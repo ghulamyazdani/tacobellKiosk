@@ -4,7 +4,7 @@
  * later loyalty domain pass. Do not add NEW anys.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -16,10 +16,14 @@ import {
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setMenuData, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
+import {
+  closeAccessibilityMode,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import LoyaltyRewardsSheet from "../LoyaltyRewardsSheet";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /*
  * THE REDEMPTION CHAIN IS MOCKED AT THE RTK LAYER, not at the useLoyalty
@@ -609,6 +613,68 @@ describe("LoyaltyRewardsSheet (Xeno redemption surface — contract step 6)", ()
     });
   });
 
+  /*
+    P9b R1 (D1, money): redeem_coupon over a FAILED transport. The trigger
+    resolves `{ error }` with no body — a timeout once the 10 s Rule 2 budget
+    runs out. It must read as a failure: no reward row, no claim, no points.
+    M5: a 2xx body without status_code 200 is not a confirmation either
+    (fork LoyaltyItemsModal gates on status_code === 200).
+  */
+  describe("redeem_coupon without a Xeno confirmation grants NOTHING (P9b R1)", () => {
+    const expectNothingGranted = async () => {
+      const error = await screen.findByTestId("loyalty-error");
+      expect(error).toHaveTextContent(i18n.t("loyalty.redeemError"));
+      expect(cartItems()).toHaveLength(0);
+      expect(loyaltyState().claimedCoupon.isClaimed).toBe(false);
+      expect(loyaltyState().totalLoyaltyPoints).toBe(6000);
+      expect(loyaltyState().openLoyaltyModal.isOpen).toBe(false);
+      // The sheet stays up behind the dialog: TRY AGAIN is live (Rule 2).
+      expect(loyaltyState().loyaltyItemsModal.isOpen).toBe(true);
+      expect(screen.getByTestId("loyalty-error-retry")).toBeInTheDocument();
+    };
+
+    const submitOtpWith = async (redeemResult: unknown) => {
+      executeEvent.mockImplementation((args: any) =>
+        args?.event_name === "redeem_coupon"
+          ? Promise.resolve(redeemResult)
+          : Promise.resolve({ data: OK_BODIES[args?.event_name] })
+      );
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+      await reachOtpStep();
+      await typeOtp("1234");
+      await userEvent.click(screen.getByTestId("loyalty-otp-submit"));
+    };
+
+    it.each([
+      ["timed out (TIMEOUT_ERROR)", { error: { status: "TIMEOUT_ERROR", error: "TimeoutError: signal timed out" } }],
+      [
+        "body ran past the budget (PARSING_ERROR)",
+        {
+          error: {
+            status: "PARSING_ERROR",
+            originalStatus: 200,
+            data: "",
+            error: "TimeoutError: signal timed out",
+          },
+        },
+      ],
+      ["network down (FETCH_ERROR)", { error: { status: "FETCH_ERROR", error: "TypeError: Failed to fetch" } }],
+    ])("transport failure — %s", async (_label, rtkResult) => {
+      await submitOtpWith(rtkResult);
+      await expectNothingGranted();
+    });
+
+    it.each([
+      ["an empty 2xx body", { data: {} }],
+      ["a 2xx body with no status_code", { data: { response: { success: true } } }],
+    ])("no positive confirmation — %s", async (_label, rtkResult) => {
+      await submitOtpWith(rtkResult);
+      await expectNothingGranted();
+    });
+  });
+
   describe("guards", () => {
     it("REDEEM without a selection asks for one and puts nothing on the wire", async () => {
       seedIdentifiedCustomer();
@@ -686,6 +752,87 @@ describe("LoyaltyRewardsSheet (Xeno redemption surface — contract step 6)", ()
         screen.queryByTestId("loyalty-otp-display")
       ).not.toBeInTheDocument();
       expect(cartItems()).toHaveLength(0);
+    });
+  });
+
+  /*
+    P9c — WCAG 2.2.1 (Timing Adjustable). The phone lookup opens the sheet
+    with isTimerOn: a 25 s auto-dismiss behind a draining bar (fork parity).
+    In the ADA view that is a content-set time limit on exactly the guests who
+    cannot race it, so it is off — and latched at open, so leaving the view
+    mid-sheet never starts a countdown on a guest who was given none.
+  */
+  describe("auto-dismiss vs the ADA view (P9c, WCAG 2.2.1)", () => {
+    const sheet = () => screen.queryByTestId("loyalty-rewards-sheet");
+    const drainBar = () => sheet()?.querySelector(".bg-tb-pink") ?? null;
+    const advance = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("normal mode: the lookup open drains for 25 s, then closes itself", () => {
+      vi.useFakeTimers();
+      seedIdentifiedCustomer();
+      openSheet(true);
+      renderSheet();
+      expect(drainBar()).toHaveStyle({ width: "100%" });
+
+      advance(1_000);
+      expect(drainBar()).toHaveStyle({ width: "96%" });
+
+      advance(23_000);
+      expect(sheet()).toBeInTheDocument();
+
+      advance(1_000);
+      expect(sheet()).not.toBeInTheDocument();
+      expect(loyaltyState().loyaltyItemsModal.isOpen).toBe(false);
+    });
+
+    it("ADA: no drain bar and no countdown — the sheet waits for the guest", () => {
+      vi.useFakeTimers();
+      store.dispatch(toggleAccessibilityMode());
+      seedIdentifiedCustomer();
+      openSheet(true);
+      renderSheet();
+
+      expect(drainBar()).toBeNull();
+      advance(60_000);
+      expect(sheet()).toBeInTheDocument();
+    });
+
+    it("opened in ADA: leaving the view mid-sheet never starts a countdown", () => {
+      vi.useFakeTimers();
+      store.dispatch(toggleAccessibilityMode());
+      seedIdentifiedCustomer();
+      openSheet(true);
+      renderSheet();
+
+      act(() => {
+        store.dispatch(closeAccessibilityMode()); // the brand-zone exit
+      });
+      advance(60_000);
+
+      expect(drainBar()).toBeNull();
+      expect(sheet()).toBeInTheDocument();
+    });
+
+    it("is capped by its containing block (the reach zone in ADA) with the X and REDEEM outside the scroller", () => {
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      const close = screen.getByTestId("loyalty-rewards-close");
+      expect(close.closest(".rounded-t-\\[60px\\]")?.className).toContain(
+        "h-[min(1470px,calc(100%_-_96px))]"
+      );
+      expect(close.closest(".overflow-y-auto")).toBeNull();
+      expect(
+        screen.getByTestId("loyalty-redeem").closest(".overflow-y-auto")
+      ).toBeNull();
     });
   });
 });

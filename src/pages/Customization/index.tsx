@@ -22,7 +22,11 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import PackSlotCard from "../../components/customization/PackSlotCard";
 import SlotSelectionSheet from "../../components/customization/SlotSelectionSheet";
 import Tier2CustomizationSheet from "../../components/customization/Tier2CustomizationSheet";
+import FooterBar from "../../components/chrome/FooterBar";
+import LanguageSheet from "../../components/language/LanguageSheet";
+import CancelOrderModal from "../../components/common/CancelOrderModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
+import { resolveEntityImage } from "../../utils/entityImage";
 import backspaceIcon from "../../assets/icons/key-backspace.svg";
 
 /**
@@ -43,6 +47,11 @@ import backspaceIcon from "../../assets/icons/key-backspace.svg";
  * sections id={group._id} — the hook's error-AutoScroll contract).
  * Commit = addCustomizationToCart() (validates min/max, adds VARIANT/
  * CUSTOMIZABLE row, closeModalStates() navigates the return path).
+ *
+ * P9c: the Figma "Footer bottom" strip (CANCEL ORDER · ADA DISPLAY ·
+ * language) sits under the ADD TO BAG bar, as on the menu — 1:2614 / 1:2920
+ * / 1:5413 draw it in BOTH modes, and without it an ADA guest on the PDP
+ * could neither leave the view nor cancel.
  */
 export default function Customization() {
   const { t } = useTranslation();
@@ -100,6 +109,8 @@ export default function Customization() {
   // Which pack slot group's SELECT sheet is open (null = closed) — the one
   // SlotSelectionSheet instance is driven by this id.
   const [openSlotGroupId, setOpenSlotGroupId] = useState<string | null>(null);
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
   const initialisedFor = useRef<string | null>(null);
 
   const isVariantFlow = isOpenBottomSheet?.type === "variant";
@@ -196,6 +207,7 @@ export default function Customization() {
     SelectedEntity?.applyAddonsPrice
   );
   const total = (Number(addonsValue || 0) + basePrice) * quantity;
+  const heroImage = resolveEntityImage(SelectedEntity);
 
   const calLabel = useMemo(() => {
     const cal = SelectedEntity?.calorieCount;
@@ -343,10 +355,11 @@ export default function Customization() {
           <div className="flex flex-col divide-y divide-tb-grey-4 rounded-[8px] bg-tb-grey-6">
             {items.map((item: any) => {
               const qty = quantityOf(group, item);
+              const imageUrl = resolveEntityImage(item);
               return (
                 <div key={item.id} className="flex items-center gap-[16px] p-[16px]">
-                  {item.image_url && (
-                    <img alt="" src={item.image_url} className="h-[72px] w-[72px] object-contain" />
+                  {imageUrl && (
+                    <img alt="" src={imageUrl} className="h-[72px] w-[72px] object-contain" />
                   )}
                   <div className="flex-1">
                     <p className="text-[20px] font-medium capitalize text-black">{item.name}</p>
@@ -385,6 +398,7 @@ export default function Customization() {
           <div className="grid grid-cols-3 gap-[16px]">
             {items.map((item: any) => {
               const selected = isSelected(group, item);
+              const imageUrl = resolveEntityImage(item);
               return (
                 <button
                   key={item.id}
@@ -395,8 +409,8 @@ export default function Customization() {
                     selected ? "border-tb-purple" : "border-transparent"
                   }`}
                 >
-                  {item.image_url && (
-                    <img alt="" src={item.image_url} className="mb-2 h-[96px] w-full object-contain" />
+                  {imageUrl && (
+                    <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
                   )}
                   <p className="text-[18px] font-medium capitalize leading-[22px] text-black">
                     {item.name}
@@ -422,10 +436,12 @@ export default function Customization() {
   };
 
   return (
-    <div data-testid="customization-screen" className="relative flex h-[1920px] w-[1080px] flex-col bg-tb-surface">
-      <div id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[220px]">
-        {SelectedEntity?.image_url && (
-          <img alt="" src={SelectedEntity.image_url} className="mx-auto mt-[24px] h-[420px] object-contain" />
+    // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
+    // 1:5413 — the whole PDP scrolls above the pinned CTA bar + footer).
+    <div data-testid="customization-screen" className="relative flex h-full w-[1080px] flex-col bg-tb-surface">
+      <div id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[96px]">
+        {heroImage && (
+          <img alt="" src={heroImage} className="mx-auto mt-[24px] h-[420px] object-contain" />
         )}
         <div className="mt-[16px] flex items-start justify-between gap-6">
           <h1 className="tb-compressed max-w-[700px] text-[56px] leading-[52px] text-black">
@@ -479,24 +495,27 @@ export default function Customization() {
               {t("size.title")}
             </h3>
             <div className="grid grid-cols-2 gap-[16px]">
-              {variants.map((v: any) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  data-testid={`pdp-variant-${v.id}`}
-                  onClick={() => pickVariant(v)}
-                  className="flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[20px] min-h-[44px]"
-                >
-                  {v.image_url && (
-                    <img alt="" src={v.image_url} className="mb-2 h-[140px] w-full object-contain" />
-                  )}
-                  <p className="text-[20px] font-medium capitalize text-black">{v.name}</p>
-                  <p className="text-[16px] text-tb-ink-purple/70">
-                    {currency}
-                    {Number(v.price ?? 0).toFixed(2)}
-                  </p>
-                </button>
-              ))}
+              {variants.map((v: any) => {
+                const imageUrl = resolveEntityImage(v);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    data-testid={`pdp-variant-${v.id}`}
+                    onClick={() => pickVariant(v)}
+                    className="flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[20px] min-h-[44px]"
+                  >
+                    {imageUrl && (
+                      <img alt="" src={imageUrl} className="mb-2 h-[140px] w-full object-contain" />
+                    )}
+                    <p className="text-[20px] font-medium capitalize text-black">{v.name}</p>
+                    <p className="text-[16px] text-tb-ink-purple/70">
+                      {currency}
+                      {Number(v.price ?? 0).toFixed(2)}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </section>
         ) : (
@@ -548,29 +567,35 @@ export default function Customization() {
         )}
       </div>
 
-      {/* ADD TO BAG bar — Figma CTA_Sheet pattern */}
-      <div className="absolute bottom-0 left-0 w-full">
-        <div className="flex w-full items-center justify-between bg-tb-purple p-[40px]">
-          <button
-            type="button"
-            data-testid="pdp-back"
-            onClick={() => closeModalStates()}
-            className="flex min-h-[44px] items-center gap-3"
-          >
-            <img alt="" src={backspaceIcon} className="h-[28px] w-[28px] brightness-0 invert" />
-            <span className="tb-display text-[22px] text-tb-surface">{t("pdp.back")}</span>
-          </button>
-          <button
-            type="button"
-            data-testid="pdp-add-to-bag"
-            disabled={needsVariantPick}
-            onClick={() => addCustomizationToCart(undefined)}
-            className={`tb-display flex min-h-[44px] items-center gap-4 text-[24px] ${needsVariantPick ? "text-tb-surface/50" : "text-tb-surface"}`}
-          >
-            {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
-            {total.toFixed(2)}
-          </button>
-        </div>
+      {/* ADD TO BAG bar — Figma CTA_Sheet pattern. In flow (Menu's pattern)
+          so the scroller ends at its top edge: pb-[96px] above is the old
+          220 minus this 124px bar, so the scroll end is unchanged. */}
+      <div className="flex w-full shrink-0 items-center justify-between bg-tb-purple p-[40px]">
+        <button
+          type="button"
+          data-testid="pdp-back"
+          onClick={() => closeModalStates()}
+          className="flex min-h-[44px] items-center gap-3"
+        >
+          <img alt="" src={backspaceIcon} className="h-[28px] w-[28px] brightness-0 invert" />
+          <span className="tb-display text-[22px] text-tb-surface">{t("pdp.back")}</span>
+        </button>
+        <button
+          type="button"
+          data-testid="pdp-add-to-bag"
+          disabled={needsVariantPick}
+          onClick={() => addCustomizationToCart(undefined)}
+          className={`tb-display flex min-h-[44px] items-center gap-4 text-[24px] ${needsVariantPick ? "text-tb-surface/50" : "text-tb-surface"}`}
+        >
+          {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
+          {total.toFixed(2)}
+        </button>
+      </div>
+      <div className="relative h-[56px] w-full shrink-0">
+        <FooterBar
+          onCancelOrder={() => setCancelOrderOpen(true)}
+          onOpenLanguage={() => setLanguageOpen(true)}
+        />
       </div>
 
       <SlotSelectionSheet
@@ -592,6 +617,20 @@ export default function Customization() {
       />
 
       <Tier2CustomizationSheet />
+
+      <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
+      <CancelOrderModal
+        open={cancelOrderOpen}
+        // ONLY navigate (hazard H1): /start's mount owns the revoke +
+        // resetSession("full"). Resetting here first would close the tier-1
+        // session while this route is still rendered, and the no-session
+        // guard above would bounce to the return path instead of the splash.
+        onConfirm={() => {
+          setCancelOrderOpen(false);
+          navigate("/start");
+        }}
+        onCancel={() => setCancelOrderOpen(false)}
+      />
     </div>
   );
 }

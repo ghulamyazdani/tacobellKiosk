@@ -62,18 +62,25 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(screen.queryByTestId("miam-prompt")).not.toBeInTheDocument();
   });
 
-  it("renders headline, combo cards and the decline row when opened", () => {
+  it("renders headline, combo cards and both CTAs when opened", () => {
     openPrompt();
     renderPrompt();
     const prompt = screen.getByTestId("miam-prompt");
     // slice default headline (primaryMakeItAMealText)
     expect(prompt).toHaveTextContent(/would you like to make it a meal/i);
-    expect(prompt).toHaveTextContent("A cheesy classic");
+    // Figma 1:3070 has no description line — the subText/description
+    // paragraph was dropped in the re-skin, deliberately.
+    expect(prompt).not.toHaveTextContent("A cheesy classic");
     const combo = screen.getByTestId("miam-combo-combo-1");
     expect(combo).toHaveTextContent("Dream Box");
     expect(combo).toHaveTextContent("7.99");
-    // decline shows the original item's price
-    expect(screen.getByTestId("miam-decline")).toHaveTextContent("3.50");
+    // Copy-only CTAs per the frame: accept above, "not today" below — the
+    // original item's price is no longer appended to the decline label.
+    expect(screen.getByTestId("miam-accept")).toHaveTextContent(
+      /yes, make it a meal/i
+    );
+    expect(screen.getByTestId("miam-decline")).toHaveTextContent(/not today/i);
+    expect(screen.getByTestId("miam-decline")).not.toHaveTextContent("3.50");
     expect(screen.getByTestId("miam-close")).toBeInTheDocument();
   });
 
@@ -130,5 +137,19 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(makeItAMealIsOpen(state)).toBe(false);
     expect(selectIsForceOpenMakeItAMealModal(state)).toBe(false);
     expect(screen.queryByTestId("miam-prompt")).not.toBeInTheDocument();
+  });
+
+  it("ADA (P9c): the card is capped by its containing block; the X and both CTAs never scroll away", () => {
+    openPrompt();
+    renderPrompt();
+    const close = screen.getByTestId("miam-close");
+
+    expect(close.closest('[class*="max-h-[calc(100%_-_48px)]"]')).not.toBeNull();
+    for (const id of ["miam-close", "miam-accept", "miam-decline"]) {
+      expect(screen.getByTestId(id).closest(".overflow-y-auto")).toBeNull();
+    }
+    expect(
+      screen.getByTestId("miam-combo-combo-1").closest(".overflow-y-auto")
+    ).not.toBeNull();
   });
 });

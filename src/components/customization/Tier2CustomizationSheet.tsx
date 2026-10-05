@@ -48,6 +48,7 @@ import {
 import { closeBottomSheet } from "../../redux/features/menuSelections/menuSelections.slice";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServices";
+import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
 // Unique id for a repeat-capable tier-1 row (fork's generateUniqueId).
@@ -480,16 +481,17 @@ export default function Tier2CustomizationSheet() {
             {items.map((item: any) => {
               const qty = quantityOf(group, item);
               const meta = itemMeta(item);
+              const imageUrl = resolveEntityImage(item);
               return (
                 <div
                   key={item.id}
                   data-testid={`tier2-option-${item.id}`}
                   className="flex items-center gap-[16px] p-[16px]"
                 >
-                  {item.image_url && (
+                  {imageUrl && (
                     <img
                       alt=""
-                      src={item.image_url}
+                      src={imageUrl}
                       className="h-[72px] w-[72px] object-contain"
                     />
                   )}
@@ -541,6 +543,7 @@ export default function Tier2CustomizationSheet() {
             {items.map((item: any) => {
               const selected = isSelected(group, item);
               const meta = itemMeta(item);
+              const imageUrl = resolveEntityImage(item);
               return (
                 <button
                   key={item.id}
@@ -553,10 +556,10 @@ export default function Tier2CustomizationSheet() {
                     selected ? "border-tb-purple" : "border-transparent"
                   }`}
                 >
-                  {item.image_url && (
+                  {imageUrl && (
                     <img
                       alt=""
-                      src={item.image_url}
+                      src={imageUrl}
                       className="mb-2 h-[96px] w-full object-contain"
                     />
                   )}

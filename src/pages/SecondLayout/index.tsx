@@ -16,9 +16,11 @@ import {
 import useKioskOpenServices from "../../hooks/kioskOpen/useKioskOpenServices";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useAppSettings from "../../hooks/utils/useAppSettings";
+import useAdaActive from "../../hooks/utils/useAdaActive";
 import DaypartTicker from "../../components/chrome/DaypartTicker";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
+import ErrorModal from "../../components/common/ErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
@@ -44,12 +46,22 @@ const iconForPipeline = (pipeline: Pipeline) =>
  * Cards are DATA-DRIVEN from the CX pipelines loaded at boot; closed
  * pipelines grey out via kioskOpenStatus. Selection wiring mirrors
  * posistKiosk's handleSelectPipeline (menu/charges fetch arrives in P5).
+ *
+ * ADA (P9c, design-language — no Figma frame, flagged for client sign-off):
+ * the page renders into the 1122px reach zone. The bell is dropped (the
+ * brand zone above carries the lockup); the ticker, the `top-1/2` block
+ * (3-line title + mb-64 + one 416px card row = 774px, i.e. y 174–948) and
+ * the footer (1066–1122) already fit. A second card ROW would not, so with
+ * more than two pipelines the cards become one horizontal swipe row at full
+ * size (fork parity — cards are never shrunk), the third card peeking in.
  */
 export default function SecondLayout() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const ada = useAdaActive();
   const pipelines = (useSelector(selectPipelines) ?? []) as Pipeline[];
+  const scrollRow = ada && pipelines.length > 2;
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const secondaryLanguage = useSelector(selectSecondaryLanguage);
   const { checkPipelineClosedFromRedux, checkAllPipelinesWithIds } =
@@ -64,7 +76,17 @@ export default function SecondLayout() {
   const { getChargesCountryDataApi, getIsLoyaltyOn } = useAppSettings();
   const [languageOpen, setLanguageOpen] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  // The pipeline whose menu failed to load — drives the error dialog.
+  const [failedPipeline, setFailedPipeline] = useState<Pipeline | null>(null);
   const isProcessing = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Refresh per-pipeline open state on mount (fork parity).
   useEffect(() => {
@@ -74,6 +96,49 @@ export default function SecondLayout() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only refresh
   }, []);
+
+  /**
+   * Fetch the pipeline's menu, then enter it. Shared by the card tap and the
+   * error dialog's TRY AGAIN, so a retry re-runs ONLY the fetches (no second
+   * PipelineSelected/OrderTypeSelected event, no re-dispatch).
+   */
+  const loadMenuAndEnter = async (pipeline: Pipeline) => {
+    setFailedPipeline(null);
+    setIsFetching(true);
+    try {
+      const menu = await fetchMenu(pipeline.tab_id, false, false, pipeline);
+      // Rule 1: the fetch is not idle-held, so the session can end (idle →
+      // /start) while it is in flight. A late response must not drive the
+      // emptied kiosk off the splash into /menu or /phone.
+      if (!mountedRef.current) return;
+      // Rule 2/3 (P9b): fetchMenu swallows EVERY failure (network, timeout,
+      // 5xx, bad body, converter throw) and resolves {} — fork parity. Judge
+      // the RETURN value, never the redux menu: after a nextCustomer reset
+      // that still holds the PREVIOUS pipeline's items and prices.
+      if (!menu?.categories?.length) {
+        setFailedPipeline(pipeline);
+        return;
+      }
+      navigate(getIsLoyaltyOn() ? "/phone" : "/menu");
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  /** TRY AGAIN — same pipeline, same request set. */
+  const retryMenu = async () => {
+    if (!failedPipeline || isProcessing.current) return;
+    isProcessing.current = true;
+    try {
+      // The tap's charges call usually failed with the menu (same blip), and
+      // only a success rewrites the stored charges — skip it and the bill
+      // carries the last good pipeline's charges (money, Rule 3).
+      getChargesCountryDataApi(failedPipeline.tab_id);
+      await loadMenuAndEnter(failedPipeline);
+    } finally {
+      isProcessing.current = false;
+    }
+  };
 
   const handleSelectPipeline = async (pipeline: Pipeline) => {
     if (isProcessing.current) return; // double-tap guard (fork parity)
@@ -103,12 +168,8 @@ export default function SecondLayout() {
       dispatch(setTabType(pipeline.tab_type));
       dispatch(resetCategorySelection());
 
-      setIsFetching(true);
-      await fetchMenu(pipeline.tab_id, false, false, pipeline);
-
-      navigate(getIsLoyaltyOn() ? "/phone" : "/menu");
+      await loadMenuAndEnter(pipeline);
     } finally {
-      setIsFetching(false);
       isProcessing.current = false;
     }
   };
@@ -116,11 +177,16 @@ export default function SecondLayout() {
   return (
     <div
       data-testid="second-screen"
-      className="relative h-[1920px] w-[1080px] overflow-hidden bg-tb-purple"
+      className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
+      {/* Both layers are stage-sized and bottom-anchored, i.e. registered to
+          the STAGE, not the page: in ADA (page = the reach zone) the tile
+          and the sheen crop continue the brand zone's across the seam
+          instead of restarting at its edge. Normal mode: the same box as
+          inset-0. */}
       <div
         aria-hidden
-        className="absolute inset-0"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px]"
         style={{
           backgroundImage: `url(${bgTexture})`,
           backgroundSize: "240px 240px",
@@ -131,24 +197,35 @@ export default function SecondLayout() {
         aria-hidden
         alt=""
         src={plasticOverlay}
-        className="absolute inset-0 h-full w-full object-cover opacity-40 mix-blend-soft-light"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px] object-cover opacity-40 mix-blend-soft-light"
       />
 
       <div className="absolute left-0 top-0 w-full">
         <DaypartTicker />
       </div>
 
-      <img
-        alt="Taco Bell"
-        src={tbBell}
-        className="absolute left-1/2 top-[327px] h-[89px] w-[100px] -translate-x-1/2"
-      />
+      {!ada && (
+        <img
+          alt="Taco Bell"
+          src={tbBell}
+          className="absolute left-1/2 top-[327px] h-[89px] w-[100px] -translate-x-1/2"
+        />
+      )}
 
       <div className="absolute left-1/2 top-1/2 w-[856px] -translate-x-1/2 -translate-y-1/2">
         <h1 className="tb-display mb-[64px] text-center text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface">
           {t("second.title")}
         </h1>
-        <div className="flex flex-wrap justify-center gap-[24px]">
+        {/* scrollRow: -mx-[112px] widens the row to the full 1080 stage so the
+            cards swipe edge to edge; px-[112px] keeps card 1 on the block's
+            left edge. Cards are shrink-0 or the nowrap row would squeeze them. */}
+        <div
+          className={
+            scrollRow
+              ? "-mx-[112px] flex gap-[24px] overflow-x-auto px-[112px] [scrollbar-width:none]"
+              : "flex flex-wrap justify-center gap-[24px]"
+          }
+        >
           {pipelines.map((pipeline) => {
             const openState = checkPipelineClosedFromRedux(pipeline._id);
             const closed = openState.status === false;
@@ -161,7 +238,7 @@ export default function SecondLayout() {
                 onClick={() => handleSelectPipeline(pipeline)}
                 className={`relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
                   closed ? "opacity-50" : "active:scale-[0.98]"
-                }`}
+                }${scrollRow ? " shrink-0" : ""}`}
               >
                 <img
                   alt=""
@@ -198,6 +275,25 @@ export default function SecondLayout() {
         onOpenLanguage={() => setLanguageOpen(true)}
       />
       <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
+      {/* No auto-retry: the guest is right here. BACK returns to the cards
+          (footer Cancel → /start, language) — Rule 1, never a dead end. */}
+      {failedPipeline && (
+        <ErrorModal
+          testId="menu-error"
+          title={t("menuError.title")}
+          message={t("menuError.message")}
+          primary={{
+            label: t("menuError.retry"),
+            testId: "menu-error-retry",
+            onClick: () => void retryMenu(),
+          }}
+          secondary={{
+            label: t("menuError.back"),
+            testId: "menu-error-back",
+            onClick: () => setFailedPipeline(null),
+          }}
+        />
+      )}
     </div>
   );
 }

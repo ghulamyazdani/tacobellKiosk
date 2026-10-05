@@ -29,7 +29,7 @@ jobs:
           token: ${{ secrets.SDK_REPO_TOKEN }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: 22
           cache: yarn
           cache-dependency-path: tacobell-kiosk/yarn.lock
       - run: yarn install --frozen-lockfile
@@ -78,7 +78,7 @@ jobs:
           token: ${{ secrets.SDK_REPO_TOKEN }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19
+          node-version: 22
           cache: yarn
           cache-dependency-path: tacobell-kiosk/yarn.lock
       - run: yarn install --frozen-lockfile

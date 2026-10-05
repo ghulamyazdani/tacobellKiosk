@@ -285,4 +285,22 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     expect(getItemRows()).toEqual([]);
     expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
   });
+
+  it("ADA (P9c): capped by its containing block with the X and CONFIRM outside the scroller", () => {
+    renderPicker(CHOICE_OFFER);
+    const close = screen.getByTestId("freebie-close");
+
+    expect(
+      close.closest('[class*="max-h-[min(1200px,calc(100%_-_96px))]"]')
+    ).not.toBeNull();
+    expect(close.closest(".overflow-y-auto")).toBeNull();
+    expect(
+      screen.getByTestId("freebie-confirm").closest(".overflow-y-auto")
+    ).toBeNull();
+    expect(
+      screen
+        .getByTestId("freebie-option-tortilla-sauce")
+        .closest(".overflow-y-auto")
+    ).not.toBeNull();
+  });
 });

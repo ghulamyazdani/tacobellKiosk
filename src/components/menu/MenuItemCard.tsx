@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { resolveEntityImage } from "../../utils/entityImage";
 import plusIcon from "../../assets/icons/plus.svg";
 
 /* eslint-disable @typescript-eslint/no-explicit-any --
@@ -39,6 +40,7 @@ export default function MenuItemCard({
   const { t } = useTranslation();
   const unavailable = entity?.outOfStock === true;
   const priceLine = `${currency}${entity?.price ?? ""}${calorieLabel(entity)}`;
+  const imageUrl = resolveEntityImage(entity);
 
   if (large) {
     return (
@@ -58,10 +60,10 @@ export default function MenuItemCard({
           </p>
           <p className="text-[18px] leading-[20px] text-tb-ink-purple">{priceLine}</p>
         </div>
-        {entity?.image_url && (
+        {imageUrl && (
           <img
             alt=""
-            src={entity.image_url}
+            src={imageUrl}
             className={`h-[326px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
           />
         )}
@@ -99,10 +101,10 @@ export default function MenuItemCard({
         </p>
         <p className="text-[18px] leading-[20px] text-tb-ink-purple">{priceLine}</p>
       </div>
-      {entity?.image_url && (
+      {imageUrl && (
         <img
           alt=""
-          src={entity.image_url}
+          src={imageUrl}
           className={`h-[172px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
         />
       )}

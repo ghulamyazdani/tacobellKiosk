@@ -26,6 +26,7 @@ import {
   clearTent,
   closeAccessibilityMode,
   closeStartOverConfirmation,
+  setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   closeBottomSheet,
@@ -127,6 +128,11 @@ const useSessionReset = () => {
     dispatch(closeMakeItAMealModal());
     // An abandoned MIAM session must not greet the next customer on any path.
     dispatch(closeMakeItAMealSession());
+    // The global error is a redux flag, not page state: left set, the next
+    // customer's /menu opens on the previous customer's error modal.
+    dispatch(
+      setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" })
+    );
     if (scope === "full") {
       dispatch(closeAccessibilityMode());
       dispatch(setOutOfStockItems({}));

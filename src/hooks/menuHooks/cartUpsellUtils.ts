@@ -8,6 +8,10 @@ import type {
   EntityMap,
   OutOfStockMap,
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
+import {
+  ADA_REACH_ZONE_HEIGHT,
+  STAGE_HEIGHT,
+} from "../../components/stage/KioskStage";
 
 /*
   Port of posistKiosk's src/hooks/menuHooks/cartUpsellUtils.ts (P7a).
@@ -81,8 +85,14 @@ export const CART_UPSELL_PAGE_PADDING_X_PX = 24;
  * horizontally and never consumes this.
  */
 export const CART_UPSELL_CHROME_HEIGHT_PX = 320;
-/** Accessibility mode shrinks every full page to the lower `h-[60vh]`. */
-export const CART_UPSELL_ACCESSIBLE_HEIGHT_FRACTION = 0.6;
+/**
+ * The ADA view renders every in-session page into the bottom reach zone
+ * (ReachZone), so a page gets that fraction of the stage height (0.584375 at
+ * the Figma calibration). Derived, not copied: the fork's 0.6 modelled a
+ * 60vh page inside its own 70vh container.
+ */
+export const CART_UPSELL_ACCESSIBLE_HEIGHT_FRACTION =
+  ADA_REACH_ZONE_HEIGHT / STAGE_HEIGHT;
 /**
  * Upper bound on rows, even when the screen could hold more. Purely a
  * merchandising sanity limit — a tenant who flags forty items should get a

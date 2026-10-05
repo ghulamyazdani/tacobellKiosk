@@ -21,8 +21,10 @@ import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
 import { getAllLoyaltyItemsFromMenu } from "@cx-sdk/ordering/loyalty/loyaltyEngine";
 import { getLoyaltyRedemptionError } from "@cx-sdk/ordering/loyalty/loyaltyRedemption";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
+import { resolveEntityImage } from "../../utils/entityImage";
 import KioskNumpad from "../keyboard/KioskNumpad";
 import LoyaltyErrorModal from "./LoyaltyErrorModal";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -115,6 +117,17 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
   const [error, setError] = useState<string | null>(null);
   const [remaining, setRemaining] = useState(AUTO_DISMISS_SECONDS);
 
+  // WCAG 2.2.1 (Timing Adjustable): in the ADA view the auto-dismiss is a
+  // content-set time limit, and the guests who turn ADA on are exactly the
+  // ones who cannot race it — the fork's own OffersSheet rule
+  // (`autoReturn={!accessibilityMode}`), which its LoyaltyItemsModal missed.
+  // Latched at open as well: leaving ADA mid-sheet (the brand zone stays
+  // tappable above it) must not start a countdown on a guest — possibly
+  // mid-pick — who was given none.
+  const adaActive = useAdaActive();
+  const [openedInAda] = useState(adaActive);
+  const timed = isTimerOn && !adaActive && !openedInAda;
+
   const timerRef = useRef<number | null>(null);
 
   const cancelTimer = useCallback(() => {
@@ -128,21 +141,21 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
   // Rule 5 — one interval, cleared on unmount and on the first interaction;
   // the fork re-created it on every tick, which leaked on fast unmounts.
   useEffect(() => {
-    if (!isTimerOn) return;
+    if (!timed) return;
     timerRef.current = window.setInterval(
       () => setRemaining((prev) => (prev > 0 ? prev - 1 : 0)),
       1000,
     );
     return cancelTimer;
-  }, [isTimerOn, cancelTimer]);
+  }, [timed, cancelTimer]);
 
   // Closing is a side effect of the countdown, not of the tick callback — a
   // dispatch inside a state updater would double-fire under StrictMode.
   useEffect(() => {
-    if (!isTimerOn || remaining > 0) return;
+    if (!timed || remaining > 0) return;
     cancelTimer();
     dispatch(closeLoyaltyItemsModal());
-  }, [isTimerOn, remaining, cancelTimer, dispatch]);
+  }, [timed, remaining, cancelTimer, dispatch]);
 
   /**
    * Reward tiles. Built from the RAW coupon list joined against the menu —
@@ -305,7 +318,10 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
     setBusy(true);
     try {
       const res: any = await finalLoyaltyRedemption(item?.coupon_code, otp, item);
-      if (getLoyaltyRedemptionError(res)) {
+      // Success must be POSITIVE (fork LoyaltyItemsModal: status_code === 200):
+      // the parser alone reads a 2xx body with no status ({}, {error}) as
+      // success, which would grant the reward with no Xeno confirmation.
+      if (res?.status_code !== 200 || getLoyaltyRedemptionError(res)) {
         setError(res?.response?.message || t("loyalty.redeemError"));
         return;
       }
@@ -333,6 +349,9 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
     const code = String(entity?.coupon_code ?? id);
     const selected = selectedId === id;
     const outOfStock = Boolean(entity?.outOfStock);
+    // Reward tiles are the coupon with the menu entity merged over it, so
+    // `aggregator_image` survives the join.
+    const imageUrl = resolveEntityImage(entity);
     const cost = pointsValueOf(entity);
     const chip =
       Number(entity?.discount_value) === 100
@@ -354,10 +373,10 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         } ${locked ? "opacity-60" : ""}`}
       >
         <span className="flex h-[84px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
-          {entity?.image_url ? (
+          {imageUrl ? (
             <img
               alt=""
-              src={entity.image_url}
+              src={imageUrl}
               className="h-full w-full object-contain"
             />
           ) : (
@@ -421,15 +440,20 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
+      {/* Capped by the containing block (Menu's h-full root → the reach
+          container) minus a 96 px scrim band, as RewardsSheet: 1470 on the
+          1920 stage, 1026 in the 1122 ADA reach zone — still room for the
+          whole OTP step (header 160 + prompt/cells/numpad 668 + bar 132 =
+          960) without scrolling the keypad. */}
       <div
         style={{ animation: "tbLoyaltySheetEnter 0.2s ease-out both" }}
         onPointerDownCapture={cancelTimer}
         onScrollCapture={cancelTimer}
-        className="absolute bottom-0 left-0 flex h-[1470px] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         {/* Auto-dismiss progress — purely decorative; disappears the moment
             the customer touches the sheet. */}
-        {isTimerOn && remaining > 0 && (
+        {timed && remaining > 0 && (
           <span
             aria-hidden="true"
             className="absolute left-0 top-0 h-[6px] bg-tb-pink"

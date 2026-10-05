@@ -4,6 +4,7 @@
  */
 import { useTranslation } from "react-i18next";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import { resolveEntityImage } from "../../utils/entityImage";
 import plusIcon from "../../assets/icons/plus.svg";
 
 interface BagItemRowProps {
@@ -56,6 +57,9 @@ export default function BagItemRow({
     useCartHook();
 
   const lines: any[] = getAllCustomizationList(row?.customizations) ?? [];
+  // A cart row is the menu entity spread into the row, so `aggregator_image`
+  // rides along and the kiosk image resolves straight off the row.
+  const imageUrl = resolveEntityImage(row);
   const quantity = Number(row?.quantity ?? 0);
   const lineTotal = Number(row?.total_price ?? 0) * quantity;
 
@@ -153,10 +157,10 @@ export default function BagItemRow({
       }
       className="flex w-full items-start gap-[24px] border-t border-tb-grey-4 py-[24px]"
     >
-      {row?.image_url ? (
+      {imageUrl ? (
         <img
           alt=""
-          src={row.image_url}
+          src={imageUrl}
           className="h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
         />
       ) : (

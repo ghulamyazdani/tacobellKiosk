@@ -9,7 +9,7 @@
  * fallback, every localStorage site, and the local loading state. Same
  * exported API, same observable behavior.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   selectMenu,
@@ -78,6 +78,7 @@ import {
 } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import useDynamicPricing from "../dynamicPricingHooks/useDynamicPricing";
 import useAllowMultiplePunch from "../customization/useAllowMultiplePunch";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import {
   addOutOfStockField as legacyAddOutOfStockField,
   buildLegacyCategoryMaps,
@@ -120,6 +121,14 @@ function useMenuConverters() {
   const entityModifiersMapRdx = useSelector(selectEntityModifierMap);
   const menuData = useSelector(selectMenu);
   const [fetchLoading, setFetchLoading] = useState(false);
+  // fetchMenu's late-result guard (see there).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   // Delegates to the leaf hook so this one-liner has a single implementation
   // and components needing only this boolean can skip this hook entirely.
   const { isAllowMultiplePunch } = useAllowMultiplePunch();
@@ -304,6 +313,16 @@ function useMenuConverters() {
           }
         }
       }
+
+      // Rule 3 (P9a): idle can end the session under the awaits above (the
+      // fetch overlay hides every other exit). Once the caller is gone, a
+      // late menu must not overwrite the NEXT customer's — drop it like a
+      // failed fetch.
+      // ponytail: guards only this function's own writes; fetchDpItems still
+      // writes the dp map after its own await. With P9b's host-configured
+      // transport budget (getMenu 30 s) the fetch normally settles before
+      // idle can fire, so this is the backstop.
+      if (!mountedRef.current) return {};
 
       if (
         menu.settings &&
@@ -497,10 +516,18 @@ function useMenuConverters() {
       setFetchLoading(false);
       return convertedData;
     } catch (err: any) {
-      // The ONLY signal that a menu conversion failed. The failure mode is a
-      // silent blank pane (fetchMenu returns {} and never dispatches
-      // setMenuData), so this must not be deleted with the debug dumps.
-      console.error("fetch menu err", err);
+      // Every failure (network, timeout, 5xx, 401/504/505 after their side
+      // effects, bad body, converter bug) lands here and resolves {} — fork
+      // parity, and BagSheet relies on the shape. Callers judge the returned
+      // categories (SecondLayout / Menu show the menu-error dialog); the cause
+      // goes to analytics, the only trace of it on an unattended kiosk.
+      // error_detail keeps RTK's "TimeoutError…", which is how a mid-body
+      // timeout (PARSING_ERROR under RTK 2.12) is told apart from a bad body.
+      captureKioskEvent(KioskEventName.ErrorOccurred, {
+        error_source: "menu_fetch",
+        error_status: String(err?.status ?? err?.name ?? "unknown"),
+        error_detail: String(err?.error ?? err?.message ?? ""),
+      });
       setFetchLoading(false);
       return {};
     }
@@ -629,8 +656,8 @@ function useMenuConverters() {
 
       return newMenuItems;
     } catch (err) {
-      // Second of the two real failure signals (see fetchMenu's catch). This
-      // one returns undefined, which surfaces as an empty /menu.
+      // Returns undefined; fetchMenu's next read of the result then throws
+      // into its catch (analytics + {} → the menu-error dialog).
       console.error("convertMenuData failed", err);
     }
   };

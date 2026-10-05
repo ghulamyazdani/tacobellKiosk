@@ -16,6 +16,10 @@ import {
   makeItAMealIsSessionOpen,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  setShowErrorModalGlobal,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { startTimer, tick } from "@cx-sdk/core/session/timer.slice";
 import { store } from "../../../redux/app/store";
 import useSessionReset, { type SessionResetScope } from "../useSessionReset";
@@ -113,6 +117,38 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
     expect(state().menu.menu.categories).toHaveLength(1);
     expect(state().timer.isRunning).toBe(false);
     expect(state().timer.timeRemaining).toBe(135);
+  });
+
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") clears the global error — it is redux, not page state',
+    async (scope) => {
+      store.dispatch(
+        setShowErrorModalGlobal({ showErrorModal: true, errorMessage: "Checkout failed" })
+      );
+
+      await fireReset(scope);
+
+      // Left set, the next customer's /menu opens on this customer's error.
+      expect(state().appSettings.showGlobalError).toBe(false);
+      expect(state().appSettings.errorMessageGlobal).toBe("");
+    }
+  );
+
+  /*
+    P9c: the ADA view is the guest's, so the splash's full reset ends it.
+    The nextCustomer fast path ("Place new order") keeps it ON — fork parity,
+    flagged for sign-off; changing it is a session-reset decision, so this
+    pins it until someone makes that call deliberately.
+  */
+  it.each<[SessionResetScope, string, boolean]>([
+    ["full", "OFF", false],
+    ["nextCustomer", "ON (fork parity)", true],
+  ])('resetSession("%s") leaves the ADA view %s', async (scope, _label, stillOn) => {
+    store.dispatch(toggleAccessibilityMode());
+
+    await fireReset(scope);
+
+    expect(state().appSettings.accessibilityMode).toBe(stillOn);
   });
 
   it("is idempotent: resetting an already-clean session neither throws nor dirties state", async () => {

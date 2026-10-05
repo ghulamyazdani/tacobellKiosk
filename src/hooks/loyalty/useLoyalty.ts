@@ -7,9 +7,13 @@
 // This hook keeps ONLY the impure edges: redux selectors/dispatches, the RTK
 // Query executeLoyaltyEvent transport, uuid generation, console logging, the
 // localStorage claimed-coupon cleanup, and the raw Xeno undoRewardRedemption
-// fetch (KNOWN Rule-2 violation — kept verbatim on purpose). All payload
-// building, coupon/menu matching, discount math and the payment-bypass
-// predicate live in the engine.
+// fetch (Xeno's own origin, so it stays off the kiosk transport and its
+// credentials; bounded, never retried — see checkAndRevokeLoyaltyReward).
+// All payload building, coupon/menu matching, discount math and the
+// payment-bypass predicate live in the engine.
+import { useEffect, useRef } from "react";
+import { isTimeoutError } from "@cx-sdk/core/transport/withTimeoutRetry";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { useExecuteLoyaltyEventMutation } from "@cx-sdk/ordering/services/loyaltyApi";
 import { selectLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { useSelector } from "react-redux";
@@ -24,6 +28,7 @@ import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
 import { selectTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { v4 as uuid } from "uuid";
 import useOrderHook from "../menuHooks/useOrderHook";
+import { useIdleHold } from "../utils/useIdleTimeout";
 import { setClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
 import { removeClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
@@ -44,9 +49,37 @@ import {
   shouldPlaceLoyaltyOrderDirectly as shouldPlaceLoyaltyOrderDirectlyEngine,
 } from "@cx-sdk/ordering/loyalty/loyaltyEngine";
 
+/** Rule 2 budget for the Xeno revoke (undoRewardRedemption). */
+const XENO_REVOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Claim (by its datetime) whose undo is in flight. Module scope: BagSheet,
+ * Menu, CustomerName and StartScreen each hold their own useLoyalty, and the
+ * bag's auto-reversal plus a Cancel order inside its 10 s window would
+ * otherwise send two undos for one claim — a double refund unless Xeno
+ * dedupes (unconfirmed).
+ */
+let revokingClaim: string | undefined;
+
 function useLoyalty() {
   const [executeLoyaltyEvent, { isLoading: isLoyaltyEventLoading, reset: resetLoyaltyEvent }] =
     useExecuteLoyaltyEventMutation();
+  // Lookups and redemptions dispatch customer-scoped (persisted) loyalty
+  // state AFTER their await — an idle reset mid-call would let that land in
+  // the next customer's session. Every screen using this hook is covered.
+  useIdleHold(isLoyaltyEventLoading);
+  // The hold ends when the asking screen unmounts, and nothing blocks the
+  // exits around a lookup (Back/Skip/Cancel off /phone, closing the login
+  // modal). RTK's unmount reset() does not abort, so the trigger still
+  // resolves with {data} — executeLoyalty must not write it into whoever is
+  // at the kiosk by then (Rule 3).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const countryCode = useSelector(selectCountryCode);
   const claimedCouponRdx = useSelector(selectClaimedCoupon);
   const phoneNumber = useSelector(selectPhoneNumber);
@@ -83,6 +116,9 @@ function useLoyalty() {
         partners: buildLoyaltyEventPartners(loyaltyPartnerRdx),
         data: payload,
       });
+      // undefined, not resp: both callers then take their no-lookup path, so
+      // LoyaltyLoginModal cannot open the rewards sheet for the next customer.
+      if (!mountedRef.current) return undefined;
 
       const resp = response?.data;
       // const resp = xenoExpectedSuccessResponse;
@@ -193,6 +229,12 @@ function useLoyalty() {
       partners: buildLoyaltyEventPartners(loyaltyPartnerRdx),
       data: payload,
     });
+    // A transport failure (timeout, network, HTTP error) resolves with NO
+    // body. Wrapping infoForClaim around nothing made
+    // getLoyaltyRedemptionError read it as SUCCESS — free reward row + claim
+    // + points deducted with no Xeno confirmation. undefined is that
+    // parser's missing-body failure, so the sheet shows its error instead.
+    if (!response?.data) return undefined;
     // const resp = response?.data;
 
     const resp = {
@@ -239,14 +281,58 @@ function useLoyalty() {
 
   const checkAndRevokeLoyaltyReward = async () => {
     if (!claimedCouponRdx?.isClaimed) return;
+    const claim = claimedCouponRdx?.couponData;
+    // User decision 2026-10-01 (P9d S7): a push carrying this claim ended
+    // outcome-unknown (usePayAtCounter marks it), so the order — reward
+    // included — may exist. Never auto-refund it: hand it to staff through
+    // this event (non-PII ids only) and drop the claim so no later caller
+    // reports it twice. Every unmarked claim takes the undo below unchanged.
+    if (claim?.orderOutcomeUnknown) {
+      captureKioskEvent(KioskEventName.ErrorOccurred, {
+        source: "xeno_revoke_skipped",
+        reason: "order_outcome_unknown",
+        reward_id: claim?.couponCode,
+        claim_datetime: claim?.datetime,
+        points: claim?.claimedPoints,
+      });
+      removeClaimedCouponFromPersist();
+      return;
+    }
+    const claimKey = String(claim?.datetime);
+    if (revokingClaim === claimKey) return;
+    revokingClaim = claimKey;
     const uri = `https://xeno.in:2223/api/xeno/loyalty/undoRewardRedemption?apikey=${claimedCouponRdx?.couponData?.merchantId}&phone=${claimedCouponRdx?.couponData?.phoneNumber}&datetime=${claimedCouponRdx?.couponData?.datetime}&pointsToBeReturned=${claimedCouponRdx?.couponData?.claimedPoints}&rewardId=${claimedCouponRdx?.couponData?.couponCode}`;
-    const data = await fetch(uri, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-    await data.json();
+    try {
+      // Rule 2 bound, and NEVER retried: an undo carrying a client-supplied
+      // points amount is not known to be idempotent — a timed-out one may
+      // have landed, so a resend risks a double refund. The bound also keeps
+      // the late removeClaimedCouponFromPersist() below off the next
+      // customer's claim (nobody reaches a claimed reward within 10 s).
+      const data = await fetch(uri, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(XENO_REVOKE_TIMEOUT_MS),
+      });
+      await data.json();
+    } catch (error) {
+      // Claim kept (fork parity) — but only the in-session bag callers get a
+      // later teardown; StartScreen/Menu/CustomerName reset straight after,
+      // which wipes it. Every caller is fire-and-forget, so this event is the
+      // only trace of a stranded refund: it carries the non-PII claim ids to
+      // reconcile it (never the phone or the apikey).
+      captureKioskEvent(KioskEventName.ErrorOccurred, {
+        source: "xeno_revoke",
+        timed_out: isTimeoutError(error),
+        reward_id: claim?.couponCode,
+        claim_datetime: claim?.datetime,
+        points: claim?.claimedPoints,
+      });
+      return;
+    } finally {
+      revokingClaim = undefined;
+    }
     removeClaimedCouponFromPersist();
   };
 

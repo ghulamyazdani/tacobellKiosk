@@ -1,6 +1,9 @@
 {
   "splash": {
-    "startOrder": "start order"
+    "startOrder": "start order",
+    "welcome": "welcome",
+    "touchToStart": "touch anywhere to start",
+    "orderHere": "order here"
   },
   "registration": {
     "title": "Register this kiosk",
@@ -30,7 +33,31 @@
   "loading": {
     "preparing": "Preparing your kiosk…",
     "errorTitle": "Configuration error",
-    "backToRegistration": "Back to registration"
+    "unavailableTitle": "Can't connect",
+    "unavailableBody": "This kiosk can't reach the ordering system right now. It will keep trying automatically.",
+    "configNoLanguage": "No language is set up for this kiosk. Add one in Cockpit.",
+    "configNoPipelines": "No order types (Dine In / Take Out) are set up for this kiosk. Add them in Cockpit.",
+    "configNoStartText": "The start screen text is missing from the kiosk settings. Add it in Cockpit.",
+    "retryIn": "Trying again in {{seconds}}s",
+    "retryNow": "Try again now"
+  },
+  "update": {
+    "title": "Kiosk update",
+    "countdown": "Starting in {{seconds}}s",
+    "inProgress": "Updating…",
+    "body": "The kiosk will be ready again in a moment."
+  },
+  "menuError": {
+    "title": "We couldn't load the menu",
+    "message": "Something went wrong while getting the menu ready. Please try again.",
+    "retry": "Try again",
+    "back": "Back",
+    "startOver": "Start over"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "message": "Please restart your order.",
+    "startOver": "Start over"
   },
   "ticker": {
     "lunch": "It's lunch time!"
@@ -38,6 +65,9 @@
   "footer": {
     "cancelOrder": "Cancel order",
     "adaDisplay": "ADA Display"
+  },
+  "ada": {
+    "exit": "Exit ADA display"
   },
   "language": {
     "title": "Select your language",
@@ -57,8 +87,12 @@
     "device": "Device",
     "deployment": "Deployment",
     "version": "Software version",
+    "dataLoaded": "Data loaded",
     "notifications": "Notifications",
     "printer": "Printer",
+    "loyalty": "Loyalty",
+    "loyaltyActive": "Active",
+    "loyaltyUnavailable": "Unavailable (retried on the start screen)",
     "fullscreen": "Mandatory fullscreen",
     "passcodePrompt": "Enter the passcode to disable mandatory fullscreen",
     "invalidPasscode": "Invalid passcode. Please try again.",
@@ -68,7 +102,8 @@
     "logout": "Logout kiosk",
     "logoutConfirmTitle": "Confirm logout",
     "logoutConfirmBody": "This unregisters the kiosk and returns to device activation. Are you sure?",
-    "logoutYes": "Yes, logout"
+    "logoutYes": "Yes, logout",
+    "reloadResources": "Reload resources"
   },
   "added": {
     "title": "Your product has been added",
@@ -120,7 +155,13 @@
   "miam": {
     "title": "Would you like to make it a meal?",
     "accept": "Yes, make it a meal",
-    "decline": "No thanks, just the item"
+    "decline": "Not today",
+    "save": "Save {{amount}}"
+  },
+  "upsell": {
+    "anythingElse": "Complete Your Meal",
+    "notToday": "Not Today",
+    "proceedToOrder": "Proceed to Order"
   },
   "bag": {
     "title": "My Bag",
@@ -210,19 +251,6 @@
     "increase": "Increase quantity",
     "decrease": "Decrease quantity"
   },
-  "checkout": {
-    "title": "Checkout",
-    "placeholder": "The payment experience is coming soon.",
-    "routeLabel": "Next step",
-    "routes": {
-      "tent": "Table tent",
-      "payment": "Payment",
-      "customerName": "Customer name",
-      "phone": "Phone number"
-    },
-    "totalLabel": "Total to pay",
-    "backToBag": "Back to my bag"
-  },
   "loyalty": {
     "title": "Rewards",
     "rewardsLink": "Rewards",
@@ -278,5 +306,68 @@
     "clear": "Clear name",
     "required": "Please enter a valid first name",
     "loading": "Looking you up…"
+  },
+  "tent": {
+    "title": "Do you want to be served at your table?",
+    "displayLabel": "Table number",
+    "confirm": "Confirm table number",
+    "skip": "No thanks",
+    "back": "Back",
+    "rangeError": "Table number should be between {{from}} and {{to}}"
+  },
+  "payment": {
+    "title": "How would you like to pay?",
+    "total": "Total",
+    "payAtCounter": "Pay at counter",
+    "payAtRestaurant": "Pay at restaurant",
+    "payWithCard": "Pay with card below",
+    "comingSoon": "Coming soon",
+    "backToMenu": "Back to menu",
+    "placingOrder": "Placing your order…",
+    "cancel": "Cancel",
+    "unavailable": "Payment isn't available here",
+    "unavailableBody": "We can't take payment at this kiosk right now. Please order at the front counter."
+  },
+  "receipt": {
+    "title": "Do you need the receipt?",
+    "print": "Print",
+    "email": "Email",
+    "none": "No thanks",
+    "comingSoon": "Coming soon",
+    "back": "Back"
+  },
+  "success": {
+    "thankYou": "Thank you for your order",
+    "orderHeading": "Order",
+    "proceedToCounter": "Proceed to front counter",
+    "rewardsHeadline": "Earn points on your meal",
+    "rewardsSub": "Unlock freebies with points",
+    "promoHeadline": "Checkout next Tuesday drops",
+    "promoSub": "Exclusive decades merch",
+    "autoResetLabel": "Time left before this kiosk resets",
+    "autoReset": "Returning to the start screen in {{seconds}}s",
+    "startOver": "Start over",
+    "newOrder": "Place new order"
+  },
+  "orderError": {
+    "title": "We couldn't place your order",
+    "message": "Your order didn't reach the restaurant and nothing has been charged. Try again, or go back to your bag.",
+    "uncertainTitle": "We couldn't confirm your order",
+    "uncertainMessage": "It may have reached the restaurant. Please check with a team member before trying again.",
+    "retry": "Try again",
+    "backToBag": "Back to my bag"
+  },
+  "toast": {
+    "alreadyReachedMaximumLimit": "You've already reached the maximum for this option",
+    "selectVariantFirst": "Please choose a size first",
+    "selectAllCustomizations": "Please complete every required choice",
+    "fillCustomizationFields": "Please finish customising this item"
+  },
+  "idle": {
+    "title": "you have been inactive",
+    "body": "Tap continue ordering or start again if you finished browsing",
+    "startAgain": "Start again",
+    "continue": "continue ordering",
+    "countdownA11y": "Starting again in {{seconds}} seconds"
   }
 }

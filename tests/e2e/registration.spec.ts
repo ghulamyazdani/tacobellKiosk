@@ -115,7 +115,7 @@ test.describe("registration + boot (mocked backend)", () => {
 });
 
 test.describe("order type (mocked backend)", () => {
-  test("splash → pipelines → menu; failed menu fetch still lands on a sane screen (never blank)", async ({ page }) => {
+  test("splash → pipelines; a failed menu fetch keeps the guest on /second behind the menu-error dialog (never an empty menu)", async ({ page }) => {
     await mockBootEndpoints(page);
     await page.route("**/api/cx/kiosk/getPipelines", (r) =>
       r.fulfill({
@@ -142,11 +142,21 @@ test.describe("order type (mocked backend)", () => {
     await expect(page.getByTestId("pipeline-p1")).toContainText("Dine In");
 
     await page.getByTestId("pipeline-p2").click();
-    // getMenu is NOT mocked here (catch-all returns {}): fetchMenu swallows
-    // the converter failure (fork parity) and the Menu screen must show its
-    // empty state — never a blank pane (Rule 2).
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("menu-screen")).toContainText(/menu is loading/i);
+    // getMenu is NOT mocked here (the catch-all answers a malformed {}).
+    // fetchMenu still swallows the failure and resolves {} (fork parity), but
+    // P9b judges that result: the guest stays on /second behind the
+    // menu-error dialog instead of landing on an empty "Menu is loading…"
+    // /menu that never loads (Rule 2). TRY AGAIN → /menu is covered by
+    // recovery.spec.ts.
+    const dialog = page.getByTestId("menu-error");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog).toContainText(/we couldn't load the menu/i);
+    await expect(page).toHaveURL(/\/second$/);
+    await expect(page.getByTestId("menu-screen")).toHaveCount(0);
+    // BACK closes the dialog onto the live order-type cards — no dead end.
+    await page.getByTestId("menu-error-back").click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("pipeline-p1")).toBeVisible();
   });
 });
 

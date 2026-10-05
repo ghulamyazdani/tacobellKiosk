@@ -15,7 +15,8 @@
  * Reloading mid-order is safe here: the cart lives in Dexie and is rehydrated
  * exactly once per page load by the ref-guarded `useCartHook().syncCartOnReLoad()`
  * mount effect in `src/routes/AppRoutes.tsx` (P7a, contract E), so the customer
- * keeps their items.
+ * keeps their items; the never-persisted menu is refetched by /menu's own
+ * mount (P9b).
  */
 
 /**
@@ -26,6 +27,9 @@
  */
 const RELOAD_LOOP_WINDOW_MS = 60_000;
 
+/** How long the crash screen stays up after a crash on a healthy page. */
+const CRASH_RECOVERY_DELAY_MS = 10_000;
+
 const isRetryOfAReload = (): boolean => {
   const [navigation] = performance.getEntriesByType(
     "navigation",
@@ -35,15 +39,45 @@ const isRetryOfAReload = (): boolean => {
   );
 };
 
+/**
+ * Where (and how soon) the app ErrorBoundary reloads to. A crash this soon
+ * after a page load is probably a loop: wait a full window, then re-boot with
+ * fresh settings instead of reloading straight back into it — at most one
+ * cycle a minute. A crash ON the boot screen re-boots too: /start would skip
+ * the boot that never finished (the hole P9b closed on /LoadingResources).
+ * Otherwise /start, whose mount ends the session.
+ * ponytail: time-boxed, not stored (Rule 3, same trade as above) — a
+ * deterministic crash cycles at ≤1/min forever rather than stopping on a dead
+ * screen. Upgrade: a persisted crash counter if telemetry ever shows loops.
+ */
+export const planCrashRecovery = (
+  pageAgeMs = performance.now(),
+  currentPath = window.location.pathname,
+) =>
+  pageAgeMs < RELOAD_LOOP_WINDOW_MS || currentPath === "/LoadingResources"
+    ? { path: "/LoadingResources", delayMs: RELOAD_LOOP_WINDOW_MS }
+    : { path: "/start", delayMs: CRASH_RECOVERY_DELAY_MS };
+
+/** Full page load to `path` — the Router is gone once the boundary trips. */
+export const reloadTo = (path: string): void => window.location.replace(path);
+
 export const installChunkErrorRecovery = (): void => {
   window.addEventListener("vite:preloadError", (event) => {
     // Stops Vite rethrowing into the app-level ErrorBoundary, which would show
-    // the untranslated developer crash card instead of quietly recovering.
+    // the crash screen instead of quietly recovering.
     event.preventDefault();
+
+    // FCM is optional (P9e): its lazy chunk (src/hooks/firebase/fcmRuntime.ts
+    // → assets/fcmRuntime-<hash>.js; the browser's message names the URL)
+    // must never reload the kiosk, least of all mid-order after a long hang.
+    // Prevented, import() resolves undefined: useFcmRegistration reports
+    // fcm_init "import" and FCM stays off until the next page load.
+    if (/fcmRuntime/.test(String(event.payload?.message))) return;
 
     if (isRetryOfAReload()) {
       // Reloading again would cycle. Let the rejection surface instead: the
-      // ErrorBoundary card is a bad outcome, but a looping kiosk is worse.
+      // ErrorBoundary then retries no faster than once a minute
+      // (planCrashRecovery), and a slow cycle beats a fast one.
       console.error(
         "[chunkRecovery] chunk preload failed again after a reload — not retrying",
         event.payload,

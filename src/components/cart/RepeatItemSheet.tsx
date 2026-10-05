@@ -256,8 +256,12 @@ function SheetBody({ sheet }: { sheet: any }) {
         onClick={close}
         className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
       />
+      {/* Cap = containing block (the z-55 AppRoutes wrapper → the reach
+          container) minus a 96 px scrim band: 1200 on the 1920 stage, 1026
+          in the 1122 ADA reach zone. The title/X and the CTA keep their
+          content height; only the rows shrink and scroll. */}
       <div
-        className="absolute bottom-0 left-0 flex max-h-[1200px] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
+        className="absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
         style={{ animation: "tbRepeatSheetEnter 0.2s ease-out both" }}
       >
         <h2 className="tb-display mb-[20px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">

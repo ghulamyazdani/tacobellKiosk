@@ -8,6 +8,7 @@ import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
+import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface FreebiePickerSheetProps {
@@ -120,6 +121,9 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
     const plain = isPlain(entry);
     const selected = orMode ? selectedId === id : plain;
     const entity = entry?.entities ?? {};
+    // The resolved entity is the menu entity, so its kiosk aggregator image
+    // is the one to show.
+    const imageUrl = resolveEntityImage(entity);
     const undiscounted = Number(
       entity?.undiscounted_total_price ?? entity?.price ?? 0,
     );
@@ -146,10 +150,10 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           plain ? "" : "opacity-50"
         }`}
       >
-        {entity?.image_url ? (
+        {imageUrl ? (
           <img
             alt=""
-            src={entity.image_url}
+            src={imageUrl}
             className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
           />
         ) : (
@@ -194,9 +198,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
+      {/* Cap = containing block (the bag's inset-0 root → Menu's h-full root
+          → the reach container) minus a 96 px scrim band: 1200 on the 1920
+          stage, 1026 in the 1122 ADA reach zone. Title/X and CONFIRM keep
+          their content height; only the options shrink and scroll. */}
       <div
         style={{ animation: "tbFreebieSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex max-h-[1200px] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
+        className="absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
       >
         <h2 className="tb-display mb-[8px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
           {t("offers.freebieTitle")}

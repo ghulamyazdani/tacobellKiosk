@@ -14,6 +14,7 @@ const NetworkStatusOverlay = () => {
     <AnimatePresence>
       {!isOnline && (
         <motion.div
+          data-testid="network-offline"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

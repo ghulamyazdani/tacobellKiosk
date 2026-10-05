@@ -249,9 +249,30 @@ async function addCheeseBurgerViaPdp(page: Page, expectedCta: string) {
   await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
 }
 
-/** VIEW MY BAG → /cart renders the Menu page with the bag sheet open. */
+/**
+ * VIEW MY BAG → /cart renders the Menu page with the bag sheet open.
+ *
+ * P7d: the pre-cart upsell (/forYou) now sits on this edge — it is the only
+ * forward menu→cart transition, and its gate is opt-OUT. It deliberately is
+ * NOT switched off here: `enable_cart_upsell_screen: false` is read by
+ * useCartUpsell's single `shouldShowUpsell`, which also gates the in-bag
+ * Complete-Your-Meal rail used by its sibling suites — so disabling it
+ * would trade one broken assertion for another and stop this suite testing the
+ * default configuration. The helper walks through the screen instead.
+ *
+ * markCartUpsellSeen() fires on the upsell's forward exits, so only the first
+ * openBag() of a session meets it; later ones land on /cart directly. Settling
+ * on whichever of the two arrived keeps that deterministic with no sleep.
+ * Declining mutates no cart state, so every assertion downstream is unchanged
+ * — and both original assertions below are kept verbatim. The gate's own
+ * behaviour is owned by tests/e2e/forYou.spec.ts.
+ */
 async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
+  await page.waitForURL(/\/(forYou|cart)$/);
+  if (new URL(page.url()).pathname === "/forYou") {
+    await page.getByTestId("foryou-primary").click();
+  }
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
   await expect(page).toHaveURL(/\/cart$/);
 }
@@ -646,10 +667,13 @@ test.describe("P7c XENO loyalty", () => {
     await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
 
     await page.getByTestId("bag-pay").click();
-    await expect(page.getByTestId("checkout-stub")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("checkout-total")).toContainText("£9.00");
     // resolveCheckoutRoute: not a table tab, skip_crm_page false, loyalty on
-    // ⇒ "customerName" (the phone was already collected pre-menu).
-    await expect(page.getByTestId("checkout-route")).toContainText("Customer name");
+    // ⇒ "customerName" (the phone was already collected pre-menu). P8a
+    // replaced the /checkout stub with the real screen, so the decision is
+    // asserted by the destination it actually lands on.
+    await expect(page).toHaveURL(/\/customerName$/, { timeout: 10_000 });
+    await expect(page.getByTestId("customer-name-screen")).toBeVisible();
+    // Nothing is pushed by arriving here: the name step is still pre-order.
+    await expect(page.getByTestId("order-error")).toHaveCount(0);
   });
 });

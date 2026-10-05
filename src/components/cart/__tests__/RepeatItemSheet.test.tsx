@@ -134,4 +134,21 @@ describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
     expect(cartState().repeatItembottomSheet.isOpen).toBe(false);
     expect(screen.queryByTestId("repeat-sheet")).not.toBeInTheDocument();
   });
+
+  it("ADA (P9c): capped by its containing block with the X and the CTA outside the scroller", () => {
+    seedOpenSheet();
+    renderSheet();
+    const close = screen.getByTestId("repeat-sheet-close");
+
+    expect(
+      close.closest('[class*="max-h-[min(1200px,calc(100%_-_96px))]"]')
+    ).not.toBeNull();
+    expect(close.closest(".overflow-y-auto")).toBeNull();
+    expect(
+      screen.getByTestId("repeat-new-customizations").closest(".overflow-y-auto")
+    ).toBeNull();
+    expect(
+      screen.getByTestId("repeat-row-cb-1").closest(".overflow-y-auto")
+    ).not.toBeNull();
+  });
 });

@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import useAutoUpdate from "../../hooks/autoUpdates/useAutoUpdate";
+import useAuthHook from "../../hooks/utils/useAuthHook";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import {
   DEFAULT_UPDATE_POLICY_CONFIG,
@@ -118,6 +119,9 @@ async function readStorageDiagnostics(): Promise<ServiceWorkerStorageDiagnostics
 export function PWAUpdateHandler(): React.ReactElement {
   const { checkAndUpdateDeviceVersionDeviceWise, setAutoUpdateOnNextStartOver } =
     useAutoUpdate();
+  // The app's own token resolution (cookie, else redux), reactive to both:
+  // registration dispatches setToken and sets the cookie together.
+  const token = useAuthHook().getAuthToken();
 
   // `useAutoUpdate` returns fresh function identities on every render. Holding
   // the latest ones in refs lets the effects below run exactly once for the
@@ -132,14 +136,23 @@ export function PWAUpdateHandler(): React.ReactElement {
     checkDeviceVersionRef.current = checkAndUpdateDeviceVersionDeviceWise;
   });
 
-  // Preserved from the original implementation: report this device's build
-  // version to the backend on mount.
-  useLayoutEffect(() => {
+  // D8: report this build's version only once the device HAS a token — never
+  // "Bearer undefined" from Registration — and right after registration,
+  // without waiting for the next reload. Once per token per page load:
+  // StrictMode's double-invoked effect would otherwise POST twice (the
+  // persisted version is still unrecorded while the first POST is in flight);
+  // a new token (re-registration without a reload) reports again.
+  const reportedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!token || reportedForRef.current === token) {
+      return;
+    }
+    reportedForRef.current = token;
     void Promise.resolve(checkDeviceVersionRef.current()).catch(() => {
-      // `useAutoUpdate` already handles its own errors; this guard only stops
-      // a future refactor from turning this into an unhandled rejection.
+      // `useAutoUpdate` never rejects; this guard only stops a future
+      // refactor from turning the report into an unhandled rejection.
     });
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {

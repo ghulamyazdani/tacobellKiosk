@@ -58,7 +58,9 @@ import useOfferHook from "../../hooks/offerHooks/useOfferHook";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import useAdaActive from "../../hooks/utils/useAdaActive";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
 import BagItemRow from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import RewardsSheet from "../offer/RewardsSheet";
@@ -70,6 +72,9 @@ import tbBell from "../../assets/brand/tb-bell.svg";
 // Built in the same P7a wave (rail agent) — lazy so the sheet neither blocks
 // on nor bundles the rail chunk; the locked prop contract is { onDetour? }.
 const CompleteYourMealRail = lazy(() => import("./CompleteYourMealRail"));
+
+/** Figma 1:3171: the sheet's top sits at stage y 244. ADA: ADA_SHEET_HEIGHT. */
+const BAG_SHEET_HEIGHT = 1676;
 
 interface BagSheetProps {
   open: boolean;
@@ -164,6 +169,7 @@ export default function BagSheet({
   // table, the customer phone is the XENO identity (set by /phone).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
   const customerPhone = useSelector(selectPhoneNumber) as any;
+  const adaActive = useAdaActive();
 
   const {
     decreaseItemQuantityById,
@@ -289,8 +295,8 @@ export default function BagSheet({
       // session.
       if (pointsValue) dispatch(addLoyaltyPoints(pointsValue));
     });
-    // Rule 2: the revoke fetch carries no timeout in the ported hook, so every
-    // caller swallows its rejection rather than letting it reach the boundary.
+    // Rule 2: the revoke is bounded (10 s) and swallows its own failures
+    // (P9b); the catch stays so a rejection can never reach the boundary.
     checkAndRevokeLoyaltyReward().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartRdx?.cartItems]);
@@ -374,6 +380,15 @@ export default function BagSheet({
     [],
   );
 
+  // handlePay's continuation must know the sheet is gone (see there).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   if (!open) {
     // The removal notice is redux-driven and must survive the bag's
     // empty-exit (scenario 7: the customer lands back on the menu and the
@@ -436,9 +451,12 @@ export default function BagSheet({
   };
 
   /**
-   * PAY — checkout preflight (contract C1, locked decision 5): entry guards
-   * → menu/scheduler revalidation → stock decision → all four routes land
-   * on the /checkout stub (P8 builds the real screens).
+   * PAY — checkout preflight (contract C1): entry guards → menu/scheduler
+   * revalidation → stock decision → resolveCheckoutRoute. P8a replaced the
+   * single /checkout stub with the four real screens, and the four
+   * CheckoutRoute literals ARE the four registered path segments, so the
+   * decision is navigated to directly; `state.checkoutRoute` is still carried
+   * because /phone reads it to enter checkout mode.
    */
   const handlePay = async () => {
     const entryGuard = evaluateCheckoutEntryGuards({
@@ -483,6 +501,12 @@ export default function BagSheet({
         showEntpCategory,
         currentServerDateWithTime,
       );
+      // Rule 1 (the SecondLayout guard): these awaits are transport-bounded
+      // (P9b: 10 s, getMenu 30 s) but not idle-held, so the session can end
+      // (idle → /start) while they run. A late result must neither write
+      // into the next session nor drive the emptied kiosk off the splash
+      // into the checkout fan-out.
+      if (!mountedRef.current) return;
       const isAnyItemUnavailable = invalidSchedulerItemIds.length > 0;
       if (isAnyItemUnavailable) {
         dispatch(
@@ -523,8 +547,11 @@ export default function BagSheet({
       });
       dispatch(setAppliedCharges(bill?.charges?.detail));
       setCheckoutInProgress(false);
-      navigate("/checkout", { state: { checkoutRoute: decision.route } });
+      navigate(`/${decision.route}`, { state: { checkoutRoute: decision.route } });
     } catch {
+      // Same late-result rule: the global error is redux, so it would greet
+      // the next customer.
+      if (!mountedRef.current) return;
       // Never a frozen sheet (Rule 2): release the latch and surface the
       // failure through the global error modal.
       setCheckoutInProgress(false);
@@ -652,9 +679,16 @@ export default function BagSheet({
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
+      {/* ADA (Figma 1:5445): only the height changes — the header, the
+          scroll body (507px) and the pinned CTA row re-flow inside it, and
+          the scrim above covers the reach zone only (ReachZone confines
+          this whole subtree). */}
       <div
-        style={{ animation: "tbBagSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex h-[1676px] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        style={{
+          animation: "tbBagSheetEnter 0.2s ease-out both",
+          height: adaActive ? ADA_SHEET_HEIGHT : BAG_SHEET_HEIGHT,
+        }}
+        className="absolute bottom-0 left-0 flex w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         <div className="relative shrink-0 pb-[40px] pt-[54px]">
           <p className="tb-display text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">

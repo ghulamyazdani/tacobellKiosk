@@ -2,11 +2,12 @@
  * The converted menu tree flows through untyped from the legacy converters;
  * typed with the SDK menu types in the P6 pass. Do not add NEW anys.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
 import {
   selectCurrency,
   selectErrorMessageGlobal,
@@ -18,15 +19,21 @@ import {
   selectCoupons,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
+import {
+  cartQuantity,
+  selectCartUpsellSeen,
+  setCartUpsellEntryQuantity,
+} from "@cx-sdk/ordering/state/cart.slice";
 
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
+import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useSessionReset from "../../hooks/utils/useSessionReset";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import CategoryRail from "../../components/menu/CategoryRail";
-import MakeItAMealPrompt from "../../components/makeItAMeal/MakeItAMealPrompt";
 import ProductAddedModal from "../../components/menu/ProductAddedModal";
 import SelectSizeModal from "../../components/menu/SelectSizeModal";
 import MenuItemCard from "../../components/menu/MenuItemCard";
@@ -34,8 +41,8 @@ import MenuCtaBar from "../../components/menu/MenuCtaBar";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import BagSheet from "../../components/cart/BagSheet";
-import RepeatItemSheet from "../../components/cart/RepeatItemSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
+import ErrorModal from "../../components/common/ErrorModal";
 import LoyaltyLoginModal from "../../components/loyalty/LoyaltyLoginModal";
 import LoyaltyRewardsSheet from "../../components/loyalty/LoyaltyRewardsSheet";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
@@ -79,6 +86,17 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const customerPhone = useSelector(selectPhoneNumber) as any;
   const globalErrorOpen = useSelector(selectShowErrorModalGlobal) as any;
   const globalErrorMessage = useSelector(selectErrorMessageGlobal) as any;
+  /**
+   * P7d pre-cart upsell gate — UNITS, not ROWS.
+   *
+   * `cartQuantity` is `state.cart.totalQuantity`, the same read BagSheet makes.
+   * The CTA bar's own "(n)" is deliberately a ROW count (`cartItems.length`)
+   * and stays that way — but a cart holding two of one item is ONE row and TWO
+   * units, so gating or baselining on rows would make /forYou's "Proceed to
+   * Order" flip on the wrong event for every multi-quantity cart.
+   */
+  const totalQuantity = Number(useSelector(cartQuantity) ?? 0);
+  const cartUpsellSeen = Boolean(useSelector(selectCartUpsellSeen));
 
   const [languageOpen, setLanguageOpen] = useState(false);
   const [sizeEntity, setSizeEntity] = useState<any | null>(null);
@@ -88,8 +106,15 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const { addItemToCart, isAnyLoyaltyItemPresentInCart } = useCartHook();
   const { openDoubleTierModal } = useMakeItAMeal();
   const { resetSession } = useSessionReset();
-  const { getIsLoyaltyOn } = useAppSettings();
+  const { getIsLoyaltyOn, getSelectedPipeline } = useAppSettings();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
+  const { fetchMenu } = useMenuConverters();
+  const tabId = useSelector(selectTabId);
+  const {
+    items: upsellItems,
+    shouldShowUpsell,
+    getBreakdown,
+  } = useCartUpsell();
   const paneRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
@@ -109,6 +134,40 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     [categories]
   );
   const activeCategoryId = selectedCategoryId || railCategories[0]?.id || "";
+  const isEmpty = categories.length === 0;
+
+  /* ------------------------------------------------------------------ *
+   * P9b — menu re-drive (Rule 2; fork parity, posistKiosk Menu.tsx:218) *
+   * ------------------------------------------------------------------ */
+
+  /**
+   * `menu` is neverPersist (store.ts), so a reload mid-session (chunk
+   * recovery, crash, power blip) lands here with the cart rehydrated and NO
+   * menu — and nothing else would ever fetch it. Refetch once per mount when
+   * empty. getSelectedPipeline() is the persisted pipeline and never
+   * undefined (fetchMenu reads pipeline.tab_type synchronously). fetchMenu
+   * resolves {} on ANY failure, so the return value is judged; the state
+   * write lives in the promise callback (house react-hooks rules forbid
+   * set-state-in-effect). No mounted guard: a late answer only sets this
+   * screen's own (dead) state, and useMenuConverters already drops late
+   * menus. The H1 cancel-order reset empties the menu on THIS mount, so it
+   * never triggers a refetch.
+   */
+  const [menuLoadFailed, setMenuLoadFailed] = useState(false);
+  const refetchedRef = useRef(false);
+  const reloadMenu = () =>
+    fetchMenu(tabId, false, false, getSelectedPipeline()).then((result) => {
+      if (!result?.categories?.length) setMenuLoadFailed(true);
+    });
+
+  useEffect(() => {
+    // Ref-latched: StrictMode re-runs mount effects.
+    if (isEmpty && !refetchedRef.current) {
+      refetchedRef.current = true;
+      void reloadMenu();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only re-drive (fork parity)
+  }, []);
 
   const handleRailSelect = (id: string) => {
     setSelectedCategoryId(id);
@@ -129,7 +188,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    *                setRepeatItemBottomSheet(buildRepeatSheetPayload(...))
    *                → the repeat-selections sheet
    * - upsell     → addEntity → openMakeItAMealModal (selectedItem +
-   *                availableCombos) → <MakeItAMealPrompt /> mounted below
+   *                availableCombos) → <MakeItAMealPrompt />
+   * The last two render NOTHING here: both overlays are mounted once for the
+   * whole in-session subtree by AppRoutes' InSessionOverlays layout route, so
+   * the same tap works from /forYou and /customization too. Do NOT re-mount
+   * them on this page.
    */
   const handleEntityAction = (entity: any, fromQuickAdd = false) => {
     const intent = getAddIntent(entity);
@@ -257,12 +320,65 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     navigate("/start");
   };
 
-  const isEmpty = categories.length === 0;
+  /* ------------------------------------------------------------------ *
+   * P7d — the ONE forward Menu -> Cart edge                             *
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Every OTHER navigate("/cart") in this app is a BACKWARD return —
+   * ProductAddedModal's `added-view-bag`, CustomerName, Checkout, and the bag
+   * sheet's own close — and must never be upsold. Re-offering "complete your
+   * meal" to somebody reversing OUT of the cart is the worst outcome
+   * available, so the upsell hangs off this handler alone.
+   *
+   * Three-factor AND, evaluated HERE rather than on /forYou so the customer
+   * never sees a screen flash up and redirect itself away:
+   *   1. the cart holds something,
+   *   2. this menu actually has an upsell worth showing (useCartUpsell —
+   *      opt-out setting AND a non-empty item list; a gate that can render an
+   *      empty surface is a broken gate), and
+   *   3. this session has not already been offered one.
+   *
+   * `cartUpsellSeen` is redux, NOT location.state: router state belongs to a
+   * single history entry, so it is lost the moment the customer navigates
+   * anywhere that does not re-supply it — including /forYou's own mount guards,
+   * which redirect with `replace` and no state — and the screen then reappears
+   * later in the same session.
+   *
+   * Not reachable from behind the bag: BagSheet renders `absolute inset-0
+   * z-40` over the whole page, so the /cart mount of this same component
+   * cannot re-enter the gate while the sheet is open.
+   */
+  const handleViewBag = () => {
+    if (totalQuantity <= 0) return;
+    const showUpsell = shouldShowUpsell && !cartUpsellSeen;
+    if (showUpsell) {
+      captureKioskEvent(KioskEventName.CartUpsellViewed, {
+        item_count: upsellItems.length,
+      });
+      // A VISIT to the upsell screen starts here and ONLY here. That screen's
+      // "Proceed to Order" flip is cartQuantity minus this baseline, so it has
+      // to be captured before the customer can add anything there — and it
+      // must NOT be recaptured when a customization detour navigates back to
+      // /forYou with the just-added item already counted. Hence redux (the
+      // screen unmounts during the detour) and hence the seed-once guard on
+      // the far side.
+      dispatch(setCartUpsellEntryQuantity(totalQuantity));
+    } else {
+      // Why the gate closed, per reason, so a tenant whose flagged items are
+      // all out of stock / tag-filtered can see it rather than guess.
+      captureKioskEvent(KioskEventName.CartUpsellSuppressed, getBreakdown());
+    }
+    navigate(showUpsell ? "/forYou" : "/cart");
+  };
 
   return (
     <div
       data-testid="menu-screen"
-      className="relative flex h-[1920px] w-[1080px] flex-col bg-tb-surface"
+      // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
+      // 1:5392 — only the rail+pane viewport shrinks; CTA and footer stay
+      // pinned to the bottom).
+      className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
     >
       <div className="flex min-h-0 flex-1">
         <CategoryRail
@@ -332,7 +448,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       </div>
       <MenuCtaBar
         currency={currency}
-        onViewBag={() => navigate("/cart")}
+        onViewBag={handleViewBag}
         onOpenRewards={handleOpenLoyaltyRewards}
       />
       <div className="relative h-[56px] w-full">
@@ -342,7 +458,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         />
       </div>
       <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
-      <MakeItAMealPrompt />
       <ProductAddedModal
         onQuickAdd={(entity) => addEntity(entity, { suppressAddedModal: true })}
       />
@@ -351,10 +466,12 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         onClose={() => setSizeEntity(null)}
         onContinue={handleSizeContinue}
       />
-      {/* P7a overlays — z-stack: BagSheet z-40 (after MakeItAMealPrompt in
-          DOM order, so it wins at equal z), confirm modals z-50, repeat
-          sheet z-[60] on top so a repeat triggered from the bag rail stacks
-          over the sheet. */}
+      {/* P7a overlays — z-stack: BagSheet z-40 (a stacking context, so its
+          RewardsSheet/FreebiePicker/OfferRemovalNotice children all paint in
+          its z-40 slot), confirm modals z-50. The MIAM prompt and the repeat
+          sheet are NOT here any more — AppRoutes pins them above this sheet
+          at z-45 / z-55, which is what lets a repeat or an upsell triggered
+          from the bag rail stack over the bag instead of under it. */}
       <BagSheet
         open={bagOpen}
         onClose={() => navigate("/menu")}
@@ -366,7 +483,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           dispatch(openLoyaltyItemsModal({ isTimerOn: false }))
         }
       />
-      <RepeatItemSheet />
       <CancelOrderModal
         open={cancelOrderOpen}
         // Locked decision 4: teardown only on confirm — and the loyalty
@@ -394,6 +510,30 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         message={loyaltyGuardError ?? ""}
         onRetry={dismissLoyaltyGuardError}
       />
+      {/* P9b menu-load failure (z-80, last in the DOM so it wins the tie with
+          LoyaltyErrorModal). START OVER only navigates: /start's mount owns
+          the revoke + reset (hazard H1) — and the restored cart may belong to
+          a pipeline this session can no longer switch away from. */}
+      {isEmpty && menuLoadFailed && (
+        <ErrorModal
+          testId="menu-error"
+          title={t("menuError.title")}
+          message={t("menuError.message")}
+          primary={{
+            label: t("menuError.retry"),
+            testId: "menu-error-retry",
+            onClick: () => {
+              setMenuLoadFailed(false);
+              void reloadMenu();
+            },
+          }}
+          secondary={{
+            label: t("menuError.startOver"),
+            testId: "menu-error-start-over",
+            onClick: () => navigate("/start"),
+          }}
+        />
+      )}
     </div>
   );
 }

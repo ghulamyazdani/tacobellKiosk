@@ -4,30 +4,38 @@ import { useSelector } from "react-redux";
 import posthog from "posthog-js";
 import { AppRoutes } from "./routes";
 import { KioskStage } from "./components/stage/KioskStage";
+import { ReachZone } from "./components/stage/ReachZone";
 import NetworkStatusOverlay from "./components/common/NetworkStatusOverlay";
 import { PWAUpdateHandler } from "./components/autoUpdate/PWAUpdateHandler";
+import useFcmRegistration from "./hooks/firebase/useFcmRegistration";
 import { selectSelectedLanguage } from "./redux/features/multiLanguage/multiLanguage.slice";
 import { selectLicenseDetails } from "@cx-sdk/core/auth/authentication.slice";
-import i18n from "./i18n";
+import i18n, { DEFAULT_LANGUAGE } from "./i18n";
 
 /**
  * App shell. Boot-order invariants (see CLAUDE.md):
  * - NetworkStatusOverlay / PWAUpdateHandler are always mounted.
  * - Kiosk hardening: zoom, devtools keys, context menu blocked; every
  *   listener detached on unmount (24/7 uptime — leaks are real leaks).
- * - FCM init + FullscreenPrompt + accessibility-mode transform land in
- *   P3/P9 with their features.
+ * - ReachZone wraps the routes INSIDE KioskStage: it is the containing block
+ *   for every page and overlay, full-stage normally and the bottom reach
+ *   zone in the ADA view (P9c). It must sit inside Router (useLocation).
+ * - FCM (P9e): useFcmRegistration — latch-, config- and permission-gated,
+ *   never prompts; firebase is a lazy chunk, never on the boot path.
+ *   FullscreenPrompt lands with its feature.
  */
 const App = () => {
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const licenseDetails = useSelector(selectLicenseDetails);
+  useFcmRegistration();
 
   // Language sync: the shell pushes the store's language into i18n (the
-  // detector never reads the store — that coupling stays broken).
+  // detector never reads the store — that coupling stays broken). Every
+  // session reset blanks the code to "" (emptySelectedLanguage), so "" must
+  // mean the default — skipping it left the next customer in the previous
+  // customer's language.
   useEffect(() => {
-    if (selectedLanguage?.code) {
-      i18n.changeLanguage(selectedLanguage.code);
-    }
+    i18n.changeLanguage(selectedLanguage?.code || DEFAULT_LANGUAGE);
   }, [selectedLanguage]);
 
   // Tenant identity for analytics (guarded: posthog is init-ed only when
@@ -96,7 +104,9 @@ const App = () => {
       <PWAUpdateHandler />
       <Router>
         <KioskStage>
-          <AppRoutes />
+          <ReachZone>
+            <AppRoutes />
+          </ReachZone>
         </KioskStage>
       </Router>
     </>

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 export default function NotFound() {
   const { t } = useTranslation();
   return (
-    <div className="flex h-[1920px] w-[1080px] flex-col items-center justify-center gap-8 bg-tb-purple">
+    <div className="flex h-full w-[1080px] flex-col items-center justify-center gap-8 bg-tb-purple">
       <h1 className="tb-display text-6xl text-tb-surface">{t("notFound.title")}</h1>
       <Link
         to="/start"

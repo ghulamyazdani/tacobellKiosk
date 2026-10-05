@@ -1763,7 +1763,7 @@ const useCustomization = ({
         }
       }
     },
-    [isOpenBottomSheet],
+    [isOpenBottomSheet, currentIndex, sortedModifiers],
   );
 
   const fetchNextModifierGroup = (

@@ -8,13 +8,17 @@ import ar from "./locales/ar/translation.json";
  * the shell pushes the selected language in via i18n.changeLanguage() (App.tsx),
  * which breaks the i18n→store module cycle the old app carried.
  */
+
+/** The language every session starts in (and resets to — see App.tsx). */
+export const DEFAULT_LANGUAGE = "en";
+
 i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
     ar: { translation: ar },
   },
-  lng: "en",
-  fallbackLng: "en",
+  lng: DEFAULT_LANGUAGE,
+  fallbackLng: DEFAULT_LANGUAGE,
   supportedLngs: ["en", "ar"],
   debug: import.meta.env.DEV,
   interpolation: { escapeValue: false },

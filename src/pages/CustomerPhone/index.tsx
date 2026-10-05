@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   kiosSettingsRdx,
@@ -18,6 +18,7 @@ import {
   setLoyaltyCouponAvailable,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
+import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import FooterBar from "../../components/chrome/FooterBar";
@@ -48,6 +49,12 @@ interface LoyaltyBalanceResponse {
   };
 }
 
+/** Router state this screen may be entered with (P8a checkout fan-out). */
+interface PhoneLocationState {
+  /** The preflight route BagSheet decided on; "phone" ⇒ CHECKOUT MODE. */
+  checkoutRoute?: string;
+}
+
 /** Longest phone number the numpad will accept when a country carries no max. */
 const PHONE_MAX_LENGTH = 15;
 /** Masked-but-last window, fork parity (CustomerPhone.tsx:88). */
@@ -71,13 +78,45 @@ const maskExceptLast = (input: string) =>
  * /customerName; TB navigates to /menu — a failed lookup must never block
  * ordering, and /customerName is a checkout-time screen here.
  *
+ * CHECKOUT MODE (P8a). The SAME screen is also the "phone" leg of the
+ * checkout fan-out, entered from the bag (or /tent) with
+ * `location.state.checkoutRoute === "phone"`. resolveCheckoutRoute only
+ * returns "phone" when loyalty is OFF, so in this mode `redirection()` takes
+ * its `!isLoyaltyOnSetting` early-return and NO check_loyalty_balance lookup
+ * is ever fired — the screen is a pure CRM phone capture.
+ *
+ * The mode changes exactly two edges and nothing else, so the pre-menu
+ * behaviour stays byte-identical:
+ *   Continue / Skip → /customerName   (pre-menu: /menu)
+ *   Back            → /cart           (pre-menu: /second)
+ * Validation, masking, the CRM mandatory gates, the analytics vocabulary and
+ * every rendered string are untouched by the mode.
+ *
  * No Figma frame exists for this screen — TB design language (KioskStage
  * absolute px, tb-* tokens, FooterBar); flagged for client sign-off.
+ *
+ * ADA (P9c, design-language, flagged): the same controls at the same sizes,
+ * re-stacked into the 1122px reach zone (1066 above the footer). The bell is
+ * dropped (the brand zone carries the brand) and the gaps shrink to 16–20px:
+ * BACK 40–104 · title 120–260 (2 lines) · subtitle 260–296 · input 316–416 ·
+ * numpad 436–856 · continue 876–980 · skip 996–1048 · footer 1066. Nothing
+ * scrolls — the keypad and both CTAs stay fully visible.
+ * ponytail: tops are tuned to the Figma zone — skip clears the footer only
+ * while ADA_BRAND_ZONE_HEIGHT ≤ 816; recalibrating past that needs these
+ * re-derived (or a flex column).
  */
 export default function CustomerPhone() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
+  const ada = useAdaActive();
+
+  // CHECKOUT MODE latch. Read once per render from router state — react-router
+  // keeps `location.state` stable for the life of the entry, so this cannot
+  // flip mid-screen and strand the customer on the wrong exit.
+  const isCheckoutMode =
+    (location.state as PhoneLocationState | null)?.checkoutRoute === "phone";
 
   const kioskSettings = useSelector(kiosSettingsRdx) as PhoneKioskSettings | undefined;
   const selectedCountryCode = useSelector(selectCountryCode) as CountryCode | undefined;
@@ -97,6 +136,19 @@ export default function CustomerPhone() {
   // so a second tap must not fire a second check_loyalty_balance (Rule 2).
   const isSubmitting = useRef(false);
   const revealTimer = useRef<number | null>(null);
+  // The lookup continuation dispatches + navigates after its await. Once this
+  // screen is gone (Back, Skip, Cancel, idle → /start after the hold cap) it
+  // must do neither: it would yank the kiosk off whatever screen it is on now
+  // (Rule 1) and, after a session end, open the rewards sheet for the NEXT
+  // customer.
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     captureKioskEvent(KioskEventName.NumberScreenViewed, {
@@ -151,10 +203,14 @@ export default function CustomerPhone() {
     dispatch(setPhoneNumberRdx(inputValue));
   }, [dispatch, inputValue, phoneRdx]);
 
-  /** Fork's navigationControl(): loyalty is pre-menu in TB, so both land on /menu. */
+  /**
+   * Fork's navigationControl(). Pre-menu (loyalty on) both branches land on
+   * /menu; in CHECKOUT MODE the screen is the "phone" leg of the checkout
+   * fan-out and continues to the name capture instead (P8a).
+   */
   const navigationControl = useCallback(() => {
-    navigate("/menu");
-  }, [navigate]);
+    navigate(isCheckoutMode ? "/customerName" : "/menu");
+  }, [isCheckoutMode, navigate]);
 
   /** Fork's redirection() — the Xeno branch of the partner table. */
   const redirection = useCallback(() => {
@@ -176,6 +232,7 @@ export default function CustomerPhone() {
       phoneNumber: inputValue,
     })
       .then((resp: LoyaltyBalanceResponse | undefined) => {
+        if (!mountedRef.current) return;
         if (resp?.status_code === 200) {
           const res = resp?.response;
           const couponCount = res?.coupons?.length ?? 0;
@@ -209,6 +266,7 @@ export default function CustomerPhone() {
         navigationControl();
       })
       .catch((error: { message?: string }) => {
+        if (!mountedRef.current) return;
         captureKioskEvent(KioskEventName.AccountResendCodeError, {
           error_message: error?.message,
         });
@@ -310,10 +368,12 @@ export default function CustomerPhone() {
     t,
   ]);
 
+  // Back never dead-ends (Rule 1): pre-menu it returns to the order-type
+  // screen, in checkout mode to the bag the customer came from.
   const handleBack = useCallback(() => {
     commitPhone();
-    navigate("/second");
-  }, [commitPhone, navigate]);
+    navigate(isCheckoutMode ? "/cart" : "/second");
+  }, [commitPhone, isCheckoutMode, navigate]);
 
   const canSkip =
     !kioskSettings?.crm_phone_mandatory && !kioskSettings?.crm_name_mandatory;
@@ -322,7 +382,7 @@ export default function CustomerPhone() {
   return (
     <div
       data-testid="phone-screen"
-      className="relative h-[1920px] w-[1080px] overflow-hidden bg-tb-purple"
+      className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       <button
         type="button"
@@ -333,23 +393,31 @@ export default function CustomerPhone() {
         {t("phone.back")}
       </button>
 
-      <img
-        alt="Taco Bell"
-        src={tbBell}
-        className="absolute left-1/2 top-[190px] h-[89px] w-[100px] -translate-x-1/2"
-      />
+      {!ada && (
+        <img
+          alt="Taco Bell"
+          src={tbBell}
+          className="absolute left-1/2 top-[190px] h-[89px] w-[100px] -translate-x-1/2"
+        />
+      )}
 
-      <h1 className="tb-display absolute left-1/2 top-[330px] w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface">
+      <h1
+        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[330px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
+      >
         {t("phone.title")}
       </h1>
-      <p className="absolute left-1/2 top-[470px] w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream">
+      <p
+        className={`absolute left-1/2 ${ada ? "top-[260px]" : "top-[470px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
+      >
         {isLoyaltyOnSetting ? t("phone.loyaltySubtitle") : t("phone.subtitle")}
       </p>
 
       {/* Country pill + masked entry field. The country PICKER is deferred
           (no country-code sheet exists in TB yet) — the pill reflects the
           store's selectedCountryCode and is intentionally not a control. */}
-      <div className="absolute left-1/2 top-[580px] flex w-[844px] -translate-x-1/2 items-center gap-[16px]">
+      <div
+        className={`absolute left-1/2 ${ada ? "top-[316px]" : "top-[580px]"} flex w-[844px] -translate-x-1/2 items-center gap-[16px]`}
+      >
         <div
           data-testid="phone-country-code"
           className="flex h-[100px] min-w-[140px] items-center justify-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[24px] text-[32px] font-medium text-black"
@@ -382,7 +450,9 @@ export default function CustomerPhone() {
         </div>
       </div>
 
-      <div className="absolute left-1/2 top-[740px] -translate-x-1/2">
+      <div
+        className={`absolute left-1/2 ${ada ? "top-[436px]" : "top-[740px]"} -translate-x-1/2`}
+      >
         <KioskNumpad
           value={inputValue}
           onChange={handleDigitsChange}
@@ -395,7 +465,7 @@ export default function CustomerPhone() {
         data-testid="phone-continue"
         onClick={handleContinue}
         disabled={isLoyaltyEventLoading}
-        className="tb-display absolute left-1/2 top-[1260px] min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60"
+        className={`tb-display absolute left-1/2 ${ada ? "top-[876px]" : "top-[1260px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
       >
         {isLoyaltyEventLoading ? t("phone.checking") : t("phone.continue")}
       </button>
@@ -405,7 +475,7 @@ export default function CustomerPhone() {
           type="button"
           data-testid="phone-skip"
           onClick={skipPhoneAndName}
-          className="absolute left-1/2 top-[1400px] min-h-[44px] -translate-x-1/2 px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline"
+          className={`absolute left-1/2 ${ada ? "top-[996px]" : "top-[1400px]"} min-h-[44px] -translate-x-1/2 px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline`}
         >
           {t("phone.skip")}
         </button>

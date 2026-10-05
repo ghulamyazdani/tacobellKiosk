@@ -146,4 +146,20 @@ describe("SlotSelectionSheet (Figma 1:4761/1:4692 — SELECT sheet)", () => {
     expect(within(sheet).getByText("Select Dessert")).toBeInTheDocument();
     expect(screen.getByTestId("slot-sheet-save")).toBeDisabled();
   });
+
+  it("ADA (P9c): capped by its containing block with the X and SAVE outside the scroller", () => {
+    renderSheet();
+    const close = screen.getByTestId("slot-sheet-close");
+
+    expect(
+      close.closest('[class*="max-h-[min(1500px,calc(100%_-_96px))]"]')
+    ).not.toBeNull();
+    expect(close.closest(".overflow-y-auto")).toBeNull();
+    expect(
+      screen.getByTestId("slot-sheet-save").closest(".overflow-y-auto")
+    ).toBeNull();
+    expect(
+      screen.getByTestId("slot-option-opt-cola").closest(".overflow-y-auto")
+    ).not.toBeNull();
+  });
 });

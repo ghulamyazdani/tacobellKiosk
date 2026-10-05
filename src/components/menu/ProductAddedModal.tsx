@@ -10,6 +10,7 @@ import { mutateAddToCartModal } from "../../redux/features/menuSelections/menuSe
 import { selectCartAmount } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -76,33 +77,36 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
               {t("added.youMightLike")}
             </p>
             <div className="mb-[24px] grid grid-cols-3 gap-[16px]">
-              {recommendations.map((entity: any) => (
-                <div
-                  key={entity.id}
-                  data-testid={`added-rec-${entity.id}`}
-                  className="relative flex flex-col rounded-[8px] bg-tb-grey-6 p-[16px]"
-                >
-                  {entity.image_url && (
-                    <img alt="" src={entity.image_url} className="mb-2 h-[96px] w-full object-contain" />
-                  )}
-                  <p className="text-[17px] font-medium capitalize leading-[20px] text-black">
-                    {entity.name}
-                  </p>
-                  <p className="text-[15px] text-tb-ink-purple">
-                    {currency}
-                    {entity.price}
-                  </p>
-                  <button
-                    type="button"
-                    aria-label={t("menu.quickAdd")}
-                    data-testid={`added-rec-add-${entity.id}`}
-                    onClick={() => onQuickAdd(entity)}
-                    className="absolute right-[8px] top-[8px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
+              {recommendations.map((entity: any) => {
+                const imageUrl = resolveEntityImage(entity);
+                return (
+                  <div
+                    key={entity.id}
+                    data-testid={`added-rec-${entity.id}`}
+                    className="relative flex flex-col rounded-[8px] bg-tb-grey-6 p-[16px]"
                   >
-                    <img alt="" src={plusIcon} className="h-[14px] w-[14px]" />
-                  </button>
-                </div>
-              ))}
+                    {imageUrl && (
+                      <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
+                    )}
+                    <p className="text-[17px] font-medium capitalize leading-[20px] text-black">
+                      {entity.name}
+                    </p>
+                    <p className="text-[15px] text-tb-ink-purple">
+                      {currency}
+                      {entity.price}
+                    </p>
+                    <button
+                      type="button"
+                      aria-label={t("menu.quickAdd")}
+                      data-testid={`added-rec-add-${entity.id}`}
+                      onClick={() => onQuickAdd(entity)}
+                      className="absolute right-[8px] top-[8px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
+                    >
+                      <img alt="" src={plusIcon} className="h-[14px] w-[14px]" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}

@@ -62,6 +62,13 @@
    * "YES, DELETE"/"YES, CANCEL ORDER" CTAs (remove-item 1:4533 and
    * cancel-order 1:4552 both render rgb(222,19,19)). */
   --color-tb-red: #de1313;
+  /* Idle prompt (P9a, 1:4514): the CTA_Sheet_Fixed Secondary/"Loading" fill
+   * behind START AGAIN — the design's only countdown cue. Unbound in Figma
+   * (raw #F3D9FF), so the name is ours; tb-purple on it is 8.7:1. */
+  --color-tb-lilac: #f3d9ff;
+  /* Splash full-bleed bottom tint (P9d, 1:5604/1:5617 gradient fill: 16%
+   * at the foot). Unbound in Figma (raw #6301D2), so the name is ours. */
+  --color-tb-violet: #6301d2;
 
   --color-brand-primary: var(--brand-primary);
   --color-brand-secondary: var(--brand-secondary);
@@ -106,6 +113,16 @@
 }
 .tb-modal-enter {
   animation: tb-modal-enter 0.2s ease-out both;
+}
+
+/* Splash carousel slide change (P9d, 1:2203 has no motion data): opacity
+ * only — position-neutral, so it is safe on any positioned/translated box. */
+@keyframes tb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tb-fade-in {
+  animation: tb-fade-in 0.5s ease-out both;
 }
 
 html,

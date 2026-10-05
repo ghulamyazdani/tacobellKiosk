@@ -3,6 +3,7 @@
  * inherited; typed in the P6/P7 domain passes. Do not add NEW anys.
  */
 import React from "react";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   setChargesCountryData,
   setInitialAppSetting,
@@ -84,26 +85,43 @@ function useAppSettings() {
     return settingsEngine.getCurrencyCode(currencyRdx);
   };
 
-  const getDeploymentInfoApi = async () => {
+  /**
+   * Deployment ordering settings. `apply` defaults to dispatch; the boot
+   * passes its stage, so the writes land in its one commit (P9e).
+   */
+  const getDeploymentInfoApi = async (
+    apply: (action: UnknownAction) => unknown = dispatch
+  ) => {
     const deployment_id = deploymentDetailsRdx ? deploymentDetailsRdx?._id : "";
     const res = await getDeploymentInfo({ deployment_id });
-    if (res.data) {
-      const data = res.data;
-      // Replays the SDK-derived setting updates as dispatches, in the same
-      // order/count as the original inline loop.
-      settingsEngine.deriveDeploymentSettingUpdates(data).forEach((update) => {
+    // Only a real list of setting rows replaces the stored one (P9e B3). A
+    // failed call or a degraded body (`{}`, an error envelope) keeps the last
+    // good rows: storing [] silently dropped `disable_roundoff` (bill totals
+    // changed) and the "Disable COD" gate until the next good boot, even
+    // when the boot itself succeeded.
+    //
+    // The slice must ALWAYS hold an array (P8a): the SDK's
+    // `hasSetting(name, settingsArray)` (ordering/order/orderBuilder) does an
+    // UNGUARDED `settingsArray.filter`, reached from `convertOrderItems` →
+    // `convertCart` → `getCalculatedBill`, i.e. on EVERY bill recompute while
+    // the bag is open. The SDK derive helper also iterates with `forEach`.
+    if (!Array.isArray(res.data)) return;
+    // Replays the SDK-derived setting updates in the same order/count as the
+    // original inline loop.
+    settingsEngine
+      .deriveDeploymentSettingUpdates(res.data)
+      .forEach((update) => {
         if (update.kind === "dynamicPricing") {
-          dispatch(setIsDynamicPricingEnabled(update.selected));
+          apply(setIsDynamicPricingEnabled(update.selected));
         }
         if (update.kind === "deploymentDynamicPricing") {
-          dispatch(setIsDeploymentDynamicPricingEnabled(update.selected));
+          apply(setIsDeploymentDynamicPricingEnabled(update.selected));
         }
         if (update.kind === "discountOnAddon") {
-          dispatch(setDiscountOnAddon(update.selected));
+          apply(setDiscountOnAddon(update.selected));
         }
       });
-      dispatch(setDeploymentInfo(data));
-    }
+    apply(setDeploymentInfo(res.data));
   };
 
   const valueWrapper = (value: any) => {

@@ -4,7 +4,7 @@ Taco Bell self-service kiosk (1080×1920 portrait), built on the shared
 `@cx-sdk/*` packages linked from the sibling `posistKiosk-cx-sdk` checkout.
 
 ## Prerequisites
-- Node ≥ 20.19 (`.nvmrc`), yarn 1.22
+- Node ≥ 22.12 LTS (`.nvmrc`; Node 20 is EOL and dependency-cruiser needs ≥ 22), yarn 1.22
 - The sibling repo checked out at `../posistKiosk-cx-sdk` (the `link:`
   dependencies resolve into its `packages/` — raw TS source, no build step)
 - `.env.development` created from `.env.example`

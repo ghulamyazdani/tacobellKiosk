@@ -3,6 +3,7 @@
  * converters; typed in later domain passes. Do not add NEW anys.
  */
 import { useTranslation } from "react-i18next";
+import { resolveEntityImage } from "../../utils/entityImage";
 
 interface PackSlotCardProps {
   group: any; // modifier group (name, _id, min, max)
@@ -37,6 +38,7 @@ export default function PackSlotCard({
 
   const pick = selection?.[0] ?? null;
   const shown = pick ?? previewItem ?? null;
+  const shownImage = resolveEntityImage(shown);
   const price = Number(shown?.price ?? 0);
   const cal = calValue(shown);
   const infoLine =
@@ -85,10 +87,10 @@ export default function PackSlotCard({
           )}
         </span>
 
-        {shown?.image_url ? (
+        {shownImage ? (
           <img
             alt=""
-            src={shown.image_url}
+            src={shownImage}
             className={`mx-auto mb-[14px] mt-[20px] h-[150px] w-full object-contain ${
               pick ? "" : "opacity-40"
             }`}

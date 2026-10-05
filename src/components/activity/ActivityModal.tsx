@@ -2,13 +2,16 @@ import { useCallback, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import {
+  kiosSettingsRdx,
   selectMandatoryFullscreen,
   setMandatoryFullscreen,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import { isLoyaltyOn } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
   selectDeploymentDetails,
   selectLicenseDetails,
 } from "@cx-sdk/core/auth/authentication.slice";
+import { selectLastBootAt } from "@cx-sdk/devices/updates/autoUpdate.slice";
 import {
   formatSoftwareVersion,
   getDeviceDisplayName,
@@ -22,10 +25,13 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
 
 /**
  * Operator Activity Center — diagnostics modal opened by the hidden 3s
- * top-left hold on the StartScreen. Logic parity with posistKiosk's
- * ActivityModal (995-line original): device/deployment/version info,
- * notification + printer status, mandatory-fullscreen toggle (disable is
- * passcode-gated), kiosk logout with confirmation.
+ * top-left hold on the StartScreen (and on the /LoadingResources boot screen,
+ * P9b). Logic parity with posistKiosk's ActivityModal (995-line original):
+ * device/deployment/version info, notification + printer status (+ loyalty
+ * status when enabled, P9b), mandatory-fullscreen toggle (disable is
+ * passcode-gated), kiosk logout with confirmation. P9e: when the last
+ * successful boot ran ("Data loaded") and, on the splash only, "Reload
+ * resources" (a refresh-mode boot; design language, no frame — flagged).
  *
  * SECURITY FLAG (inherited, byte-identical per the extraction's pending
  * decision): the fullscreen passcode is hardcoded. Replace with a
@@ -36,16 +42,34 @@ const FULLSCREEN_PASSCODE = "Pos@123";
 interface ActivityModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Re-run the boot fetches in refresh mode (P9e). Only the splash passes
+   * it: on /LoadingResources a same-path navigate keeps the mounted boot
+   * screen, whose startedRef latch would make the button a silent no-op, and
+   * that screen has its own retry.
+   */
+  onReloadResources?: () => void;
 }
 
-export default function ActivityModal({ isOpen, onClose }: ActivityModalProps) {
-  const { t } = useTranslation();
+export default function ActivityModal({
+  isOpen,
+  onClose,
+  onReloadResources,
+}: ActivityModalProps) {
+  const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
   const { logoutKiosk } = useAuthHook();
   const { getPrinterName } = useAppSettings();
   const licenseDetails = useSelector(selectLicenseDetails);
   const deploymentDetails = useSelector(selectDeploymentDetails);
   const mandatoryFullscreen = useSelector(selectMandatoryFullscreen);
+  // Loyalty degrades at boot (P9b): enabled in settings but no partner
+  // resolved means the kiosk is selling loyalty-off until StartScreen's
+  // splash-visit retry resolves one.
+  const loyaltyEnabled = Boolean(useSelector(kiosSettingsRdx)?.enable_loyalty);
+  const loyaltyResolved = Boolean(useSelector(isLoyaltyOn));
+  // Epoch ms of the last SUCCESSFUL boot (P9e, D1); 0 = never/unknown.
+  const lastBootAt = useSelector(selectLastBootAt);
 
   const [showPasscodeInput, setShowPasscodeInput] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -106,6 +130,16 @@ export default function ActivityModal({ isOpen, onClose }: ActivityModalProps) {
     },
     { label: t("activity.version"), value: version },
     {
+      label: t("activity.dataLoaded"),
+      value:
+        lastBootAt > 0
+          ? new Date(lastBootAt).toLocaleString(i18n.language, {
+              dateStyle: "medium",
+              timeStyle: "medium",
+            })
+          : "—",
+    },
+    {
       label: t("activity.notifications"),
       value: notificationStatus.status,
       tone: notificationPermission === "denied" ? "error" : undefined,
@@ -115,6 +149,19 @@ export default function ActivityModal({ isOpen, onClose }: ActivityModalProps) {
       value: printerStatus.label,
       tone: printerStatus.connected ? undefined : "warning",
     },
+    ...(loyaltyEnabled
+      ? [
+          {
+            label: t("activity.loyalty"),
+            value: t(
+              loyaltyResolved
+                ? "activity.loyaltyActive"
+                : "activity.loyaltyUnavailable"
+            ),
+            tone: loyaltyResolved ? undefined : "warning",
+          },
+        ]
+      : []),
   ];
 
   if (!isOpen) return null;
@@ -211,7 +258,7 @@ export default function ActivityModal({ isOpen, onClose }: ActivityModalProps) {
               </div>
             )}
 
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-[16px]">
               <button
                 type="button"
                 data-testid="activity-logout"
@@ -220,6 +267,16 @@ export default function ActivityModal({ isOpen, onClose }: ActivityModalProps) {
               >
                 {t("activity.logout")}
               </button>
+              {onReloadResources && (
+                <button
+                  type="button"
+                  data-testid="activity-reload-resources"
+                  onClick={onReloadResources}
+                  className="min-h-[44px] rounded-full bg-tb-purple px-10 py-4 text-[20px] font-black uppercase text-tb-surface"
+                >
+                  {t("activity.reloadResources")}
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="activity-close"

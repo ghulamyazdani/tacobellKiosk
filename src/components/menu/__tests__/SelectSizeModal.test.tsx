@@ -47,4 +47,18 @@ describe("SelectSizeModal (Figma 1:5628)", () => {
       expect.objectContaining({ id: "v-medium", name: "Medium" })
     );
   });
+
+  it("ADA (P9c): capped by its containing block with CONTINUE pinned — only the size tiles scroll", () => {
+    renderModal();
+    const cont = screen.getByTestId("size-continue");
+
+    expect(
+      cont.closest('[class*="max-h-[min(1500px,calc(100%_-_48px))]"]')
+    ).not.toBeNull();
+    expect(cont.closest(".overflow-y-auto")).toBeNull();
+    expect(screen.getByRole("heading").closest(".overflow-y-auto")).toBeNull();
+    expect(
+      screen.getByTestId("size-v-large").closest(".overflow-y-auto")
+    ).not.toBeNull();
+  });
 });

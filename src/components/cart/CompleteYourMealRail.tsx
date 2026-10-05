@@ -7,16 +7,11 @@ import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import ForYouCard from "./ForYouCard";
 import {
-  CART_UPSELL_CARD_HEIGHT_PX,
-  CART_UPSELL_CARD_WIDTH_PX,
   CART_UPSELL_GRID_GAP_PX,
-  CART_UPSELL_IMAGE_HEIGHT_PX,
   CART_UPSELL_PAGE_PADDING_X_PX,
-  CART_UPSELL_TITLE_HEIGHT_PX,
-  CART_UPSELL_TITLE_LINE_HEIGHT_PX,
 } from "../../hooks/menuHooks/cartUpsellUtils";
-import plusIcon from "../../assets/icons/plus.svg";
 
 interface CompleteYourMealRailProps {
   /**
@@ -26,32 +21,6 @@ interface CompleteYourMealRailProps {
    */
   onDetour?: () => void;
 }
-
-/**
- * The engine's RecommendedEntity is deliberately narrow; the converted menu
- * entities additionally carry `image_url` and sometimes an object-shaped
- * calorie count (MenuItemCard precedent). Read those through this widening
- * rather than `any`.
- */
-type ConvertedEntityExtras = {
-  image_url?: string;
-  calorieCount?: number | string | { value?: number | string };
-  nutritionalInfo?: {
-    calorieCount?: number | string | { value?: number | string };
-  };
-};
-
-const imageUrlOf = (entity: RecommendedEntity): string | undefined =>
-  (entity as RecommendedEntity & ConvertedEntityExtras).image_url;
-
-const calorieValue = (
-  entity: RecommendedEntity,
-): number | string | undefined => {
-  const extras = entity as RecommendedEntity & ConvertedEntityExtras;
-  const cal = extras?.calorieCount ?? extras?.nutritionalInfo?.calorieCount;
-  if (cal !== null && typeof cal === "object") return cal?.value;
-  return cal;
-};
 
 /**
  * Complete-Your-Meal rail — Figma mybag 1:3171 "You Might Like" section:
@@ -66,6 +35,15 @@ const calorieValue = (
  * confirmation); every other intent calls onDetour first (via onBeforeLeave)
  * and carries returnTo:"cart" so a customization detour returns to /cart
  * (trap 7), never dumping the customer on /menu.
+ *
+ * P7d: the tile itself now lives in `./ForYouCard`, lifted out of what used to
+ * be this file's private `renderCard` helper so the pre-cart /forYou grid and
+ * this rail render the SAME component — one card, one set of geometry
+ * constants, one accessible-name rule. The rail keeps everything that is
+ * genuinely its own: the gate, the in-cart filter, the tap routing and the
+ * section chrome. `bag-rail` and `bag-rail-item-<id>` are unchanged — the
+ * card takes its testid from the consumer precisely so both suites keep the
+ * ids they already address.
  */
 export default function CompleteYourMealRail({
   onDetour,
@@ -94,81 +72,12 @@ export default function CompleteYourMealRail({
   const currency =
     currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
 
-  const priceLine = (entity: RecommendedEntity): string => {
-    const base = `${currency}${entity?.price ?? ""}`;
-    const cal = calorieValue(entity);
-    return cal ? `${base} | ${t("pack.cal", { value: cal })}` : base;
-  };
-
   const handleTap = (entity: RecommendedEntity) => {
     addEntity(entity, {
       onBeforeLeave: () => onDetour?.(),
       returnTo: "cart",
       suppressAddedModal: true,
     });
-  };
-
-  // Render helper, NOT a component (react-hooks/static-components).
-  const renderCard = (entity: RecommendedEntity) => {
-    const imageUrl = imageUrlOf(entity);
-    // Defensive parity with the fork's rail card: the id filter above makes
-    // an in-cart hit unreachable today, but the badge contract survives a
-    // future source that stops filtering.
-    const inCartQty = Number(doesItemExistInCart(entity?.id)?.quantity ?? 0);
-
-    return (
-      <button
-        key={entity?.id}
-        type="button"
-        data-testid={`bag-rail-item-${entity?.id}`}
-        aria-label={entity?.name ?? ""}
-        onClick={() => handleTap(entity)}
-        className="relative flex shrink-0 flex-col items-stretch justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 text-left"
-        style={{
-          width: CART_UPSELL_CARD_WIDTH_PX,
-          height: CART_UPSELL_CARD_HEIGHT_PX,
-        }}
-      >
-        <span className="flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px]">
-          <span
-            className="block overflow-hidden text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
-            style={{
-              lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
-              maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
-            }}
-          >
-            {entity?.name}
-          </span>
-          <span className="block text-[18px] leading-[20px] text-tb-ink-purple">
-            {priceLine(entity)}
-          </span>
-        </span>
-        {imageUrl ? (
-          <img
-            alt=""
-            src={imageUrl}
-            className="w-full object-contain"
-            style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-          />
-        ) : (
-          <span
-            className="block w-full"
-            style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-          />
-        )}
-        <span
-          aria-hidden="true"
-          className="absolute right-[12px] top-[12px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
-        >
-          <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
-        </span>
-        {inCartQty > 0 && (
-          <span className="absolute left-[12px] top-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
-            {inCartQty}
-          </span>
-        )}
-      </button>
-    );
   };
 
   return (
@@ -187,7 +96,33 @@ export default function CompleteYourMealRail({
         className="mt-[16px] flex w-full overflow-x-auto"
         style={{ gap: CART_UPSELL_GRID_GAP_PX, scrollbarWidth: "none" }}
       >
-        {railItems.map(renderCard)}
+        {railItems.map((entity) => (
+          <ForYouCard
+            key={entity?.id}
+            entity={entity}
+            testId={`bag-rail-item-${entity?.id}`}
+            title={entity?.name ?? ""}
+            // The RAW menu price, exactly as before — never the bill's taxed
+            // total, which is a cart concept.
+            price={entity?.price}
+            currency={currency}
+            /*
+              Defensive parity with the fork's rail card: the in-cart filter
+              above makes a hit unreachable today, but the count-pill contract
+              survives a future source that stops filtering.
+            */
+            quantity={Number(doesItemExistInCart(entity?.id)?.quantity ?? 0)}
+            /*
+              Accessible verbs, reusing the keys TB already ships: `quickAdd`
+              is the verb MenuItemCard puts on its one-tap "+" affordance, and
+              `pack.customize` the one the slot sheet uses for a chooser. The
+              card picks between them from `entity.isDirectlyAddable`.
+            */
+            addLabel={t("menu.quickAdd")}
+            customizeLabel={t("pack.customize")}
+            onAdd={handleTap}
+          />
+        ))}
       </div>
     </section>
   );

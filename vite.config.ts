@@ -18,7 +18,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       devOptions: { enabled: false },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // jpg/jpeg: the splash WELCOME photo and textures must be precached so
+        // an offline boot still shows them. No image optimizer (CLAUDE.md rule 7).
+        globPatterns: ["**/*.{js,css,html,ico,png,jpg,jpeg,svg,woff2}"],
         cleanupOutdatedCaches: true,
         // Safe ONLY because the app defers the actual reload to the splash screen
         // (PWAUpdateHandler dispatches setAutoUpdateOnNextStartOver; StartScreen reloads).
@@ -27,11 +29,24 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|avif)$/,
-            handler: "CacheFirst",
+            // Splash media + item images live on S3 (cross-origin). Workbox
+            // RegExp routes match a cross-origin URL only at index 0, so the
+            // old extension regex never cached them; match by destination.
+            // StaleWhileRevalidate keeps opaque (status 0) <img> answers and
+            // heals a cached error on the next load (CacheFirst would pin an
+            // opaque 404 until it expired). Videos (destination "video") stay
+            // in the HTTP cache: range requests (206) are not cacheable here.
+            // Serialized into sw.js — keep the matcher self-contained.
+            urlPattern: ({ request }) => request.destination === "image",
+            handler: "StaleWhileRevalidate",
             options: {
               cacheName: "images",
-              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              expiration: {
+                maxEntries: 250,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+                // Chrome pads every opaque entry by MBs of quota.
+                purgeOnQuotaError: true,
+              },
             },
           },
           {

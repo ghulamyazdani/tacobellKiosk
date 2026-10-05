@@ -4,6 +4,7 @@
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface SlotSelectionSheetProps {
@@ -50,6 +51,7 @@ function SheetBody({
   // Render helper, NOT a component (react-hooks/static-components).
   const renderRow = (item: any) => {
     const isPicked = item?.id === picked;
+    const imageUrl = resolveEntityImage(item);
     const price = Number(item?.price ?? 0);
     const cal = calValue(item);
     const calText = cal ? t("pack.cal", { value: cal }) : "";
@@ -63,10 +65,10 @@ function SheetBody({
         key={item?.id}
         className="relative flex items-center gap-[20px] border-b border-tb-grey-4 px-[24px] py-[16px]"
       >
-        {item?.image_url ? (
+        {imageUrl ? (
           <img
             alt=""
-            src={item.image_url}
+            src={imageUrl}
             className="h-[80px] w-[80px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
           />
         ) : (
@@ -136,8 +138,12 @@ function SheetBody({
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
       />
+      {/* Cap = containing block (the PDP's h-full root → the reach
+          container) minus a 96 px scrim band: 1500 on the 1920 stage, 1026
+          in the 1122 ADA reach zone. Title/X and SAVE keep their content
+          height; only the options shrink and scroll. */}
       <div
-        className="absolute bottom-0 left-0 flex max-h-[1500px] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
+        className="absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
         style={{ animation: "tbSlotSheetEnter 0.2s ease-out both" }}
       >
         <h2 className="tb-display mb-[20px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple-vibrant">

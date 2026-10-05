@@ -292,8 +292,10 @@ test.describe("P6c MIAM upsell prompt (enable_combo_upsell on)", () => {
     await expect(comboCard).toBeVisible();
     await expect(comboCard).toContainText("Dream box 1,");
     await expect(comboCard).toContainText("£25.00");
-    // Decline shows the original item's price.
-    await expect(prompt.getByTestId("miam-decline")).toContainText("£8.00");
+    // Figma 1:3070's secondary CTA is copy-only ("NOT TODAY") — the original
+    // item's price moved off this label; it is still asserted below on
+    // pdp-add-to-bag and cta-total.
+    await expect(prompt.getByTestId("miam-decline")).toContainText("Not today");
 
     // Decline. Cheese Burger is a CUSTOMIZABLE item (3 modifier groups), so
     // the decline path opens its own customization instead of a direct add

@@ -1,32 +1,197 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { emptyCart } from "@cx-sdk/ordering/state/cart.slice";
+import { kiosSettingsRdx } from "@cx-sdk/catalog/state/appSettings.slice";
+import { selectPipelines } from "@cx-sdk/catalog/state/pipeline.slice";
+import { selectDeploymentDetails } from "@cx-sdk/core/auth/authentication.slice";
+import { useGetLoyaltyPartnerMutation } from "@cx-sdk/ordering/services/loyaltyApi";
+import {
+  isLoyaltyOn,
+  setLoyaltyPartner,
+} from "@cx-sdk/ordering/state/loyalty.slice";
+import {
+  selectLastBootAt,
+  selectLastRefreshFailedAt,
+  selectShouldBrandUpdate,
+  selectShouldWholeAppUpdate,
+} from "@cx-sdk/devices/updates/autoUpdate.slice";
+import {
+  msUntilScheduledRefresh,
+  resolveSplashUpdateAction,
+} from "@cx-sdk/devices/updates/updatePolicy";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import useLongPress from "../../hooks/utils/useLongPress";
+import useSessionReset from "../../hooks/utils/useSessionReset";
+import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import useCartIndexedDb from "../../hooks/cartHooks/useCartIndexedDb";
+import useAutoUpdate from "../../hooks/autoUpdates/useAutoUpdate";
+import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import ActivityModal from "../../components/activity/ActivityModal";
-import bgTexture from "../../assets/splash/bg-texture.png";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
-import posterTaco from "../../assets/splash/poster-taco.jpg";
-import star1 from "../../assets/splash/star-1.svg";
-import star2 from "../../assets/splash/star-2.svg";
-import star3 from "../../assets/splash/star-3.svg";
-import star4 from "../../assets/splash/star-4.svg";
-import star5 from "../../assets/splash/star-5.svg";
-import star6 from "../../assets/splash/star-6.svg";
-import tbBell from "../../assets/brand/tb-bell.svg";
+import UpdateCountdownModal from "../../components/autoUpdate/UpdateCountdownModal";
+import { ErrorBoundary } from "../../ErrorBoundary";
+import type {
+  BootRefreshState,
+  BootRefreshTrigger,
+} from "../LoadingResources/bootRefresh";
+import SplashMedia, { SplashWelcome } from "./SplashMedia";
 
 /**
- * Attract/splash screen — Figma "Splash - Single" (node 1:2184), laid out in
- * design pixels on the 1080×1920 KioskStage.
- *
- * The promo poster ("Half Moon Half Price") is the Figma frame's static
- * content, used as the default attract poster; P3 wires it to the kiosk
- * media API (coverImage/banner rotation) the same way posistKiosk's
- * StartScreen does. Whole screen is one tap target (kiosk convention).
+ * While the scheduled boot refresh is not yet due, re-read the wall clock at
+ * least this often: a timer runs on the monotonic clock, so an NTP/RTC jump
+ * would otherwise move the due instant unseen.
+ */
+const BOOT_REFRESH_RECHECK_MS = 15 * 60 * 1000;
+
+/**
+ * Attract/splash screen, laid out in design pixels on the 1080×1920
+ * KioskStage. Content is the getMedia `home_screen` media (SplashMedia: none →
+ * WELCOME 1:5617, one → full-bleed 1:5604, several → carousel 1:2203). The
+ * whole screen is one tap target (kiosk convention); its accessible name is
+ * the visible copy of whichever layout is showing. It is also the ONLY place
+ * updates apply (P9e), which is what keeps them from ever landing mid-order.
  */
 export default function StartScreen() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const dispatch = useDispatch();
   const [activityOpen, setActivityOpen] = useState(false);
+  const { resetSession } = useSessionReset();
+  const { checkAndRevokeLoyaltyReward } = useLoyalty();
+  const { clearIndexedDbCart } = useCartIndexedDb();
+
+  // True only while the splash is on screen — gates the late re-empty below.
+  const onSplashRef = useRef(false);
+  useEffect(() => {
+    onSplashRef.current = true;
+    return () => {
+      onSplashRef.current = false;
+    };
+  }, []);
+
+  // SESSION TEARDOWN OWNER (fork parity: StartOverResourceLoading on mount).
+  // Every exit to the splash — idle timeout, START AGAIN, the /second and
+  // /phone footer cancels, NotFound — only navigates here; this mount ends
+  // the session. Never reset-then-navigate from a screen with guard effects
+  // (hazard H1): RR7's BrowserRouter runs navigate inside startTransition, so
+  // the emptied store renders on the OLD route first and the /cart, /tent,
+  // /payment, /forYou, /customization guards re-navigate to /menu instead.
+  // Callers that already reset (Menu/CustomerName cancel, OrderSuccess) are
+  // harmless: their reset cleared the claim, so the revoke below no-ops.
+  // Ref-latched: StrictMode re-runs mount effects with the SAME closure (claim
+  // still set), which would otherwise fire undoRewardRedemption twice.
+  const didTeardownRef = useRef(false);
+  useEffect(() => {
+    if (didTeardownRef.current) return;
+    didTeardownRef.current = true;
+    // Revoke FIRST — it reads the claimed coupon from this render's closure,
+    // which the reset wipes. Fire-and-forget: a dead xeno.in must never hold
+    // the splash (Rule 2).
+    checkAndRevokeLoyaltyReward().catch(() => {});
+    resetSession("full");
+    // Reload race: a relaunch lands on "/" and is redirected here one
+    // transition commit later, so AppRoutes' Dexie rehydrate may already be
+    // reading the previous customer's rows and dispatch them AFTER the reset
+    // above. IndexedDB starts overlapping transactions in creation order, so
+    // this clear commits only after that read — emptying redux then is
+    // ordered after the rehydrate's dispatch (no timer).
+    void clearIndexedDbCart().then(() => {
+      if (onSplashRef.current) dispatch(emptyCart());
+    });
+  }, [checkAndRevokeLoyaltyReward, resetSession, clearIndexedDbCart, dispatch]);
+
+  // Loyalty that degraded at boot (P9b, R6) is retried HERE: TB boots only
+  // after registration — a relaunch with a token lands straight on /start —
+  // so "the next boot" would mean re-registering. Once per splash visit while
+  // enabled-but-off, bounded by the transport's 10 s; applied only while the
+  // splash is still up, so loyalty never switches on under a guest mid-order.
+  const loyaltyEnabled = Boolean(useSelector(kiosSettingsRdx)?.enable_loyalty);
+  const loyaltyOn = Boolean(useSelector(isLoyaltyOn));
+  const deploymentId = useSelector(selectDeploymentDetails)?._id;
+  const [getLoyaltyPartner] = useGetLoyaltyPartnerMutation();
+  const didRetryLoyaltyRef = useRef(false);
+  useEffect(() => {
+    if (didRetryLoyaltyRef.current || !loyaltyEnabled || loyaltyOn) return;
+    didRetryLoyaltyRef.current = true;
+    getLoyaltyPartner({ deployment_id: deploymentId })
+      .unwrap()
+      .then((partner: unknown) => {
+        if (partner && onSplashRef.current) dispatch(setLoyaltyPartner(partner));
+      })
+      .catch(() =>
+        captureKioskEvent(KioskEventName.ErrorOccurred, {
+          source: "loyalty_partner",
+          stage: "splash_retry",
+        })
+      );
+  }, [loyaltyEnabled, loyaltyOn, deploymentId, getLoyaltyPartner, dispatch]);
+
+  // UPDATE APPLY (P9e). Pending, by precedence: a new build (whole_app), an
+  // FCM brand push (brand), boot data older than BOOT_DATA_MAX_AGE_MS
+  // (scheduled, D1). Armed only while online — a refresh would fail and burn
+  // its backoff, an ack would be lost — and with the Activity Center closed.
+  // The dwell is a CHILD mounted only while armed: a guest tap leaves for
+  // /second and its unmount defers the update to the next splash visit.
+  const shouldWholeAppUpdate = Boolean(useSelector(selectShouldWholeAppUpdate));
+  const shouldBrandUpdate = Boolean(useSelector(selectShouldBrandUpdate));
+  const lastBootAt = useSelector(selectLastBootAt);
+  const lastRefreshFailedAt = useSelector(selectLastRefreshFailedAt);
+  const hasPipelines = Boolean(useSelector(selectPipelines)?.length);
+  const isOnline = useNetworkStatus();
+  const { updateDeviceUpdateStatus, applyWholeAppUpdate } = useAutoUpdate();
+
+  // The D1 clock: `now` advances ONLY from this timer, so render stays pure.
+  // It fires at the due instant, or within 15 min to notice a clock jump; a
+  // due refresh (0) needs no timer — only a new boot stamp un-stales it.
+  const [now, setNow] = useState(() => Date.now());
+  const refreshInMs = msUntilScheduledRefresh(
+    lastBootAt,
+    lastRefreshFailedAt,
+    now
+  );
+  useEffect(() => {
+    if (refreshInMs === 0) return;
+    const id = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(refreshInMs, BOOT_REFRESH_RECHECK_MS)
+    );
+    return () => window.clearTimeout(id);
+  }, [refreshInMs]);
+
+  const kind = isOnline
+    ? resolveSplashUpdateAction({
+        shouldWholeAppUpdate,
+        shouldBrandUpdate,
+        bootDataStale: refreshInMs === 0,
+      })
+    : null;
+
+  // Refresh mode: a failed refresh returns here on the old data. With no
+  // pipelines there is no old data worth keeping, so a NORMAL boot (its
+  // retry ladder) heals an evicted-storage kiosk instead (OV4).
+  const startRefresh = (trigger: BootRefreshTrigger) =>
+    navigate(
+      "/LoadingResources",
+      hasPipelines
+        ? { state: { refresh: true, trigger } satisfies BootRefreshState }
+        : undefined
+    );
+
+  // Latched, so the apply runs once and "Updating…" stays up even after the
+  // brand ack lowers its flag: that store update renders on THIS route
+  // before the navigation transition commits (hazard H1). No reset here —
+  // this mount's teardown already ended the session.
+  const [applying, setApplying] = useState(false);
+  const applyUpdate = () => {
+    if (applying || kind === null) return;
+    setApplying(true);
+    captureKioskEvent(KioskEventName.UpdateTriggered, { update_type: kind });
+    if (kind === "whole_app") return applyWholeAppUpdate();
+    // Fire-and-forget (OV2): the flag drops synchronously; the ack retries in
+    // the background (≤ ~31 s) and must never hold the splash.
+    if (kind === "brand") void updateDeviceUpdateStatus();
+    startRefresh(kind);
+  };
+  const counting = applying || (kind !== null && !activityOpen);
 
   // Hidden operator gesture: press-and-hold the top-left corner for 3s to
   // open the Activity Center (diagnostics). Deliberately invisible; a short
@@ -42,68 +207,16 @@ export default function StartScreen() {
     <div className="relative h-[1920px] w-[1080px]">
     <button
       type="button"
-      aria-label={t("splash.startOrder")}
       data-testid="start-screen"
       onClick={() => navigate("/second")}
-      className="relative block h-full w-full cursor-pointer overflow-hidden bg-tb-purple text-left"
+      className="relative isolate block h-full w-full cursor-pointer overflow-hidden bg-tb-purple text-left"
     >
-      {/* BG texture tile + plastic sheen (Figma BG TEXTURE 1:2185) */}
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          backgroundImage: `url(${bgTexture})`,
-          backgroundSize: "240px 240px",
-          backgroundPosition: "top left",
-        }}
-      />
-      <img
-        aria-hidden
-        alt=""
-        src={plasticOverlay}
-        className="absolute inset-0 h-full w-full object-cover opacity-40 mix-blend-soft-light"
-      />
-
-      {/* Taco Bell bell (1:2202) */}
-      <img
-        alt="Taco Bell"
-        src={tbBell}
-        className="absolute left-1/2 top-[101px] h-[89px] w-[100px] -translate-x-1/2"
-      />
-
-      {/* Promo poster (1:2188) */}
-      <div className="absolute left-[78px] top-[286px] h-[1338px] w-[924px] overflow-hidden rounded-[16px] bg-tb-purple-vibrant">
-        <img
-          alt=""
-          src={posterTaco}
-          className="absolute left-1/2 top-[418px] h-[755px] w-[574px] -translate-x-1/2 object-cover"
-        />
-        <h1 className="tb-display absolute left-[48px] top-[161px] text-[103px] leading-[0.95] tracking-[-8.7px] text-tb-surface">
-          Half
-          <br />
-          moon
-        </h1>
-        <h1 className="tb-display absolute right-[45px] top-[348px] text-right text-[103px] leading-[0.95] tracking-[-8.7px] text-tb-surface">
-          half
-          <br />
-          price
-        </h1>
-        <p className="absolute bottom-[84px] left-1/2 w-[393px] -translate-x-1/2 text-center text-[21.76px] font-bold uppercase leading-[1.1] text-tb-cream">
-          happy hour 2-4pm get half price on half moons
-        </p>
-        {/* Star scribbles */}
-        <img aria-hidden alt="" src={star4} className="absolute right-[68px] top-[890px] w-[115px] -scale-x-100" />
-        <img aria-hidden alt="" src={star1} className="absolute left-[-11px] top-[745px] w-[63px] -scale-x-100" />
-        <img aria-hidden alt="" src={star2} className="absolute right-[251px] top-[630px] w-[38px] -scale-x-100" />
-        <img aria-hidden alt="" src={star3} className="absolute right-[-8px] top-[420px] w-[124px]" />
-        <img aria-hidden alt="" src={star5} className="absolute left-[300px] top-[428px] w-[38px] rotate-180" />
-        <img aria-hidden alt="" src={star6} className="absolute left-[228px] top-[36px] w-[60px]" />
-      </div>
-
-      {/* start order (Component 1, 1:2187) */}
-      <p className="tb-display absolute left-1/2 top-[1752px] -translate-x-1/2 text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-surface">
-        {t("splash.startOrder")}
-      </p>
+      {/* `isolate`: nothing in the media layer can stack over the z-20
+          operator hotspot (a sibling). A decorative crash shows WELCOME in
+          place — never the global crash screen — and this tap still works. */}
+      <ErrorBoundary fallback={<SplashWelcome />}>
+        <SplashMedia />
+      </ErrorBoundary>
     </button>
     <div
       data-testid="activity-hotspot"
@@ -112,7 +225,12 @@ export default function StartScreen() {
       onClick={(e) => e.stopPropagation()}
       className="absolute left-0 top-0 z-20 h-[180px] w-[180px]"
     />
-    <ActivityModal isOpen={activityOpen} onClose={() => setActivityOpen(false)} />
+    <ActivityModal
+      isOpen={activityOpen}
+      onClose={() => setActivityOpen(false)}
+      onReloadResources={() => startRefresh("operator")}
+    />
+    {counting && <UpdateCountdownModal onElapsed={applyUpdate} />}
     </div>
   );
 }

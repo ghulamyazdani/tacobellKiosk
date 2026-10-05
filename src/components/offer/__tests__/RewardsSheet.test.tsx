@@ -276,4 +276,21 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
       cartState().cartItems.filter((row: any) => row?.isGetItem)
     ).toEqual([]);
   });
+
+  it("ADA (P9c): capped by its containing block with the X and SAVE outside the scroller", () => {
+    store.dispatch(setFilteredOffers([FLAT_OFFER]));
+    renderSheet();
+    const close = screen.getByTestId("rewards-close");
+
+    expect(
+      close.closest('[class*="h-[min(1470px,calc(100%_-_96px))]"]')
+    ).not.toBeNull();
+    expect(close.closest(".overflow-y-auto")).toBeNull();
+    expect(
+      screen.getByTestId("rewards-save").closest(".overflow-y-auto")
+    ).toBeNull();
+    expect(
+      screen.getByTestId("offer-row-offer-flat-2").closest(".overflow-y-auto")
+    ).not.toBeNull();
+  });
 });

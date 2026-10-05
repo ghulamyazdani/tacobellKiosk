@@ -202,6 +202,10 @@ const persistence: PersistencePolicy = {
         "device_update_id",
         "shouldRegisterFCM",
         "kioskDeviceVersion",
+        // P9e (D1, TB-only): the boot-age stamp must survive reloads — a
+        // relaunch with a token goes straight to /start and never boots.
+        // NOT lastRefreshFailedAt: the refresh backoff is session-only.
+        "lastBootAt",
       ],
     },
     {

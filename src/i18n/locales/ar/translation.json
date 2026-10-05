@@ -1,6 +1,9 @@
 {
   "splash": {
-    "startOrder": "ابدأ الطلب"
+    "startOrder": "ابدأ الطلب",
+    "welcome": "أهلاً بك",
+    "touchToStart": "اضغط في أي مكان للبدء",
+    "orderHere": "اطلب هنا"
   },
   "registration": {
     "title": "تسجيل هذا الكشك",
@@ -30,7 +33,31 @@
   "loading": {
     "preparing": "جارٍ تجهيز الكشك…",
     "errorTitle": "خطأ في الإعدادات",
-    "backToRegistration": "العودة إلى التسجيل"
+    "unavailableTitle": "تعذر الاتصال",
+    "unavailableBody": "لا يمكن لهذا الكشك الوصول إلى نظام الطلبات حاليًا. سيواصل المحاولة تلقائيًا.",
+    "configNoLanguage": "لم يتم إعداد أي لغة لهذا الكشك. أضف لغة من Cockpit.",
+    "configNoPipelines": "لم يتم إعداد أي نوع طلب (تناول في المطعم / طلب خارجي) لهذا الكشك. أضفها من Cockpit.",
+    "configNoStartText": "نص شاشة البداية غير موجود في إعدادات الكشك. أضفه من Cockpit.",
+    "retryIn": "إعادة المحاولة خلال {{seconds}} ث",
+    "retryNow": "حاول مرة أخرى الآن"
+  },
+  "update": {
+    "title": "تحديث الكشك",
+    "countdown": "يبدأ خلال {{seconds}} ث",
+    "inProgress": "جارٍ التحديث…",
+    "body": "سيكون الكشك جاهزًا مرة أخرى بعد قليل."
+  },
+  "menuError": {
+    "title": "تعذر تحميل القائمة",
+    "message": "حدث خطأ أثناء تجهيز القائمة. يرجى المحاولة مرة أخرى.",
+    "retry": "حاول مرة أخرى",
+    "back": "رجوع",
+    "startOver": "البدء من جديد"
+  },
+  "errorBoundary": {
+    "title": "حدث خطأ ما",
+    "message": "يرجى بدء طلبك من جديد.",
+    "startOver": "البدء من جديد"
   },
   "ticker": {
     "lunch": "حان وقت الغداء!"
@@ -38,6 +65,9 @@
   "footer": {
     "cancelOrder": "إلغاء الطلب",
     "adaDisplay": "وضع سهولة الوصول"
+  },
+  "ada": {
+    "exit": "الخروج من وضع سهولة الوصول"
   },
   "language": {
     "title": "اختر لغتك",
@@ -57,8 +87,12 @@
     "device": "الجهاز",
     "deployment": "الفرع",
     "version": "إصدار البرنامج",
+    "dataLoaded": "آخر تحميل للبيانات",
     "notifications": "الإشعارات",
     "printer": "الطابعة",
+    "loyalty": "برنامج الولاء",
+    "loyaltyActive": "نشط",
+    "loyaltyUnavailable": "غير متاح (تُعاد المحاولة عند العودة إلى شاشة البداية)",
     "fullscreen": "ملء الشاشة الإلزامي",
     "passcodePrompt": "أدخل رمز المرور لتعطيل ملء الشاشة الإلزامي",
     "invalidPasscode": "رمز مرور غير صحيح. حاول مرة أخرى.",
@@ -68,7 +102,8 @@
     "logout": "تسجيل خروج الكشك",
     "logoutConfirmTitle": "تأكيد تسجيل الخروج",
     "logoutConfirmBody": "سيؤدي هذا إلى إلغاء تسجيل الكشك والعودة إلى تفعيل الجهاز. هل أنت متأكد؟",
-    "logoutYes": "نعم، تسجيل الخروج"
+    "logoutYes": "نعم، تسجيل الخروج",
+    "reloadResources": "إعادة تحميل الموارد"
   },
   "added": {
     "title": "تمت إضافة منتجك",
@@ -120,7 +155,13 @@
   "miam": {
     "title": "هل ترغب في جعلها وجبة؟",
     "accept": "نعم، اجعلها وجبة",
-    "decline": "لا شكرًا، المنتج فقط"
+    "decline": "ليس اليوم",
+    "save": "وفر {{amount}}"
+  },
+  "upsell": {
+    "anythingElse": "أكمل وجبتك",
+    "notToday": "ليس اليوم",
+    "proceedToOrder": "المتابعة إلى الطلب"
   },
   "bag": {
     "title": "حقيبتي",
@@ -210,19 +251,6 @@
     "increase": "زيادة الكمية",
     "decrease": "تقليل الكمية"
   },
-  "checkout": {
-    "title": "الدفع",
-    "placeholder": "تجربة الدفع قادمة قريباً.",
-    "routeLabel": "الخطوة التالية",
-    "routes": {
-      "tent": "رقم الطاولة",
-      "payment": "الدفع",
-      "customerName": "اسم العميل",
-      "phone": "رقم الهاتف"
-    },
-    "totalLabel": "الإجمالي المستحق",
-    "backToBag": "العودة إلى حقيبتي"
-  },
   "loyalty": {
     "title": "المكافآت",
     "rewardsLink": "المكافآت",
@@ -278,5 +306,68 @@
     "clear": "مسح الاسم",
     "required": "يرجى إدخال اسم أول صالح",
     "loading": "جارٍ البحث عن بياناتك…"
+  },
+  "tent": {
+    "title": "هل ترغب في تقديم الطلب على طاولتك؟",
+    "displayLabel": "رقم الطاولة",
+    "confirm": "تأكيد رقم الطاولة",
+    "skip": "لا، شكرًا",
+    "back": "رجوع",
+    "rangeError": "يجب أن يكون رقم الطاولة بين {{from}} و {{to}}"
+  },
+  "payment": {
+    "title": "كيف ترغب في الدفع؟",
+    "total": "الإجمالي",
+    "payAtCounter": "الدفع عند الكاشير",
+    "payAtRestaurant": "الدفع في المطعم",
+    "payWithCard": "الدفع بالبطاقة أدناه",
+    "comingSoon": "قريبًا",
+    "backToMenu": "العودة إلى القائمة",
+    "placingOrder": "جارٍ إرسال طلبك…",
+    "cancel": "إلغاء",
+    "unavailable": "الدفع غير متاح هنا",
+    "unavailableBody": "لا يمكننا استقبال الدفع من هذا الكشك حاليًا. يرجى الطلب من الكاشير."
+  },
+  "receipt": {
+    "title": "هل تحتاج إلى الفاتورة؟",
+    "print": "طباعة",
+    "email": "بريد إلكتروني",
+    "none": "لا، شكرًا",
+    "comingSoon": "قريبًا",
+    "back": "رجوع"
+  },
+  "success": {
+    "thankYou": "شكرًا لطلبك",
+    "orderHeading": "الطلب",
+    "proceedToCounter": "توجه إلى الكاشير",
+    "rewardsHeadline": "اجمع النقاط على وجبتك",
+    "rewardsSub": "استبدل نقاطك بهدايا مجانية",
+    "promoHeadline": "تابع إصدارات الثلاثاء القادمة",
+    "promoSub": "منتجات حصرية من مجموعة ديكيدز",
+    "autoResetLabel": "الوقت المتبقي قبل إعادة ضبط الكشك",
+    "autoReset": "العودة إلى شاشة البداية خلال {{seconds}} ثانية",
+    "startOver": "البدء من جديد",
+    "newOrder": "طلب جديد"
+  },
+  "orderError": {
+    "title": "تعذر إرسال طلبك",
+    "message": "لم يصل طلبك إلى المطعم ولم يتم خصم أي مبلغ. حاول مرة أخرى أو عد إلى حقيبتك.",
+    "uncertainTitle": "لم نتمكن من تأكيد طلبك",
+    "uncertainMessage": "ربما وصل طلبك إلى المطعم. يرجى مراجعة أحد الموظفين قبل المحاولة مرة أخرى.",
+    "retry": "حاول مرة أخرى",
+    "backToBag": "العودة إلى حقيبتي"
+  },
+  "toast": {
+    "alreadyReachedMaximumLimit": "لقد وصلت بالفعل إلى الحد الأقصى لهذا الخيار",
+    "selectVariantFirst": "يرجى اختيار الحجم أولاً",
+    "selectAllCustomizations": "يرجى إكمال جميع الخيارات المطلوبة",
+    "fillCustomizationFields": "يرجى إنهاء تخصيص هذا الصنف"
+  },
+  "idle": {
+    "title": "لم تقم بأي نشاط منذ فترة",
+    "body": "اضغط على متابعة الطلب، أو ابدأ من جديد إذا انتهيت من التصفح",
+    "startAgain": "ابدأ من جديد",
+    "continue": "متابعة الطلب",
+    "countdownA11y": "سيتم البدء من جديد خلال {{seconds}} ثانية"
   }
 }

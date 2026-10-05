@@ -3,7 +3,7 @@
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -12,8 +12,11 @@ import {
   setCartInstructions,
 } from "@cx-sdk/ordering/state/cart.slice";
 import {
+  closeAccessibilityMode,
   setCurrency,
   setDeploymentInfo,
+  setEnableAccessibilityMode,
+  toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import BagSheet from "../BagSheet";
@@ -193,5 +196,50 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
     await userEvent.click(button);
     expect(button).toHaveTextContent(/coming soon/i);
     expect(cartState()).toBe(before); // no state mutation at all (P7c wires it)
+  });
+});
+
+/*
+  P9c (Figma 1:5445): in the ADA view only the sheet's HEIGHT changes — the
+  header, the scroll body and the pinned CTA row re-flow inside it. The height
+  is an inline style sized from the KioskStage constants (jsdom has no
+  Tailwind), so it is asserted there.
+*/
+describe("BagSheet in the ADA reach zone (P9c)", () => {
+  /** The rounded sheet panel (the X's header sits directly inside it). */
+  const panel = () =>
+    screen.getByTestId("bag-close").closest(".rounded-t-\\[60px\\]");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+
+  it("normal mode keeps the Figma 1:3171 height", () => {
+    renderSheet();
+    expect(panel()).toHaveStyle({ height: "1676px" });
+  });
+
+  it("ADA: 765 tall with the X, PAY and log-in CTAs all rendered; the brand-zone exit restores 1676 live", () => {
+    store.dispatch(toggleAccessibilityMode());
+    renderSheet();
+
+    expect(panel()).toHaveStyle({ height: "765px" });
+    expect(panel()).toContainElement(screen.getByTestId("bag-pay"));
+    expect(panel()).toContainElement(screen.getByTestId("bag-login-rewards"));
+
+    act(() => {
+      store.dispatch(closeAccessibilityMode());
+    });
+    expect(panel()).toHaveStyle({ height: "1676px" });
+  });
+
+  it("a stale flag with the tenant gate off never shrinks the sheet", () => {
+    store.dispatch(toggleAccessibilityMode());
+    store.dispatch(setEnableAccessibilityMode(false));
+    renderSheet();
+
+    expect(panel()).toHaveStyle({ height: "1676px" });
   });
 });

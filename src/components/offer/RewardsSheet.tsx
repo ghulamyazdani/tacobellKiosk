@@ -17,6 +17,7 @@ import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
+import { resolveEntityImage } from "../../utils/entityImage";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -55,9 +56,6 @@ type ConvertedEntityExtras = {
     calorieCount?: number | string | { value?: number | string };
   };
 };
-
-const imageUrlOf = (entity: RecommendedEntity): string | undefined =>
-  (entity as RecommendedEntity & ConvertedEntityExtras).image_url;
 
 const calorieValue = (
   entity: RecommendedEntity,
@@ -216,7 +214,7 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
   // Render helper, NOT a component (react-hooks/static-components) — the
   // menu-card skin from the bag's rail, with the offer-rail testids.
   const renderRailCard = (entity: RecommendedEntity) => {
-    const imageUrl = imageUrlOf(entity);
+    const imageUrl = resolveEntityImage(entity);
     return (
       <button
         key={entity?.id}
@@ -293,9 +291,14 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
+      {/* Height is capped by the containing block (the bag's inset-0 root
+          → Menu's h-full root → the reach container) minus a 96 px scrim
+          band — Tier2's top-[96px]. Never binds on the 1920 stage (1824 >
+          1470); in the 1122 ADA reach zone the sheet is 1026, so the X and
+          SAVE stay on screen and only the list scrolls. */}
       <div
         style={{ animation: "tbRewardsSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex h-[1470px] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         <div className="relative shrink-0 pb-[32px] pt-[54px]">
           <div className="flex items-center justify-center gap-[16px]">
