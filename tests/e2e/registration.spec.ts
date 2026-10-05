@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { APP_ORIGIN } from "./fixtures/origin";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -98,7 +99,7 @@ test.describe("registration + boot (mocked backend)", () => {
     context,
   }) => {
     await context.addCookies([
-      { name: "token", value: "stale-or-fake", url: "http://localhost:5373" },
+      { name: "token", value: "stale-or-fake", url: APP_ORIGIN },
     ]);
     // Every API call rejects with 401 — the transport's onAuthFailure must
     // clear the token and land on Registration (posistKiosk parity).
@@ -222,7 +223,7 @@ test.describe("operator activity center", () => {
     context,
   }) => {
     await context.addCookies([
-      { name: "token", value: "e2e-device-token", url: "http://localhost:5373" },
+      { name: "token", value: "e2e-device-token", url: APP_ORIGIN },
     ]);
     // Background shell calls (PWAUpdateHandler version report) must not
     // reach a real backend and 401 the fake token mid-test.

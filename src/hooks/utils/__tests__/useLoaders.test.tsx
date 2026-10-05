@@ -5,10 +5,19 @@ import { Provider } from "react-redux";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setAutenticationDetails } from "@cx-sdk/core/auth/authentication.slice";
 import {
+  setDeploymentInfo,
+  setDiscountOnAddon,
   setEnableAccessibilityMode,
+  setGeneralSettings,
+  setKioskSettings,
   setMediaData,
+  setPaymentSettings,
+  setTemplateType,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setPipelines } from "@cx-sdk/catalog/state/pipeline.slice";
+import { setLastBootAt } from "@cx-sdk/devices/updates/autoUpdate.slice";
 import { store } from "../../../redux/app/store";
+import { setLanguages } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { resolveIdleSeconds } from "../useIdleTimeout";
 import useLoaders from "../useLoaders";
 
@@ -26,6 +35,11 @@ import useLoaders from "../useLoaders";
   config reason, or "unavailable" for anything the network did — and the
   loyalty partner lookup DEGRADES instead of blocking boot. Local faults
   (Dexie, localStorage, the cosmetic theme) never stop boot either.
+
+  P9e: the REAL useAppSettings runs (its getDeploymentInfoApi(stage) guards
+  the deployment rows), stubbed one level down at the RTK hook like every
+  other step. The skin, deployment-info and device-settings triggers are not
+  unwrapped by the loader, so their stubs answer `{data}` / `{error}`.
 */
 
 // Hoisted with the vi.mock factories that read them.
@@ -42,6 +56,11 @@ const { boot, mockCapture } = vi.hoisted(() => ({
     partner: vi.fn((): Promise<unknown> => Promise.resolve(null)),
     /** getMedia; called with the request so a test can check brand_id. */
     media: vi.fn<(request: unknown) => Promise<unknown>>(),
+    /** Trigger RESULTS (not unwrapped by the loader): `{data}` or `{error}`. */
+    skin: (): Promise<unknown> => Promise.resolve({ data: {} }),
+    deploy: (): Promise<unknown> => Promise.resolve({ data: [] }),
+    device: (): Promise<unknown> => Promise.resolve({ data: [] }),
+    partners: vi.fn((): Promise<unknown> => Promise.resolve({ paymentPartners: [] })),
   },
   mockCapture: vi.fn(),
 }));
@@ -68,7 +87,9 @@ vi.mock("@cx-sdk/catalog/services/kioskInfoApi", async (importOriginal) => ({
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/settingsApi")>()),
-  useGetCxSkinDataMutation: () => [() => Promise.resolve({ data: {} })],
+  useGetCxSkinDataMutation: () => [() => boot.skin()],
+  // Reached through the REAL useAppSettings.getDeploymentInfoApi.
+  useGetDeploymentInfoForOrderingMutation: () => [() => boot.deploy()],
 }));
 
 vi.mock("@cx-sdk/ordering/services/loyaltyApi", async (importOriginal) => ({
@@ -80,25 +101,16 @@ vi.mock("@cx-sdk/payments/services/paymentSettingsFetchApi", async (importOrigin
   ...(await importOriginal<
     typeof import("@cx-sdk/payments/services/paymentSettingsFetchApi")
   >()),
-  useGetPaymentSettingsApiMutation: () => [() => Promise.resolve({ data: [] })],
+  useGetPaymentSettingsApiMutation: () => [() => boot.device()],
 }));
 
 vi.mock("@cx-sdk/payments/services/paymentInfoApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/payments/services/paymentInfoApi")>()),
-  useGetDeploymentPaymentPartnersMutation: () => [
-    trigger(() => Promise.resolve({ paymentPartners: [] })),
-  ],
+  useGetDeploymentPaymentPartnersMutation: () => [trigger(() => boot.partners())],
 }));
 
 vi.mock("../colorManagement/useFetchColors", () => ({
   default: () => ({ FetchThemeData: () => boot.theme() }),
-}));
-
-vi.mock("../useAppSettings", () => ({
-  default: () => ({
-    getDeploymentInfoApi: () => Promise.resolve(),
-    getAllIds: () => [],
-  }),
 }));
 
 vi.mock("../../../utils/analytics", async (importOriginal) => ({
@@ -158,6 +170,11 @@ beforeEach(() => {
   // hook would make a real (failing) request from inside the boot.
   boot.media.mockReset();
   boot.media.mockImplementation(() => Promise.resolve({ media: [] }));
+  boot.skin = () => Promise.resolve({ data: {} });
+  boot.deploy = () => Promise.resolve({ data: [] });
+  boot.device = () => Promise.resolve({ data: [] });
+  boot.partners.mockReset();
+  boot.partners.mockImplementation(() => Promise.resolve({ paymentPartners: [] }));
 });
 
 afterEach(() => {
@@ -285,14 +302,15 @@ describe("useLoaders — local faults never read as 'Can't connect' (P9b)", () =
     ]);
   });
 
-  it("a broken IndexedDB (resetDatabase rejects) is reported and boot continues", async () => {
-    boot.resetDatabase = () => Promise.reject(new Error("MissingAPIError"));
+  it("never wipes IndexedDB (P9e): the menu 304 cache survives a boot, a broken Dexie cannot fail it", async () => {
+    const wipe = vi.fn(() => Promise.reject(new Error("MissingAPIError")));
+    boot.resetDatabase = wipe;
 
     const { onError, onSuccess } = await runBoot();
 
     expect(onError).not.toHaveBeenCalled();
     expect(onSuccess).toHaveBeenCalledTimes(1);
-    expect(eventsFrom("boot_reset_database")).toHaveLength(1);
+    expect(wipe).not.toHaveBeenCalled();
   });
 
   it("a full or blocked localStorage only loses the fork-parity mirrors; boot continues", async () => {
@@ -598,5 +616,422 @@ describe("useLoaders — splash media (P9d)", () => {
     expect(storedAtSuccess).toEqual({
       media: { home_screen: [ROOT, EVERYWHERE, THIS_STORE] },
     });
+  });
+});
+
+/*
+  P9e STAGE → COMMIT (boot-refresh.md §2.4). Every step stages its writes and
+  nothing reaches the store until the last await is behind the boot; then ONE
+  synchronous burst commits them in step order, stamps lastBootAt and writes
+  the fork-parity mirrors. A boot that fails anywhere commits NOTHING, so a
+  splash refresh returns on exactly the old data and the values a half-run
+  boot used to leave (B1 empty pipelines, B2 a degraded kiosk_settings) can
+  never be stored. Best-effort steps stage only a well-formed answer and
+  otherwise keep the last-known value. The store is seeded with a previous
+  boot's data, 7 h old.
+*/
+describe("useLoaders — stage → commit: a boot writes all or nothing (P9e)", () => {
+  const T0 = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const OLD_BOOT = T0 - 7 * 60 * 60 * 1000;
+  const OLD = {
+    languages: { primary_language: { name: "OLD", code: "old" }, secondary_language: {} },
+    pipelines: [{ _id: "old-p", tab_id: "old-t" }],
+    media: { media: { home_screen: [{ key: "home_screen", url: "https://cdn.test/old.jpg" }] } },
+    kioskSettings: { start_order_text_primary: "OLD START", enable_loyalty: true },
+    deploymentRows: [
+      { name: "disable_roundoff", selected: true },
+      { name: "enable_dis_addon", selected: true },
+    ],
+    general: [{ group: "general", setting_id: "tent_number_range" }],
+    payment: [{ _id: "old-pay" }],
+    partner: { partner: { partner_name: "OLD" } },
+  };
+  const NEW_SETTINGS = {
+    start_order_text_primary: "NEW START",
+    one_category_at_a_time: true,
+    enable_loyalty: true,
+    ideal_time: "90",
+  };
+  const NEW_MEDIA = { key: "home_screen", url: "https://cdn.test/new.jpg" };
+  const NEW_ROWS = [{ name: "enable_dis_addon", selected: false }];
+  const NEW_GENERAL = [{ group: "general", setting_id: "new-general" }];
+  const NEW_PARTNER = { partner: { partner_name: "Xeno" } };
+  /** The fork-parity localStorage keys, written only for a committed boot. */
+  const MIRRORS = ["showSelectionText", "kiosk_settings", "showUpsellItemsInMenu"];
+
+  type BootState = {
+    multiLanguage: { primary_language: unknown; secondary_language: unknown };
+    pipeline: { pipelines: unknown };
+    appSettings: Record<string, unknown>;
+    loyalty: { isLoyaltyOn: boolean; loyaltyPartner: unknown };
+    dynamicPricing: unknown;
+    autoUpdate: { lastBootAt: number };
+  };
+  const state = () => store.getState() as unknown as BootState;
+
+  /** Everything a boot can write. */
+  const snapshot = () => {
+    const s = state();
+    return JSON.parse(
+      JSON.stringify({
+        languages: [s.multiLanguage.primary_language, s.multiLanguage.secondary_language],
+        pipelines: s.pipeline.pipelines,
+        appSettings: s.appSettings,
+        loyalty: [s.loyalty.isLoyaltyOn, s.loyalty.loyaltyPartner],
+        dynamicPricing: s.dynamicPricing,
+        lastBootAt: s.autoUpdate.lastBootAt,
+      })
+    ) as unknown;
+  };
+
+  /** runBoot, plus every action the boot dispatched and every mirror it wrote. */
+  const bootRecording = async () => {
+    const dispatch = vi.spyOn(store, "dispatch");
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    const outcome = await runBoot();
+    return {
+      ...outcome,
+      types: dispatch.mock.calls.map(([action]) => (action as { type: string }).type),
+      mirrors: setItem.mock.calls.map(([key]) => key).filter((key) => MIRRORS.includes(key)),
+    };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
+    store.dispatch(
+      setAutenticationDetails({
+        deploymentDetails: { _id: "dep-1", brand_id: "brand-1" },
+        licenseDetails: {},
+      })
+    );
+    store.dispatch(setLanguages(OLD.languages));
+    store.dispatch(setTemplateType("albaik"));
+    store.dispatch(setPipelines(OLD.pipelines));
+    store.dispatch(setMediaData(OLD.media));
+    store.dispatch(setKioskSettings(OLD.kioskSettings));
+    store.dispatch(setDeploymentInfo(OLD.deploymentRows));
+    store.dispatch(setDiscountOnAddon(true));
+    store.dispatch(setGeneralSettings(OLD.general));
+    store.dispatch(setPaymentSettings(OLD.payment));
+    store.dispatch(setLoyaltyPartner(OLD.partner));
+    store.dispatch(setLastBootAt(OLD_BOOT));
+
+    boot.resetDatabase = vi.fn(() => Promise.resolve());
+    boot.skin = () => Promise.resolve({ data: { skin_id: "skin_1" } });
+    boot.pipelines = () => Promise.resolve([{ _id: "new-p", tab_id: "t1" }]);
+    boot.media.mockImplementation(() => Promise.resolve({ media: [NEW_MEDIA] }));
+    boot.settings = { ...NEW_SETTINGS };
+    boot.deploy = () => Promise.resolve({ data: NEW_ROWS });
+    boot.device = () => Promise.resolve({ data: NEW_GENERAL });
+    boot.partner.mockImplementation(() => Promise.resolve(NEW_PARTNER));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    [
+      "the FIRST await: the language call times out",
+      () => (boot.language = () => Promise.reject(TIMEOUT)),
+      "unavailable",
+    ],
+    [
+      "the first await: an empty primary language",
+      () => (boot.language = () => Promise.resolve({ primary_language: {} })),
+      "noLanguage",
+    ],
+    [
+      "the 2nd await: the skin call throws",
+      () => (boot.skin = () => Promise.reject(new TypeError("skin"))),
+      "unavailable",
+    ],
+    [
+      "a MIDDLE await: no pipelines (B1 — the staged [] is dropped)",
+      () => (boot.pipelines = () => Promise.resolve([])),
+      "noPipelines",
+    ],
+    [
+      "a middle await: a null pipelines body (B1)",
+      () => (boot.pipelines = () => Promise.resolve(null)),
+      "noPipelines",
+    ],
+    [
+      "a middle await: pipelines that are not a list",
+      () => (boot.pipelines = () => Promise.resolve({})),
+      "unavailable",
+    ],
+    [
+      "a middle await: settings without the start text (B2 — the staged settings are dropped)",
+      () => (boot.settings = { one_category_at_a_time: true, enable_loyalty: true }),
+      "noStartText",
+    ],
+    [
+      "a middle await: a null settings body (B2)",
+      () => (boot.settingsCall = () => Promise.resolve(null)),
+      "noStartText",
+    ],
+    [
+      "a middle await: the settings call times out",
+      () => (boot.settingsCall = () => Promise.reject(TIMEOUT)),
+      "unavailable",
+    ],
+    [
+      "the LAST await that can fail: the deployment-info call throws",
+      () => (boot.deploy = () => Promise.reject(new TypeError("deploy"))),
+      "unavailable",
+    ],
+  ])("%s → commits NOTHING: no redux write, no stamp, no mirrors", async (_label, arrange, reason) => {
+    arrange();
+    const before = snapshot();
+
+    const { onError, onSuccess, types, mirrors } = await bootRecording();
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(reason);
+    expect(types).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(state().autoUpdate.lastBootAt).toBe(OLD_BOOT);
+    // The staged turnOfLoyalty never landed: the last boot's partner stands.
+    expect(state().loyalty.isLoyaltyOn).toBe(true);
+    expect(mirrors).toEqual([]);
+    expect(boot.resetDatabase).not.toHaveBeenCalled();
+    expect(eventsFrom("boot")).toEqual([expect.objectContaining({ failure: reason })]);
+  });
+
+  it("nothing reaches the store while the LAST fetch (the loyalty partner) is still in flight", async () => {
+    let answer!: (partner: unknown) => void;
+    boot.partner.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const before = snapshot();
+    const dispatch = vi.spyOn(store, "dispatch");
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    const { result } = renderHook(() => useLoaders(), { wrapper });
+
+    let booting!: Promise<void>;
+    await act(async () => {
+      booting = result.current.LoadResourcesInitially(onError, onSuccess);
+      // One macrotask drains every microtask (only Date is faked).
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(boot.partner).toHaveBeenCalledTimes(1);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(snapshot()).toEqual(before);
+
+    await act(async () => {
+      answer(null);
+      await booting;
+    });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(state().autoUpdate.lastBootAt).toBe(T0);
+    // The staged turnOfLoyalty committed; no partner came back.
+    expect(state().loyalty.isLoyaltyOn).toBe(false);
+  });
+
+  it("success: ONE burst after the last fetch — every write in step order, then the stamp, the mirrors, onSuccess", async () => {
+    const fetched = vi.fn((name: string) => name);
+    const logged = (name: string, run: () => Promise<unknown>) => () => {
+      fetched(name);
+      return run();
+    };
+    boot.language = logged("language", boot.language);
+    boot.skin = logged("skin", boot.skin);
+    boot.pipelines = logged("pipelines", boot.pipelines);
+    boot.theme = logged("theme", boot.theme);
+    boot.media.mockImplementation(logged("media", () => Promise.resolve({ media: [NEW_MEDIA] })));
+    boot.settingsCall = logged("settings", () => Promise.resolve(boot.settings));
+    boot.deploy = logged("deploy", boot.deploy);
+    boot.device = logged("device", boot.device);
+    boot.partners.mockImplementation(
+      logged("partners", () => Promise.resolve({ paymentPartners: [] }))
+    );
+    boot.partner.mockImplementation(logged("partner", () => Promise.resolve(NEW_PARTNER)));
+    const dispatch = vi.spyOn(store, "dispatch");
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+
+    const { onError, onSuccess } = await runBoot();
+
+    /** One merged timeline, ordered by vitest's global invocation counter. */
+    const entries = (
+      mock: { mock: { calls: unknown[][]; invocationCallOrder: number[] } },
+      label: (args: unknown[]) => string | null
+    ) =>
+      mock.mock.calls.flatMap((args, i) => {
+        const text = label(args);
+        return text === null ? [] : [{ at: mock.mock.invocationCallOrder[i], text }];
+      });
+    const timeline = [
+      ...entries(fetched, ([name]) => `fetch:${String(name)}`),
+      ...entries(dispatch, ([action]) => (action as { type: string }).type),
+      ...entries(setItem, ([key]) =>
+        MIRRORS.includes(String(key)) ? `mirror:${String(key)}` : null
+      ),
+      ...entries(onSuccess, () => "onSuccess"),
+    ]
+      .sort((a, b) => a.at - b.at)
+      .map(({ text }) => text);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(timeline).toEqual([
+      // Fetch order unchanged (posistKiosk's LoadResourcesInitially).
+      "fetch:language",
+      "fetch:skin",
+      "fetch:pipelines",
+      "fetch:theme",
+      "fetch:media",
+      "fetch:settings",
+      "fetch:deploy",
+      "fetch:device",
+      "fetch:partners",
+      "fetch:partner",
+      // The commit: staged writes in step order…
+      "multiLanguage/setLanguages",
+      "appSettings/setTemplateType",
+      "pipeline/setPipelines",
+      "appSettings/setMediaData",
+      "appSettings/setOneCategoryAtATime",
+      "appSettings/setShowRepeatCustomization",
+      "appSettings/setQuickCustomizationMode",
+      "appSettings/setEnableFullWidthBanner",
+      "appSettings/setHideFilter",
+      "appSettings/setHideComboConstituentAddons",
+      "appSettings/setShowSelectionText",
+      "appSettings/setKioskSettings",
+      "appSettings/setEnableBannerCollapse",
+      "appSettings/setIdealTimeout",
+      "appSettings/setStickyDuration",
+      "appSettings/setHidePlusIconFromItem",
+      "appSettings/setAutoAdjustFontSize",
+      "appSettings/setShowUpsellingItemAsSeperateItem",
+      "appSettings/setDiscountOnAddon",
+      "appSettings/setDeploymentInfo",
+      "appSettings/setPaymentSettings",
+      "appSettings/setGeneralSettings",
+      "loyalty/turnOfLoyalty",
+      "loyalty/setLoyaltyPartner",
+      // …then the stamp, the mirrors, and only then the success callback.
+      "autoUpdate/setLastBootAt",
+      "mirror:showSelectionText",
+      "mirror:kiosk_settings",
+      "mirror:showUpsellItemsInMenu",
+      "onSuccess",
+    ]);
+
+    const s = state();
+    expect(s.autoUpdate.lastBootAt).toBe(T0);
+    expect(s.multiLanguage.primary_language).toEqual({ name: "English", code: "en" });
+    expect(s.appSettings.templateType).toBe("default");
+    expect(s.pipeline.pipelines).toEqual([{ _id: "new-p", tab_id: "t1" }]);
+    expect(s.appSettings.mediaData).toEqual({ media: { home_screen: [NEW_MEDIA] } });
+    expect(s.appSettings.kiosk_settings).toEqual(NEW_SETTINGS);
+    expect(s.appSettings.idealTimeout).toBe(90);
+    expect(s.appSettings.deploymentInfoSettings).toEqual(NEW_ROWS);
+    expect(s.appSettings.discountOnAddon).toBe(false);
+    expect(s.appSettings.generalSettings).toEqual(NEW_GENERAL);
+    expect(s.appSettings.paymentSettings).toEqual([]);
+    expect(s.loyalty.isLoyaltyOn).toBe(true);
+    expect(s.loyalty.loyaltyPartner).toEqual(NEW_PARTNER);
+    expect(window.localStorage.getItem("kiosk_settings")).toBe(JSON.stringify(NEW_SETTINGS));
+    // B8: the boot never wipes the Dexie menu cache.
+    expect(boot.resetDatabase).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a failed call ({error})", { error: { status: 500 } }],
+    ["a timed-out call", { error: TIMEOUT }],
+    ["an error envelope ({data: {}})", { data: {} }],
+    ["a null body", { data: null }],
+    ["a string body", { data: "x" }],
+  ])("B3: deployment info — %s keeps the LAST rows and their derived flags; the boot still commits and stamps", async (_label, answer) => {
+    boot.deploy = () => Promise.resolve(answer);
+
+    const { onSuccess, types } = await bootRecording();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(types).not.toContain("appSettings/setDeploymentInfo");
+    expect(types).not.toContain("appSettings/setDiscountOnAddon");
+    expect(state().appSettings.deploymentInfoSettings).toEqual(OLD.deploymentRows);
+    expect(state().appSettings.discountOnAddon).toBe(true);
+    expect(state().autoUpdate.lastBootAt).toBe(T0);
+  });
+
+  it("B3: a valid EMPTY list is a real answer and replaces the rows", async () => {
+    boot.deploy = () => Promise.resolve({ data: [] });
+
+    await bootRecording();
+
+    expect(state().appSettings.deploymentInfoSettings).toEqual([]);
+  });
+
+  it.each([
+    ["a failed call ({error})", () => Promise.resolve({ error: { status: 500 } })],
+    ["an error envelope ({data: {}})", () => Promise.resolve({ data: {} })],
+    ["a null body", () => Promise.resolve({ data: null })],
+    ["a trigger that throws", () => Promise.reject(new TypeError("device"))],
+  ])("B4: device settings — %s keeps the LAST general + payment settings, reports once, the boot commits and stamps", async (_label, answer) => {
+    boot.device = answer;
+
+    const { onSuccess, types } = await bootRecording();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(types).not.toContain("appSettings/setGeneralSettings");
+    expect(types).not.toContain("appSettings/setPaymentSettings");
+    expect(state().appSettings.generalSettings).toEqual(OLD.general);
+    expect(state().appSettings.paymentSettings).toEqual(OLD.payment);
+    expect(eventsFrom("boot_payment_settings_fetch")).toEqual([
+      { source: "boot_payment_settings_fetch" },
+    ]);
+    expect(boot.partners).not.toHaveBeenCalled();
+    expect(state().autoUpdate.lastBootAt).toBe(T0);
+  });
+
+  it.each([
+    ["a failed call ({error}) keeps the stored skin", { error: { status: 500 } }, "albaik"],
+    ["skin_2 → albaik", { data: { skin_id: "skin_2" } }, "albaik"],
+    ["any other skin → default", { data: { skin_id: "skin_1" } }, "default"],
+  ])("skin: %s", async (_label, answer, expected) => {
+    boot.skin = () => Promise.resolve(answer);
+
+    const { onSuccess } = await bootRecording();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(state().appSettings.templateType).toBe(expected);
+  });
+
+  it("a failed skin call stages nothing (it used to overwrite the skin with 'default')", async () => {
+    boot.skin = () => Promise.resolve({ error: { status: 500 } });
+
+    const { types } = await bootRecording();
+
+    expect(types).not.toContain("appSettings/setTemplateType");
+  });
+
+  it("P9d under stage → commit: a valid media answer is NOT stored when a later step fails the boot", async () => {
+    boot.settings = {};
+
+    const { onError } = await bootRecording();
+
+    expect(onError).toHaveBeenCalledWith("noStartText");
+    expect(state().appSettings.mediaData).toEqual(OLD.media);
+  });
+
+  it("P9d under stage → commit: a media failure keeps the last-known media while the rest commits", async () => {
+    boot.media.mockImplementation(() => Promise.reject(TIMEOUT));
+
+    const { onSuccess, types } = await bootRecording();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(types).not.toContain("appSettings/setMediaData");
+    expect(state().appSettings.mediaData).toEqual(OLD.media);
+    expect(eventsFrom("boot_media_fetch")).toHaveLength(1);
+    expect(state().pipeline.pipelines).toEqual([{ _id: "new-p", tab_id: "t1" }]);
+    expect(state().autoUpdate.lastBootAt).toBe(T0);
   });
 });

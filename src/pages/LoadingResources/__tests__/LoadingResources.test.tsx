@@ -22,10 +22,11 @@ interface BootCall {
   succeed: () => void;
 }
 
-const { boots, mockNavigate, logoutKiosk } = vi.hoisted(() => ({
+const { boots, mockNavigate, logoutKiosk, mockCapture } = vi.hoisted(() => ({
   boots: [] as BootCall[],
   mockNavigate: vi.fn(),
   logoutKiosk: vi.fn(),
+  mockCapture: vi.fn(),
 }));
 
 vi.mock("../../../hooks/utils/useLoaders", () => ({
@@ -50,10 +51,19 @@ vi.mock("../../../hooks/utils/useAuthHook", () => ({
   default: () => ({ logoutKiosk }),
 }));
 
-const mount = (options: { reactStrictMode?: boolean } = {}) =>
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
+
+/** `state` is the router state the splash hands over (P9e refresh mode). */
+const mount = ({
+  state,
+  ...options
+}: { reactStrictMode?: boolean; state?: unknown } = {}) =>
   render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={["/LoadingResources"]}>
+      <MemoryRouter initialEntries={[{ pathname: "/LoadingResources", state }]}>
         <LoadingResources />
       </MemoryRouter>
     </Provider>,
@@ -318,5 +328,148 @@ describe("LoadingResources — boot recovery (P9b R7)", () => {
     expect(screen.getByTestId("loading-error-retry")).toHaveTextContent(
       "حاول مرة أخرى الآن"
     );
+  });
+});
+
+/*
+  P9e — refresh mode. The splash navigates here with { refresh: true,
+  trigger } to re-run the boot on a kiosk that already has working data. The
+  boot commits nothing unless it fully succeeds, so a failed refresh goes
+  straight back to /start on the old data: no dialog, no retry ladder, no
+  reconnect retry. It stamps lastRefreshFailedAt BEFORE navigating (the splash
+  must mount already backing off) and even when this screen is gone, and
+  reports one boot_refresh event naming the trigger and the failure.
+*/
+describe("LoadingResources — refresh mode (P9e)", () => {
+  const T0 = Date.UTC(2026, 9, 5, 12, 0, 0);
+
+  const failedAt = () =>
+    (store.getState() as { autoUpdate: { lastRefreshFailedAt: number } }).autoUpdate
+      .lastRefreshFailedAt;
+
+  const refreshEvents = () =>
+    mockCapture.mock.calls
+      .map(([, props]) => props as Record<string, unknown> | undefined)
+      .filter((props) => props?.source === "boot_refresh");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    boots.length = 0;
+    mockNavigate.mockReset();
+    mockCapture.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["scheduled", "unavailable"],
+    ["brand", "noPipelines"],
+    ["operator", "noStartText"],
+    ["scheduled", "noLanguage"],
+  ] as const)(
+    "trigger %s, failure %s → stamps, reports and goes back to /start AT ONCE — no dialog, no ladder, no reconnect retry",
+    async (trigger, failure) => {
+      mount({ state: { refresh: true, trigger } });
+      expect(boots).toHaveLength(1);
+      let stampAtNavigate = -1;
+      mockNavigate.mockImplementation(() => {
+        stampAtNavigate = failedAt();
+      });
+      // The boot ran for 3 s: the stamp is the failure's own instant.
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+
+      await failLatest(failure);
+
+      expect(failedAt()).toBe(T0 + 3_000);
+      expect(stampAtNavigate).toBe(T0 + 3_000);
+      expect(refreshEvents()).toEqual([{ source: "boot_refresh", trigger, failure }]);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
+      expect(dialog()).not.toBeInTheDocument();
+
+      // Nothing retries: not the ladder, not a reconnect.
+      await tick(130);
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await tick(2);
+      expect(boots).toHaveLength(1);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(refreshEvents()).toHaveLength(1);
+    }
+  );
+
+  it("a successful refresh → /start, with no failure stamp and no boot_refresh event", () => {
+    mount({ state: { refresh: true, trigger: "scheduled" } });
+
+    act(() => boots[0].succeed());
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/start");
+    expect(failedAt()).toBe(0);
+    expect(refreshEvents()).toEqual([]);
+  });
+
+  it("a refresh that fails after the screen is gone still stamps and reports, but never navigates", () => {
+    const view = mount({ state: { refresh: true, trigger: "operator" } });
+    view.unmount();
+
+    act(() => boots[0].fail("unavailable"));
+
+    expect(failedAt()).toBe(T0);
+    expect(refreshEvents()).toEqual([
+      { source: "boot_refresh", trigger: "operator", failure: "unavailable" },
+    ]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("StrictMode: one refresh boot, one navigate", () => {
+    mount({ state: { refresh: true, trigger: "brand" }, reactStrictMode: true });
+    expect(boots).toHaveLength(1);
+
+    act(() => boots[0].fail("unavailable"));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(refreshEvents()).toHaveLength(1);
+  });
+
+  it.each([
+    ["refresh not exactly true", { refresh: "yes", trigger: "scheduled" }],
+    ["an unknown trigger", { refresh: true, trigger: "cron" }],
+    ["a string", "refresh"],
+  ])("malformed state (%s) is a NORMAL boot: the P9b dialog and ladder, no stamp, no boot_refresh", async (_label, state) => {
+    mount({ state });
+
+    await failLatest("unavailable");
+
+    expect(dialog()).toBeInTheDocument();
+    expect(note()).toBe(i18n.t("loading.retryIn", { seconds: 10 }));
+    expect(failedAt()).toBe(0);
+    expect(refreshEvents()).toEqual([]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    await tick(10);
+    expect(boots).toHaveLength(2);
+  });
+
+  it("the boot screen's Activity Center has no 'Reload resources' (only the splash passes it)", async () => {
+    mount();
+    await failLatest("unavailable");
+
+    fireEvent.mouseDown(screen.getByTestId("loading-activity-hotspot"));
+    act(() => {
+      vi.advanceTimersByTime(3_100);
+    });
+
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-reload-resources")).not.toBeInTheDocument();
   });
 });

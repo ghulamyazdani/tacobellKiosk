@@ -56,7 +56,6 @@ import { setLanguages } from "../../redux/features/multiLanguage/multiLanguage.s
 import useAppSettings from "./useAppSettings";
 import useFetchColors from "./colorManagement/useFetchColors";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
-import { resetDatabase } from "../../models/db";
 
 /** The registration blob the two settings fetches are keyed on. */
 interface LicenseDetails {
@@ -487,20 +486,13 @@ function useLoaders() {
         }
       }
 
-      //// COMMIT: the last await, then one synchronous burst.
-      // The Dexie wipe moved here from the start of the boot (P9e B6), so a
-      // boot that fails keeps the menu 304 cache: the next guest does not
-      // download the full menu over the network that just failed. It is
-      // local and best-effort: a broken IndexedDB must not read as "Can't
-      // connect" and retry forever (AppRoutes treats Dexie as optional too).
-      // /start's mount clears the cart rows anyway, and a cached menu is only
-      // reused on the server's 304 for that same menu id.
-      await resetDatabase().catch((error: unknown) =>
-        captureKioskEvent(KioskEventName.ErrorOccurred, {
-          source: "boot_reset_database",
-          ...errorDetail(error),
-        })
-      );
+      //// COMMIT: the last await is behind us; one synchronous burst.
+      // No Dexie wipe here (the fork's boot ran resetDatabase first): with D1
+      // a boot runs ≥ 4×/day, and each wipe cost the next guest the full
+      // menu download. A cached menu is reused only on the server's 304 for
+      // that same menu id, /start's mount clears the cart rows, nothing reads
+      // the recommendations table, and registration, logout and the 401
+      // recovery still wipe everything.
       staged.forEach((action) => dispatch(action));
       // D1: the boot age the splash's scheduled refresh reads. Stamped only
       // here, so only a fully successful boot of any kind counts.

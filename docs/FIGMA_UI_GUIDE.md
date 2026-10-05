@@ -148,7 +148,8 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 | `1:4552` | Cancel Order | `components/common/CancelOrderModal` (+ `hooks/utils/useSessionReset`) | ✅ P7a |
 | `1:5392`,`1:5413`,`1:5445` | ADA Home/Customization/Recap | `components/stage/ReachZone` (+ `hooks/utils/useAdaActive`, `ADA_*` in `KioskStage`) | ✅ P9c — reach-zone view: brand zone 0–798 (`ADA_BRAND_ZONE_HEIGHT`, the cabinet calibration knob), content zone 798–1920, nothing scaled; bag sheet 765 (top 1155); PDP gained the Footer-bottom strip in BOTH modes (it is in 1:2614/1:2920/1:5413) |
 | — (no frames) | ADA variants of `/second`, `/phone`, `/customerName`, `/tent`, `/payment`, `/receipt`, `/orderSuccess` + overlay caps | the pages + sheets/modals | ✅ P9c design-language, flag for sign-off (incl. brand-zone tap-to-exit, which Figma does not draw) |
-| — (no frames) | Activity Center, Tent, Phone/OTP, CountryCode | `components/activity/ActivityModal` (✅) / — | design-language builds, flagged |
+| — (no frame) | Update countdown (splash) | `components/autoUpdate/UpdateCountdownModal` (+ `pages/StartScreen` apply machine) | ✅ P9e design-language, flag for sign-off (non-dismissable ≤5 s) |
+| — (no frames) | Activity Center, Tent, Phone/OTP, CountryCode | `components/activity/ActivityModal` (✅; P9e adds Reload resources + Data loaded — design-language) / — | design-language builds, flagged |
 
 ## 5. Assets committed (source node → path)
 

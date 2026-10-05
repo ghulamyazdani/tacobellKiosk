@@ -104,6 +104,10 @@ const persistence: PersistencePolicy = {
         "auto_adjust_font_size",
         "showRepeatCustomization",
         "enableBannerCollapes",
+        // Boot-derived (enable_dis_addon) and read by the order, offer and
+        // cart discount math. A relaunch (or P9e's whole-app reload) reaches
+        // /start without booting, so an unpersisted flag fell back to false.
+        "discountOnAddon",
       ],
     },
     {
@@ -204,8 +208,12 @@ const persistence: PersistencePolicy = {
         "kioskDeviceVersion",
         // P9e (D1, TB-only): the boot-age stamp must survive reloads — a
         // relaunch with a token goes straight to /start and never boots.
-        // NOT lastRefreshFailedAt: the refresh backoff is session-only.
         "lastBootAt",
+        // Also the failure stamp: a failed brand/operator refresh on fresh
+        // data is retried 30 min later (msUntilScheduledRefresh), and a
+        // deploy reload or power cycle inside that window must not drop the
+        // retry until the 6 h age. Loop-safe: the backoff survives too.
+        "lastRefreshFailedAt",
       ],
     },
     {

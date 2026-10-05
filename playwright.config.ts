@@ -1,9 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_PORT } from "./tests/e2e/fixtures/origin";
 
 // Port 5373 is deliberately unique: 5173 belongs to whatever other Restroworks
 // Vite app is running, and 5273 is the posistKiosk E2E port. reuseExistingServer
-// would otherwise attach this suite to the wrong app.
-const PORT = 5373;
+// would otherwise attach this suite to the wrong app. TB_E2E_PORT overrides it
+// for a parallel worktree lane only (never 5173/5273).
+const PORT = E2E_PORT;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -42,7 +44,8 @@ export default defineConfig({
   webServer: {
     // --strictPort: fail loudly instead of drifting to another port and leaving
     // Playwright polling a URL that will never come up.
-    command: `yarn dev`,
+    // = `yarn dev` with the port substituted (the script pins 5373).
+    command: `yarn vite --host --mode development --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

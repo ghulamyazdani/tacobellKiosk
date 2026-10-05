@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { APP_ORIGIN } from "./fixtures/origin";
 
 test.describe("boot flow smoke (registration-first, posistKiosk parity)", () => {
   test("unregistered device: / shows Registration; /start redirects back", async ({
@@ -17,7 +18,7 @@ test.describe("boot flow smoke (registration-first, posistKiosk parity)", () => 
     context,
   }) => {
     await context.addCookies([
-      { name: "token", value: "e2e-device-token", url: "http://localhost:5373" },
+      { name: "token", value: "e2e-device-token", url: APP_ORIGIN },
     ]);
 
     await page.goto("/");

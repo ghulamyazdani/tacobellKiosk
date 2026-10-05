@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-05 (P9d)** · Gates at last update (Node 22.14):
-> **`yarn validate` green · unit 911/911 · e2e 90/90 (first run, 42 s) · guardrails 0 critical / 200 warnings · build+PWA green · JS 1,608.4 KB / 2,000 budget · fork app `tsc -b` green**
+> Last updated: **2026-10-06 (P9e)** · Gates at last update (Node 22.14):
+> **`yarn validate` green · unit 1,216/1,216 · e2e 119/119 (first run, 1.0 min) · guardrails 0 critical / 197 warnings · build+PWA green · JS 1,663.6 KB / 2,000 budget · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -23,7 +23,7 @@
 | P6 | PDP/customization — **P6a ✅** quick-add spine · **P6b ✅** PDP bound to useCustomization Tier1-style (all groups one Figma scroll, defaults seeded, min/max via commit, VARIANT+CUSTOMIZABLE commits, return-path navigation) · **P6c ✅** Order-a-Pack slot cards + SELECT sheets, tier-2 nested customize, BYO via generic group path, MIAM upsell prompt · repeat-sheet → P7 | ✅ done |
 | P7 | Cart + Offers + Loyalty + ForYou — **P7a ✅** My Bag sheet over /menu (route-driven /cart): rows w/ addon lines + steppers, remove-confirm + cancel-order modals (session reset), edit-from-bag (PDP edit mode), repeat sheet, Complete-Your-Meal rail (cart-upsell engine), checkout preflight → /checkout stub, Dexie crash-recovery rehydrate · **P7b ✅** Rewards/offers sheet (Figma reward-states adapted to CX mechanics), apply/swap/remove cores, freebie flows (atomic + picker), bill Discounts line + ORDER & PAY, six-check revalidation + removal notice · **P7c ✅** Xeno loyalty replicated from the fork (boot partner fetch, /phone lookup, rewards sheet + 4-digit OTP redemption chain, loyalty cart rows, revoke-before-reset, auto-reversal, /customerName) · **P7d ✅** MIAM prompt re-skinned to its real frame (1:3070) + `/forYou` pre-cart upsell (capacity-bounded grid, session-seen gate, detour-safe baseline) + overlays hoisted to the routes level | ✅ done |
 | P8 | Checkout + Payment + Success — **P8a ✅** real route fan-out (/tent, /payment, /receipt, /orderSuccess) replacing the stub, PAY AT COUNTER end-to-end with a hardened retry ladder, order push, Order Complete + gated print · **P8b 🔲** the 9 card gateways + Polling settlement machines + terminal WS bridges (client-gated: which gateways apply to TB UK) | 🔄 P8a done |
-| P9 | Close-out, mapped 2026-10-01 by an 8-reader workflow (contracts in the session scratchpad, summarised below) — **P9a ✅** idle timeout (Figma 1:4514: IdleGuard + IdleTimeoutModal, holds, ≤120 s) + `/start` owns the session teardown + late-async guards · **P9b ✅** Rule 2 hardening: redeem-failure money fix, host-configured SDK timeout (TB 10 s / menu 30 s), timed-out pushes never auto-retried, menu-load error + Retry, boot auto-retry, ErrorBoundary recovery, loyalty boot degrade, Xeno revoke bounded · **P9c ✅** ADA reach-zone view (1:5392/1:5413/1:5445; stable-tree ReachZone, overlay caps, PDP footer strip, WCAG 2.2.1 timer off in ADA) + design-language re-flows of 7 frameless screens · **P9d ✅** splash media pipeline (getMedia `home_screen` → WELCOME 1:5617 when none / full-bleed 1:5604 / carousel 1:2203, slides that fail or stall are skipped) + the uncertain-order refund skip (S7) · **P9e 🔲** auto-update apply at the splash + FCM (config-gated, never prompts) · **P9f 🔲** e2e parity suite (the 7 rulebook flows, page objects, axe-core a11y) + bundle budgets + Arabic RTL text · proximity welcome ⏸ deferred (see open decisions) | 🔄 |
+| P9 | Close-out, mapped 2026-10-01 by an 8-reader workflow (contracts in the session scratchpad, summarised below) — **P9a ✅** idle timeout (Figma 1:4514: IdleGuard + IdleTimeoutModal, holds, ≤120 s) + `/start` owns the session teardown + late-async guards · **P9b ✅** Rule 2 hardening: redeem-failure money fix, host-configured SDK timeout (TB 10 s / menu 30 s), timed-out pushes never auto-retried, menu-load error + Retry, boot auto-retry, ErrorBoundary recovery, loyalty boot degrade, Xeno revoke bounded · **P9c ✅** ADA reach-zone view (1:5392/1:5413/1:5445; stable-tree ReachZone, overlay caps, PDP footer strip, WCAG 2.2.1 timer off in ADA) + design-language re-flows of 7 frameless screens · **P9d ✅** splash media pipeline (getMedia `home_screen` → WELCOME 1:5617 when none / full-bleed 1:5604 / carousel 1:2203, slides that fail or stall are skipped) + the uncertain-order refund skip (S7) · **P9e ✅** updates apply only at the splash (whole-app reload / FCM brand refresh / a SCHEDULED boot refresh when the data is >6 h old, 15 s untouched + a 5 s countdown) + Activity Center Reload resources + an atomic boot commit + the telemetry recovery exemption (D2) + the hardened update hook + FCM (lazy, config- and permission-gated, never prompts; e2e mutation check pending) · **P9f 🔲** e2e parity suite (the 7 rulebook flows, page objects, axe-core a11y) + bundle budgets + Arabic RTL text · proximity welcome ⏸ deferred (see open decisions) | 🔄 |
 
 ## What exists right now (flow you can walk)
 
@@ -56,6 +56,16 @@ peek carousel for two or more (images dwell `iteration_time` s, ≥3 s, else
 has no decodable video is skipped for the visit, so the splash degrades
 carousel → full-bleed → WELCOME and is never blank. A media failure at boot
 keeps the last-known media and never blocks the boot.
+**Updates (P9e):** a new build (service worker), an FCM brand push, or boot
+data older than 6 h only ever applies on the splash: after 15 s untouched a
+5 s countdown shows, then the kiosk reloads (new build) or re-runs the boot in
+REFRESH mode (push / schedule / the Activity Center's "Reload resources");
+a guest tap defers it, the Activity Center pauses it, offline skips it. The
+boot commits atomically, so a failed refresh returns to the splash on the old
+data and retries after 30 min. The Activity Center shows when the data last
+loaded. The FCM token, version report and update ack can no longer log out or
+de-register the kiosk. FCM stays inert until Firebase keys exist AND
+notification permission is pre-granted (it never prompts).
 Language switch EN↔العربية anywhere via the footer (text only — RTL lands in P9f).
 **Idle (P9a):** on every screen from `/second` on, 100 s without a touch opens
 "You have been inactive" (START AGAIN fills over 20 s · CONTINUE ORDERING or a
@@ -80,16 +90,16 @@ full-stage, and every return to the splash ends ADA for the next guest.
   switch needs setSelectedPipeline+setSelectedTabId+charges refetch+setTabType+
   fetchMenu+cart revalidation (fork has NO such path) → P7 later, decide UX
 - Edit-quantity numpad modal for multi-qty rows (Figma 1:4460) → P7 polish
-- LOG-IN & GET REWARDS button inert ("coming soon" pressed state) → P7c
-- Checkout routes (tent/payment/customerName/phone) all land on /checkout stub → P8
+- LOG-IN & GET REWARDS on loyalty-OFF deployments still shows and answers
+  "coming soon" (live since P7c when loyalty is on) → user decision 2026-10-05: hide
 - Cart recommendations S3 source (tenant map, useRecommendationHook) → later;
   P7a rail ships the isCartRecommended engine source only
 - Loyalty deferred set (P7 later / P8): Reelo partner path entirely
   (CartRewardsCard, points-redemption modals, `redeem_points`), SCAN APP tab
   (renders inert — no scanner integration), resend-OTP (no fork endpoint),
-  the fork's dead `/verify` + `/loyalty` pages, and
-  the real order push for `shouldPlaceLoyaltyOrderDirectly` (routes to the
-  `/checkout` stub with `state.directOrder` for P8 to honour)
+  and the fork's dead `/verify` + `/loyalty` pages (the zero-bill
+  `shouldPlaceLoyaltyOrderDirectly` push landed in P8a). Reelo is not ported
+  (user decision 2026-10-05: Xeno only)
 - Offers deferred set (P7 later / P8 polish): BOGO buy-stage UI (locked
   bogoBuySide rows fall back to /menu — documented fork fallback),
   customizable freebies (tier session inside the picker; rows render disabled
@@ -106,7 +116,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   `hooks/utils/useLoaders.ts` (splash media landed in P9d; the loyalty
   partner in P7c; cluster settings are dead in the fork — `useLoaders.ts:649-657`
   commented out — so they are not ported)
-- Payment settings fetch + Geidea/NeoLeap socket connects at boot → P8
+- Payment-terminal socket connects at boot (Geidea/NeoLeap) are deliberately NOT ported
+  (the payment-settings fetch landed in P8a; P8b ports only Paytm DQR + EDC)
 - Per-language pipeline/menu names (`secondary_name`) → P6/P7 polish
 
 ## Open decisions / user-gated items
@@ -121,7 +132,7 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | Rewards scan/code Figma UX ↔ loyalty mechanics: **user decision 2026-09-30 — replicate the ORIG kiosk's XENO integration/flow exactly** (same endpoints, session lifecycle, redeem/revoke), skinned with the Figma rewards surfaces (numpad login 1:4174 as phone→OTP steps, REWARDS INCOMING 1:4079, error 1:3786, MY REWARDS (n) CTA entry 1:3956); SCAN APP tab deferred (no scanner) | user | 📌 decided |
 | Bill math in the bag: billCalculation rounds the TOTAL to whole units unless deployment carries `{name:"disable_roundoff",selected:true}`, and fixture items carry exclusive VAT@15% — so bag/checkout total = round(subtotal×1.15) while the menu CTA shows the plain subtotal (fork-faithful). Maintainer: confirm round-off/VAT deployment settings for TB UK + whether the CTA should show the taxed total | maintainer | ⚠️ open |
 | P6c surfaces partly design-language: Figma MCP rate limit (Starter plan) blocked the pack customize-family frames (`1:4895`…), BYO frames (`1:5264`…), completed/warning pack states, and MIAM has no frame — built from the 4 pulled frames' language; needs a visual pass once frames are pullable | client review | ⚠️ open |
-| **Payment gateways for TB UK deployment (which of the 9 apply)** — this gates ALL of P8b. P8a ships pay-at-counter only; the card tile renders disabled and no gateway/terminal code is ported | client | ⚠️ open |
+| **Payment gateways — user decision 2026-10-05: PAYTM DYNAMIC QR + PAYTM EDC.** Of the fork's 9 (Dojo; Geidea, NeoLeap; Network International, Mashreq; Paytm QR, Paytm EDC, Pine Labs Plutus, Razorpay), P8b ports exactly `PaytmDynamicQr` and `PaytmEdc` (+ their polling settlement and the Figma payment-instructions / please-wait / card-failure screens). Every other gateway stays unported; pay-at-counter remains | user | 📌 decided → P8b |
 | Order Complete QR codes (frames 1:5932 guest "scan to earn points" / 1:3437 promo) have NO CX data source — the panel ships without a QR rather than a placeholder that scans to nothing | client/backend | ⚠️ open |
 | Email receipt: the Figma receipt screen offers EMAIL but **the original kiosk has no email-receipt anything** — `customerInfo.email` exists in the slice, is never written and never reaches the order payload. Tile ships inert; needs a payload contract before it can collect an address | client/backend | ⚠️ open |
 | MIAM "SAVE £X" badge (Figma 1:3070) has NO data source: a full key census of the reference menu (100 distinct keys) found only `price`/`applyAddonsPrice`/`differentialPrice`/`priceChange` — the last two are modifier deltas, not a was-price — and `makeItMeal` carries only subText/buttonText1/buttonText2. Badge is implemented + gated on a real figure and stays hidden; needs a backend data contract to ever appear | client/backend | ⚠️ open |
@@ -138,7 +149,7 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **ADA sign-off list (P9c, design-language):** (1) tapping the brand zone exits ADA — fork parity, but Figma draws no affordance (it is a labelled button for screen readers); (2) the PDP now shows the Figma Footer-bottom strip (CANCEL ORDER / ADA / language) in NORMAL mode too — it is in 1:2614/1:2920/1:5413, TB lacked it — and the PDP scroll area is 56 px shorter; (3) ADA variants of the 7 frameless screens (`/second` >2 pipelines become a swipe row, bells dropped, Tent's error banner pinned from the top); (4) backdrop seams where the brand-zone texture meets `/tent`, `/payment`, `/receipt` (540 px tile), `/orderSuccess` (gradient), `/phone`, `/customerName` (plain purple) — `/second` aligned; (5) "Place New Order" keeps ADA on for the next guest (fork parity; every path via the splash clears it); (6) Arabic `ada.exit` copy | client | ⚠️ sign-off |
 | ADA reach calibration: the 798/1122 split is Figma's; whether it keeps every control under the ADA 2010 §308 high-reach limit (48 in / 1220 mm) depends on the cabinet's panel size and mounting height. `ADA_BRAND_ZONE_HEIGHT` is the single knob (lowering it is always safe; unit tests guard ≤ 816) | hardware | ⚠️ open |
 | Back-to-bag after a timed-out push then re-PAY mints a NEW order id — if the timed-out push actually landed, that is a duplicate order even if the backend dedupes on order id (Retry on the error panel keeps the id). Needs the backend idempotency answer | backend | ⚠️ open |
-| Any 504/505 (incl. on `placeOrder`) still de-registers the kiosk via `recoverFromServerError` when the gateway answers inside the 10 s budget. Intended "session invalid" signal or gateway timeouts? | maintainer / backend | ⚠️ open |
+| Any 504/505 (incl. on `placeOrder`) still de-registers the kiosk via `recoverFromServerError` when the gateway answers inside the 10 s budget. Intended "session invalid" signal or gateway timeouts? P9e: the scheduled refresh re-runs ~10 boot calls about 4×/day per kiosk, multiplying this exposure; D2 exempts only the three telemetry endpoints | maintainer / backend | ⚠️ open |
 | `/LoadingResources` auto-retry keeps counting while the operator has the Activity Center open; a successful background boot navigates to `/start` and closes the diagnostics mid-use | client | ⚠️ sign-off |
 | Fork follow-ups surfaced by the P9b mapping (NOT TB work): the fork's Polling ladder would duplicate paid orders if it ever opts into timeouts; its gateway initiators need an explicit ambiguous-timeout UX; RTK 2.7 in the fork bounds only time-to-headers (TB's deduped 2.12 bounds the whole request — a mid-body timeout surfaces as `PARSING_ERROR` "TimeoutError", so classify timeouts with a shared predicate, never `status === "TIMEOUT_ERROR"` alone) | fork payments owner | ⚠️ open |
 | **Order push after a TIMEOUT** — placeOrder idempotency on the client orderId is unknown. **User decision 2026-10-01:** no auto-retry after a timeout (show the Retry / Back-to-bag panel); clean errors (network down, 5xx) keep the existing 4-attempt ladder. Backend still to confirm idempotency | user / backend | ✅ P9b (also covers a 2xx whose body was lost) |
@@ -146,8 +157,9 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Arabic layout** — **user decision 2026-10-01:** RTL text, LTR layout (the Figma has no RTL frames); Arabic text blocks get `dir="rtl"`. Client sign-off still wanted | user / client | 📌 decided → P9f |
 | **Idle timing (P9a, orchestrator default)** — Rule 1's 120 s is a CEILING: total = clamp(server `ideal_time`, 60, 120) s, fallback 120; the "You have been inactive" prompt covers the last 20 s (WCAG 2.2.1 minimum). The fork reset at (ideal−10)/2+10 s (65 s for 120) — fixed, not ported. Boot no longer throws on a missing `ideal_time` | maintainer | 📌 decided |
 | **Proximity welcome — deferred.** The fork's feature is always-on camera motion detection on the splash (getUserMedia, no enable key; the delay setting only tunes it). Needs an explicit backend enable key, UK GDPR/DPIA + signage sign-off, a front camera with pre-granted permission, and on-site calibration — and it depends on the idle timer (P9a). Not built | client / legal / hardware | ⏸ deferred |
-| **Boot-data refresh — user decision 2026-10-05: SCHEDULED.** A registered kiosk only re-fetched its boot data (kiosk settings, theme, pipelines, splash media, loyalty partner) on an FCM brand update (fork parity — the fork's splash-mount `StartOverResourceLoading` fetches nothing), and FCM stays off until TB has Firebase keys AND pre-granted notification permission, so Cockpit changes reached a kiosk only by re-registering it. P9e: FCM brand updates + an Activity Center "Reload resources" button + the splash re-runs the boot when the last SUCCESSFUL boot is older than 6 h (one knob) and the splash has been untouched for 15 s — the brand-update path, never mid-order; a failed refresh returns to the splash on the old data | user | 📌 decided → P9e |
-| **Background telemetry vs session recovery — user decision 2026-10-05: OPT-IN EXEMPTION.** `configureKioskTransport()` gains a host-configured list of background endpoints (`update_cx_fcm_key`, `update_cx_software`, `update_device_status`) that skip the 401 / 504 / 505 recovery, so a gateway hiccup on telemetry can no longer log out or de-register a healthy kiosk; TB opts in, the fork configures nothing and stays byte-identical (the P9b timeout pattern) | user | 📌 decided → P9e |
+| **Boot-data refresh — user decision 2026-10-05: SCHEDULED.** A registered kiosk only re-fetched its boot data (kiosk settings, theme, pipelines, splash media, loyalty partner) on an FCM brand update (fork parity — the fork's splash-mount `StartOverResourceLoading` fetches nothing), and FCM stays off until TB has Firebase keys AND pre-granted notification permission, so Cockpit changes reached a kiosk only by re-registering it. P9e: FCM brand updates + an Activity Center "Reload resources" button + the splash re-runs the boot when the last SUCCESSFUL boot is older than 6 h (one knob) and the splash has been untouched for 15 s — the brand-update path, never mid-order; a failed refresh returns to the splash on the old data | user | ✅ P9e |
+| **Background telemetry vs session recovery — user decision 2026-10-05: OPT-IN EXEMPTION.** `configureKioskTransport()` gains a host-configured list of background endpoints (`update_cx_fcm_key`, `update_cx_software`, `update_device_status`) that skip the 401 / 504 / 505 recovery, so a gateway hiccup on telemetry can no longer log out or de-register a healthy kiosk; TB opts in, the fork configures nothing and stays byte-identical (the P9b timeout pattern) | user | ✅ P9e (488-row A/B on RTK 2.7 + 2.12: fork identical) |
+| **P9e sign-off list (design-language, no Figma frames):** (1) the update countdown modal (invisible 0–10 s, "Starting in Ns" 10–15 s, then "Updating…"; z-80); (2) a guest tap in the final 5 s is swallowed — non-dismissable, ≤5 s, fork parity (OV8); (3) the Activity Center's "Reload resources" button and "Data loaded" row; (4) the Arabic update strings are drafts. Calibration knobs: `BOOT_DATA_MAX_AGE_MS` 6 h, `BOOT_REFRESH_RETRY_MS` 30 min (no jitter yet — `withJitter` is the upgrade if a fleet power-cycled together refreshes together) | client / ops | ⚠️ sign-off |
 | **Visual regression — user decision 2026-10-05: CAPTURE ONLY.** P9f's flow specs attach screenshots at the key steps (splash, order type, menu, bag, payment, complete) to the e2e report for human review; no pixel assertions until the GT America font is licensed and a CI rendering image is fixed | user | 📌 decided → P9f |
 | **CI e2e — user decision 2026-10-05: PER-PR JOB, 2 SHARDS.** P9f adds an e2e job to every PR. The first estimate (~3–4 min) was wrong: the suite needs ~12–18 min on one CI worker, so the job runs as 2 parallel shards (~8–10 min wall per PR; user decision the same day). The job waits for lint + type-check, and its build sets `VITE_POST_HOG_TYPE=production` so the bundle budget measures the production layout (lazy PostHog chunk included). Default SDK checkout: the local SDK clone's origin `PosistGit/posistKiosk` at branch `cx-sdk/extraction` (workflow-level `SDK_REPO` / `SDK_REF`) — change it if the SDK moves to its own repo. It needs the SDK checked out beside this repo, so it stays red until the real SDK repo slug and an `SDK_REPO_TOKEN` secret are filled in (`.github/workflows/ci.yml` placeholders) | user / devops | 📌 decided → P9f (slug + secret owed) |
 | **Bundle budget — user decision 2026-10-05: ENTRY + TOTAL.** P9f fixes `scripts/check-bundle-size.mjs` (fail closed on a malformed budget, exclude the service worker), keeps the 2,000 KB total-JS budget, and adds an entry-chunk gzip budget set just above the post-P9f size (after lazy PostHog and dropping framer-motion), so boot-path regressions fail the gate | user | 📌 decided → P9f |
@@ -155,6 +167,10 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **PostHog identify payload — user decision 2026-10-05: KEEP AS IS.** `posthog.identify` keeps sending `license_key` and `login_code` with the tenant/deployment ids (fork parity), also after P9f's lazy analytics loader | user | 📌 decided |
 | **CLAUDE.md rule 8 — user approval 2026-10-05:** P9f adds "startAnalytics() right after setAnalyticsPort(); never import posthog-js statically" to the boot-order rule when the lazy PostHog loader lands | user | 📌 decided → P9f |
 | **P9f orchestrator defaults (2026-10-05):** the Registration ACTIVATE button's white-on-pink (2.46:1) is fixed in code (ink-purple text, 7.73:1 — Registration has no Figma frame); Playwright `expect.timeout` 10 s and an ESLint ban on `page.waitForTimeout` under `tests/e2e`; the back-to-bag re-PAY order id stays an annotation, not an assertion, until the backend confirms placeOrder idempotency; P9e's specs are written in today's per-spec style and P9f's harness migration absorbs them; the optional idle sweep over 5 more screens and the boot-config parity cases go to the backlog (CI time) | orchestrator | 📌 decided |
+| **Loyalty partner — user decision 2026-10-05: XENO ONLY.** The fork's Reelo path (6-digit OTP, points redemption, `redeem_points`) is NOT ported; a Reelo-configured store would have no working rewards in TB | user | 📌 decided |
+| **Bag rewards button on loyalty-off deployments — user decision 2026-10-05: HIDE.** LOG-IN & GET REWARDS renders only when loyalty is on (today it shows and answers "coming soon") | user | 📌 decided → backlog build |
+| **Backend contract proposals — user decision 2026-10-05: WRITE THEM.** One proposed contract each (fields, endpoints, payloads, kiosk behaviour) for: email receipt, Order Complete QR codes, the MIAM "SAVE £X" badge, a separate in-bag meal-rail flag, a server-issued Activity Center passcode, SCAN APP login, resend OTP — in `docs/BACKEND_CONTRACT_PROPOSALS.md` for the backend team | user | 📌 decided → docs |
+| **Menu cache across boots (P9e review F2):** the boot no longer wipes the Dexie menu cache (the fork wiped it on every boot, incl. brand refreshes), so menu freshness between boots relies only on the server's `MENU_ID` / 304 — which TB already trusts within a session. Backend: confirm that every Cockpit change affecting the menu payload bumps `MENU_ID` (if a brand push must force a full download, it is one line: clear `db.menus` on trigger `brand`) | maintainer / backend | ⚠️ open |
 | **Arabic / a11y sign-off list (P9f mapping):** (S1) an Arabic typeface — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback; (S2) wrapped Arabic paragraphs right-align via `dir="auto"`, single lines keep the layout's alignment; (S3) the kiosk blocks pinch-zoom / text resize (`user-scalable=no`, WCAG 1.4.4) — the axe sweep documents a `meta-viewport` exclusion; (S4) placeholder grey darkened 35 % → 55 % black for contrast; (S6) the 🇬🇧 flag next to "العربية" in the footer; (S7) the pink phone-field border is 2.46:1 non-text contrast | client / compliance | ⚠️ sign-off |
 | **Splash sign-off list (P9d, design-language details):** (1) carousel cards crop 1080×1920 art with `object-cover` — ≈6.9 % lost top and bottom on the 680×1043 cards (author carousel art at 680×1043, or accept); (2) the card colour behind a loading slide or a peeking video, and the 0.5 s centre fade, have no Figma spec; (3) the carousel sheen uses the app-wide recipe (40 % soft-light, unrotated), not Figma's 50 % normal rotated −90°; (4) the full-bleed CTA has no scrim over operator media, so its contrast depends on the asset (keep the bottom band dark in the asset spec); (5) WELCOME says "touch anywhere to start" but a short tap in the hidden 180×180 operator corner does nothing; (6) the Arabic splash copy is a draft needing native review; (7) the bell is now decorative (`alt=""`) — the start button's accessible name is the visible copy | client | ⚠️ sign-off |
 | **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open |
@@ -370,7 +386,69 @@ full-stage, and every return to the splash ends ADA for the next guest.
   tsconfig references are relative), give the copy its own Vite `cacheDir`,
   serve it on 5399 and point a scratch Playwright config's `baseURL` there.
 
+- **The boot commits atomically (P9e).** `LoadResourcesInitially` stages every
+  write and commits them in one synchronous burst after the last await, then
+  stamps `autoUpdate.lastBootAt`; a failed boot (normal or refresh) writes
+  NOTHING. Any new boot step must stage-and-commit too — an inline dispatch
+  reopens the mixed-state bug (empty pipelines, `deploymentInfoSettings = []`
+  or payment settings wiped by a blip during a successful boot). The theme is
+  the one accepted non-atomic write. The boot no longer wipes the Dexie menu
+  cache (freshness = the server's `MENU_ID` / 304).
+- **`lastBootAt` is the only boot-age source; a relaunch never boots.** A token
+  relaunch lands on `/start`, so both stamps (`lastBootAt`,
+  `lastRefreshFailedAt`) are persisted. A never-stamped store counts as STALE:
+  any test that idles on `/start` ≥15 s must seed `autoUpdate/setLastBootAt`
+  (via `window.__kioskStore` after rehydration) or it will refresh. Refresh
+  mode never retries — a failure returns straight to `/start`.
+- **Firebase only through the lazy `src/hooks/firebase/fcmRuntime.ts` chunk.**
+  `chunkRecovery` skips failures matching `/fcmRuntime/` (a failed FCM chunk
+  must never reload the kiosk mid-order); renaming the file silently restores
+  the reload. FCM never calls `Notification.requestPermission`.
+- **D2 is keyed by RTK endpoint name** (`BACKGROUND_TELEMETRY_ENDPOINTS`, with a
+  `satisfies keyof autoUpdateApi.endpoints` guard); the fork passes nothing.
+- **Workflow agents all stalling at once = an API/network outage, not the
+  code** (2026-10-05 20:40 → after 23:37: every retry produced only its
+  opening setup). Recover from the workflow journal and the agent transcripts;
+  completed agents' work is already in the tree.
+- **Parallel worktree lanes:** a lane is a `git worktree` created BESIDE this
+  repo (`../tb-<lane>`) so `link:../posistKiosk-cx-sdk/packages/*` resolves;
+  it needs its own `yarn install` and runs e2e with `TB_E2E_PORT=537x`
+  (`tests/e2e/fixtures/origin.ts`; never 5173/5273). All lanes share ONE SDK
+  checkout: SDK edits happen only in a lane's build stage, additive, in files
+  no other lane touches — every lane's dev server hot-reloads them.
+
 ## Session log
+
+- **2026-10-06 (P9e)** · **Updates apply only at the splash.** Re-baselined
+  2026-10-05 by a 3-reader workflow against the post-P9a–d code, then a 9-agent
+  build workflow (foundation → 4 builders → integrate → adversarial review ×2 →
+  fix). **SDK (additive, fork byte-identical — 594-file checksum and a 488-row
+  recovery A/B on RTK 2.7 + 2.12):** `updatePolicy` gains the splash/boot-age
+  helpers (`resolveSplashUpdateAction`, `isBootDataStale`,
+  `msUntilScheduledRefresh`, `extractBrandUpdateId`) and the autoUpdate slice
+  `lastBootAt` / `lastRefreshFailedAt`; `configureKioskTransport()` gains the
+  opt-in `recoveryExemptEndpoints` (D2). **TB:** the stage→commit boot,
+  `LoadingResources` refresh mode (failure → straight back to `/start`), the
+  splash apply machine + `UpdateCountdownModal`, Activity Center "Reload
+  resources" + "Data loaded", the hardened `useAutoUpdate` (retries, analytics
+  instead of `console.error`, synchronous flag drop, success-only version
+  record), the token-gated version report, FCM (`useFcmRegistration` + the lazy
+  `fcmRuntime` chunk + the dependency-free relay SW `public/firebase-messaging-sw.js`).
+  **Found and fixed:** a failed brand refresh dropped the push for ~6 h after
+  acking it; every refresh wiped the menu cache; `discountOnAddon` was not
+  persisted (pre-existing — reset by every reload); every VITE_* value was
+  inlined into the entry chunk by the FCM env fallback; a slow first FCM token
+  was thrown away; a failed FCM chunk would have reloaded the kiosk mid-order
+  (chunkRecovery exemption); the refresh-failure stamp is now persisted so a
+  reload cannot drop the 30 min retry. **Tests:** unit 911→1,216 (+305; the
+  two unit authors ran 102 deliberate breakages, 100 caught, 1 equivalent,
+  1 over-specified assertion dropped), e2e 90→119 (`autoUpdate.spec.ts` 22,
+  `fcm.spec.ts` 5 incl. a real-Firebase `onMessage` path via the DEV-only
+  `__TB_FCM_ENV__` seam). The test stage's e2e author and mutation verifiers
+  were cut off by an API outage (2026-10-05 ~20:40 → 23:37); the e2e specs
+  that landed pass, the e2e mutation check is re-queued. Bundle 1,608→1,663.6
+  KB (firebase is a separate 47.8 KB lazy chunk). Lanes prepared: the e2e
+  port is parameterised (`TB_E2E_PORT`) for parallel worktrees.
 
 - **2026-10-05 (P9d)** · **Splash media pipeline + the uncertain-order refund
   skip.** Built 2026-10-01 by a 9-agent workflow (build ×3: media pipeline /

@@ -13,7 +13,7 @@ import "../../../i18n";
   (watchdog, plays, teardown, hidden page, StrictMode) and the rate-limited
   failure report. jsdom decodes nothing: the media methods are stubbed and
   media events are fired by hand. The report limiter is MODULE state keyed by
-  url|kind, so every test gets URLs of its own (`u`).
+  URL path|kind (P9e OV5), so every test gets URLs of its own (`u`).
 */
 
 const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
@@ -432,7 +432,7 @@ describe("a hidden page pauses video — the watchdog waits", () => {
   });
 });
 
-describe("failure reporting — one event per url|kind per hour", () => {
+describe("failure reporting — one event per URL path|kind per hour", () => {
   it("the same broken asset on the next visits is silent until the hour is up, then reports again", () => {
     seed([{ url: u("broken.jpg") }]);
     const visit = () => {
@@ -443,7 +443,7 @@ describe("failure reporting — one event per url|kind per hour", () => {
     };
 
     visit();
-    visit(); // the next guest: same url|kind
+    visit(); // the next guest: same path|kind
     expect(splashEvents()).toEqual([failure("load_error", 0)]);
 
     tick(HOUR - 1);
@@ -455,7 +455,7 @@ describe("failure reporting — one event per url|kind per hour", () => {
     expect(splashEvents()).toEqual([failure("load_error", 0), failure("load_error", 0)]);
   });
 
-  it("the key is url AND kind: the same asset failing another way still reports", () => {
+  it("the key is path AND kind: the same asset failing another way still reports", () => {
     seed([{ url: u("v.mp4") }]);
     const visit = (breakIt: (video: HTMLVideoElement) => void) => {
       const view = renderSplash();
@@ -469,6 +469,29 @@ describe("failure reporting — one event per url|kind per hour", () => {
     visit((video) => fireEvent.error(video));
 
     expect(splashEvents()).toEqual([failure("load_error", 0), failure("stalled", 0)]);
+  });
+
+  it("the key is the URL PATH (OV5): a re-signed URL — new query or hash after a refresh — is the same asset, one report per hour", () => {
+    const visit = (url: string) => {
+      seed([{ url }]);
+      const view = renderSplash();
+      fireEvent.error(fullBleed() as HTMLImageElement);
+      expect(layout()).toBe("welcome");
+      view.unmount();
+    };
+
+    visit(`${u("a.jpg")}?X-Amz-Signature=one&X-Amz-Expires=3600`);
+    visit(`${u("a.jpg")}?X-Amz-Signature=two`);
+    visit(`${u("a.jpg")}#t=1`);
+    visit(u("a.jpg"));
+    expect(splashEvents()).toEqual([failure("load_error", 0)]);
+
+    visit(`${u("b.jpg")}?X-Amz-Signature=one`); // another PATH is another asset
+    expect(splashEvents()).toHaveLength(2);
+
+    tick(HOUR);
+    visit(`${u("a.jpg")}?X-Amz-Signature=three`);
+    expect(splashEvents()).toHaveLength(3);
   });
 
   it("with two slides the broken peek is shown twice and errors twice — reported ONCE", () => {

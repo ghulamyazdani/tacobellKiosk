@@ -7,6 +7,7 @@ import {
 } from "@cx-sdk/core/transport/kioskApi";
 import { menuApi } from "@cx-sdk/catalog/services/menuApi";
 import { settingsApi } from "@cx-sdk/catalog/services/settingsApi";
+import { autoUpdateApi } from "@cx-sdk/devices/updates/services/autoUpdateApi";
 import { isTimeoutError, TimeoutError } from "@cx-sdk/core";
 import { classifyAuthenticationFailure } from "@cx-sdk/core/auth/authPolicy";
 import {
@@ -15,6 +16,7 @@ import {
   shouldRetryOrderPush,
 } from "@cx-sdk/payments/settlement/settlementRules";
 import {
+  BACKGROUND_TELEMETRY_ENDPOINTS,
   KIOSK_REQUEST_TIMEOUT_MS,
   MENU_DOWNLOAD_TIMEOUT_MS,
 } from "../redux/app/apiSlice";
@@ -88,6 +90,18 @@ const probeApi = apiSlice.injectEndpoints({
         method: "POST",
         body: {},
       }),
+    }),
+    /** D2 matches the RTK endpoint NAME: the version report's URL under another name. */
+    renamedTelemetry: build.mutation<unknown, void>({
+      query: () => ({ url: "/api/cx/update_cx_software", method: "POST", body: {} }),
+    }),
+    /** An exempt name as a PREFIX: exact matching only. */
+    updateCxFcmKeyV2: build.mutation<unknown, void>({
+      query: () => ({ url: "/api/probe-v2", method: "POST", body: {} }),
+    }),
+    /** An exempt name in another case: exact matching only. */
+    updatecxfcmkey: build.mutation<unknown, void>({
+      query: () => ({ url: "/api/probe-lower", method: "POST", body: {} }),
     }),
   }),
 });
@@ -388,6 +402,160 @@ describe("Rule 2 transport budget (P9b R2) — SDK base query + RTK 2.12", () =>
       await advance(20_000);
       expect(statusOf(menu.result)).toBe("TIMEOUT_ERROR");
     });
+  });
+});
+
+/*
+  P9e D2 — background update telemetry never tears the session down. A 401 /
+  504 / 505 on the FCM-key registration, the version report or the brand ack
+  says nothing about the device session (a gateway 504 on a version report
+  used to de-register the kiosk). TB lists them by RTK endpoint NAME in
+  `recoveryExemptEndpoints`; the caller still sees the error. Run through the
+  REAL autoUpdateApi endpoints and TB's REAL wiring (only the recovery
+  callbacks are swapped for spies).
+*/
+describe("D2 — recoveryExemptEndpoints (P9e)", () => {
+  type Telemetry = (typeof BACKGROUND_TELEMETRY_ENDPOINTS)[number];
+
+  /** TB's own module-scope config, with spies for the two recovery callbacks. */
+  const configureAsTB = () =>
+    configureKioskTransport({
+      ...(wiring.tb as KioskTransportConfig),
+      onAuthFailure,
+      onServerError,
+    });
+
+  const answering = (status: number) =>
+    fetchStub.mockImplementation((request) => answer(request, status));
+
+  const sendTelemetry = (name: Telemetry) =>
+    store.dispatch(autoUpdateApi.endpoints[name].initiate({ app: "kiosk" }));
+
+  const EXEMPT_CASES = BACKGROUND_TELEMETRY_ENDPOINTS.flatMap((name) =>
+    [401, 504, 505].map((status) => [name, status] as const)
+  );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchStub.mockReset();
+    fetchStub.mockImplementation(hang);
+    vi.stubGlobal("fetch", fetchStub);
+    onAuthFailure.mockReset();
+    onServerError.mockReset();
+    store = makeStore();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(EXEMPT_CASES)(
+    "TB wiring: %s answering %i keeps the session — no recovery, and the caller still sees the status",
+    async (name, status) => {
+      configureAsTB();
+      answering(status);
+
+      const result = await sendTelemetry(name);
+
+      expect(statusOf(result)).toBe(status);
+      expect(onAuthFailure).not.toHaveBeenCalled();
+      expect(onServerError).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([401, 504, 505])(
+    "TB wiring: every NON-listed endpoint still recovers on %i — probe, the same URL under another name, an exempt name as a prefix or in another case",
+    async (status) => {
+      configureAsTB();
+      answering(status);
+
+      for (const endpoint of [
+        "probe",
+        "renamedTelemetry",
+        "updateCxFcmKeyV2",
+        "updatecxfcmkey",
+      ] as const) {
+        await store.dispatch(probeApi.endpoints[endpoint].initiate());
+      }
+
+      expect(onAuthFailure).toHaveBeenCalledTimes(status === 401 ? 4 : 0);
+      expect(onServerError).toHaveBeenCalledTimes(status === 401 ? 0 : 4);
+    }
+  );
+
+  it("TB wiring: the legacy URL rule is untouched — 401 on …/checkMobileForQR stays exempt, its 504 still recovers", async () => {
+    configureAsTB();
+
+    answering(401);
+    await store.dispatch(probeApi.endpoints.otpProbe.initiate());
+    expect(onAuthFailure).not.toHaveBeenCalled();
+
+    answering(504);
+    await store.dispatch(probeApi.endpoints.otpProbe.initiate());
+    expect(onServerError).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(EXEMPT_CASES)(
+    "nothing configured (the fork's shape): %s answering %i recovers exactly as before",
+    async (name, status) => {
+      configure();
+      answering(status);
+
+      const result = await sendTelemetry(name);
+
+      expect(statusOf(result)).toBe(status);
+      expect(onAuthFailure).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
+      expect(onServerError).toHaveBeenCalledTimes(status === 401 ? 0 : 1);
+    }
+  );
+
+  it("an EMPTY exemption list exempts nothing", async () => {
+    configure({ recoveryExemptEndpoints: [] });
+    answering(504);
+
+    await sendTelemetry("updateCxSoftwareDevice");
+
+    expect(onServerError).toHaveBeenCalledTimes(1);
+  });
+
+  it("an exempt endpoint that times out resolves TIMEOUT_ERROR and recovers nothing", async () => {
+    configureAsTB();
+    const pending = track(sendTelemetry("updateDeviceStatus"));
+
+    await advance(KIOSK_REQUEST_TIMEOUT_MS);
+
+    expect(statusOf(pending.result)).toBe("TIMEOUT_ERROR");
+    expect(onAuthFailure).not.toHaveBeenCalled();
+    expect(onServerError).not.toHaveBeenCalled();
+  });
+
+  it("TB wiring lists exactly the three live autoUpdateApi endpoints — not the dead getLastSyncDetails", async () => {
+    expect(wiring.tb?.recoveryExemptEndpoints).toBe(BACKGROUND_TELEMETRY_ENDPOINTS);
+    expect([...BACKGROUND_TELEMETRY_ENDPOINTS].sort()).toEqual([
+      "updateCxFcmKey",
+      "updateCxSoftwareDevice",
+      "updateDeviceStatus",
+    ]);
+    // A rename in the SDK drops the exemption silently at runtime: each name
+    // must be a real endpoint of the autoUpdate service.
+    for (const name of BACKGROUND_TELEMETRY_ENDPOINTS) {
+      expect(autoUpdateApi.endpoints).toHaveProperty(name);
+    }
+    expect(autoUpdateApi.endpoints).toHaveProperty("getLastSyncDetails");
+    expect(BACKGROUND_TELEMETRY_ENDPOINTS).not.toContain("getLastSyncDetails");
+
+    // …and they are the three update calls the kiosk makes in the background.
+    configureAsTB();
+    answering(200);
+    for (const name of BACKGROUND_TELEMETRY_ENDPOINTS) {
+      await sendTelemetry(name);
+    }
+    expect(requests().map((request) => new URL(request.url).pathname)).toEqual([
+      "/api/cx/update_cx_fcm_key",
+      "/api/cx/update_cx_software",
+      "/api/cx/update_device_status",
+    ]);
   });
 });
 

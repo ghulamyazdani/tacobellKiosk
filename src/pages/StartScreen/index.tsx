@@ -126,9 +126,11 @@ export default function StartScreen() {
   }, [loyaltyEnabled, loyaltyOn, deploymentId, getLoyaltyPartner, dispatch]);
 
   // UPDATE APPLY (P9e). Pending, by precedence: a new build (whole_app), an
-  // FCM brand push (brand), boot data older than BOOT_DATA_MAX_AGE_MS
-  // (scheduled, D1). Armed only while online — a refresh would fail and burn
-  // its backoff, an ack would be lost — and with the Activity Center closed.
+  // FCM brand push (brand), boot data older than BOOT_DATA_MAX_AGE_MS or a
+  // refresh (any trigger) that failed since the last good boot (scheduled,
+  // D1, 30 min after the failure). Armed only while online — a refresh would
+  // fail and burn its backoff, an ack would be lost — and with the Activity
+  // Center closed.
   // The dwell is a CHILD mounted only while armed: a guest tap leaves for
   // /second and its unmount defers the update to the next splash visit.
   const shouldWholeAppUpdate = Boolean(useSelector(selectShouldWholeAppUpdate));

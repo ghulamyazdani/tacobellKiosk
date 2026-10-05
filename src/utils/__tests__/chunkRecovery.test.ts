@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { planCrashRecovery } from "../chunkRecovery";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { installChunkErrorRecovery, planCrashRecovery } from "../chunkRecovery";
 
 /*
   P9b R9 — where (and how soon) the app ErrorBoundary reloads to. Time-boxed
@@ -33,5 +33,85 @@ describe("planCrashRecovery (P9b R9)", () => {
     window.history.replaceState(null, "", "/menu");
     vi.spyOn(performance, "now").mockReturnValue(1_000);
     expect(planCrashRecovery()).toEqual({ path: "/LoadingResources", delayMs: 60_000 });
+  });
+});
+
+/*
+  P9e — a failed lazy chunk normally reloads the page (a deploy re-hashed it),
+  but FCM is optional: its chunk (fcmRuntime) failing must never reload the
+  kiosk, least of all mid-order. The handler still preventDefault()s it, so
+  import() resolves undefined and useFcmRegistration reports "import" and
+  leaves FCM off. Every other chunk keeps the P9b recovery.
+*/
+describe("installChunkErrorRecovery — the FCM chunk is exempt (P9e)", () => {
+  const reload = vi.fn();
+
+  /** What Vite's preload helper dispatches for a chunk that failed to load. */
+  const preloadError = (payload?: Error) => {
+    const event = new Event("vite:preloadError", { cancelable: true });
+    Object.assign(event, { payload });
+    window.dispatchEvent(event);
+    return event;
+  };
+
+  beforeAll(() => {
+    // Once per file: every call adds a window listener.
+    installChunkErrorRecovery();
+  });
+
+  beforeEach(() => {
+    reload.mockReset();
+    // jsdom's location.reload is unforgeable; swap the whole location.
+    vi.stubGlobal("location", { reload });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    [
+      "the production chunk",
+      "Failed to fetch dynamically imported module: https://kiosk.example/assets/fcmRuntime-9ypKZIdg.js",
+    ],
+    [
+      "the dev-server module",
+      "Failed to fetch dynamically imported module: http://localhost:5373/src/hooks/firebase/fcmRuntime.ts",
+    ],
+  ])("%s failing: handled (no crash screen) but NEVER reloads", (_label, message) => {
+    const event = preloadError(new Error(message));
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "any other chunk",
+      new Error(
+        "Failed to fetch dynamically imported module: https://kiosk.example/assets/CompleteYourMealRail-DUeHLWT_.js"
+      ),
+    ],
+    ["a stylesheet", new Error("Unable to preload CSS for /assets/index-Dx-ze_Wk.css")],
+    ["a payload without a message", undefined],
+  ])("%s failing on a healthy page still reloads once to pick up the current build", (_label, payload) => {
+    const event = preloadError(payload);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failure on a page that IS a fresh reload does not reload again (loop guard, unchanged)", () => {
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([
+      { type: "reload" } as unknown as PerformanceEntry,
+    ]);
+    vi.spyOn(performance, "now").mockReturnValue(1_000);
+
+    preloadError(new Error("Failed to fetch dynamically imported module: /assets/Menu-x.js"));
+
+    expect(reload).not.toHaveBeenCalled();
   });
 });

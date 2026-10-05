@@ -22,6 +22,19 @@ export interface FcmConfig {
 }
 
 /**
+ * The five keys by NAME: Vite then inlines only these. A bare
+ * `import.meta.env` would inline EVERY VITE_* value present at build time
+ * into the entry chunk, including ones no code reads.
+ */
+const buildFcmEnv = (): Env => ({
+  VITE_FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY,
+  VITE_FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  VITE_FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID,
+  VITE_FIREBASE_MESSAGING_SENDER_ID: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  VITE_FIREBASE_VAPID_KEY: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+});
+
+/**
  * DEV-only e2e seam (precedent: window.__kioskStore, store.ts): a spec injects
  * dummy, NON-secret values with addInitScript, because Playwright reuses an
  * already-running `yarn dev` and would ignore webServer.env.
@@ -31,7 +44,7 @@ function fcmEnv(): Env {
   const injected = import.meta.env.DEV
     ? (window as unknown as { __TB_FCM_ENV__?: Env }).__TB_FCM_ENV__
     : undefined;
-  return injected ?? import.meta.env;
+  return injected ?? buildFcmEnv();
 }
 
 /**
@@ -75,7 +88,11 @@ const permissionGranted = (): boolean =>
  */
 const loadFcmRuntime = () => import("./fcmRuntime").catch(() => undefined);
 
-/** Rule 2 cap. getToken cannot be aborted: this bounds the WAIT, not the work. */
+/**
+ * Rule 2 cap on the mint's failure report. getToken cannot be aborted, so
+ * this bounds when a slow mint is REPORTED, not the work: its late token is
+ * still registered (background only; nothing on screen waits for it).
+ */
 const MINT_TIMEOUT_MS = 10_000;
 
 /** At most one per page load. NEVER the token, never error.message. */
@@ -156,21 +173,29 @@ export default function useFcmRegistration(): void {
         // NO serviceWorkerRegistration: Firebase then registers
         // public/firebase-messaging-sw.js at its own scope AND waits for it
         // to activate; a passed registration skips that wait (first-boot race).
-        // ponytail: ONE bounded attempt per page load — a retry would overlap
-        // a hung, un-abortable getToken; every reload re-mints. Upgrade: retry
-        // on `online` if fcm_init "token" failures cluster at power-on.
-        const minted = await withTimeoutRetry(
-          () => fcm.getToken(messaging, { vapidKey }),
-          { timeoutMs: MINT_TIMEOUT_MS, retries: 0 },
-        );
+        // ponytail: ONE mint per page load — a retry would overlap a hung,
+        // un-abortable getToken. The 10 s bound only times the failure
+        // report: a mint that lands later is still registered (the SAME
+        // promise, never a second getToken). Upgrade: retry on `online` if
+        // fcm_init "token" failures cluster at power-on.
+        const mint = fcm.getToken(messaging, { vapidKey });
+        const minted = await withTimeoutRetry(() => mint, {
+          timeoutMs: MINT_TIMEOUT_MS,
+          retries: 0,
+        });
         if (cancelled) return;
-        if (!minted.ok) {
-          return reportInitFailure("token", minted.error, minted.timedOut);
+        let token: string | undefined;
+        if (minted.ok) {
+          token = minted.data;
+        } else {
+          reportInitFailure("token", minted.error, minted.timedOut);
+          if (minted.timedOut) token = await mint.catch(() => undefined);
         }
+        if (cancelled || !token) return;
         // Stored only once the backend took it (fork D5). The register call
         // retries and reports its own failure.
-        if ((await registerRef.current(minted.data)) && !cancelled) {
-          dispatch(setFcmKeyAutoUpdateRdx(minted.data));
+        if ((await registerRef.current(token)) && !cancelled) {
+          dispatch(setFcmKeyAutoUpdateRdx(token));
         }
       } catch (error) {
         if (!cancelled) reportInitFailure("init", error); // never rethrow (Rule 2)
