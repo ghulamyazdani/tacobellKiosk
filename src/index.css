@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/*
+ * Display face: the Figma file uses GT America (Expanded Black / Bold) — a
+ * commercial Grilli Type font (the design file itself uses the TRIAL cut).
+ * Until the client provides a license, we self-host Archivo (variable wdth/
+ * wght), whose Expanded Black cut is the closest open substitute.
+ * FLAGGED for client sign-off.
+ */
+@font-face {
+  font-family: "Archivo";
+  src: url("./assets/fonts/Archivo-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Pinned static instance (wdth 62 / wght 700) — GT America "Compressed
+ * Bold" stand-in for CTA/category type. */
+@font-face {
+  font-family: "Archivo Condensed";
+  src: url("./assets/fonts/Archivo-Condensed-Bold.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Pinned static instance (wdth 125 / wght 900) — the served "variable"
+ * subsets came back as thin instances, so the display face is one exact cut. */
+@font-face {
+  font-family: "Archivo Expanded";
+  src: url("./assets/fonts/Archivo-Expanded-Black.woff2") format("woff2");
+  font-weight: 100 900; /* single cut serves every requested weight */
+  font-display: swap;
+}
+
+/*
+ * Taco Bell design tokens — extracted from Figma 33e5briUYJiBqxv6P0AbqY:
+ * "Backgrounds/Textured Taco Bell Purple" #501098, "Secondary/Vibrant Purple"
+ * #9A23F8, "Pink" #F07ADE, poster off-white #F4F2F0.
+ *
+ * Two layers:
+ * 1. Static brand palette (tb-*): authored from the Figma design.
+ * 2. Runtime theme contract (--brand-*): set imperatively by useFetchColors
+ *    from the theme API (same contract as posistKiosk). Fallbacks below are
+ *    mandatory — without them every bg-brand-primary resolves invalid and
+ *    buttons paint invisible while the (untimed) theme fetch is pending.
+ */
+@theme {
+  --font-sans: "Archivo", system-ui, sans-serif;
+
+  --color-tb-purple: #501098;
+  --color-tb-purple-vibrant: #9a23f8;
+  --color-tb-pink: #f07ade;
+  --color-tb-pink-dark: #ca16af;
+  --color-tb-yellow: #fadb3c;
+  --color-tb-surface: #ffffff;
+  --color-tb-cream: #f4f2f0;
+  --color-tb-ink: #1f1f1f;
+  --color-tb-ink-purple: #1b0726;
+  --color-tb-grey-4: #ebebeb;
+  --color-tb-grey-6: #f9f9f9;
+  /* Destructive red (P7a) — sampled from the Figma confirm modals'
+   * "YES, DELETE"/"YES, CANCEL ORDER" CTAs (remove-item 1:4533 and
+   * cancel-order 1:4552 both render rgb(222,19,19)). */
+  --color-tb-red: #de1313;
+
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
+}
+
+:root {
+  /* Runtime theme fallbacks (see note above). */
+  --brand-primary: #501098;
+  --brand-secondary: #ffffff;
+}
+
+/* GT America Expanded Black stand-in: widest, heaviest Archivo cut. */
+.tb-display {
+  font-family: "Archivo Expanded", "Archivo", system-ui, sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+/* GT America Compressed Bold stand-in (CTA cards, category rail). */
+.tb-compressed {
+  font-family: "Archivo Condensed", "Archivo", system-ui, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Daypart ticker marquee: track holds two copies of the sequence, shifts by
+ * exactly one copy, loops seamlessly. Linear + infinite (kiosk-safe: pure
+ * CSS compositor animation, no JS timers). */
+@keyframes tb-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.tb-marquee-track {
+  animation: tb-marquee 18s linear infinite;
+}
+
+/* Modal entrance: CSS-only (JS/rAF animations freeze in occluded windows —
+ * fatal for operator UI on a kiosk). translate/opacity composited. */
+@keyframes tb-modal-enter {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 40px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+.tb-modal-enter {
+  animation: tb-modal-enter 0.2s ease-out both;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden; /* kiosk: no page scroll, screens manage their own scroll areas */
+  background-color: var(--color-tb-purple);
+  -webkit-user-select: none;
+  user-select: none;
+}

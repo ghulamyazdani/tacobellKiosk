@@ -1,0 +1,282 @@
+{
+  "splash": {
+    "startOrder": "ابدأ الطلب"
+  },
+  "registration": {
+    "title": "تسجيل هذا الكشك",
+    "subtitle": "أدخل رمز الترخيص من Cockpit لتفعيل هذا الجهاز.",
+    "placeholder": "أدخل الرمز",
+    "paste": "لصق",
+    "activate": "ابدأ استقبال الطلبات",
+    "activating": "جارٍ التفعيل…",
+    "emptyCode": "يجب أن يكون طول الرمز أكبر من صفر",
+    "clear": "مسح الرمز"
+  },
+  "second": {
+    "title": "أين ستتناول طعامك؟",
+    "dineIn": "تناول في المطعم",
+    "takeOut": "طلب خارجي",
+    "closed": "مغلق",
+    "preparingMenu": "جارٍ تجهيز القائمة…"
+  },
+  "notFound": {
+    "title": "الصفحة غير موجودة",
+    "backToStart": "العودة إلى البداية"
+  },
+  "network": {
+    "title": "لا يوجد اتصال بالإنترنت",
+    "subtitle": "يرجى الاتصال بالإنترنت لمتابعة استخدام الكشك."
+  },
+  "loading": {
+    "preparing": "جارٍ تجهيز الكشك…",
+    "errorTitle": "خطأ في الإعدادات",
+    "backToRegistration": "العودة إلى التسجيل"
+  },
+  "ticker": {
+    "lunch": "حان وقت الغداء!"
+  },
+  "footer": {
+    "cancelOrder": "إلغاء الطلب",
+    "adaDisplay": "وضع سهولة الوصول"
+  },
+  "language": {
+    "title": "اختر لغتك",
+    "close": "إغلاق",
+    "english": "الإنجليزية"
+  },
+  "menu": {
+    "empty": "جارٍ تحميل القائمة…",
+    "new": "جديد",
+    "unavailable": "غير متوفر",
+    "quickAdd": "إضافة سريعة",
+    "total": "الإجمالي",
+    "viewMyBag": "عرض حقيبتي"
+  },
+  "activity": {
+    "title": "مركز النشاط",
+    "device": "الجهاز",
+    "deployment": "الفرع",
+    "version": "إصدار البرنامج",
+    "notifications": "الإشعارات",
+    "printer": "الطابعة",
+    "fullscreen": "ملء الشاشة الإلزامي",
+    "passcodePrompt": "أدخل رمز المرور لتعطيل ملء الشاشة الإلزامي",
+    "invalidPasscode": "رمز مرور غير صحيح. حاول مرة أخرى.",
+    "confirm": "تأكيد",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+    "logout": "تسجيل خروج الكشك",
+    "logoutConfirmTitle": "تأكيد تسجيل الخروج",
+    "logoutConfirmBody": "سيؤدي هذا إلى إلغاء تسجيل الكشك والعودة إلى تفعيل الجهاز. هل أنت متأكد؟",
+    "logoutYes": "نعم، تسجيل الخروج"
+  },
+  "added": {
+    "title": "تمت إضافة منتجك",
+    "youMightLike": "قد يعجبك أيضاً",
+    "addToOrder": "أضف إلى الطلب"
+  },
+  "size": {
+    "title": "اختر الحجم",
+    "bestValue": "أفضل قيمة",
+    "continue": "متابعة"
+  },
+  "customization": {
+    "comingSoon": "التخصيص قادم قريباً",
+    "backToMenu": "العودة إلى القائمة"
+  },
+  "keyboard": {
+    "shift": "تبديل الأحرف",
+    "backspace": "حذف",
+    "layerToggle": "أرقام ورموز",
+    "go": "انطلق",
+    "clear": "مسح"
+  },
+  "pdp": {
+    "back": "رجوع",
+    "addToBag": "أضف إلى الحقيبة",
+    "showMore": "عرض المزيد",
+    "showLess": "عرض أقل",
+    "change": "تغيير",
+    "required": "مطلوب",
+    "increase": "زيادة الكمية",
+    "decrease": "تقليل الكمية",
+    "customizationErrors": "يرجى التحقق من أخطاء التخصيص",
+    "itemLimitExceeded": "تم تجاوز الحد الأقصى للصنف",
+    "groupLimitExceeded": "تم تجاوز الحد الأقصى للمجموعة",
+    "discardTitle": "هل أنت متأكد؟",
+    "discardBody": "سيتم فقدان تخصيصاتك",
+    "discardKeep": "متابعة التعديل",
+    "discardConfirm": "تجاهل"
+  },
+  "pack": {
+    "selectGroup": "اختر {{name}}",
+    "swap": "استبدال",
+    "included": "مشمول",
+    "upgrades": "الترقيات",
+    "customize": "تخصيص",
+    "save": "حفظ",
+    "cal": "{{value}} سعرة حرارية"
+  },
+  "miam": {
+    "title": "هل ترغب في جعلها وجبة؟",
+    "accept": "نعم، اجعلها وجبة",
+    "decline": "لا شكرًا، المنتج فقط"
+  },
+  "bag": {
+    "title": "حقيبتي",
+    "eatIn": "تناول في المطعم",
+    "takeOut": "طلب خارجي",
+    "edit": "تعديل",
+    "update": "تحديث",
+    "subTotal": "المجموع الفرعي",
+    "total": "الإجمالي",
+    "pay": "ادفع",
+    "loginRewards": "سجّل الدخول واحصل على المكافآت",
+    "completeYourMeal": "أكمل وجبتك",
+    "comingSoon": "قريباً",
+    "close": "إغلاق الحقيبة",
+    "increase": "زيادة الكمية",
+    "decrease": "تقليل الكمية",
+    "lineQty": "{{qty}} ×",
+    "emptyCartError": "حقيبتك فارغة — يرجى إضافة أصناف",
+    "itemUnavailable": "بعض الأصناف غير متوفرة حالياً",
+    "checkoutFailed": "حدث خطأ ما — يرجى المحاولة مرة أخرى",
+    "discounts": "الخصومات",
+    "orderAndPay": "اطلب وادفع"
+  },
+  "offers": {
+    "title": "المكافآت",
+    "subtitle": "اختر مكافأة واحدة لاستبدالها مع طلبك.",
+    "entryTitle": "المكافآت والعروض",
+    "close": "إغلاق المكافآت",
+    "applied": "مُطبَّق",
+    "save": "وفّر {{amount}}",
+    "saveUpTo": "وفّر حتى {{amount}}",
+    "saveSelection": "حفظ الاختيار",
+    "remove": "إزالة",
+    "addNudge": "أضف {{amount}}+ إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
+    "addNudgeItems": "أضف {{count}}+ من العناصر الإضافية إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
+    "suggestedItems": "عناصر مقترحة بقيمة {{amount}}+",
+    "lockedBogoBuySide": "أضف العناصر المؤهلة لفتح هذه المكافأة",
+    "lockedItemCriteria": "تتطلب عناصر محددة في طلبك",
+    "lockedGeneric": "أضف عناصر لفتح هذه المكافأة",
+    "lockedUnavailable": "غير متاحة حاليًا",
+    "unavailable": "غير متاحة حالياً",
+    "progressItemsLabel": "تمت إضافة {{have}} من {{need}} أصناف — أضف {{more}} إضافية لفتح العرض",
+    "progressBillLabel": "{{have}} من {{need}} — أضف {{more}} إضافية لفتح العرض",
+    "mechPercentComplete": "خصم {{value}}٪ على طلبك",
+    "mechPercentCompleteCapped": "خصم {{value}}٪ على طلبك · بحد أقصى {{max}}",
+    "mechAmountComplete": "خصم {{amount}} على طلبك",
+    "mechPercentItems": "خصم {{value}}٪ على عناصر مختارة",
+    "mechAmountItems": "خصم {{amount}} على عناصر مختارة",
+    "mechFreeItem": "عنصر مجاني مع طلبك",
+    "mechBogo": "اشترِ واحصل مجاناً — اختر بنفسك",
+    "mechLeastValueOne": "اشترِ {{buy}} واحصل على أرخص عنصر مجاناً",
+    "mechLeastValueOther": "اشترِ {{buy}} واحصل على أرخص {{get}} عناصر مجاناً",
+    "mechGroupWise": "اختر {{count}} مجاناً",
+    "noneAvailableTitle": "لا توجد مكافآت حالياً",
+    "noneAvailableBody": "لا توجد مكافآت متاحة لهذا الطلب.",
+    "freebieTitle": "اختر عنصرك المجاني",
+    "freebieSubtitleOr": "اختر عنصرًا واحدًا لاستبداله مع مكافأتك.",
+    "freebieSubtitleAnd": "هذه العناصر تأتي مع مكافأتك.",
+    "confirm": "تأكيد",
+    "free": "مجانًا",
+    "percentOff": "خصم {{value}}٪",
+    "amountOff": "خصم {{amount}}",
+    "customizableSoon": "التخصيص متاح قريبًا",
+    "removedTitle": "تمت إزالة المكافأة",
+    "removedBody": "{{name}} لم يعد ساريًا على طلبك.",
+    "removedNewTotal": "أصبح إجمالي طلبك الآن {{amount}}",
+    "removedReasonItemsOne": "أضف عنصرًا واحدًا إضافيًا إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
+    "removedReasonItemsOther": "أضف {{count}} عناصر إضافية إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
+    "gotIt": "حسنًا"
+  },
+  "removeItem": {
+    "title": "إزالة الصنف",
+    "body": "أنت على وشك حذف هذا الصنف، هل تريد المتابعة؟",
+    "confirm": "نعم، احذف",
+    "cancel": "لا، العودة إلى الحقيبة"
+  },
+  "cancelOrder": {
+    "title": "تأكيد الإلغاء",
+    "body": "أنت على وشك إلغاء طلبك، هل ترغب في المتابعة؟",
+    "cancel": "لا، العودة إلى القائمة",
+    "confirm": "نعم، إلغاء الطلب"
+  },
+  "repeat": {
+    "title": "هل تريد تكرار التخصيصات الأخيرة؟",
+    "newCustomizations": "تخصيصات جديدة",
+    "noCustomizations": "بدون تخصيصات",
+    "increase": "زيادة الكمية",
+    "decrease": "تقليل الكمية"
+  },
+  "checkout": {
+    "title": "الدفع",
+    "placeholder": "تجربة الدفع قادمة قريباً.",
+    "routeLabel": "الخطوة التالية",
+    "routes": {
+      "tent": "رقم الطاولة",
+      "payment": "الدفع",
+      "customerName": "اسم العميل",
+      "phone": "رقم الهاتف"
+    },
+    "totalLabel": "الإجمالي المستحق",
+    "backToBag": "العودة إلى حقيبتي"
+  },
+  "loyalty": {
+    "title": "المكافآت",
+    "rewardsLink": "المكافآت",
+    "myRewards": "مكافآتي ({{count}})",
+    "scanApp": "مسح التطبيق",
+    "enterCode": "أدخل رقم الهاتف",
+    "comingSoon": "قريباً",
+    "phonePrompt": "أدخل رقم هاتفك المحمول",
+    "continue": "متابعة",
+    "close": "إغلاق المكافآت",
+    "invalidPhone": "يرجى إدخال رقم هاتف محمول صالح",
+    "lookupFailed": "تعذر الوصول إلى حساب المكافآت الخاص بك. يرجى المحاولة مرة أخرى.",
+    "pointsBalance": "{{points}} نقطة",
+    "pointsCost": "{{points}} نقطة",
+    "free": "مجانًا",
+    "percentOff": "خصم {{value}}٪",
+    "remove": "إزالة",
+    "redeem": "استبدال",
+    "selectReward": "يرجى اختيار مكافأة للاستبدال",
+    "alreadyAvailed": "تم استخدام عنصر الولاء بالفعل",
+    "noCoupons": "لا توجد قسائم متاحة لك في الوقت الحالي",
+    "validateError": "حدث خطأ أثناء التحقق من القسيمة",
+    "redeemError": "حدث خطأ أثناء استبدال النقاط",
+    "otpPrompt": "أدخل الرمز المكون من 4 أرقام المُرسل إلى هاتفك",
+    "invalidOtp": "يرجى إدخال رمز تحقق صالح",
+    "confirm": "تأكيد",
+    "back": "رجوع",
+    "successTitle": "المكافآت في الطريق",
+    "sealText": "مكافآت تاكو بيل",
+    "tryAgain": "حاول مرة أخرى"
+  },
+  "phone": {
+    "title": "ما هو رقم هاتفك؟",
+    "subtitle": "أدخل رقم هاتفك المحمول للمتابعة.",
+    "loyaltySubtitle": "مطلوب للحصول على مكافآت تاكو بيل.",
+    "placeholder": "رقم الهاتف المحمول",
+    "continue": "متابعة",
+    "checking": "جارٍ التحقق من المكافآت…",
+    "back": "رجوع",
+    "skip": "تخطي رقم الهاتف",
+    "show": "إظهار",
+    "hide": "إخفاء",
+    "invalidNumber": "يرجى إدخال رقم هاتف صالح",
+    "exactDigits": "يجب أن يتكون رقم الهاتف من {{digits}} أرقام بالضبط",
+    "digitRange": "يجب أن يتكون رقم الهاتف من {{min}} إلى {{max}} رقمًا"
+  },
+  "customerName": {
+    "title": "ما هو اسمك؟",
+    "subtitle": "سننادي عليه عندما يصبح طلبك جاهزًا.",
+    "placeholder": "الاسم الأول",
+    "continue": "متابعة",
+    "back": "رجوع",
+    "clear": "مسح الاسم",
+    "required": "يرجى إدخال اسم أول صالح",
+    "loading": "جارٍ البحث عن بياناتك…"
+  }
+}

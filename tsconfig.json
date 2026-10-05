@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "../posistKiosk-cx-sdk/packages/core" },
+    { "path": "../posistKiosk-cx-sdk/packages/catalog" },
+    { "path": "../posistKiosk-cx-sdk/packages/ordering" },
+    { "path": "../posistKiosk-cx-sdk/packages/payments" },
+    { "path": "../posistKiosk-cx-sdk/packages/devices" }
+  ]
+}

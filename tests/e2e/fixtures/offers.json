@@ -1,0 +1,196 @@
+[
+  {
+    "_id": "offer-percent-25",
+    "name": "25% off your order",
+    "type": { "name": "percent", "value": 25 },
+    "minBillAmount": 25,
+    "minItemCount": null,
+    "maxDiscount": 10,
+    "imageUrl": null,
+    "isAvailable": true,
+    "isComplimentary": false,
+    "autoApplied": false,
+    "autoReapply": false,
+    "sameOrLess": false,
+    "onGrossTotal": false,
+    "getItemOnly": false,
+    "getLeastValueItem": false,
+    "buygetItemOnly": false,
+    "buygetGroupWiseOffer": false,
+    "dynamicItemExpressOffer": false,
+    "tabs": ["TakeOut", "Delivery", "Online"],
+    "applicable": {
+      "on": "complete",
+      "categories": [],
+      "items": [],
+      "isExclude": false,
+      "isInclude": false,
+      "rawItems": []
+    },
+    "buyItems": {},
+    "getItems": {},
+    "itemQuantities": [],
+    "leastItemValueCount": { "buyQuantity": null, "getQuantity": null },
+    "buygetGroupWiseOfferValues": {
+      "discountType": "percent",
+      "value": null,
+      "getQuantity": null,
+      "buyQuantity": null
+    }
+  },
+  {
+    "_id": "offer-flat-2",
+    "name": "£2 off your order",
+    "type": { "name": "amount", "value": 2 },
+    "minBillAmount": null,
+    "minItemCount": null,
+    "maxDiscount": null,
+    "imageUrl": null,
+    "isAvailable": true,
+    "isComplimentary": false,
+    "autoApplied": false,
+    "autoReapply": false,
+    "sameOrLess": false,
+    "onGrossTotal": false,
+    "getItemOnly": false,
+    "getLeastValueItem": false,
+    "buygetItemOnly": false,
+    "buygetGroupWiseOffer": false,
+    "dynamicItemExpressOffer": false,
+    "tabs": ["TakeOut", "Delivery", "Online"],
+    "applicable": {
+      "on": "complete",
+      "categories": [],
+      "items": [],
+      "isExclude": false,
+      "isInclude": false,
+      "rawItems": []
+    },
+    "buyItems": {},
+    "getItems": {},
+    "itemQuantities": [],
+    "leastItemValueCount": { "buyQuantity": null, "getQuantity": null },
+    "buygetGroupWiseOfferValues": {
+      "discountType": "percent",
+      "value": null,
+      "getQuantity": null,
+      "buyQuantity": null
+    }
+  },
+  {
+    "_id": "offer-free-salad",
+    "name": "Free Greek Salad with your order",
+    "type": { "name": "item", "value": 0 },
+    "minBillAmount": null,
+    "minItemCount": null,
+    "maxDiscount": null,
+    "imageUrl": null,
+    "isAvailable": true,
+    "isComplimentary": false,
+    "autoApplied": false,
+    "autoReapply": false,
+    "sameOrLess": false,
+    "onGrossTotal": false,
+    "getItemOnly": true,
+    "getLeastValueItem": false,
+    "buygetItemOnly": false,
+    "buygetGroupWiseOffer": false,
+    "dynamicItemExpressOffer": false,
+    "tabs": ["TakeOut", "Delivery", "Online"],
+    "applicable": {
+      "on": "complete",
+      "categories": [],
+      "items": [],
+      "isExclude": false,
+      "isInclude": false,
+      "rawItems": []
+    },
+    "buyItems": {},
+    "getItems": {
+      "items": [
+        {
+          "_id": "gi-greek-salad",
+          "baseItemId": "5dd1093829754a432f2c32e2",
+          "name": "Greek Salad",
+          "relation": "and",
+          "discountType": "percent",
+          "value": 100,
+          "quantity": 1,
+          "type": "ITEM"
+        }
+      ],
+      "categories": []
+    },
+    "itemQuantities": [],
+    "leastItemValueCount": { "buyQuantity": null, "getQuantity": null },
+    "buygetGroupWiseOfferValues": {
+      "discountType": "percent",
+      "value": null,
+      "getQuantity": null,
+      "buyQuantity": null
+    }
+  },
+  {
+    "_id": "offer-free-sauce-choice",
+    "name": "Free sauce of your choice",
+    "type": { "name": "item", "value": 0 },
+    "minBillAmount": null,
+    "minItemCount": null,
+    "maxDiscount": null,
+    "imageUrl": null,
+    "isAvailable": true,
+    "isComplimentary": false,
+    "autoApplied": false,
+    "autoReapply": false,
+    "sameOrLess": false,
+    "onGrossTotal": false,
+    "getItemOnly": true,
+    "getLeastValueItem": false,
+    "buygetItemOnly": false,
+    "buygetGroupWiseOffer": false,
+    "dynamicItemExpressOffer": false,
+    "tabs": ["TakeOut", "Delivery", "Online"],
+    "applicable": {
+      "on": "complete",
+      "categories": [],
+      "items": [],
+      "isExclude": false,
+      "isInclude": false,
+      "rawItems": []
+    },
+    "buyItems": {},
+    "getItems": {
+      "items": [
+        {
+          "_id": "gi-tortilla-sauce",
+          "baseItemId": "5dd109392b29ee1f2a82a49b",
+          "name": "Tortilla Sauce",
+          "relation": "or",
+          "discountType": "percent",
+          "value": 100,
+          "quantity": 1,
+          "type": "ITEM"
+        },
+        {
+          "_id": "gi-caesar-dressing",
+          "baseItemId": "5dd109392b29ee1f2a82a49c",
+          "name": "Caesar Dressing",
+          "relation": "or",
+          "discountType": "percent",
+          "value": 100,
+          "quantity": 1,
+          "type": "ITEM"
+        }
+      ],
+      "categories": []
+    },
+    "itemQuantities": [],
+    "leastItemValueCount": { "buyQuantity": null, "getQuantity": null },
+    "buygetGroupWiseOfferValues": {
+      "discountType": "percent",
+      "value": null,
+      "getQuantity": null,
+      "buyQuantity": null
+    }
+  }
+]

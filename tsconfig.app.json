@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* @cx-sdk packages are consumed as SOURCE (.ts) via link:, so files they
+       import join THIS program. @cx-sdk/ordering/order/orderBuilder imports
+       the verbatim-legacy bill/billCalculation.js — same allowJs/checkJs pair
+       the ordering package's own tsconfig uses for it. src/ itself has no .js. */
+    "allowJs": true,
+    "checkJs": false,
+    /* Full strictness from day one — no legacy ratchet in this repo. */
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.*", "src/setupTests.ts"]
+}

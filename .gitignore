@@ -1,0 +1,20 @@
+node_modules
+dist
+dev-dist
+build
+coverage
+playwright-report
+test-results
+stats.html
+guardrails-report.json
+dependency-report.json
+bundle-size-report.md
+.vite-image-cache
+.netlify
+*.local
+.DS_Store
+*.tsbuildinfo
+# env: never commit real keys — see .env.example
+.env
+.env.*
+!.env.example

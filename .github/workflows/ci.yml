@@ -1,0 +1,111 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# NOTE: the @cx-sdk link: dependencies resolve into ../posistKiosk-cx-sdk,
+# so CI must check out BOTH repos side by side.
+jobs:
+  checkout-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "placeholder — see composite setup below"
+
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tacobell-kiosk
+      - uses: actions/checkout@v4
+        with:
+          repository: PosistGit/posistKiosk-cx-sdk # adjust to the real remote
+          path: posistKiosk-cx-sdk
+          token: ${{ secrets.SDK_REPO_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: yarn
+          cache-dependency-path: tacobell-kiosk/yarn.lock
+      - run: yarn install --frozen-lockfile
+        working-directory: posistKiosk-cx-sdk
+      - run: yarn install --frozen-lockfile
+        working-directory: tacobell-kiosk
+      - run: yarn lint && yarn type-check
+        working-directory: tacobell-kiosk
+
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # dependency-free script — no yarn install needed
+      - run: node scripts/guardrails.mjs --report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guardrails-report
+          path: guardrails-report.json
+          retention-days: 14
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/check-dependencies.mjs --report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-report
+          path: dependency-report.json
+          retention-days: 14
+
+  unit-tests-build:
+    needs: [lint-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tacobell-kiosk
+      - uses: actions/checkout@v4
+        with:
+          repository: PosistGit/posistKiosk-cx-sdk
+          path: posistKiosk-cx-sdk
+          token: ${{ secrets.SDK_REPO_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: yarn
+          cache-dependency-path: tacobell-kiosk/yarn.lock
+      - run: yarn install --frozen-lockfile
+        working-directory: posistKiosk-cx-sdk
+      - run: yarn install --frozen-lockfile
+        working-directory: tacobell-kiosk
+      - run: yarn depcruise
+        working-directory: tacobell-kiosk
+      - run: yarn test:coverage
+        working-directory: tacobell-kiosk
+      - run: yarn build
+        working-directory: tacobell-kiosk
+      - run: node scripts/check-bundle-size.mjs
+        working-directory: tacobell-kiosk
+      - run: cat bundle-size-report.md >> $GITHUB_STEP_SUMMARY
+        working-directory: tacobell-kiosk
+        if: always()
+
+  status-check:
+    needs: [lint-typecheck, guardrails, dependency-check, unit-tests-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "job results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then exit 1; fi
+          done

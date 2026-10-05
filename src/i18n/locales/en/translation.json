@@ -1,0 +1,282 @@
+{
+  "splash": {
+    "startOrder": "start order"
+  },
+  "registration": {
+    "title": "Register this kiosk",
+    "subtitle": "Enter the license code from Cockpit to activate this device.",
+    "placeholder": "Enter code",
+    "paste": "Paste",
+    "activate": "Start taking orders",
+    "activating": "Activating…",
+    "emptyCode": "Length of code should be greater than 0",
+    "clear": "Clear code"
+  },
+  "second": {
+    "title": "Where are you eating?",
+    "dineIn": "Dine In",
+    "takeOut": "Take Out",
+    "closed": "Closed",
+    "preparingMenu": "Building your menu…"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "backToStart": "Back to start"
+  },
+  "network": {
+    "title": "No internet connection",
+    "subtitle": "Please connect to the internet to continue using the kiosk."
+  },
+  "loading": {
+    "preparing": "Preparing your kiosk…",
+    "errorTitle": "Configuration error",
+    "backToRegistration": "Back to registration"
+  },
+  "ticker": {
+    "lunch": "It's lunch time!"
+  },
+  "footer": {
+    "cancelOrder": "Cancel order",
+    "adaDisplay": "ADA Display"
+  },
+  "language": {
+    "title": "Select your language",
+    "close": "Close",
+    "english": "English"
+  },
+  "menu": {
+    "empty": "Menu is loading…",
+    "new": "New",
+    "unavailable": "Unavailable",
+    "quickAdd": "Quick add",
+    "total": "Total",
+    "viewMyBag": "View my bag"
+  },
+  "activity": {
+    "title": "Activity Center",
+    "device": "Device",
+    "deployment": "Deployment",
+    "version": "Software version",
+    "notifications": "Notifications",
+    "printer": "Printer",
+    "fullscreen": "Mandatory fullscreen",
+    "passcodePrompt": "Enter the passcode to disable mandatory fullscreen",
+    "invalidPasscode": "Invalid passcode. Please try again.",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "close": "Close",
+    "logout": "Logout kiosk",
+    "logoutConfirmTitle": "Confirm logout",
+    "logoutConfirmBody": "This unregisters the kiosk and returns to device activation. Are you sure?",
+    "logoutYes": "Yes, logout"
+  },
+  "added": {
+    "title": "Your product has been added",
+    "youMightLike": "You Might Like",
+    "addToOrder": "Add to order"
+  },
+  "size": {
+    "title": "Select a size",
+    "bestValue": "Best value",
+    "continue": "Continue"
+  },
+  "customization": {
+    "comingSoon": "Customization arrives in P6b",
+    "backToMenu": "Back to menu"
+  },
+  "keyboard": {
+    "shift": "Shift",
+    "backspace": "Backspace",
+    "layerToggle": "Toggle numbers and symbols",
+    "go": "Go",
+    "clear": "Clear"
+  },
+  "pdp": {
+    "back": "Back",
+    "addToBag": "Add to bag",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "change": "Change",
+    "required": "Required",
+    "increase": "Increase quantity",
+    "decrease": "Decrease quantity",
+    "customizationErrors": "Please check the customization errors",
+    "itemLimitExceeded": "Item limit exceeded",
+    "groupLimitExceeded": "Group limit exceeded",
+    "discardTitle": "Are you sure?",
+    "discardBody": "Your customizations will be lost",
+    "discardKeep": "Keep editing",
+    "discardConfirm": "Discard"
+  },
+  "pack": {
+    "selectGroup": "Select {{name}}",
+    "swap": "Swap",
+    "included": "Included",
+    "upgrades": "Upgrades",
+    "customize": "Customize",
+    "save": "Save",
+    "cal": "{{value}} Cal"
+  },
+  "miam": {
+    "title": "Would you like to make it a meal?",
+    "accept": "Yes, make it a meal",
+    "decline": "No thanks, just the item"
+  },
+  "bag": {
+    "title": "My Bag",
+    "eatIn": "Eat In",
+    "takeOut": "Take Out",
+    "edit": "Edit",
+    "update": "Update",
+    "subTotal": "Sub Total",
+    "total": "Total",
+    "pay": "Pay",
+    "loginRewards": "Log-in & Get Rewards",
+    "completeYourMeal": "Complete Your Meal",
+    "comingSoon": "Coming soon",
+    "close": "Close bag",
+    "increase": "Increase quantity",
+    "decrease": "Decrease quantity",
+    "lineQty": "{{qty}} x",
+    "emptyCartError": "Your bag is empty — please add items",
+    "itemUnavailable": "Some items are not available right now",
+    "checkoutFailed": "Something went wrong — please try again",
+    "discounts": "Discounts",
+    "orderAndPay": "Order & Pay"
+  },
+  "offers": {
+    "title": "Rewards",
+    "subtitle": "Select 1 reward to redeem with your order.",
+    "entryTitle": "Rewards & Offers",
+    "close": "Close rewards",
+    "applied": "Applied",
+    "save": "Save {{amount}}",
+    "saveUpTo": "Save up to {{amount}}",
+    "saveSelection": "Save Selection",
+    "remove": "Remove",
+    "addNudge": "Add {{amount}}+ to your order to be eligible to redeem this reward",
+    "addNudgeItems": "Add {{count}}+ more items to your order to be eligible to redeem this reward",
+    "suggestedItems": "Suggested {{amount}}+ Items",
+    "lockedBogoBuySide": "Add the qualifying items to unlock this reward",
+    "lockedItemCriteria": "Needs specific items in your order",
+    "lockedGeneric": "Add items to unlock this reward",
+    "lockedUnavailable": "Not available right now",
+    "unavailable": "Not available right now",
+    "progressItemsLabel": "{{have}} of {{need}} items added — add {{more}} more to unlock",
+    "progressBillLabel": "{{have}} of {{need}} — add {{more}} more to unlock",
+    "mechPercentComplete": "{{value}}% off your order",
+    "mechPercentCompleteCapped": "{{value}}% off your order · up to {{max}}",
+    "mechAmountComplete": "{{amount}} off your order",
+    "mechPercentItems": "{{value}}% off selected items",
+    "mechAmountItems": "{{amount}} off selected items",
+    "mechFreeItem": "Free item with your order",
+    "mechBogo": "Buy & get free — pick yours",
+    "mechLeastValueOne": "Buy {{buy}}, your cheapest item is free",
+    "mechLeastValueOther": "Buy {{buy}}, your {{get}} cheapest items are free",
+    "mechGroupWise": "Pick {{count}} free",
+    "noneAvailableTitle": "No rewards right now",
+    "noneAvailableBody": "There are no rewards available for this order.",
+    "freebieTitle": "Choose Your Free Item",
+    "freebieSubtitleOr": "Select 1 item to redeem with your reward.",
+    "freebieSubtitleAnd": "These items come with your reward.",
+    "confirm": "CONFIRM",
+    "free": "Free",
+    "percentOff": "{{value}}% off",
+    "amountOff": "{{amount}} off",
+    "customizableSoon": "Customization coming soon",
+    "removedTitle": "Reward Removed",
+    "removedBody": "{{name}} no longer applies to your order.",
+    "removedNewTotal": "Your total is now {{amount}}",
+    "removedReasonItemsOne": "Add 1 more item to your order to be eligible to redeem this reward",
+    "removedReasonItemsOther": "Add {{count}} more items to your order to be eligible to redeem this reward",
+    "gotIt": "GOT IT"
+  },
+  "removeItem": {
+    "title": "Remove Item",
+    "body": "You are about to delete this item, would you like to continue ?",
+    "confirm": "Yes, Delete",
+    "cancel": "No, Back to Cart"
+  },
+  "cancelOrder": {
+    "title": "Confirm Cancellation",
+    "body": "You are about to cancel your order, would you like to continue ?",
+    "cancel": "No, back to menu",
+    "confirm": "Yes, cancel order"
+  },
+  "repeat": {
+    "title": "Repeat Last Customizations?",
+    "newCustomizations": "New Customizations",
+    "noCustomizations": "No customizations",
+    "increase": "Increase quantity",
+    "decrease": "Decrease quantity"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "placeholder": "The payment experience is coming soon.",
+    "routeLabel": "Next step",
+    "routes": {
+      "tent": "Table tent",
+      "payment": "Payment",
+      "customerName": "Customer name",
+      "phone": "Phone number"
+    },
+    "totalLabel": "Total to pay",
+    "backToBag": "Back to my bag"
+  },
+  "loyalty": {
+    "title": "Rewards",
+    "rewardsLink": "Rewards",
+    "myRewards": "My Rewards ({{count}})",
+    "scanApp": "Scan App",
+    "enterCode": "Enter Phone",
+    "comingSoon": "Coming soon",
+    "phonePrompt": "Enter your mobile number",
+    "continue": "Continue",
+    "close": "Close rewards",
+    "invalidPhone": "Please enter a valid mobile number",
+    "lookupFailed": "We couldn't reach your rewards account. Please try again.",
+    "pointsBalance": "{{points}} points",
+    "pointsCost": "{{points}} points",
+    "free": "Free",
+    "percentOff": "{{value}}% off",
+    "remove": "Remove",
+    "redeem": "Redeem",
+    "selectReward": "Please select a reward to redeem",
+    "alreadyAvailed": "Loyalty Item already availed",
+    "noCoupons": "No coupons available for you at the moment",
+    "validateError": "Error in validating coupon",
+    "redeemError": "Error in redeeming points",
+    "otpPrompt": "Enter the 4-digit code sent to your phone",
+    "invalidOtp": "Please enter a valid OTP",
+    "confirm": "Confirm",
+    "back": "Back",
+    "successTitle": "Rewards Incoming",
+    "sealText": "Taco Bell Rewards",
+    "tryAgain": "Try Again"
+  },
+  "phone": {
+    "title": "What's your number?",
+    "subtitle": "Enter your mobile number to continue.",
+    "loyaltySubtitle": "Required for Taco Bell Rewards.",
+    "placeholder": "Mobile number",
+    "continue": "Continue",
+    "checking": "Checking rewards…",
+    "back": "Back",
+    "skip": "Skip phone number",
+    "show": "Show",
+    "hide": "Hide",
+    "invalidNumber": "Please enter a valid phone number",
+    "exactDigits": "Phone number should be exactly {{digits}} digits",
+    "digitRange": "Phone number should be between {{min}} and {{max}} digits"
+  },
+  "customerName": {
+    "title": "What's your name?",
+    "subtitle": "We'll call it out when your order is ready.",
+    "placeholder": "First name",
+    "continue": "Continue",
+    "back": "Back",
+    "clear": "Clear name",
+    "required": "Please enter a valid first name",
+    "loading": "Looking you up…"
+  }
+}
