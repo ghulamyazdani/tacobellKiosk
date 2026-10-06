@@ -5,7 +5,7 @@
  * (unmount closes it) and a crash inside it renders nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import {
@@ -218,7 +218,7 @@ describe("OfferAppliedCelebration", () => {
     expect(card()).toBeNull();
   });
 
-  it("a throwing child renders nothing (local ErrorBoundary) while the bag survives", () => {
+  it("a throwing child renders nothing (local ErrorBoundary) while the bag survives", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     render(
       <Provider store={store}>
@@ -230,6 +230,13 @@ describe("OfferAppliedCelebration", () => {
     // A non-renderable name makes the card itself throw mid-render.
     customerApply({ not: "a string" });
 
+    // The bag's celebration is lazy (bagLazyParts): it throws once mounted.
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith(
+        "error_occurred",
+        expect.objectContaining({ recovery_path: "local_fallback" })
+      )
+    );
     expect(card()).toBeNull();
     expect(screen.getByTestId("bag-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("£2 off your order");

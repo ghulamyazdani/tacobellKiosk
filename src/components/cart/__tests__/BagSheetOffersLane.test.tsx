@@ -369,6 +369,8 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
       expect(swapCount(spy)).toBe(1);
       expect(caption()).toHaveTextContent("Applied for you");
       expect(state().cart.offerModal.isOpen).toBe(false);
+      // The (lazy) celebration is mounted, and shows nothing.
+      await screen.findByTestId("offer-celebration-region");
       expect(screen.queryByTestId("offer-applied-celebration")).toBeNull();
       expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
       expect(state().offerSession).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: "auto-flat-2" });
@@ -404,7 +406,8 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     render(<BagUi />);
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
     await userEvent.click(screen.getByTestId("offer-row-add-items-offer-buy-two"));
-    expect(screen.getByTestId("buy-stage-sheet")).toBeInTheDocument();
+    // Lazy (bagLazyParts): the stage mounts once its chunk resolves.
+    expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
 
     act(() => void store.dispatch(setFilteredOffers([BUY_TWO_SAUCES, AUTO_FLAT])));
     expect(slotId()).toBeUndefined();
@@ -531,7 +534,7 @@ describe("BagSheet — buy-stage hand-offs", () => {
   const openStage = async (offerId: string) => {
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
     await userEvent.click(screen.getByTestId(`offer-row-add-items-${offerId}`));
-    await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
+    await userEvent.click(await screen.findByTestId(`buy-stage-add-${SAUCE.id}`));
     expect(state().cart.cartItems.map((row) => row.id)).toEqual([BURGER_ROW.id, SAUCE.id]);
   };
 
@@ -584,7 +587,7 @@ describe("BagSheet — buy-stage hand-offs", () => {
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
     await userEvent.click(screen.getByTestId("offer-row-add-items-offer-sol-salad"));
 
-    expect(screen.getByTestId("buy-stage-sheet")).toBeInTheDocument();
+    expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("buy-stage-guard")).toBeEmptyDOMElement();
   });
 });

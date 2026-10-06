@@ -73,17 +73,26 @@ import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
 import BagItemRow from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import RewardsSheet from "../offer/RewardsSheet";
-import BuyStageSheet from "../offer/BuyStageSheet";
 import FreebiePickerSheet from "../offer/FreebiePickerSheet";
 import OfferTierHost from "../offer/OfferTierHost";
-import OfferAppliedCelebration from "../offer/OfferAppliedCelebration";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
 import closeIcon from "../../assets/icons/close.svg";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
-// Built in the same P7a wave (rail agent) — lazy so the sheet neither blocks
-// on nor bundles the rail chunk; the locked prop contract is { onDetour? }.
-const CompleteYourMealRail = lazy(() => import("./CompleteYourMealRail"));
+// Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
+// entry would grow the boot path). `await import()`, never `.then`: a failed
+// chunk must reach chunkRecovery's reload. The rail's locked prop contract
+// is { onDetour? }; the offer-only buy stage and celebration keep the boot
+// path inside its P9f budget.
+const CompleteYourMealRail = lazy(async () => ({
+  default: (await import("./bagLazyParts")).CompleteYourMealRail,
+}));
+const BuyStageSheet = lazy(async () => ({
+  default: (await import("./bagLazyParts")).BuyStageSheet,
+}));
+const OfferAppliedCelebration = lazy(async () => ({
+  default: (await import("./bagLazyParts")).OfferAppliedCelebration,
+}));
 
 /** Figma 1:3171: the sheet's top sits at stage y 244. ADA: ADA_SHEET_HEIGHT. */
 const BAG_SHEET_HEIGHT = 1676;
@@ -1086,17 +1095,29 @@ export default function BagSheet({
         }}
       />
       {stage.buyStage && (
-        <BuyStageSheet
-          stage={stage.buyStage}
-          continuing={stage.continuing}
-          blockedMessage={stageBlocked}
-          onBack={() => {
-            stage.abandon();
-            setRewardsOpen(true);
-          }}
-          onClose={() => stage.abandon()}
-          onContinue={handleStageContinue}
-        />
+        // Fallback = the sheet's own scrim: the bag beneath stays covered
+        // and untappable while the chunk loads.
+        <Suspense
+          fallback={
+            <div
+              aria-hidden="true"
+              data-testid="buy-stage-loading"
+              className="absolute inset-0 z-50 bg-tb-purple/80"
+            />
+          }
+        >
+          <BuyStageSheet
+            stage={stage.buyStage}
+            continuing={stage.continuing}
+            blockedMessage={stageBlocked}
+            onBack={() => {
+              stage.abandon();
+              setRewardsOpen(true);
+            }}
+            onClose={() => stage.abandon()}
+            onContinue={handleStageContinue}
+          />
+        </Suspense>
       )}
       <FreebiePickerSheet
         open={!!pickerOffer}
@@ -1109,11 +1130,16 @@ export default function BagSheet({
         }}
       />
       <OfferTierHost />
-      <OfferAppliedCelebration
-        discount={appliedDiscount}
-        currency={currency}
-        sheetHeight={sheetHeight}
-      />
+      {/* null fallback = its idle look (it is invisible until a customer
+          apply, seconds after the bag opens); it reads cart.offerModal on
+          mount, so an apply that lands while the chunk loads still plays. */}
+      <Suspense fallback={null}>
+        <OfferAppliedCelebration
+          discount={appliedDiscount}
+          currency={currency}
+          sheetHeight={sheetHeight}
+        />
+      </Suspense>
       <OfferRemovalNotice bill={bill ?? undefined} />
     </div>
   );

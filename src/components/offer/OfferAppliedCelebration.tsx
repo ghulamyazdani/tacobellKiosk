@@ -166,6 +166,7 @@ export default function OfferAppliedCelebration({
     <div
       role="status"
       aria-live="polite"
+      data-testid="offer-celebration-region"
       className="pointer-events-none absolute inset-x-0 z-[86] mx-auto w-[600px] max-w-[calc(100%_-_48px)]"
       style={{ top: `calc(100% - ${sheetHeight}px + 16px)` }}
     >
