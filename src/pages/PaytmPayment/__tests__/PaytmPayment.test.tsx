@@ -17,7 +17,7 @@ import {
 import { setAutenticationDetails } from "@cx-sdk/core/auth/authentication.slice";
 import { store } from "../../../redux/app/store";
 import PaytmPayment from "../index";
-import i18n from "../../../i18n";
+import i18n, { isolate } from "../../../i18n";
 import bellPurple from "../../../assets/brand/tb-bell-purple.svg";
 import creditCard from "../../../assets/payment/credit-card.svg";
 
@@ -200,7 +200,10 @@ describe("PaytmPayment — /paymentPolling", () => {
       expect(prompt.textContent).not.toMatch(/paytm\./);
       // YES-only by meaning, whatever the wording: YES is offered, NO never
       // is (EN "NO", AR "لا") — a reworded YES/NO line under the new key fails.
-      const words = (prompt.textContent ?? "").toUpperCase().split(/[\s,.،!?؟]+/u);
+      // The FSI/PDI isolates (P9f) split too: AR text is wrapped in them, and
+      // an edge word glued to one ("لا" + PDI) would slip past not.toContain.
+      const words = (prompt.textContent ?? "").toUpperCase().split(/[\s,.،!?؟⁨⁩]+/u);
+      if (lng === "ar") expect(prompt.textContent).toMatch(/^⁨[^⁨⁩]+⁩$/u);
       expect(words).toContain(lng === "en" ? "YES" : "نعم");
       expect(words).not.toContain(lng === "en" ? "NO" : "لا");
     } finally {
@@ -291,6 +294,35 @@ describe("PaytmPayment — /paymentPolling", () => {
 
     tap("paytm-unknown-finish");
     expect(m.navigate).toHaveBeenCalledWith("/start");
+  });
+
+  // P9f: Arabic is RTL text in the LTR layout — the countdown time and the
+  // order number are i18n VALUES, so each is its own FSI…PDI isolate (no
+  // strong character inside → LTR digits) within the isolated Arabic copy.
+  it("Arabic: the countdown time and the staff panel's order number stay LTR isolates; the TOTAL digits stay plain", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    try {
+      const template = (key: string) => String(i18n.getResource("ar", "translation", key));
+      seed("edc");
+      statusImpl = () => Promise.resolve({ error: { status: "FETCH_ERROR" } });
+      mount();
+
+      expect(screen.getByTestId("paytm-countdown").textContent).toBe(
+        isolate(template("paytm.timeLeft").replace("{{time}}", isolate("3:00"))),
+      );
+      expect(screen.getByTestId("paytm-total").textContent).toBe(`${isolate(template("payment.total"))}₹9.00`);
+
+      await step(180_000 + 30_000);
+      expect(document.getElementById("paytm-unknown-message")?.textContent).toBe(
+        isolate(template("paytm.unknown.message").replace("{{order}}", isolate("54321"))),
+      );
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+    }
   });
 
   it("ADA: bell dropped, the column at 40, a 360 slot (QR and card)", () => {
