@@ -32,6 +32,8 @@ import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useSessionReset from "../../hooks/utils/useSessionReset";
 import useAppSettings from "../../hooks/utils/useAppSettings";
+import useAdaActive from "../../hooks/utils/useAdaActive";
+import useLocalized from "../../hooks/utils/useLocalized";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import CategoryRail from "../../components/menu/CategoryRail";
 import ProductAddedModal from "../../components/menu/ProductAddedModal";
@@ -39,6 +41,7 @@ import SelectSizeModal from "../../components/menu/SelectSizeModal";
 import MenuItemCard from "../../components/menu/MenuItemCard";
 import MenuCtaBar from "../../components/menu/MenuCtaBar";
 import FooterBar from "../../components/chrome/FooterBar";
+import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import BagSheet from "../../components/cart/BagSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
@@ -48,6 +51,7 @@ import LoyaltyRewardsSheet from "../../components/loyalty/LoyaltyRewardsSheet";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
 import LoyaltyErrorModal from "../../components/loyalty/LoyaltyErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { ErrorBoundary } from "../../ErrorBoundary";
 
 /**
  * Menu browse — Figma "Menu-basic agency" (1:2595): category rail + item
@@ -110,6 +114,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
   const { fetchMenu } = useMenuConverters();
   const tabId = useSelector(selectTabId);
+  const ada = useAdaActive();
+  const { name } = useLocalized();
   const {
     items: upsellItems,
     shouldShowUpsell,
@@ -129,9 +135,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     () =>
       categories.map((c: any) => ({
         id: String(c?.id ?? c?.categoryId ?? ""),
-        name: String(c?.name ?? c?.categoryName ?? ""),
+        name: name(c) || String(c?.categoryName ?? ""),
       })),
-    [categories]
+    [categories, name]
   );
   const activeCategoryId = selectedCategoryId || railCategories[0]?.id || "";
   const isEmpty = categories.length === 0;
@@ -386,7 +392,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           selectedId={activeCategoryId}
           onSelect={handleRailSelect}
         />
-        <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[48px]">
+        <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center gap-6">
               <h1 className="tb-display text-center text-5xl text-tb-purple">
@@ -409,7 +415,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                   className="pt-[48px]"
                 >
                   <h2 className="tb-display mb-[32px] text-[64px] leading-[0.85] tracking-[-3px] text-tb-purple">
-                    {category?.name}
+                    {name(category)}
                   </h2>
                   {subCategories.map((subCategory: any, subIndex: number) => {
                     const entities: any[] = Array.isArray(subCategory?.entities)
@@ -420,7 +426,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                       <div key={subCategory?.id ?? subIndex} className="mb-[40px]">
                         {subCategories.length > 1 && (
                           <h3 className="tb-display mb-[24px] text-[28px] leading-[1] tracking-[-1px] text-tb-ink-purple">
-                            {subCategory?.name ?? subCategory?.categoryName}
+                            {name(subCategory) || subCategory?.categoryName}
                           </h3>
                         )}
                         <div className="grid grid-cols-3 gap-[24px]">
@@ -446,6 +452,16 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           )}
         </div>
       </div>
+      {/* Figma 1:5263 bar (menu 1:2613 / ADA 1:5412): the root is the
+          containing block and the rail+pane row starts at its top. */}
+      <ErrorBoundary fallback={null}>
+        <ScrollIndicator
+          target={paneRef}
+          top={ada ? 170 : 505}
+          height={ada ? 578 : 790}
+          testId="menu-scrollbar"
+        />
+      </ErrorBoundary>
       <MenuCtaBar
         currency={currency}
         onViewBag={handleViewBag}

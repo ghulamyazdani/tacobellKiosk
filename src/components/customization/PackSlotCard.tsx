@@ -4,6 +4,7 @@
  */
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 
 interface PackSlotCardProps {
   group: any; // modifier group (name, _id, min, max)
@@ -24,7 +25,8 @@ const calValue = (item: any) => {
  * the 3-col pack grid. Selected slot = pick's image + ✓ badge + SWAP;
  * empty slot = preview constituent dimmed + empty ring + "SELECT {group}".
  * Pure presentational: the whole card is one ≥44px button → onOpen; the
- * errored ring mirrors the PDP group treatment. No Redux, no business logic.
+ * errored ring mirrors the PDP group treatment. No business logic; the only
+ * store read is the display language (useLocalized names).
  */
 export default function PackSlotCard({
   group,
@@ -35,6 +37,7 @@ export default function PackSlotCard({
   onOpen,
 }: PackSlotCardProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
 
   const pick = selection?.[0] ?? null;
   const shown = pick ?? previewItem ?? null;
@@ -49,7 +52,7 @@ export default function PackSlotCard({
         : "";
   const ctaLabel = pick
     ? t("pack.swap")
-    : t("pack.selectGroup", { name: group?.name ?? "" });
+    : t("pack.selectGroup", { name: name(group) });
 
   return (
     <div
@@ -97,7 +100,7 @@ export default function PackSlotCard({
           />
         ) : (
           <span className="tb-compressed mb-[14px] mt-[20px] flex h-[150px] w-full items-center justify-center rounded-[8px] bg-tb-grey-6 px-[8px] text-center text-[24px] leading-[24px] text-tb-ink-purple/60">
-            {group?.name}
+            {name(group)}
           </span>
         )}
 
@@ -107,7 +110,7 @@ export default function PackSlotCard({
               pick ? "" : "text-black/70"
             }`}
           >
-            {shown?.name ?? group?.name}
+            {name(shown) || name(group)}
           </span>
           {infoLine && (
             <span className="mt-[2px] block text-[15px] leading-[20px] text-tb-ink-purple/70">

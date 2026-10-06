@@ -61,6 +61,8 @@ const { boot, mockCapture } = vi.hoisted(() => ({
     deploy: (): Promise<unknown> => Promise.resolve({ data: [] }),
     device: (): Promise<unknown> => Promise.resolve({ data: [] }),
     partners: vi.fn((): Promise<unknown> => Promise.resolve({ paymentPartners: [] })),
+    /** Post-P9 29b: the tenant recommendations' background refresh. */
+    refresh: vi.fn((): Promise<void> => Promise.resolve()),
   },
   mockCapture: vi.fn(),
 }));
@@ -111,6 +113,10 @@ vi.mock("@cx-sdk/payments/services/paymentInfoApi", async (importOriginal) => ({
 
 vi.mock("../colorManagement/useFetchColors", () => ({
   default: () => ({ FetchThemeData: () => boot.theme() }),
+}));
+
+vi.mock("../../recommendation/useTenantRecommendations", () => ({
+  default: () => ({ refresh: boot.refresh, loadCached: () => Promise.resolve() }),
 }));
 
 vi.mock("../../../utils/analytics", async (importOriginal) => ({
@@ -175,6 +181,8 @@ beforeEach(() => {
   boot.device = () => Promise.resolve({ data: [] });
   boot.partners.mockReset();
   boot.partners.mockImplementation(() => Promise.resolve({ paymentPartners: [] }));
+  boot.refresh.mockReset();
+  boot.refresh.mockImplementation(() => Promise.resolve());
 });
 
 afterEach(() => {
@@ -436,7 +444,8 @@ describe("useLoaders — the ADA feature gate (P9c)", () => {
 /*
   P9d — splash media (getMedia → appSettings.mediaData). Decorative, never
   boot-critical: a valid answer stores ONLY { media: { home_screen } } scoped
-  to this deployment (a stored banner_image_* key can blank /menu); a failure,
+  to this deployment (menu banners are not stored — D1, user 2026-10-06; the
+  SDK banner walk is guarded since post-P9 25a); a failure,
   or a body that is not a getMedia answer, keeps the last-known
   (device-persisted) media, is reported once, and boot carries on.
 */
@@ -910,6 +919,8 @@ describe("useLoaders — stage → commit: a boot writes all or nothing (P9e)", 
       "appSettings/setHidePlusIconFromItem",
       "appSettings/setAutoAdjustFontSize",
       "appSettings/setShowUpsellingItemAsSeperateItem",
+      "makeItAMeal/setPrimaryMakeItAMealText",
+      "makeItAMeal/setSecondaryMakeItAMealText",
       "appSettings/setDiscountOnAddon",
       "appSettings/setDeploymentInfo",
       "appSettings/setPaymentSettings",
@@ -1033,5 +1044,140 @@ describe("useLoaders — stage → commit: a boot writes all or nothing (P9e)", 
     expect(eventsFrom("boot_media_fetch")).toHaveLength(1);
     expect(state().pipeline.pipelines).toEqual([{ _id: "new-p", tab_id: "t1" }]);
     expect(state().autoUpdate.lastBootAt).toBe(T0);
+  });
+});
+
+/*
+  Post-P9 29c — the operator's make_it_meal_<slot> texts are ALWAYS staged with
+  the kiosk settings ("" when unset or not a string, so the prompt falls back
+  to the translated miam.title), and land only with the rest of the commit.
+*/
+describe("useLoaders — MIAM texts (post-P9 29c)", () => {
+  const AR_MIAM = "هل تريدها وجبة؟";
+  type MiamState = {
+    makeItAMeal: { primaryMakeItAMealText: unknown; secondaryMakeItAMealText: unknown };
+  };
+  const texts = () => {
+    const { makeItAMeal } = store.getState() as unknown as MiamState;
+    return [makeItAMeal.primaryMakeItAMealText, makeItAMeal.secondaryMakeItAMealText];
+  };
+  const seedTexts = (primary: string, secondary: string) => {
+    store.dispatch({ type: "makeItAMeal/setPrimaryMakeItAMealText", payload: primary });
+    store.dispatch({ type: "makeItAMeal/setSecondaryMakeItAMealText", payload: secondary });
+  };
+  /** The two MIAM writes the boot dispatched, in order. */
+  const miamWrites = (dispatch: { mock: { calls: unknown[][] } }) =>
+    dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload: unknown })
+      .filter(({ type }) => type.startsWith("makeItAMeal/"))
+      .map(({ type, payload }) => [type, payload]);
+
+  it.each<[string, Record<string, unknown>, string, string]>([
+    ["set (trimmed)", { make_it_meal_primary: "  Make it a combo? ", make_it_meal_secondary: ` ${AR_MIAM} ` }, "Make it a combo?", AR_MIAM],
+    ["unset → ''", {}, "", ""],
+    ["blank → ''", { make_it_meal_primary: "   ", make_it_meal_secondary: "" }, "", ""],
+    ["non-string → ''", { make_it_meal_primary: 5, make_it_meal_secondary: { text: "x" } }, "", ""],
+  ])("%s: both texts are staged and committed", async (_label, miam, primary, secondary) => {
+    seedTexts("OLD PRIMARY", "OLD SECONDARY");
+    boot.settings = { ...START_TEXT, ...miam };
+    const dispatch = vi.spyOn(store, "dispatch");
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(miamWrites(dispatch)).toEqual([
+      ["makeItAMeal/setPrimaryMakeItAMealText", primary],
+      ["makeItAMeal/setSecondaryMakeItAMealText", secondary],
+    ]);
+    expect(texts()).toEqual([primary, secondary]);
+  });
+
+  it("they are part of the ONE commit burst: written after the last fetch, before the stamp", async () => {
+    // enable_loyalty: the partner lookup is then the boot's LAST fetch.
+    boot.settings = { ...START_TEXT, enable_loyalty: true, make_it_meal_primary: "Meal?" };
+    const dispatch = vi.spyOn(store, "dispatch");
+    const lastFetch = vi.fn();
+    boot.partner.mockImplementation(() => {
+      lastFetch();
+      return Promise.resolve(null);
+    });
+
+    await runBoot();
+
+    const order = (type: string) =>
+      dispatch.mock.invocationCallOrder[
+        dispatch.mock.calls.findIndex(([action]) => (action as { type: string }).type === type)
+      ];
+    const primaryAt = order("makeItAMeal/setPrimaryMakeItAMealText");
+    expect(primaryAt).toBeGreaterThan(lastFetch.mock.invocationCallOrder[0]);
+    expect(order("makeItAMeal/setSecondaryMakeItAMealText")).toBeGreaterThan(primaryAt);
+    expect(order("autoUpdate/setLastBootAt")).toBeGreaterThan(
+      order("makeItAMeal/setSecondaryMakeItAMealText")
+    );
+  });
+
+  it.each<[string, () => void, string]>([
+    ["the deployment-info call throws (after the settings step)", () => (boot.deploy = () => Promise.reject(new TypeError("deploy"))), "unavailable"],
+    ["no start text in the same settings body", () => (boot.settings = { make_it_meal_primary: "NEW PRIMARY", make_it_meal_secondary: "NEW SECONDARY" }), "noStartText"],
+  ])("a later boot failure (%s) leaves the previous texts", async (_label, arrange, reason) => {
+    seedTexts("OLD PRIMARY", "OLD SECONDARY");
+    boot.settings = { ...START_TEXT, make_it_meal_primary: "NEW PRIMARY", make_it_meal_secondary: "NEW SECONDARY" };
+    arrange();
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(reason);
+    expect(texts()).toEqual(["OLD PRIMARY", "OLD SECONDARY"]);
+  });
+});
+
+/*
+  Post-P9 29b — the tenant recommendations refresh is a post-commit BACKGROUND
+  task: started exactly once, after the commit burst and the lastBootAt stamp,
+  never awaited (a dead S3 can neither delay nor fail a boot), and never run
+  for a failed boot.
+*/
+describe("useLoaders — tenant recommendations refresh (post-P9 29b)", () => {
+  it("runs exactly once, after every commit write and the lastBootAt stamp, before onSuccess", async () => {
+    const dispatch = vi.spyOn(store, "dispatch");
+
+    const { onSuccess } = await runBoot();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(boot.refresh).toHaveBeenCalledTimes(1);
+    expect(boot.refresh).toHaveBeenCalledWith();
+    const types = dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
+    expect(types).toContain("autoUpdate/setLastBootAt");
+    const refreshAt = boot.refresh.mock.invocationCallOrder[0];
+    // Every boot write — the commit burst and the stamp — precedes it.
+    expect(Math.max(...dispatch.mock.invocationCallOrder)).toBeLessThan(refreshAt);
+    expect(onSuccess.mock.invocationCallOrder[0]).toBeGreaterThan(refreshAt);
+  });
+
+  it.each<[string, () => void]>([
+    ["the first await (language) times out", () => (boot.language = () => Promise.reject(TIMEOUT))],
+    ["no pipelines", () => (boot.pipelines = () => Promise.resolve([]))],
+    ["settings without the start text", () => (boot.settings = {})],
+    ["the deployment-info call throws", () => (boot.deploy = () => Promise.reject(new TypeError("deploy")))],
+  ])("never runs on a failed boot: %s", async (_label, arrange) => {
+    arrange();
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(boot.refresh).not.toHaveBeenCalled();
+  });
+
+  it("a never-settling refresh does not delay onSuccess (it is never awaited)", async () => {
+    boot.refresh.mockImplementation(() => new Promise<void>(() => {}));
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(boot.refresh).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 });

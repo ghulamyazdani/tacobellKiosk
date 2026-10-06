@@ -1,6 +1,9 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Provider } from "react-redux";
+import { store } from "../../../redux/app/store";
 import SlotSelectionSheet from "../SlotSelectionSheet";
 import "../../../i18n";
 
@@ -21,6 +24,11 @@ const FRIES = {
   image_url: "",
 };
 
+// useLocalized (post-P9 item 28) reads the display language from the store.
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <Provider store={store}>{children}</Provider>
+);
+
 const renderSheet = (
   overrides: Partial<Parameters<typeof SlotSelectionSheet>[0]> = {}
 ) => {
@@ -38,7 +46,8 @@ const renderSheet = (
       onCustomize={onCustomize}
       onClose={onClose}
       {...overrides}
-    />
+    />,
+    { wrapper }
   );
   return { onSave, onCustomize, onClose };
 };
@@ -132,7 +141,8 @@ describe("SlotSelectionSheet (Figma 1:4761/1:4692 — SELECT sheet)", () => {
       onClose: vi.fn(),
     };
     const { rerender } = render(
-      <SlotSelectionSheet {...props} group={GROUP} selectedId="opt-fries" />
+      <SlotSelectionSheet {...props} group={GROUP} selectedId="opt-fries" />,
+      { wrapper }
     );
     expect(screen.getByTestId("slot-sheet-save")).toBeEnabled();
     rerender(

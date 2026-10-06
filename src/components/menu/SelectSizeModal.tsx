@@ -7,6 +7,7 @@ import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface SelectSizeModalProps {
@@ -27,6 +28,7 @@ export default function SelectSizeModal({
   onContinue,
 }: SelectSizeModalProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const currencySettings = useSelector(selectCurrency) as any;
   const currency = currencySettings?.symbol ?? "";
   const [selectedId, setSelectedId] = useState<string>("");
@@ -91,7 +93,7 @@ export default function SelectSizeModal({
             {t("size.title")}
           </h2>
           <p className="mb-[24px] text-center text-[22px] font-medium text-black">
-            {entity?.name}
+            {name(entity)}
           </p>
         </div>
         <button
@@ -114,7 +116,7 @@ export default function SelectSizeModal({
               <span className="tb-compressed mb-[8px] bg-tb-yellow px-[10px] py-[8px] text-[20px] leading-[16px] text-black">
                 {t("size.bestValue")}
               </span>
-              <p className="text-[26px] font-medium capitalize text-black">{hero.name}</p>
+              <p className="text-[26px] font-medium capitalize text-black">{name(hero)}</p>
               <p className="mb-[8px] text-[17px] text-tb-ink-purple">
                 {priceLabel(hero)}
                 {calText(hero)}
@@ -141,7 +143,7 @@ export default function SelectSizeModal({
                     {imageUrl && (
                       <img alt="" src={imageUrl} className="mb-2 h-[120px] w-full object-contain" />
                     )}
-                    <p className="text-[19px] font-medium capitalize text-black">{v.name}</p>
+                    <p className="text-[19px] font-medium capitalize text-black">{name(v)}</p>
                     <p className="text-[15px] text-tb-ink-purple">
                       {priceLabel(v)}
                       {calText(v)}

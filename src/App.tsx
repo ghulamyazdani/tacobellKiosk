@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { BrowserRouter as Router } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { identifyKiosk } from "./utils/analytics";
@@ -8,6 +8,7 @@ import { ReachZone } from "./components/stage/ReachZone";
 import NetworkStatusOverlay from "./components/common/NetworkStatusOverlay";
 import { PWAUpdateHandler } from "./components/autoUpdate/PWAUpdateHandler";
 import useFcmRegistration from "./hooks/firebase/useFcmRegistration";
+import useTenantRecommendations from "./hooks/recommendation/useTenantRecommendations";
 import { selectSelectedLanguage } from "./redux/features/multiLanguage/multiLanguage.slice";
 import { selectLicenseDetails } from "@cx-sdk/core/auth/authentication.slice";
 import i18n, { DEFAULT_LANGUAGE } from "./i18n";
@@ -23,11 +24,24 @@ import i18n, { DEFAULT_LANGUAGE } from "./i18n";
  * - FCM (P9e): useFcmRegistration — latch-, config- and permission-gated,
  *   never prompts; firebase is a lazy chunk, never on the boot path.
  *   FullscreenPrompt lands with its feature.
+ * - Tenant recommendations (post-P9 29a): their Dexie copy loads once per
+ *   launch, because a relaunch never boots (P9e) — without it a reload
+ *   loses the bag rail's tenant source until the next boot (≤ 6 h).
  */
 const App = () => {
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const licenseDetails = useSelector(selectLicenseDetails);
   useFcmRegistration();
+  const { loadCached } = useTenantRecommendations();
+  const recommendationsLoaded = useRef(false);
+
+  // Once per launch (the ref survives StrictMode's effect replay). Never
+  // rejects, and never overwrites a map a boot already stored.
+  useEffect(() => {
+    if (recommendationsLoaded.current) return;
+    recommendationsLoaded.current = true;
+    void loadCached();
+  }, [loadCached]);
 
   // Language sync: the shell pushes the store's language into i18n (the
   // detector never reads the store — that coupling stays broken). Every

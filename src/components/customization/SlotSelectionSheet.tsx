@@ -5,11 +5,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface SlotSelectionSheetProps {
   open: boolean;
-  group: any; // slot group; title = group.name
+  group: any; // slot group; title = useLocalized().name(group)
   options: any[]; // active constituent items (already filtered)
   selectedId?: string; // current pick id
   currency: string;
@@ -40,6 +41,7 @@ function SheetBody({
   onClose,
 }: SlotSelectionSheetProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const [picked, setPicked] = useState<string>(selectedId ?? "");
 
   const list: any[] = Array.isArray(options) ? options : [];
@@ -77,7 +79,7 @@ function SheetBody({
 
         <span className="flex-1">
           <span className="block text-[20px] font-medium capitalize leading-[24px] text-black">
-            {item?.name}
+            {name(item)}
           </span>
           {line && (
             <span className="mt-[2px] block text-[16px] leading-[22px] text-tb-ink-purple/70">
@@ -121,7 +123,7 @@ function SheetBody({
         <button
           type="button"
           data-testid={`slot-option-${item?.id}`}
-          aria-label={item?.name}
+          aria-label={name(item)}
           onClick={() => setPicked(item?.id)}
           className="absolute inset-0 h-full w-full min-h-[44px]"
         />
@@ -147,7 +149,7 @@ function SheetBody({
         style={{ animation: "tbSlotSheetEnter 0.2s ease-out both" }}
       >
         <h2 className="tb-display mb-[20px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple-vibrant">
-          {t("pack.selectGroup", { name: group?.name ?? "" })}
+          {t("pack.selectGroup", { name: name(group) })}
         </h2>
         <button
           type="button"
