@@ -1051,6 +1051,29 @@ describe("FreebiePickerSheet — group-wise pick N (G3)", () => {
     expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
   });
 
+  it.each([
+    ["null", null],
+    ["0", 0],
+  ])("a group-wise offer whose shared discount value is %s can't be applied: rows locked, CONFIRM locked, nothing lands at full price", async (_label, value) => {
+    const zeroValue = {
+      ...PICK_2_OFFER,
+      _id: "offer-gw-zero-value",
+      buygetGroupWiseOfferValues: { ...PICK_2_OFFER.buygetGroupWiseOfferValues, value },
+    };
+    const { onClose } = renderPicker(zeroValue);
+    expect(hint()).toHaveTextContent("This reward can't be applied to your current order");
+    expect(option("greek-salad")).toBeDisabled();
+    expect(option("tortilla-sauce")).toBeDisabled();
+    const confirm = screen.getByTestId("freebie-confirm");
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.click(option("tortilla-sauce"));
+    await userEvent.click(confirm);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(getItemRows()).toEqual([]);
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+  });
+
   it("'get 2' over ONE customizable entry can never fill (one customization per entry): 'can't be applied' up front, the row locked before any PDP, CONFIRM locked", async () => {
     const burgerEntry = PICK_2_OFFER.getItems.items[3];
     const oneCustom = { ...PICK_2_OFFER, _id: "offer-gw-one-custom", getItems: { items: [burgerEntry] } };

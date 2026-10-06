@@ -31,6 +31,9 @@ import { fileURLToPath } from "node:url";
  *   + free Greek Salad (17): Sub £34.00, −£25.00, VAT 1.35 → 10.35 → £10.00.
  * - E10 (G3 + reload) paid burger 8 + free Greek Salad (17) + free Tortilla
  *   Sauce (2): the E6 bill, −£19.00 and £9.00, before AND after the reload.
+ * - E11 (4a crash-recovery) the E10 picks Removed, then written back into
+ *   IndexedDB under the empty slot: after the reload only the paid burger,
+ *   no Discounts line (before the fix: the rows back, −£19.00, no reward).
  * The bag renders U+2212 MINUS SIGN on the Discounts line (MINUS below).
  */
 
@@ -203,6 +206,56 @@ function clearDexieCart(page: Page): Promise<void> {
           };
         };
       })
+  );
+}
+
+type DexieRow = Record<string, unknown> & { isGetItem?: boolean };
+
+/** The Dexie cart mirror's rows (KioskDB.cartItems), read under the running app. */
+function readDexieCart(page: Page): Promise<DexieRow[]> {
+  return page.evaluate(
+    () =>
+      new Promise<DexieRow[]>((resolve, reject) => {
+        const open = indexedDB.open("KioskDB");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const request = db.transaction("cartItems", "readonly").objectStore("cartItems").getAll();
+          request.onsuccess = () => {
+            db.close();
+            resolve(request.result as DexieRow[]);
+          };
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+        };
+      })
+  );
+}
+
+/** Put rows back into the Dexie cart mirror (a write the app never undid). */
+function writeDexieCart(page: Page, rows: DexieRow[]): Promise<void> {
+  return page.evaluate(
+    (toPut) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open("KioskDB");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction("cartItems", "readwrite");
+          toPut.forEach((row) => tx.objectStore("cartItems").put(row));
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => {
+            db.close();
+            reject(tx.error);
+          };
+        };
+      }),
+    rows
   );
 }
 
@@ -924,6 +977,52 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
     await expect(page).toHaveURL(/\/menu$/);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
+    expect(await readOfferStaging(page)).toEqual({
+      staged: 0,
+      slotTaken: false,
+      tierSession: false,
+    });
+  });
+
+  test("E11 4a crash-recovery: free rows a Remove deleted come back from IndexedDB under the empty slot (the probe) — the reload drops them before they render: only the paid burger, no Discounts line, no reward, no notice, and IndexedDB loses them too", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [PICK_2_SIDES]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await saveOfferToPicker(page, PICK_2_SIDES._id);
+    await page.getByTestId(`freebie-option-${GREEK_SALAD}`).click();
+    await page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`).click();
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£19.00`);
+    const freeRowsIn = async () => (await readDexieCart(page)).filter((row) => row.isGetItem);
+    await expect.poll(async () => (await freeRowsIn()).length).toBe(2);
+    const freeRows = await freeRowsIn();
+
+    // Remove: the reward leaves the persisted slot and its rows leave
+    // IndexedDB — then a crash between the two stores is simulated by
+    // writing the rows back under the empty slot.
+    await page.getByTestId("bag-rewards-remove").click();
+    await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
+    await expect.poll(async () => (await readDexieCart(page)).length).toBe(1);
+    await writeDexieCart(page, freeRows);
+    expect(await readDexieCart(page)).toHaveLength(3);
+
+    await page.reload();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(bagRows(page)).toContainText("Cheese Burger");
+    await expect(page.locator('[data-testid^="bag-free-chip-"]')).toHaveCount(0);
+    await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
+    await expect(page.getByTestId("bag-rewards-applied")).toHaveCount(0);
+    // (Post-reload money may lack "£" until get_data — E9.)
+    await expect(page.getByTestId("bag-total")).toHaveText(/^£?9\.00$/);
+    await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
+    await expect.poll(async () => (await readDexieCart(page)).length).toBe(1);
     expect(await readOfferStaging(page)).toEqual({
       staged: 0,
       slotTaken: false,

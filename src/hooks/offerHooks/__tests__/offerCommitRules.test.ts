@@ -16,6 +16,7 @@ import {
   canAddGroupWiseUnit,
   canCompleteGroupWisePicks,
   canOfferBuyStage,
+  findOrphanedFreebieRows,
   getGroupWisePickState,
   isFixedGetEntry,
   isSameOrLessViolated,
@@ -31,6 +32,7 @@ import type {
   BuyStageMode,
   BuyStageView,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
+import { redeemGetItem } from "@cx-sdk/ordering/cart/cartEngine";
 import P7B_FIXTURE_OFFERS from "../../../../tests/e2e/fixtures/offers.json";
 
 // Pass-through spies on the two engine helpers the ceiling / 7th check call,
@@ -780,6 +782,22 @@ describe("group-wise pick N — production shapes and over-grant probes (G3, tes
     expect(state.commitItems !== null).toBe(commits);
   });
 
+  it.each([
+    ["null", null],
+    ["0", 0],
+    ["'' (unset)", ""],
+    ["-5", -5],
+    ["'free' (non-numeric)", "free"],
+  ])("a shared discount value of %s can't be applied: no commit, the group never fills (the picks would land at FULL price)", (_label, value) => {
+    const zeroValue = withValues({ value });
+    const all = [GW_SALAD, GW_TORTILLA, GW_CAESAR, GW_BURGER];
+    expect(pickState(zeroValue, [SALAD_1, CAESAR_1])).toMatchObject({ need: 2, picked: 2, commitItems: null });
+    expect(canCompleteGroupWisePicks(asOffer(zeroValue), [], all)).toBe(false);
+    // Control: the same picks commit at the configured value.
+    expect(pickState(PICK_2, [SALAD_1, CAESAR_1]).commitItems).toHaveLength(2);
+    expect(canCompleteGroupWisePicks(asOffer(PICK_2), [], all)).toBe(true);
+  });
+
   it("a fixed pick grants its entry's OWN entity: a row riding on the pick cannot swap a dearer item in", () => {
     const state = pickState(PICK_2, [
       { entry: GW_TORTILLA, quantity: 1, entities: STAGED_BURGER },
@@ -849,5 +867,83 @@ describe("group-wise pick N — production shapes and over-grant probes (G3, tes
     const categoryPick: Pick = { entry: { entities: fries }, quantity: 1 };
     expect(pickState(withCategory, [SALAD_1, categoryPick]).commitItems).toBeNull();
     expect(canAddGroupWiseUnit(asOffer(withCategory), [SALAD_1], categoryPick.entry)).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 4a: crash-recovery orphans — freebie rows the applied offer does not own
+ * ------------------------------------------------------------------ */
+
+describe("findOrphanedFreebieRows — what a crash-reload must not restore (4a)", () => {
+  /** A committed freebie row exactly as the apply paths land it (redeemGetItem). */
+  const landed = (line: { entities: object; discountType: unknown; value: unknown }) =>
+    redeemGetItem(line.entities, line.discountType, 1, line.value, true, false);
+  const orphans = (fixture: object | undefined, rows: object[]) =>
+    findOrphanedFreebieRows(fixture && asOffer(fixture), rows);
+  const PAID = paidRow("cheese-burger", 8);
+  const SALAD_ROW = landed(SALAD_AND);
+  const CAESAR_ROW = landed(CAESAR_AND);
+
+  it("no applied offer (the probe: Remove, then the rows came back): every freebie row is an orphan, a paid row never", () => {
+    expect(orphans(undefined, [PAID, SALAD_ROW, CAESAR_ROW])).toEqual([SALAD_ROW, CAESAR_ROW]);
+    // removeCartOffer empties the slot to {}.
+    expect(orphans({}, [PAID, SALAD_ROW])).toEqual([SALAD_ROW]);
+    expect(orphans(undefined, [PAID])).toEqual([]);
+    expect(findOrphanedFreebieRows(undefined, undefined)).toEqual([]);
+  });
+
+  it.each([
+    ["flat (amount)", FLAT],
+    ["percent", PERCENT],
+    ["least-value (never lands rows)", LEAST_EMPTY_GET],
+  ])("an offer that lands no rows owns none: %s — even one whose payload lists a matching get entry", (_label, fixture) => {
+    expect(orphans(fixture, [PAID, SALAD_ROW])).toEqual([SALAD_ROW]);
+    const listing = { ...fixture, getItems: { items: [SALAD_AND], categories: [] } };
+    expect(orphans(listing, [PAID, SALAD_ROW])).toEqual([SALAD_ROW]);
+  });
+
+  it("the applied item offer keeps its own rows: by base id, by the granted size's variant id, and a customized row", () => {
+    expect(orphans(FIXED_AND_ITEM, [PAID, SALAD_ROW])).toEqual([]);
+
+    const largeFries = {
+      ...VARIANT_ENTITY,
+      isVariantSelected: true,
+      selectedVariant: { id: "fries-l", name: "Large", price: 5, isActive: true },
+    };
+    const fixedSize = { ...FIXED_AND_ITEM, getItems: { items: [getEntry("fries-l", "and", largeFries)], categories: [] } };
+    expect(orphans(fixedSize, [landed(fixedSize.getItems.items[0])])).toEqual([]);
+
+    const customized = { ...CUSTOMIZABLE_ENTITY, itemId: "cb-staged", total_price: 9 };
+    expect(
+      orphans(SINGLE_AND_CUSTOMIZABLE, [landed({ ...SINGLE_AND_CUSTOMIZABLE.getItems.items[0], entities: customized })])
+    ).toEqual([]);
+  });
+
+  it("another offer's rows are orphans under the applied one: a different item, or the same item at a different stamp", () => {
+    expect(orphans(FIXED_AND_ITEM, [PAID, SALAD_ROW, CAESAR_ROW])).toEqual([CAESAR_ROW]);
+    const halfPriceSalad = { ...FIXED_AND_ITEM, _id: "half-salad", getItems: { items: [{ ...SALAD_AND, value: 50 }], categories: [] } };
+    expect(orphans(halfPriceSalad, [SALAD_ROW])).toEqual([SALAD_ROW]);
+    const amountSalad = { ...FIXED_AND_ITEM, _id: "amount-salad", getItems: { items: [{ ...SALAD_AND, discountType: "amount" }], categories: [] } };
+    expect(orphans(amountSalad, [SALAD_ROW])).toEqual([SALAD_ROW]);
+  });
+
+  it("group-wise: the picks carry the offer's SHARED stamp and are kept; a row at the entries' own (empty) stamp is not", () => {
+    const lines = getGroupWisePickState(asOffer(PICK_2), [
+      { entry: GW_SALAD, quantity: 1 },
+      { entry: GW_CAESAR, quantity: 1 },
+    ]).commitItems;
+    const rows = (lines ?? []).map(landed);
+    expect(rows).toHaveLength(2);
+    expect(orphans(PICK_2, [PAID, ...rows])).toEqual([]);
+    const ownStamp = landed(GW_TORTILLA);
+    expect(orphans(PICK_2, [ownStamp])).toEqual([ownStamp]);
+  });
+
+  it("unreadable offer data fails closed: every freebie row goes", () => {
+    expect(orphans({ ...FIXED_AND_ITEM, getItems: { items: "corrupt" } }, [SALAD_ROW])).toEqual([SALAD_ROW]);
+    const noBaseId = { ...FIXED_AND_ITEM, getItems: { items: [{ ...SALAD_AND, baseItemId: undefined }] } };
+    expect(orphans(noBaseId, [SALAD_ROW])).toEqual([SALAD_ROW]);
+    const throwing = { ...FIXED_AND_ITEM, get getItems(): never { throw new Error("corrupt"); } };
+    expect(orphans(throwing, [PAID, SALAD_ROW])).toEqual([SALAD_ROW]);
   });
 });
