@@ -234,12 +234,20 @@ export default function ReceiptPreferenceScreen() {
           data-testid="order-error"
           role="alertdialog"
           aria-modal="true"
+          aria-labelledby="order-error-title"
+          aria-describedby="order-error-message"
           className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-[40px] bg-tb-ink-purple/95 px-[90px] text-center"
         >
-          <h2 className="tb-display text-[64px] leading-[60px] tracking-[-2px] text-tb-surface">
+          <h2
+            id="order-error-title"
+            className="tb-display text-[64px] leading-[60px] tracking-[-2px] text-tb-surface"
+          >
             {t(failedOnTimeout ? "orderError.uncertainTitle" : "orderError.title")}
           </h2>
-          <p className="max-w-[820px] text-[30px] leading-[40px] text-tb-cream">
+          <p
+            id="order-error-message"
+            className="max-w-[820px] text-[30px] leading-[40px] text-tb-cream"
+          >
             {t(
               failedOnTimeout
                 ? "orderError.uncertainMessage"

@@ -1,7 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { motion } from "framer-motion";
 import useAuthHook from "../../hooks/utils/useAuthHook";
 import KioskKeyboard from "../../components/keyboard/KioskKeyboard";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
@@ -24,8 +23,22 @@ export default function Registration() {
     message: "",
   });
 
+  // One dismiss timer at a time: a second error restarts the 3 s window
+  // instead of being cleared early by the first one's timer, and leaving the
+  // screen never leaves a timer behind (Rule 5).
+  const errorTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (errorTimer.current) window.clearTimeout(errorTimer.current);
+    },
+    [],
+  );
   const closeError = useCallback(() => {
-    setTimeout(() => setError({ status: false, message: "" }), 3000);
+    if (errorTimer.current) window.clearTimeout(errorTimer.current);
+    errorTimer.current = window.setTimeout(
+      () => setError({ status: false, message: "" }),
+      3000,
+    );
   }, []);
 
   const handlePaste = async () => {
@@ -62,15 +75,19 @@ export default function Registration() {
       data-testid="registration-screen"
       className="relative flex h-[1920px] w-[1080px] flex-col items-center bg-tb-purple"
     >
-      <motion.div
-        initial={{ y: -120 }}
-        animate={{ y: error.status ? 0 : -120 }}
-        transition={{ duration: 0.4 }}
-        className="absolute top-0 z-50 flex w-full items-center justify-center bg-red-600 px-8 py-6 text-2xl font-bold text-white"
+      {/* Pure-CSS motion (rAF animations freeze in occluded windows). The
+          banner slides on the `translate` property alone; the submit button
+          shakes on `rotate` and presses on `scale` — separate properties, so
+          they compose instead of fighting over `transform`. */}
+      <style>{`@keyframes tbRegistrationShake{0%,100%{rotate:0deg}20%,60%{rotate:1deg}40%,80%{rotate:-1deg}}`}</style>
+      <div
+        className={`absolute top-0 z-50 flex w-full items-center justify-center bg-red-600 px-8 py-6 text-2xl font-bold text-white transition-transform duration-[400ms] ${
+          error.status ? "translate-y-0" : "-translate-y-[120px]"
+        }`}
         data-testid="registration-error"
       >
         {error.message}
-      </motion.div>
+      </div>
 
       <img alt="Taco Bell" src={tbBell} className="mt-[140px] h-[110px]" />
       <h1 className="tb-display mt-[80px] max-w-[860px] text-center text-[72px] leading-[0.95] tracking-[-3px] text-tb-surface">
@@ -87,7 +104,7 @@ export default function Registration() {
         className="relative mt-[80px] flex h-[100px] w-[844px] items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-8 text-[28px] font-medium tracking-[2px] text-black"
       >
         {code || (
-          <span className="text-black/35">{t("registration.placeholder")}</span>
+          <span className="text-black/55">{t("registration.placeholder")}</span>
         )}
         {code && (
           <button
@@ -110,19 +127,24 @@ export default function Registration() {
         >
           {t("registration.paste")}
         </button>
-        <motion.button
+        {/* Ink-purple on pink (7.73:1, the house pink-CTA pattern); white
+            was 2.46:1. */}
+        <button
           type="button"
           data-testid="registration-submit"
-          animate={{ rotate: error.status ? [0, 1, -1, 1, -1, 0] : 0 }}
-          whileTap={{ scale: 0.95 }}
           onClick={handleActivate}
           disabled={isAuthenticateLoading}
-          className="min-h-[44px] min-w-[44px] rounded-full bg-tb-pink px-14 py-4 text-xl font-black uppercase text-white disabled:opacity-60"
+          className="min-h-[44px] min-w-[44px] rounded-full bg-tb-pink px-14 py-4 text-xl font-black uppercase text-tb-ink-purple transition-transform active:scale-95 disabled:opacity-60"
+          style={
+            error.status
+              ? { animation: "tbRegistrationShake 0.4s ease-in-out" }
+              : undefined
+          }
         >
           {isAuthenticateLoading
             ? t("registration.activating")
             : t("registration.activate")}
-        </motion.button>
+        </button>
       </div>
 
       <div className="absolute bottom-[90px] w-full px-[40px]">

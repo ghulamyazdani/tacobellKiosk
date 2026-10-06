@@ -1,6 +1,5 @@
 import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   selectPrimaryLanguage,
   selectSecondaryLanguage,
@@ -45,65 +44,71 @@ export default function LanguageSheet({ open, onClose }: LanguageSheetProps) {
   // string), which must fall back to the primary language.
   const selectedCode = selected?.code || primary?.code;
 
+  // L0: store the fork's slot `type` (by identity with the option object) —
+  // every per-language read (pipeline names, MIAM and ticker copy) keys on it.
   const choose = (lang: LanguageOption) => {
-    dispatch(setSelectedLanguage(withDirection(lang)));
+    dispatch(
+      setSelectedLanguage(
+        withDirection({
+          ...lang,
+          type: lang === secondary ? "secondary_language" : "primary_language",
+        })
+      )
+    );
     onClose();
   };
 
+  if (!open) return null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        <div className="absolute inset-0 z-40" data-testid="language-sheet">
-          <motion.button
-            type="button"
-            aria-label={t("language.close")}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 h-full w-full bg-tb-purple/80"
-          />
-          <motion.div
-            initial={{ y: 480 }}
-            animate={{ y: 0 }}
-            exit={{ y: 480 }}
-            transition={{ type: "tween", duration: 0.25 }}
-            className="absolute bottom-0 left-0 w-[1080px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[54px] pt-[54px]"
-          >
-            <h2 className="tb-display mb-[64px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
-              {t("language.title")}
-            </h2>
-            <button
-              type="button"
-              aria-label={t("language.close")}
-              onClick={onClose}
-              className="absolute right-[44px] top-[44px] h-[48px] w-[48px] min-h-[44px] min-w-[44px]"
-            >
-              <img alt="" src={closeIcon} className="h-full w-full" />
-            </button>
-            <div className="flex flex-col gap-[24px] px-[24px] pb-[24px]">
-              {options.map((lang) => {
-                const isSelected = lang.code === selectedCode;
-                return (
-                  <button
-                    key={lang.code}
-                    type="button"
-                    data-testid={`language-${lang.code}`}
-                    onClick={() => choose(lang)}
-                    className={`tb-display w-full rounded-[8px] py-[32px] text-center text-[24px] leading-[32px] min-h-[44px] ${
-                      isSelected
-                        ? "bg-tb-purple text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
-                        : "border border-tb-purple text-tb-purple"
-                    }`}
-                  >
-                    {lang.name}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
+    <div className="absolute inset-0 z-40" data-testid="language-sheet">
+      {/* Pure-CSS entrance, position-neutral (translateY only — tb-modal-enter
+          is for centred modals). No exit animation: the sheet unmounts at
+          once, like every other sheet (house pattern). */}
+      <style>{`@keyframes tbLanguageScrimEnter{from{opacity:0}to{opacity:1}}@keyframes tbLanguageSheetEnter{from{transform:translateY(480px)}to{transform:translateY(0)}}`}</style>
+      <button
+        type="button"
+        aria-label={t("language.close")}
+        onClick={onClose}
+        className="absolute inset-0 h-full w-full bg-tb-purple/80"
+        style={{ animation: "tbLanguageScrimEnter 0.25s ease-out both" }}
+      />
+      <div
+        className="absolute bottom-0 left-0 w-[1080px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[54px] pt-[54px]"
+        style={{ animation: "tbLanguageSheetEnter 0.25s ease-out both" }}
+      >
+        <h2 className="tb-display mb-[64px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
+          {t("language.title")}
+        </h2>
+        <button
+          type="button"
+          aria-label={t("language.close")}
+          onClick={onClose}
+          className="absolute right-[44px] top-[44px] h-[48px] w-[48px] min-h-[44px] min-w-[44px]"
+        >
+          <img alt="" src={closeIcon} className="h-full w-full" />
+        </button>
+        <div className="flex flex-col gap-[24px] px-[24px] pb-[24px]">
+          {options.map((lang) => {
+            const isSelected = lang.code === selectedCode;
+            return (
+              <button
+                key={lang.code}
+                type="button"
+                data-testid={`language-${lang.code}`}
+                onClick={() => choose(lang)}
+                className={`tb-display w-full rounded-[8px] py-[32px] text-center text-[24px] leading-[32px] min-h-[44px] ${
+                  isSelected
+                    ? "bg-tb-purple text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
+                    : "border border-tb-purple text-tb-purple"
+                }`}
+              >
+                {lang.name}
+              </button>
+            );
+          })}
         </div>
-      )}
-    </AnimatePresence>
+      </div>
+    </div>
   );
 }

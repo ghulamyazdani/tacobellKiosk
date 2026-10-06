@@ -9,6 +9,7 @@ import {
 } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setSelectedTabId } from "@cx-sdk/core/auth/authentication.slice";
 import { resetCategorySelection } from "@cx-sdk/catalog/state/Menu.slice";
+import { kiosSettingsRdx } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   selectSelectedLanguage,
   selectSecondaryLanguage,
@@ -17,6 +18,7 @@ import useKioskOpenServices from "../../hooks/kioskOpen/useKioskOpenServices";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useLocalized from "../../hooks/utils/useLocalized";
 import DaypartTicker from "../../components/chrome/DaypartTicker";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
@@ -64,6 +66,21 @@ export default function SecondLayout() {
   const scrollRow = ada && pipelines.length > 2;
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const secondaryLanguage = useSelector(selectSecondaryLanguage);
+  const { isSecondary, pipelineName, text } = useLocalized();
+  // 27b (D5): the ticker shows the guest's slot of kiosk_settings
+  // .pipeline_text_* (the fork's /second message) when set; unset or blank
+  // keeps DaypartTicker's t("ticker.lunch"). No cross-language fallback
+  // (fork getPipelineTextDescription) — the MIAM headline's rule.
+  const tickerSetting: unknown = useSelector(
+    (state) =>
+      kiosSettingsRdx(state)?.[
+        isSecondary ? "pipeline_text_secondary" : "pipeline_text_primary"
+      ]
+  );
+  const tickerCopy =
+    typeof tickerSetting === "string" && tickerSetting.trim()
+      ? text(tickerSetting.trim())
+      : undefined;
   const { checkPipelineClosedFromRedux, checkAllPipelinesWithIds } =
     useKioskOpenServices();
 
@@ -201,7 +218,7 @@ export default function SecondLayout() {
       />
 
       <div className="absolute left-0 top-0 w-full">
-        <DaypartTicker />
+        <DaypartTicker message={tickerCopy} />
       </div>
 
       {!ada && (
@@ -246,7 +263,7 @@ export default function SecondLayout() {
                   className="h-[128px] w-[128px]"
                 />
                 <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
-                  {pipeline.primary_name ?? pipeline.name}
+                  {pipelineName(pipeline)}
                 </span>
                 {closed && (
                   <span className="tb-display absolute bottom-[24px] rounded-full bg-tb-ink-purple px-6 py-2 text-[18px] text-tb-surface">

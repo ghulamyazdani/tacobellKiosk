@@ -1,5 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -15,10 +15,11 @@ import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   selectErrorMessageGlobal,
   selectShowErrorModalGlobal,
+  setCurrency,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import Tier2CustomizationSheet from "../Tier2CustomizationSheet";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Parent (tier-1) slot group the tier-2 result lands back into. */
 const SLOT_GROUP = {
@@ -62,12 +63,12 @@ const ENTITY = {
 
 const TIER1_SELECTIONS = { [SLOT_GROUP._id]: [] };
 
-const seedOpenTier2 = () => {
-  store.dispatch(setModifiersMap({ modifiersMap: { dl_addons: ICE_GROUP } }));
+const seedOpenTier2 = (entity: object = ENTITY, group: object = ICE_GROUP) => {
+  store.dispatch(setModifiersMap({ modifiersMap: { dl_addons: group } }));
   store.dispatch(setTier1SelectedCustomization(TIER1_SELECTIONS));
   store.dispatch(
     setTeir2SelectedEntity({
-      entity: ENTITY,
+      entity,
       groupId: SLOT_GROUP._id,
       currentCustomizations: {
         selectedCustomizations: TIER1_SELECTIONS,
@@ -126,6 +127,32 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     expect(tier2SelectedCustomization(store.getState())).toEqual({
       dl_addons: [],
     });
+  });
+
+  it("multi-pick option steppers are named per item, so screen readers can tell the rows apart", () => {
+    const SAUCES = {
+      ...ICE_GROUP,
+      name: "Sauces",
+      min: 0,
+      max: 2,
+      multiplePunchMin: 0,
+      multiplePunchMax: 2,
+      multiplePunchMaxItem: 2,
+      constituentItems: [
+        { id: "salsa", name: "Salsa", price: 0, isActive: true },
+        { id: "ranch", name: "Ranch", price: 0, isActive: true },
+      ],
+    };
+    seedOpenTier2(ENTITY, SAUCES);
+    renderSheet();
+    for (const item of ["Salsa", "Ranch"]) {
+      expect(
+        screen.getByRole("button", { name: `${i18n.t("pdp.increase")} ${item}` })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: `${i18n.t("pdp.decrease")} ${item}` })
+      ).toBeInTheDocument();
+    }
   });
 
   it("SAVE with an unsatisfied min: no commit, errored ring + global error, sheet stays open", async () => {
@@ -219,5 +246,58 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     ).not.toBeInTheDocument();
     expect(MIAMTier2Open(store.getState())).toBe(false);
     expect(screen.queryByTestId("tier2-sheet")).not.toBeInTheDocument();
+  });
+});
+
+/*
+  P9f §2.6: the header's calories (entityCal) and each option's meta line
+  (itemMeta) go through t("pack.cal") — EN byte-identical, never "Cal" in AR.
+*/
+describe("Tier2CustomizationSheet calories (P9f)", () => {
+  const CAL_ENTITY = { ...ENTITY, calorieCount: 360 };
+  const CAL_GROUP = {
+    ...ICE_GROUP,
+    constituentItems: [
+      { id: "ice", name: "Regular Ice", price: 0.5, calorieCount: 10, isActive: true },
+      { id: "no-ice", name: "No Ice", price: 0, isActive: true },
+    ],
+  };
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("EN is unchanged: '£0.75 | 360 Cal' header and '+£0.50 | 10 Cal' option", () => {
+    seedOpenTier2(CAL_ENTITY, CAL_GROUP);
+    renderSheet();
+
+    expect(screen.getByTestId("tier2-price-line")).toHaveTextContent("£0.75 | 360 Cal");
+    expect(screen.getByTestId("tier2-option-ice")).toHaveTextContent("+£0.50 | 10 Cal");
+  });
+
+  it("AR renders t('pack.cal') in both and never 'Cal'", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    seedOpenTier2(CAL_ENTITY, CAL_GROUP);
+    renderSheet();
+
+    const header = screen.getByTestId("tier2-price-line");
+    const option = screen.getByTestId("tier2-option-ice");
+    expect(header).toHaveTextContent(i18n.t("pack.cal", { value: 360 }));
+    expect(option).toHaveTextContent(i18n.t("pack.cal", { value: 10 }));
+    expect(header).not.toHaveTextContent("Cal");
+    expect(option).not.toHaveTextContent("Cal");
   });
 });

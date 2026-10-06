@@ -11,6 +11,7 @@ import { selectCartAmount } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -27,6 +28,7 @@ interface ProductAddedModalProps {
  */
 export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const modal = useSelector(
@@ -89,7 +91,7 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                       <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
                     )}
                     <p className="text-[17px] font-medium capitalize leading-[20px] text-black">
-                      {entity.name}
+                      {name(entity)}
                     </p>
                     <p className="text-[15px] text-tb-ink-purple">
                       {currency}

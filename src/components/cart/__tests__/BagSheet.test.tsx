@@ -16,8 +16,10 @@ import {
   setCurrency,
   setDeploymentInfo,
   setEnableAccessibilityMode,
+  setKioskSettings,
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { store } from "../../../redux/app/store";
 import BagSheet from "../BagSheet";
 import "../../../i18n";
@@ -75,6 +77,18 @@ const renderSheet = (open = true, onClose = vi.fn()) => {
 
 const cartState = () => (store.getState() as any).cart;
 
+/** Loyalty ON = kiosk_settings.enable_loyalty AND a partner (BagSheetLoyalty
+ *  precedent); no opener props are wired in this file. */
+const seedLoyaltyOn = () => {
+  store.dispatch(setKioskSettings({ enable_loyalty: true }));
+  store.dispatch(
+    setLoyaltyPartner({
+      partner: { partner_name: "Xeno" },
+      partnerDetails: { partner_name: "Xeno" },
+    })
+  );
+};
+
 describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
@@ -97,9 +111,11 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
     // Read-only order-type toggle renders both segments (locked decision 2).
     expect(screen.getByTestId("bag-ordertype-eatin")).toBeInTheDocument();
     expect(screen.getByTestId("bag-ordertype-takeout")).toBeInTheDocument();
-    // Bottom bar CTAs.
-    expect(screen.getByTestId("bag-login-rewards")).toBeInTheDocument();
-    expect(screen.getByTestId("bag-pay")).toBeInTheDocument();
+    // Bottom bar CTAs: loyalty is off here, so LOG-IN & GET REWARDS is
+    // hidden (user decision 2026-10-05) and PAY stands alone.
+    expect(screen.queryByTestId("bag-login-rewards")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bag-pay")).toHaveClass("flex-1"); // PAY takes the full row
+    expect(screen.getByTestId("bag-pay")).not.toHaveClass("w-[400px]");
   });
 
   it("bill lines come from getCalculatedBill: Sub Total and Total agree with the seeded rows (£ strings)", () => {
@@ -145,6 +161,7 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       renderSheet();
       await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
       expect(screen.getByTestId("remove-item-modal")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Remove Item" })).toHaveAttribute("aria-modal", "true");
       expect(cartState().cartItems).toHaveLength(1);
       expect(cartState().cartItems[0].quantity).toBe(1);
     });
@@ -187,11 +204,20 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("LOG-IN & GET REWARDS is inert: shows the coming-soon pressed state, dispatches nothing", async () => {
+  it("LOG-IN & GET REWARDS: hidden with loyalty OFF; with loyalty ON but no opener wired it is inert (coming-soon pressed state, dispatches nothing)", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const { unmount } = renderSheet();
+    expect(screen.queryByTestId("bag-login-rewards")).not.toBeInTheDocument();
+    unmount();
+
+    seedLoyaltyOn();
     renderSheet();
     const before = cartState();
     const button = screen.getByTestId("bag-login-rewards");
+    // Loyalty on: the Figma 1:3171 split — the CTA flexes, PAY keeps 400 px.
+    expect(button).toHaveClass("flex-1");
+    expect(screen.getByTestId("bag-pay")).toHaveClass("w-[400px]");
+    expect(screen.getByTestId("bag-pay")).not.toHaveClass("flex-1");
     expect(button).toHaveAttribute("aria-disabled", "true");
     await userEvent.click(button);
     expect(button).toHaveTextContent(/coming soon/i);
@@ -222,17 +248,33 @@ describe("BagSheet in the ADA reach zone (P9c)", () => {
   });
 
   it("ADA: 765 tall with the X, PAY and log-in CTAs all rendered; the brand-zone exit restores 1676 live", () => {
+    // The log-in CTA renders only with loyalty on (decision 2026-10-05).
+    seedLoyaltyOn();
     store.dispatch(toggleAccessibilityMode());
     renderSheet();
 
     expect(panel()).toHaveStyle({ height: "765px" });
     expect(panel()).toContainElement(screen.getByTestId("bag-pay"));
     expect(panel()).toContainElement(screen.getByTestId("bag-login-rewards"));
+    // One CTA row: 1080 − 2×24 padding − 24 gap = 1008 → PAY 400 + the CTA flexes into 608.
+    expect(screen.getByTestId("bag-login-rewards").parentElement).toBe(
+      screen.getByTestId("bag-pay").parentElement
+    );
 
     act(() => {
       store.dispatch(closeAccessibilityMode());
     });
     expect(panel()).toHaveStyle({ height: "1676px" });
+  });
+
+  it("ADA with loyalty OFF: PAY alone fills the CTA row inside the 765 px sheet", () => {
+    store.dispatch(toggleAccessibilityMode());
+    renderSheet();
+
+    expect(panel()).toHaveStyle({ height: "765px" });
+    expect(panel()).toContainElement(screen.getByTestId("bag-pay"));
+    expect(screen.getByTestId("bag-pay")).toHaveClass("flex-1");
+    expect(screen.queryByTestId("bag-login-rewards")).not.toBeInTheDocument();
   });
 
   it("a stale flag with the tenant gate off never shrinks the sheet", () => {

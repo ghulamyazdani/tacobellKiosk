@@ -17,6 +17,7 @@ import {
   primaryMakeItAMeal,
   pushToMiamBlacklistItems,
   removeMakeItAMealItem,
+  secondaryMakeItAMeal,
   selectIsForceOpenMakeItAMealModal,
   setIsForceOpenMakeItAMealModal,
   setTier1BottomSheetAndSelectedEntity,
@@ -34,6 +35,7 @@ import {
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useTagFilter from "../../hooks/menuHooks/useTagFilter";
+import useLocalized from "../../hooks/utils/useLocalized";
 import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
@@ -161,7 +163,14 @@ export default function MakeItAMealPrompt() {
   const isOpen = useSelector(makeItAMealIsOpen, shallowEqual);
   const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
   const item = useSelector(makeItMealSelectedItem, shallowEqual);
-  const primaryText = useSelector(primaryMakeItAMeal);
+  const { isSecondary, name, text } = useLocalized();
+  // 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
+  // headline. The guest's slot only — no cross-language fallback, so an
+  // Arabic guest never reads the English operator line (fork OptionsUpSell).
+  const operatorText: unknown = useSelector(
+    isSecondary ? secondaryMakeItAMeal : primaryMakeItAMeal
+  );
+  const headline = typeof operatorText === "string" ? operatorText.trim() : "";
   const currencySettings = useSelector(selectCurrency) as any;
   const currency =
     currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
@@ -322,7 +331,7 @@ export default function MakeItAMealPrompt() {
                 )}
                 <span className="flex flex-col gap-[4px]">
                   <span className="text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
-                    {combo?.name}
+                    {name(combo)}
                   </span>
                   <span className="text-[18px] leading-[20px] text-tb-ink-purple">
                     {priceLine}
@@ -335,7 +344,7 @@ export default function MakeItAMealPrompt() {
 
         <div className="flex shrink-0 flex-col items-center gap-[48px] bg-tb-surface p-[24px]">
           <h2 className="tb-display text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
-            {primaryText || t("miam.title")}
+            {headline ? text(headline) : t("miam.title")}
           </h2>
           <div className="flex w-full flex-col gap-[16px]">
             {selected && (

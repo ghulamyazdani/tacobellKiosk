@@ -73,11 +73,15 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
     fireEvent.mouseUp(hotspot);
 
     const toggle = screen.getByTestId("activity-fullscreen-toggle");
+    expect(screen.getByRole("switch", { name: "Mandatory fullscreen", checked: true })).toBe(toggle);
     // Fresh store: mandatoryFullscreen defaults TRUE (kiosks enforce
     // fullscreen out of the box) → first toggle is a DISABLE attempt and
     // must be passcode-gated.
     fireEvent.click(toggle);
     expect(screen.getByTestId("activity-passcode")).toBeInTheDocument();
+    expect(screen.getByLabelText("Enter the passcode to disable mandatory fullscreen")).toBe(
+      screen.getByTestId("activity-passcode-input")
+    );
     fireEvent.change(screen.getByTestId("activity-passcode-input"), {
       target: { value: "wrong" },
     });

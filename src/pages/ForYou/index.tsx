@@ -14,6 +14,7 @@ import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useLocalized from "../../hooks/utils/useLocalized";
 import { STAGE_HEIGHT, STAGE_WIDTH } from "../../components/stage/KioskStage";
 import {
   cartUpsellGridCapacity,
@@ -70,6 +71,7 @@ export default function ForYou() {
   // Every hook is instantiated ONCE here; the cards are props-only and memoized.
   const { items, shouldShowUpsell } = useCartUpsell();
   const { addEntity, getAddIntent } = useAddEntityToCart();
+  const { name } = useLocalized();
 
   const cart = useSelector(selectCart) as CartLike | null | undefined;
   const currencySettings = useSelector(selectCurrency) as
@@ -278,7 +280,7 @@ export default function ForYou() {
             <ForYouCard
               entity={entity}
               testId={`foryou-card-${entity.id}`}
-              title={entity?.name ?? ""}
+              title={name(entity)}
               // RAW menu price, matching the menu tile. The taxed bill total is
               // a cart concept and does not belong on a suggestion.
               price={entity?.price}

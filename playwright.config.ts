@@ -11,10 +11,15 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   timeout: 30_000,
+  // The suite is load-sensitive (2–3× slower under contention): a 2-vCPU CI
+  // runner running Vite + Chromium is contention by construction.
+  expect: { timeout: 10_000 },
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? "github" : "html",
+  // CI: PR annotations AND an HTML report (uploaded as an artifact even on
+  // green runs — it carries the capture-only screenshots).
+  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "html",
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",

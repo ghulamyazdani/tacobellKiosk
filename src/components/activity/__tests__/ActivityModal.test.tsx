@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setKioskSettings,
+  setMandatoryFullscreen,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setLastBootAt } from "@cx-sdk/devices/updates/autoUpdate.slice";
 import { store } from "../../../redux/app/store";
@@ -127,5 +130,43 @@ describe("Activity Center — Reload resources + Data loaded (P9e)", () => {
     expect(arabic).not.toBe("—");
     expect(arabic).not.toContain("Oct");
     expect(arabic).toMatch(/[\u0600-\u06FF]/); // an Arabic month name
+  });
+});
+
+/*
+  P9f (axe button-name / label): the fullscreen toggle is a named switch whose
+  aria-checked follows the store, and the passcode field is labelled by its
+  prompt. Disabling stays passcode-gated; the passcode itself never appears in
+  tests (the off state is seeded through the store).
+*/
+describe("Activity Center — accessible names (P9f)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  it("the fullscreen switch is named and its aria-checked tracks the state", () => {
+    mount();
+    const toggle = screen.getByTestId("activity-fullscreen-toggle");
+    const named = () => screen.getByRole("switch", { name: i18n.t("activity.fullscreen") });
+
+    expect(named()).toBe(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true"); // kiosks default to mandatory
+
+    act(() => {
+      store.dispatch(setMandatoryFullscreen(false));
+    });
+    expect(named()).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle); // enabling needs no passcode
+    expect(named()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("the passcode prompt labels the password input", () => {
+    mount();
+    fireEvent.click(screen.getByRole("switch", { name: i18n.t("activity.fullscreen") }));
+
+    const input = screen.getByLabelText(i18n.t("activity.passcodePrompt"));
+    expect(input).toBe(screen.getByTestId("activity-passcode-input"));
+    expect(input).toHaveAttribute("type", "password");
   });
 });

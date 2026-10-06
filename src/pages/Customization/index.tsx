@@ -23,10 +23,14 @@ import PackSlotCard from "../../components/customization/PackSlotCard";
 import SlotSelectionSheet from "../../components/customization/SlotSelectionSheet";
 import Tier2CustomizationSheet from "../../components/customization/Tier2CustomizationSheet";
 import FooterBar from "../../components/chrome/FooterBar";
+import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useAdaActive from "../../hooks/utils/useAdaActive";
+import useLocalized from "../../hooks/utils/useLocalized";
+import { ErrorBoundary } from "../../ErrorBoundary";
 import backspaceIcon from "../../assets/icons/key-backspace.svg";
 
 /**
@@ -59,6 +63,9 @@ export default function Customization() {
   const location = useLocation();
   const dispatch = useDispatch();
   const cartRef = useRef(null);
+  const pdpScrollRef = useRef<HTMLDivElement>(null);
+  const ada = useAdaActive();
+  const { name, description } = useLocalized();
 
   const sessionOpen = useSelector(makeItAMealIsSessionOpen);
   const isOpenBottomSheet = useSelector(makeItAMealTier1BottomSheet);
@@ -208,12 +215,13 @@ export default function Customization() {
   );
   const total = (Number(addonsValue || 0) + basePrice) * quantity;
   const heroImage = resolveEntityImage(SelectedEntity);
+  const pdpDescription = description(SelectedEntity);
 
   const calLabel = useMemo(() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
-    return value ? ` | ${value} Cal` : "";
-  }, [SelectedEntity]);
+    return value ? ` | ${t("pack.cal", { value })}` : "";
+  }, [SelectedEntity, t]);
 
   if (!sessionOpen || !SelectedEntity?.id) return null;
 
@@ -344,7 +352,7 @@ export default function Customization() {
         className={`mb-[40px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
       >
         <div className="mb-[16px] flex items-baseline gap-4">
-          <h3 className="text-[24px] font-bold text-black">{group?.name}</h3>
+          <h3 className="text-[24px] font-bold text-black">{name(group)}</h3>
           {min > 0 && (
             <span className={`text-[16px] ${errored ? "text-red-600 font-bold" : "text-tb-ink-purple/60"}`}>
               {t("pdp.required")}
@@ -362,15 +370,15 @@ export default function Customization() {
                     <img alt="" src={imageUrl} className="h-[72px] w-[72px] object-contain" />
                   )}
                   <div className="flex-1">
-                    <p className="text-[20px] font-medium capitalize text-black">{item.name}</p>
+                    <p className="text-[20px] font-medium capitalize text-black">{name(item)}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
-                      {Number(item.price) > 0 ? `+${currency}${Number(item.price).toFixed(2)}` : `0 Cal`}
+                      {Number(item.price) > 0 ? `+${currency}${Number(item.price).toFixed(2)}` : t("pack.cal", { value: 0 })}
                     </p>
                   </div>
                   <div className="flex items-center gap-[12px]">
                     <button
                       type="button"
-                      aria-label={`decrease ${item.name}`}
+                      aria-label={`${t("pdp.decrease")} ${name(item)}`}
                       onClick={() => decreaseCustomization(group, item)}
                       className="h-[44px] w-[44px] rounded-full border-2 border-tb-purple text-[24px] font-bold text-tb-purple"
                     >
@@ -379,7 +387,7 @@ export default function Customization() {
                     <span className="w-[36px] text-center text-[22px] font-bold">{qty}</span>
                     <button
                       type="button"
-                      aria-label={`increase ${item.name}`}
+                      aria-label={`${t("pdp.increase")} ${name(item)}`}
                       onClick={() =>
                         qty === 0
                           ? addCustomizations(group, { ...item, quantity: 1 }, null, nextGroup, false)
@@ -413,7 +421,7 @@ export default function Customization() {
                     <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
                   )}
                   <p className="text-[18px] font-medium capitalize leading-[22px] text-black">
-                    {item.name}
+                    {name(item)}
                   </p>
                   {Number(item.price) > 0 && (
                     <p className="text-[15px] text-tb-ink-purple/70">
@@ -439,13 +447,13 @@ export default function Customization() {
     // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
     // 1:5413 — the whole PDP scrolls above the pinned CTA bar + footer).
     <div data-testid="customization-screen" className="relative flex h-full w-[1080px] flex-col bg-tb-surface">
-      <div id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[96px]">
+      <div ref={pdpScrollRef} id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[96px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {heroImage && (
           <img alt="" src={heroImage} className="mx-auto mt-[24px] h-[420px] object-contain" />
         )}
         <div className="mt-[16px] flex items-start justify-between gap-6">
           <h1 className="tb-compressed max-w-[700px] text-[56px] leading-[52px] text-black">
-            {SelectedEntity?.name}
+            {name(SelectedEntity)}
           </h1>
           <div className="flex items-center gap-[16px] pt-2">
             <button
@@ -476,17 +484,24 @@ export default function Customization() {
           {basePrice.toFixed(2)}
           {calLabel}
         </p>
-        {SelectedEntity?.description && (
-          <p className={`mt-[12px] max-w-[860px] text-[18px] leading-[24px] text-tb-ink-purple/80 ${showFullDescription ? "" : "line-clamp-2"}`}>
-            {SelectedEntity.description}{" "}
+        {pdpDescription && (
+          <>
+            {/* w-fit (P9f S2): a single Arabic line keeps the layout's left
+                edge; only a wrapped one fills 860 px and right-aligns. */}
+            <p dir="auto" className={`mt-[12px] w-fit max-w-[860px] text-start text-[18px] leading-[24px] text-tb-ink-purple/80 ${showFullDescription ? "" : "line-clamp-2"}`}>
+              {pdpDescription}
+            </p>
+            {/* Outside the clamp: inside it, a long description hid the
+                toggle in the clipped overflow. 44 px tall touch target. */}
             <button
               type="button"
+              data-testid="pdp-show-more"
               onClick={() => setShowFullDescription((v) => !v)}
-              className="font-bold underline"
+              className="inline-flex min-h-[44px] items-center text-[18px] font-bold leading-[24px] text-tb-ink-purple/80 underline"
             >
               {showFullDescription ? t("pdp.showLess") : t("pdp.showMore")}
             </button>
-          </p>
+          </>
         )}
 
         {needsVariantPick ? (
@@ -508,7 +523,7 @@ export default function Customization() {
                     {imageUrl && (
                       <img alt="" src={imageUrl} className="mb-2 h-[140px] w-full object-contain" />
                     )}
-                    <p className="text-[20px] font-medium capitalize text-black">{v.name}</p>
+                    <p className="text-[20px] font-medium capitalize text-black">{name(v)}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
                       {currency}
                       {Number(v.price ?? 0).toFixed(2)}
@@ -527,7 +542,7 @@ export default function Customization() {
                 onClick={() => setConfirmedVariant(false)}
                 className="mt-[24px] rounded-full border-2 border-tb-purple px-6 py-3 text-[18px] font-bold text-tb-purple min-h-[44px]"
               >
-                {selectedVariant.name} · {t("pdp.change")}
+                {name(selectedVariant)} · {t("pdp.change")}
               </button>
             )}
             <div className="mt-[40px]">
@@ -566,6 +581,15 @@ export default function Customization() {
           </>
         )}
       </div>
+      {/* Figma 1:5263 bar (PDP 1:2920 / ADA 1:5442), positioned off this root. */}
+      <ErrorBoundary fallback={null}>
+        <ScrollIndicator
+          target={pdpScrollRef}
+          top={ada ? 488 : 703}
+          height={ada ? 394 : 790}
+          testId="pdp-scrollbar"
+        />
+      </ErrorBoundary>
 
       {/* ADD TO BAG bar — Figma CTA_Sheet pattern. In flow (Menu's pattern)
           so the scroller ends at its top edge: pb-[96px] above is the old

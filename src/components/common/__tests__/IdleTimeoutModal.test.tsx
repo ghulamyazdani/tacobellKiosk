@@ -93,11 +93,9 @@ describe("IdleTimeoutModal (Figma 1:4514)", () => {
     });
     renderModal({ announcedSeconds: 20 });
 
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName(
-      i18n.getResource("ar", "translation", "idle.title")
-    );
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName(i18n.t("idle.title"));
     expect(screen.getByTestId("idle-continue")).toHaveTextContent(
-      i18n.getResource("ar", "translation", "idle.continue")
+      i18n.t("idle.continue")
     );
   });
 
