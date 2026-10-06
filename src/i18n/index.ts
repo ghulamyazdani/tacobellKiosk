@@ -23,9 +23,9 @@ export const DEFAULT_LANGUAGE = "en";
  */
 const FSI = "\u2068";
 const PDI = "\u2069";
-const isolate = (s: string) => `${FSI}${s}${PDI}`;
+export const isolate = (s: string) => `${FSI}${s}${PDI}`;
 /** i18next's dir(undefined) answers "rtl" (sic) — only ask with a real code. */
-const isRtl = (lng?: string) => {
+export const isRtl = (lng?: string) => {
   const code = lng || i18n.language;
   return Boolean(code) && i18n.dir(code) === "rtl";
 };

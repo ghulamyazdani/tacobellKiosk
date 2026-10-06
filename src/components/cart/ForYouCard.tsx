@@ -37,7 +37,7 @@ const calorieValue = (
 export interface ForYouCardProps {
   /** The suggestion itself — handed straight back to `onAdd`. */
   entity: RecommendedEntity;
-  /** Display name. Both consumers pass `entity.name`. */
+  /** Display name, resolved at render via `useLocalized().name(entity)` — never raw `entity.name`. */
   title: string;
   /**
    * The RAW menu price, currency-symbol-free and untaxed — the same number

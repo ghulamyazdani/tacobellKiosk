@@ -5,6 +5,7 @@
 import { useTranslation } from "react-i18next";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import plusIcon from "../../assets/icons/plus.svg";
 
 interface BagItemRowProps {
@@ -53,6 +54,7 @@ export default function BagItemRow({
   onRemoveLoyalty,
 }: BagItemRowProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const { IncreaseItemQuantityById, decreaseItemQuantityById, getAllCustomizationList } =
     useCartHook();
 
@@ -144,7 +146,7 @@ export default function BagItemRow({
         className={nested ? "pl-[24px]" : ""}
       >
         {prefix}
-        {line?.name}
+        {name(line)}
         {suffix}
       </p>
     );
@@ -170,7 +172,7 @@ export default function BagItemRow({
       <div className="flex min-w-0 flex-1 flex-col items-start gap-[10px]">
         <div className="flex flex-wrap items-center gap-[12px]">
           <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
-            {row?.name}
+            {name(row)}
           </p>
           {isGetItemRow && (
             <span
@@ -192,7 +194,7 @@ export default function BagItemRow({
         {(row?.type === "VARIANT" || lines.length > 0) && (
           <div className="flex flex-col gap-[4px] text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
             {row?.type === "VARIANT" && row?.selectedVariant?.name && (
-              <p>{row.selectedVariant.name}</p>
+              <p>{name(row.selectedVariant)}</p>
             )}
             {lines.map((line: any) => [
               renderLine(line),

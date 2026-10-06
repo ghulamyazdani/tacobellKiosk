@@ -1,6 +1,9 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Provider } from "react-redux";
+import { store } from "../../../redux/app/store";
 import PackSlotCard from "../PackSlotCard";
 import "../../../i18n";
 
@@ -19,6 +22,11 @@ const PREVIEW = {
   image_url: "",
 };
 
+// useLocalized (post-P9 item 28) reads the display language from the store.
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <Provider store={store}>{children}</Provider>
+);
+
 const renderCard = (
   overrides: Partial<Parameters<typeof PackSlotCard>[0]> = {}
 ) => {
@@ -31,7 +39,8 @@ const renderCard = (
       currency="£"
       onOpen={onOpen}
       {...overrides}
-    />
+    />,
+    { wrapper }
   );
   return { onOpen };
 };

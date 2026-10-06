@@ -2,6 +2,7 @@ import type { Table } from "dexie";
 import Dexie from "dexie";
 import type { CartItems } from "./CartItems";
 import { MenuData } from "@cx-sdk/core/types/menuTypes";
+import type { TenantRecommendationMap } from "@cx-sdk/catalog/recommendation/tenantRecommendations";
 
 export interface MenuStorage {
   tabId: string;
@@ -11,8 +12,10 @@ export interface MenuStorage {
 
 export interface RecommendationCacheRecord {
   key: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- cache blob typed at the P7 recommendation pass
-  map: Record<string, any>;
+  /** Re-validated on load (toTenantRecommendationMap) — never trusted as is. */
+  map: TenantRecommendationMap;
+  /** The URL it came from: loadCached ignores a copy of any other URL (D6). */
+  url: string;
   fetchedAt: number;
 }
 

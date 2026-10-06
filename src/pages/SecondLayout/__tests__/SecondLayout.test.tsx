@@ -1,15 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { setPipelines } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setPipelineStatuses } from "@cx-sdk/catalog/state/kioskOpenStatus.slice";
-import { toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
-import { setLanguages } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import {
+  setKioskSettings,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setLanguages,
+  setSelectedLanguage,
+} from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { store } from "../../../redux/app/store";
 import SecondLayout from "../index";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 // The menu fetch is the network seam (P9b: SecondLayout now enters the menu
 // only when the fetch RETURNS categories). The failure paths live in
@@ -165,5 +171,118 @@ describe("SecondLayout in the ADA reach zone (P9c)", () => {
     expect(screen.getByTestId("pipeline-p-drive").className).not.toContain(
       "shrink-0"
     );
+  });
+});
+
+/*
+  Post-P9 27b (D5): the ticker shows the guest's slot of
+  kiosk_settings.pipeline_text_* when set — no cross-language fallback —
+  otherwise DaypartTicker keeps t("ticker.lunch"). 28: the card label is
+  the pipeline's secondary_name in a secondary-language session.
+*/
+describe("SecondLayout — server-driven ticker copy and pipeline names (post-P9 27b / 28)", () => {
+  const FSI = "\u2068";
+  const PDI = "\u2069";
+  const iso = (s: string) => `${FSI}${s}${PDI}`;
+  const AR_TICKER = "ساعة سعيدة";
+  const AR_DINE = "تناول في المطعم";
+  const AR_SESSION = { name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" };
+  const EN_SESSION = { name: "English", code: "en", dir: "ltr", type: "primary_language" };
+  /** DaypartTicker: six cells × two copies. */
+  const CELLS = 12;
+
+  const arabicSession = async () => {
+    store.dispatch(setSelectedLanguage(AR_SESSION));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(
+      setPipelines([{ ...PIPELINES[0], secondary_name: AR_DINE }, PIPELINES[1]])
+    );
+    store.dispatch(
+      setLanguages({
+        primary_language: { name: "English", code: "en" },
+        secondary_language: { name: "Arabic", code: "ar" },
+      })
+    );
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("English shows pipeline_text_primary (trimmed), never the secondary text", () => {
+    store.dispatch(
+      setKioskSettings({ pipeline_text_primary: " HAPPY HOUR 2-4PM ", pipeline_text_secondary: AR_TICKER })
+    );
+    renderSecond();
+
+    expect(screen.getAllByText("HAPPY HOUR 2-4PM")).toHaveLength(CELLS);
+    expect(screen.queryByText(i18n.t("ticker.lunch"))).not.toBeInTheDocument();
+    expect(screen.getByTestId("second-screen")).not.toHaveTextContent(AR_TICKER);
+  });
+
+  it("Arabic shows pipeline_text_secondary, isolated", async () => {
+    store.dispatch(
+      setKioskSettings({ pipeline_text_primary: "HAPPY HOUR", pipeline_text_secondary: AR_TICKER })
+    );
+    await arabicSession();
+    renderSecond();
+
+    expect(screen.getAllByText(iso(AR_TICKER))).toHaveLength(CELLS);
+    expect(screen.getByTestId("second-screen")).not.toHaveTextContent("HAPPY HOUR");
+  });
+
+  it("Arabic with only the primary text shows the Arabic ticker.lunch", async () => {
+    store.dispatch(setKioskSettings({ pipeline_text_primary: "HAPPY HOUR" }));
+    await arabicSession();
+    renderSecond();
+
+    expect(screen.getAllByText(i18n.t("ticker.lunch"))).toHaveLength(CELLS);
+    expect(i18n.t("ticker.lunch").startsWith(FSI)).toBe(true);
+    expect(screen.getByTestId("second-screen")).not.toHaveTextContent("HAPPY HOUR");
+  });
+
+  it.each<[string, unknown]>([
+    ["unset", undefined],
+    ["blank", "   "],
+    ["empty", ""],
+    ["a number", 42],
+    ["an object", { text: "HAPPY" }],
+  ])("%s pipeline_text_primary shows ticker.lunch", (_label, value) => {
+    store.dispatch(setKioskSettings({ pipeline_text_primary: value }));
+    renderSecond();
+
+    expect(screen.getAllByText("It's lunch time!")).toHaveLength(CELLS);
+  });
+
+  it("28: an Arabic session labels the card with secondary_name (isolated), falling back to primary_name", async () => {
+    await arabicSession();
+    renderSecond();
+
+    expect(screen.getByTestId("pipeline-p-dine")).toHaveTextContent(iso(AR_DINE), { normalizeWhitespace: false });
+    expect(screen.getByTestId("pipeline-p-dine")).not.toHaveTextContent("Dine In");
+    // No secondary_name → the primary name, isolated like any RTL value.
+    expect(screen.getByTestId("pipeline-p-take")).toHaveTextContent(iso("Take Out"), { normalizeWhitespace: false });
+  });
+
+  it("28: switching back to English restores the primary names, unisolated", async () => {
+    await arabicSession();
+    renderSecond();
+    expect(screen.getByTestId("pipeline-p-dine")).not.toHaveTextContent("Dine In");
+
+    act(() => {
+      store.dispatch(setSelectedLanguage(EN_SESSION));
+    });
+
+    expect(screen.getByTestId("pipeline-p-dine")).toHaveTextContent("Dine In");
+    expect(screen.getByTestId("pipeline-p-dine").textContent).not.toMatch(/[\u2066-\u2069]/);
+    expect(screen.getByTestId("pipeline-p-take")).toHaveTextContent("Take Out");
   });
 });

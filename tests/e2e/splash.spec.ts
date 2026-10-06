@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
  * only this deployment's `home_screen` list, and /start lays it out by
  * PLAYABLE slide count — 0 → WELCOME (Figma 1:5617), 1 → full-bleed
  * (1:5604), ≥ 2 → the peek carousel (1:2203). A slide that fails drops out,
- * so the layout degrades 2 → 1 → WELCOME and is never blank.
+ * so the layout degrades 2 → 1 → WELCOME and is never blank. A slide that
+ * errored or stalled gets one more try 10 min after the last failure
+ * (post-P9 44, D9: SPLASH_RETRY_MS); one with no picture (no_video) never.
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
  * House order (registration.spec.ts): the `**\/api/**` catch-all FIRST, every
@@ -22,11 +24,16 @@ import { fileURLToPath } from "node:url";
  * slide is `fixtures/splash.webm` — 593 bytes of VP8, made once with
  *   ffmpeg -f lavfi -i "color=c=0x501098:size=32x32:rate=5:duration=1" \
  *     -c:v libvpx -b:v 20k -an -pix_fmt yuv420p splash.webm
+ * The no-picture slide (`no_video`) is `fixtures/splash-audio-only.webm`,
+ * 1 s of silent Opus, no video track:
+ *   ffmpeg -f lavfi -i "anullsrc=r=8000:cl=mono:duration=1" -c:a libopus \
+ *     -b:a 6k -vn -fflags +bitexact -f webm splash-audio-only.webm
  *
  * ── TIME ────────────────────────────────────────────────────────────────
- * Only the carousel needs fake time (`page.clock.install()` before the first
- * goto, so the dwell timers are fake). The installed clock still trickles in
- * real time between calls, hence long dwells and 10 s "not yet" margins.
+ * Only the carousel and the retry need fake time (`page.clock.install()`
+ * before the first goto, so the dwell and retry timers are fake). The
+ * installed clock still trickles in real time between calls, hence long
+ * dwells and wide "not yet" margins (10 s; the retry's is 1 min).
  */
 
 const LOGIN_OK = {
@@ -49,6 +56,7 @@ const en = JSON.parse(
   readFixture("../../src/i18n/locales/en/translation.json").toString("utf-8")
 );
 const WEBM = readFixture("./fixtures/splash.webm");
+const AUDIO_ONLY_WEBM = readFixture("./fixtures/splash-audio-only.webm");
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
   "base64"
@@ -60,6 +68,7 @@ const MEDIA_ORIGIN = "https://splash-media.e2e.test";
 const SLIDE_A = `${MEDIA_ORIGIN}/slide-a.png`;
 const SLIDE_B = `${MEDIA_ORIGIN}/slide-b.png`;
 const VIDEO = `${MEDIA_ORIGIN}/promo.webm`;
+const AUDIO_ONLY = `${MEDIA_ORIGIN}/audio-only.webm`;
 
 async function mockBootEndpoints(page: Page) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
@@ -407,6 +416,98 @@ test.describe("P9d splash media", () => {
     await expect(video).toHaveJSProperty("paused", false);
     await expectFullBleed(page, "video");
     await expect(splashOf(page)).toContainText(en.splash.startOrder);
+    await tapToSecond(page);
+  });
+
+  test("RETRY (D9): a slide whose host 404s sits out (full-bleed survivor), and 10 min after the failure — host healed — it is fetched again and the carousel is back; the tap starts the order", async ({
+    page,
+  }) => {
+    test.slow();
+    // Before the first goto: the retry (SPLASH_RETRY_MS) is a fake-clock timer.
+    // The boot stamps lastBootAt on this clock, so 10 min leaves the data far
+    // from P9e's 6 h scheduled refresh.
+    await page.clock.install();
+    await mockBootEndpoints(page);
+    // Long dwells: the restored carousel must hold still while it is read.
+    await mockMedia(
+      page,
+      homeScreen(
+        image(SLIDE_A, { iteration_time: "60" }),
+        image(SLIDE_B, { iteration_time: "60" })
+      )
+    );
+    const requested = await serveMediaHost(page, [SLIDE_B]);
+    await registerToStart(page);
+
+    // B's host 404s: the carousel degrades to A alone, full-bleed.
+    const splash = splashOf(page);
+    await expect(splash).not.toContainText(en.splash.orderHere);
+    await expect(splash.locator(`img[src="${SLIDE_B}"]`)).toHaveCount(0);
+    await expectFullBleed(page, `img[src="${SLIDE_A}"]`);
+    await expectLoaded(page, SLIDE_A);
+    expect(requested).toContain(SLIDE_B);
+
+    // The host heals (newest route wins). Not retried before the 10 min…
+    await page.route(SLIDE_B, (route) =>
+      route.fulfill({ body: PNG, contentType: "image/png" })
+    );
+    await page.clock.fastForward("09:00");
+    await expect(splash.locator(`img[src="${SLIDE_B}"]`)).toHaveCount(0);
+
+    // …then B goes back on the wire — a NEW request (never a cached failure,
+    // and the URL is never cache-busted) — and the 1:2203 carousel returns
+    // with B in both peek cards.
+    const refetch = page.waitForRequest(SLIDE_B, { timeout: 10_000 });
+    await page.clock.fastForward("01:00");
+    await refetch;
+    await expect.poll(() => cards(page)).toEqual(showing(SLIDE_A, SLIDE_B));
+    await expect(splash).toContainText(en.splash.orderHere);
+    await expect
+      .poll(() =>
+        splash
+          .locator(`img[src="${SLIDE_B}"]`)
+          .first()
+          .evaluate((img: HTMLImageElement) => (img.complete ? img.naturalWidth : 0))
+      )
+      .toBeGreaterThan(0);
+    await tapToSecond(page);
+  });
+
+  test("NO VIDEO (D9): an audio-only slide drops out as no_video — a codec fact, so the retry leaves it out: 10 min later still WELCOME and never asked for again; the tap starts the order", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.clock.install();
+    await mockBootEndpoints(page);
+    await mockMedia(
+      page,
+      homeScreen({ url: AUDIO_ONLY, media_type: "webm", iteration_time: "60" })
+    );
+    // Never cacheable: a retry could only be served from the wire.
+    await page.route(AUDIO_ONLY, (route) =>
+      route.fulfill({
+        body: AUDIO_ONLY_WEBM,
+        contentType: "video/webm",
+        headers: { "Cache-Control": "no-store" },
+      })
+    );
+    const loaded = page.waitForRequest(AUDIO_ONLY);
+    await registerToStart(page);
+    await loaded;
+
+    // No picture: the only slide drops out → WELCOME (1:5617).
+    const splash = splashOf(page);
+    await expect(splash).toContainText(en.splash.welcome);
+    await expect(splash.locator("video")).toHaveCount(0);
+
+    // Past the retry interval (RETRY's steps): the slide is never re-requested.
+    const retried = page
+      .waitForRequest(AUDIO_ONLY, { timeout: 5_000 })
+      .then(() => true, () => false);
+    await page.clock.fastForward("09:00");
+    await page.clock.fastForward("02:00");
+    expect(await retried, "a no_video slide was asked for again").toBe(false);
+    await expect(splash).toContainText(en.splash.welcome);
     await tapToSecond(page);
   });
 });
