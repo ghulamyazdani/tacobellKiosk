@@ -55,5 +55,19 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // e2e: no fixed sleeps — they flake under load and hide the real wait.
+    files: ["tests/e2e/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='waitForTimeout']",
+          message:
+            "wait on state (expect/expect.poll/waitForResponse) or drive time with page.clock",
+        },
+      ],
+    },
   }
 );

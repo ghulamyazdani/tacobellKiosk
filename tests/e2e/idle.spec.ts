@@ -328,6 +328,33 @@ function persistedLoyaltyPoints(page: Page): Promise<number> {
 
 const idleModal = (page: Page) => page.getByTestId("idle-modal");
 
+/**
+ * P9f bidi probe: the on-screen x of the first `a` and `b` glyphs in the
+ * daypart ticker's first copy, measured with Ranges — the RENDERED order,
+ * which only the BiDi algorithm decides (the string order never changes).
+ * One evaluate, so the marquee's transform is the same for both.
+ */
+function tickerGlyphX(page: Page, a: string, b: string) {
+  return page
+    .locator(".tb-marquee-track span")
+    .first()
+    .evaluate(
+      (span, [first, second]) => {
+        const text = span.firstChild as Text;
+        const x = (glyph: string) => {
+          const at = text.data.indexOf(glyph);
+          if (at < 0) return Number.NaN;
+          const range = document.createRange();
+          range.setStart(text, at);
+          range.setEnd(text, at + glyph.length);
+          return range.getBoundingClientRect().x;
+        };
+        return { a: x(first), b: x(second) };
+      },
+      [a, b]
+    );
+}
+
 /** 100 s of inactivity: the prompt opens. */
 async function idleToPrompt(page: Page) {
   await page.clock.fastForward(PROMPT_AFTER_MS);
@@ -654,11 +681,43 @@ test.describe("P9a idle timeout + session integrity", () => {
     await page.getByTestId("start-screen").click();
     const second = page.getByTestId("second-screen");
     await expect(second).toContainText("Where are you eating?");
+    // Probe control: English reads left to right ("It's lunch time!").
+    const enTicker = await tickerGlyphX(page, "!", "I");
+    expect(enTicker.a).toBeGreaterThan(enTicker.b);
 
     await page.getByTestId("footer-language").click();
+    // P9f pure-CSS entrance: once it has run, the sheet rests ON the stage
+    // (a wrong end keyframe would leave it below, reachable only by scroll).
+    await page
+      .getByTestId("language-sheet")
+      .evaluate(async (sheet) => {
+        await Promise.all(sheet.getAnimations({ subtree: true }).map((a) => a.finished));
+      });
+    await expect(page.getByTestId("language-ar")).toBeInViewport({ ratio: 1 });
     await page.getByTestId("language-ar").click();
     await expect(second).toContainText("أين ستتناول طعامك؟");
     await expect(page.getByTestId("footer-language")).toContainText("العربية");
+
+    // P9f: Arabic = RTL TEXT inside the unchanged LTR LAYOUT. <html lang>
+    // follows the language; no container ever gets a direction.
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    const direction = await page.evaluate(() => ({
+      stage: getComputedStyle(
+        document.querySelector('[data-testid="kiosk-stage"]') as Element
+      ).direction,
+      html: document.documentElement.dir,
+    }));
+    expect(direction.stage).toBe("ltr");
+    expect(direction.html).not.toBe("rtl");
+    // The footer row is not mirrored: CANCEL ORDER stays left of the language.
+    const cancelBox = await page.getByTestId("footer-cancel").boundingBox();
+    const languageBox = await page.getByTestId("footer-language").boundingBox();
+    expect(cancelBox?.x ?? Number.NaN).toBeLessThan(languageBox?.x ?? Number.NaN);
+    // The text run IS right to left: "حان وقت الغداء!" is an FSI…PDI isolate,
+    // so its trailing "!" renders at the run's LEFT end, left of the first
+    // letter (unisolated in the LTR row, the "!" would trail on the right).
+    const arTicker = await tickerGlyphX(page, "!", "ح");
+    expect(arTicker.a).toBeLessThan(arTicker.b);
 
     // /second's cancel only navigates; /start's mount resets — language too.
     await page.getByTestId("footer-cancel").click();
@@ -667,6 +726,11 @@ test.describe("P9a idle timeout + session integrity", () => {
     await expect(
       page.getByRole("button", { name: /touch anywhere to start/i })
     ).toBeVisible();
+    // …with the document language and no Arabic isolate left anywhere.
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect
+      .poll(() => page.evaluate(() => document.body.textContent?.includes("\u2068")))
+      .toBe(false);
 
     await page.getByTestId("start-screen").click();
     await expect(second).toContainText("Where are you eating?");

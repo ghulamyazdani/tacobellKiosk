@@ -431,7 +431,7 @@ export default function CustomerPhone() {
             className="text-[32px] font-medium tracking-[6px] text-black"
           >
             {displayValue || (
-              <span className="tracking-normal text-black/35">
+              <span className="tracking-normal text-black/55">
                 {t("phone.placeholder")}
               </span>
             )}

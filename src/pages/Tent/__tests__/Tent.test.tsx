@@ -125,6 +125,7 @@ describe("Tent — the table-number step", () => {
       expect(screen.getByTestId("tent-confirm")).toBeInTheDocument();
       expect(screen.getByTestId("tent-skip")).toBeInTheDocument();
       expect(screen.getByTestId("tent-display")).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: i18n.t("tent.displayLabel") })).toHaveAttribute("aria-readonly", "true");
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 

@@ -580,9 +580,10 @@ export default function BagSheet({
   };
 
   /**
-   * LOG-IN & GET REWARDS (locked decision 5b). With loyalty off — or before
-   * the integrator wires the overlays — this stays P7a's inert "coming soon".
-   * With loyalty on it is the bag's rewards entry point and runs the SAME
+   * LOG-IN & GET REWARDS (locked decision 5b). Rendered only with loyalty
+   * on (user decision 2026-10-05: hidden on loyalty-off deployments); until
+   * the integrator wires the overlays it stays P7a's inert "coming soon".
+   * Otherwise it is the bag's rewards entry point and runs the SAME
    * branch table as the menu link (contract §Partner-branch table):
    * unidentified → login modal; reward already in the cart → "already
    * availed"; no coupons → "no coupons"; otherwise → the rewards sheet.
@@ -632,6 +633,7 @@ export default function BagSheet({
       ? Number(bill.getTotalDiscount?.() ?? 0)
       : 0;
   const bestRankedName: string = rankedOffers[0]?.offer?.name ?? "";
+  const loyaltyOn = getIsLoyaltyOn();
 
   const orderTypeSegment = (
     key: "eatin" | "takeout",
@@ -739,14 +741,15 @@ export default function BagSheet({
                   // Tapping the applied row reopens the sheet — the ONLY path
                   // to the swap flow while an offer is applied (decision 3
                   // keeps the applied offer in the list, preselected, with an
-                  // Applied chip — unreachable without this). Remove stops
-                  // propagation below. Touch-only kiosk; the house eslint
-                  // config carries no jsx-a11y rules, and nesting the Remove
-                  // <button> inside another button would be invalid HTML.
+                  // Applied chip — unreachable without this). Overlay-button
+                  // pattern: a button cannot nest the Remove button, so the
+                  // row stays a div and a named full-row button opens the
+                  // sheet. The overlay is LAST in the DOM so it paints over
+                  // the bell's opacity/mask layer (first, the bell would
+                  // swallow taps); Remove sits above it (relative z-10).
                   <div
                     data-testid="bag-rewards-applied"
-                    onClick={() => setRewardsOpen(true)}
-                    className="flex w-full cursor-pointer items-start gap-[24px] py-[24px]"
+                    className="relative flex w-full items-start gap-[24px] py-[24px]"
                   >
                     <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-[8px] bg-tb-grey-6">
                       <span
@@ -773,7 +776,7 @@ export default function BagSheet({
                           e.stopPropagation();
                           removeAppliedOffer();
                         }}
-                        className="-ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold tracking-[-0.08px] text-tb-purple underline"
+                        className="relative z-10 -ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold tracking-[-0.08px] text-tb-purple underline"
                       >
                         {t("offers.remove")}
                       </button>
@@ -782,6 +785,12 @@ export default function BagSheet({
                       −{currency}
                       {appliedDiscount.toFixed(2)}
                     </p>
+                    <button
+                      type="button"
+                      aria-label={t("offers.entryTitle")}
+                      onClick={() => setRewardsOpen(true)}
+                      className="absolute inset-0"
+                    />
                   </div>
                 ) : (
                   <button
@@ -864,28 +873,30 @@ export default function BagSheet({
         </div>
 
         <div className="flex shrink-0 items-center gap-[24px] p-[24px] drop-shadow-[0px_0px_64px_rgba(0,0,0,0.08)]">
-          <button
-            type="button"
-            data-testid="bag-login-rewards"
-            // Live once loyalty is on AND the integrator has wired an
-            // overlay opener; inert (P7a) otherwise.
-            aria-disabled={
-              getIsLoyaltyOn() && (onOpenLoyaltyLogin || onOpenLoyaltyRewards)
-                ? undefined
-                : "true"
-            }
-            onClick={handleLoginRewards}
-            className={`tb-display min-h-[84px] flex-1 rounded-[8px] border border-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-purple ${
-              showComingSoon ? "opacity-60" : ""
-            }`}
-          >
-            {showComingSoon ? t("bag.comingSoon") : t("bag.loginRewards")}
-          </button>
+          {/* Loyalty-off deployments hide LOG-IN & GET REWARDS and PAY takes
+              the full row (user decision 2026-10-05; no Figma frame). */}
+          {loyaltyOn && (
+            <button
+              type="button"
+              data-testid="bag-login-rewards"
+              // Live once the integrator has wired an overlay opener; the
+              // P7a inert "coming soon" otherwise.
+              aria-disabled={
+                onOpenLoyaltyLogin || onOpenLoyaltyRewards ? undefined : "true"
+              }
+              onClick={handleLoginRewards}
+              className={`tb-display min-h-[84px] flex-1 rounded-[8px] border border-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-purple ${
+                showComingSoon ? "opacity-60" : ""
+              }`}
+            >
+              {showComingSoon ? t("bag.comingSoon") : t("bag.loginRewards")}
+            </button>
+          )}
           <button
             type="button"
             data-testid="bag-pay"
             onClick={handlePay}
-            className="tb-display min-h-[84px] w-[400px] rounded-[8px] bg-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
+            className={`tb-display min-h-[84px] ${loyaltyOn ? "w-[400px]" : "flex-1"} rounded-[8px] bg-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]`}
           >
             {/* Figma 1:3137: "ORDER & PAY £33.39" once a reward discounts
                 the order (tb-display uppercases the label). */}

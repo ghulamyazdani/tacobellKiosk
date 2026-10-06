@@ -147,6 +147,7 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
       "Enter Phone"
     );
     expect(screen.getByTestId("loyalty-phone-display")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Enter your mobile number" })).toHaveAttribute("aria-readonly", "true");
     expect(screen.getByTestId("kiosk-numpad")).toBeInTheDocument();
     expect(screen.getByTestId("loyalty-login-submit")).toHaveTextContent(
       "Continue"

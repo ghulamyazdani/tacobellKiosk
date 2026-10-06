@@ -15,12 +15,6 @@ interface SelectSizeModalProps {
   onContinue: (variant: any) => void;
 }
 
-const calText = (v: any) => {
-  const cal = v?.calorieCount ?? v?.nutritionalInfo?.calorieCount;
-  const value = typeof cal === "object" ? cal?.value : cal;
-  return value ? ` | ${value} Cal` : "";
-};
-
 /**
  * "SELECT A SIZE" — Figma "Select a Size v2" (1:5628/1:5683). Hero card for
  * the first/default variant (BEST VALUE tag), smaller tiles for the rest,
@@ -59,6 +53,12 @@ export default function SelectSizeModal({
     return p > minPrice
       ? `+${currency}${(p - minPrice).toFixed(2)}`
       : `${currency}${p.toFixed(2)}`;
+  };
+
+  const calText = (v: any) => {
+    const cal = v?.calorieCount ?? v?.nutritionalInfo?.calorieCount;
+    const value = typeof cal === "object" ? cal?.value : cal;
+    return value ? ` | ${t("pack.cal", { value })}` : "";
   };
 
   // Render helper, NOT a component (react-hooks/static-components).

@@ -162,9 +162,9 @@ describe("UpdateCountdownModal", () => {
     render(<UpdateCountdownModal onElapsed={() => {}} />);
     tick(10_000);
 
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("تحديث الكشك");
-    expect(status()).toBe("يبدأ خلال 5 ث");
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName(i18n.t("update.title"));
+    expect(status()).toBe(i18n.t("update.countdown", { seconds: 5 }));
     tick(5_000);
-    expect(status()).toBe("جارٍ التحديث…");
+    expect(status()).toBe(i18n.t("update.inProgress"));
   });
 });

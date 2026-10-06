@@ -8,14 +8,15 @@ concurrency:
   group: pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# NOTE: the @cx-sdk link: dependencies resolve into ../posistKiosk-cx-sdk,
-# so CI must check out BOTH repos side by side.
-jobs:
-  checkout-sdk:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "placeholder — see composite setup below"
+# The @cx-sdk link: dependencies resolve into ../posistKiosk-cx-sdk, so every
+# job that installs checks BOTH repos out side by side, from ONE place.
+# PLACEHOLDERS the user will confirm: the local SDK checkout's origin and
+# branch. The SDK_REPO_TOKEN secret (read-only contents) must exist.
+env:
+  SDK_REPO: PosistGit/posistKiosk
+  SDK_REF: cx-sdk/extraction
 
+jobs:
   lint-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -24,7 +25,8 @@ jobs:
           path: tacobell-kiosk
       - uses: actions/checkout@v4
         with:
-          repository: PosistGit/posistKiosk-cx-sdk # adjust to the real remote
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
           path: posistKiosk-cx-sdk
           token: ${{ secrets.SDK_REPO_TOKEN }}
       - uses: actions/setup-node@v4
@@ -36,6 +38,7 @@ jobs:
         working-directory: posistKiosk-cx-sdk
       - run: yarn install --frozen-lockfile
         working-directory: tacobell-kiosk
+      # type-check = tsc -b: app, config files, unit tests and e2e specs.
       - run: yarn lint && yarn type-check
         working-directory: tacobell-kiosk
 
@@ -73,7 +76,8 @@ jobs:
           path: tacobell-kiosk
       - uses: actions/checkout@v4
         with:
-          repository: PosistGit/posistKiosk-cx-sdk
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
           path: posistKiosk-cx-sdk
           token: ${{ secrets.SDK_REPO_TOKEN }}
       - uses: actions/setup-node@v4
@@ -91,14 +95,62 @@ jobs:
         working-directory: tacobell-kiosk
       - run: yarn build
         working-directory: tacobell-kiosk
+        env:
+          # Measure what production ships: the lazy PostHog chunk exists only
+          # in kill-switch-on builds and counts toward the TOTAL budget. Not a
+          # secret; no PostHog key is set.
+          VITE_POST_HOG_TYPE: production
       - run: node scripts/check-bundle-size.mjs
         working-directory: tacobell-kiosk
       - run: cat bundle-size-report.md >> $GITHUB_STEP_SUMMARY
         working-directory: tacobell-kiosk
         if: always()
 
+  e2e:
+    needs: [lint-typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tacobell-kiosk
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
+          path: posistKiosk-cx-sdk
+          token: ${{ secrets.SDK_REPO_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: tacobell-kiosk/yarn.lock
+      - run: yarn install --frozen-lockfile
+        working-directory: posistKiosk-cx-sdk
+      - run: yarn install --frozen-lockfile
+        working-directory: tacobell-kiosk
+      # Full chromium (not --only-shell): fcm.spec runs channel "chromium".
+      - run: npx playwright install --with-deps chromium
+        working-directory: tacobell-kiosk
+      # playwright.config.ts in CI: its own dev server on 5373 (strictPort,
+      # never reused), workers 1, retries 2, github + html reporters.
+      - run: yarn test:e2e --shard=${{ matrix.shard }}/2
+        working-directory: tacobell-kiosk
+      # Always: the capture-only screenshots ride in the HTML report on green
+      # runs too (user decision 2026-10-05: no pixel assertions).
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: tacobell-kiosk/playwright-report/
+          retention-days: 14
+
   status-check:
-    needs: [lint-typecheck, guardrails, dependency-check, unit-tests-build]
+    needs: [lint-typecheck, guardrails, dependency-check, unit-tests-build, e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:

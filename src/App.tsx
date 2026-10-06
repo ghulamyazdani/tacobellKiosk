@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter as Router } from "react-router-dom";
 import { useSelector } from "react-redux";
-import posthog from "posthog-js";
+import { identifyKiosk } from "./utils/analytics";
 import { AppRoutes } from "./routes";
 import { KioskStage } from "./components/stage/KioskStage";
 import { ReachZone } from "./components/stage/ReachZone";
@@ -38,22 +38,19 @@ const App = () => {
     i18n.changeLanguage(selectedLanguage?.code || DEFAULT_LANGUAGE);
   }, [selectedLanguage]);
 
-  // Tenant identity for analytics (guarded: posthog is init-ed only when
-  // VITE_POST_HOG_TYPE === "production").
+  // Tenant identity for analytics: queued until PostHog loads, dropped when
+  // the VITE_POST_HOG_TYPE kill switch is off; never throws (the adapter
+  // swallows). Payload kept as is (user decision 2026-10-05).
   useEffect(() => {
     if (licenseDetails?.tenant_id) {
-      try {
-        posthog.identify(licenseDetails.tenant_id, {
-          login_code: licenseDetails.login_code,
-          license_key: licenseDetails.license_key,
-          deployment_id: licenseDetails.deployment_id,
-          type: licenseDetails.type,
-          expiry_date: licenseDetails.expiry_date,
-          tenant_id: licenseDetails.tenant_id,
-        });
-      } catch {
-        // analytics must never break the kiosk (Rule 2)
-      }
+      identifyKiosk(licenseDetails.tenant_id, {
+        login_code: licenseDetails.login_code,
+        license_key: licenseDetails.license_key,
+        deployment_id: licenseDetails.deployment_id,
+        type: licenseDetails.type,
+        expiry_date: licenseDetails.expiry_date,
+        tenant_id: licenseDetails.tenant_id,
+      });
     }
   }, [licenseDetails]);
 

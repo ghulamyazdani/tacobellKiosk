@@ -712,6 +712,17 @@ test.describe("P9b Rule 2 recovery", () => {
     const offline = page.getByTestId("network-offline");
     await expect(offline).toBeVisible();
     await expect(offline).toContainText(en.network.title);
+    // P9f: the CSS fade is opacity-only — once it has run, the fixed overlay
+    // is opaque AND still covers the whole kiosk (a translating entrance,
+    // e.g. tb-modal-enter, would shift it half off the screen).
+    await expect(offline).toHaveCSS("opacity", "1");
+    const viewport = page.viewportSize()!;
+    expect(await offline.boundingBox()).toEqual({
+      x: 0,
+      y: 0,
+      width: viewport.width,
+      height: viewport.height,
+    });
     // The dropped connection kills the in-flight download.
     await menu.routes[0].abort("internetdisconnected");
     await expect(page.getByTestId("menu-error")).toBeVisible();

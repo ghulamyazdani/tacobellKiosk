@@ -292,6 +292,8 @@ function LoginBody({ onClose }: LoginBodyProps) {
             on the /phone screen). */}
         <div
           data-testid="loyalty-phone-display"
+          role="textbox"
+          aria-readonly="true"
           aria-label={t("loyalty.phonePrompt")}
           dir="ltr"
           className="mx-auto mt-[20px] flex h-[88px] w-[392px] items-center gap-[16px] overflow-hidden rounded-[12px] border-2 border-tb-pink px-[20px]"

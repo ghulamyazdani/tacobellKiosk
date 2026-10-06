@@ -1,11 +1,13 @@
 /**
  * Recovery for a failed dynamic import.
  *
- * The app code-splits with `React.lazy` in ~16 files, so some components are
- * fetched from the network at the moment a customer taps. On a kiosk the
- * dangerous case is a deploy: the device has been running for hours against an
- * old index.html, the origin now serves re-hashed chunk files, and the next tap
- * requests a filename that no longer exists. `React.lazy` rejects, React 19
+ * The app code-splits one `React.lazy` component (BagSheet's
+ * CompleteYourMealRail) plus two optional runtime chunks (fcmRuntime,
+ * posthogRuntime — exempt below), so code can be fetched from the network at
+ * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
+ * device has been running for hours against an old index.html, the origin now
+ * serves re-hashed chunk files, and the next tap requests a filename that no
+ * longer exists. `React.lazy` rejects, React 19
  * memoizes that rejection for the life of the page, and the component is dead
  * until someone reboots the terminal.
  *
@@ -67,12 +69,14 @@ export const installChunkErrorRecovery = (): void => {
     // the crash screen instead of quietly recovering.
     event.preventDefault();
 
-    // FCM is optional (P9e): its lazy chunk (src/hooks/firebase/fcmRuntime.ts
-    // → assets/fcmRuntime-<hash>.js; the browser's message names the URL)
-    // must never reload the kiosk, least of all mid-order after a long hang.
-    // Prevented, import() resolves undefined: useFcmRegistration reports
-    // fcm_init "import" and FCM stays off until the next page load.
-    if (/fcmRuntime/.test(String(event.payload?.message))) return;
+    // FCM (P9e) and analytics (P9f) are optional: their lazy chunks
+    // (src/hooks/firebase/fcmRuntime.ts → assets/fcmRuntime-<hash>.js,
+    // src/utils/analytics/posthogRuntime.ts → assets/posthogRuntime-<hash>.js;
+    // the browser's message names the URL) must never reload the kiosk, least
+    // of all mid-order. Prevented, import() resolves undefined:
+    // useFcmRegistration reports fcm_init "import" and FCM stays off, and
+    // startAnalytics leaves analytics off, until the next page load.
+    if (/fcmRuntime|posthogRuntime/.test(String(event.payload?.message))) return;
 
     if (isRetryOfAReload()) {
       // Reloading again would cycle. Let the rejection surface instead: the

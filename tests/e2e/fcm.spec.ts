@@ -275,6 +275,20 @@ const readAutoUpdate = (page: Page) =>
         .autoUpdate as unknown as AutoUpdateState
   );
 
+/** Distinct statuses of the update_cx_fcm_key mutations RTK holds in the store. */
+const fcmKeyMutationStatuses = (page: Page) =>
+  page.evaluate(() => {
+    const mutations = (window as unknown as KioskWindow).__kioskStore.getState().api
+      .mutations as Record<string, { endpointName?: string; status?: string }>;
+    return [
+      ...new Set(
+        Object.values(mutations)
+          .filter((m) => m.endpointName === "updateCxFcmKey")
+          .map((m) => m.status)
+      ),
+    ];
+  });
+
 const permissionRequests = (page: Page) =>
   page.evaluate(() => (window as unknown as KioskWindow).__e2ePermissionRequests);
 
@@ -524,8 +538,10 @@ test.describe("P9e FCM brand updates (real Firebase SDK)", () => {
       await expect
         .poll(() => backend.fcmKeyPosts.length, { timeout: 20_000 })
         .toBe(status === 401 ? 1 : 3);
-      // Recovery would run as the last answer lands: give it a moment to show.
-      await page.waitForTimeout(1_000);
+      // The base query runs any session recovery synchronously BEFORE RTK
+      // marks the mutation rejected: once every update_cx_fcm_key mutation
+      // has settled as rejected (none pending), a recovery would have run.
+      await expect.poll(() => fcmKeyMutationStatuses(page)).toEqual(["rejected"]);
       expect(backend.fcmKeyPosts).toHaveLength(status === 401 ? 1 : 3);
       await expect(page).toHaveURL(/\/start$/);
       await expect(page.getByTestId("start-screen")).toBeVisible();

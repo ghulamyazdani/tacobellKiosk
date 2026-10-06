@@ -25,7 +25,13 @@ export default function RemoveItemModal({
   if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-50" data-testid="remove-item-modal">
+    <div
+      className="absolute inset-0 z-50"
+      data-testid="remove-item-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remove-item-title"
+    >
       <button
         type="button"
         aria-label={t("removeItem.cancel")}
@@ -33,7 +39,10 @@ export default function RemoveItemModal({
         className="absolute inset-0 h-full w-full bg-tb-purple/60"
       />
       <div className="tb-modal-enter absolute left-1/2 top-1/2 w-[760px] rounded-[16px] bg-tb-surface px-[48px] pb-[56px] pt-[72px] text-center">
-        <h2 className="tb-display mb-[24px] text-[40px] leading-[40px] tracking-[-1px] text-tb-purple">
+        <h2
+          id="remove-item-title"
+          className="tb-display mb-[24px] text-[40px] leading-[40px] tracking-[-1px] text-tb-purple"
+        >
           {t("removeItem.title")}
         </h2>
         <p className="mx-auto mb-[56px] max-w-[520px] text-[26px] leading-[34px] text-black">
