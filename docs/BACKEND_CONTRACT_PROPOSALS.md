@@ -16,7 +16,7 @@
 | 2 | Order Complete QR codes (1:5932 guest, 1:3437 promo) | No source for the URL or the points | placeOrder response `order_complete.earn` + getMedia slot `order_complete` | Panel ships without a QR |
 | 3 | Make-it-a-meal (MIAM) "SAVE £X" badge (1:3070) | No was-price in the menu | getMenu `comparePrice` on meal entities | Badge built but hidden |
 | 4 | Bag rail vs `/forYou` | One flag controls both | get_kiosk_settings `enable_cart_upsell_rail` | One flag for both |
-| 5 | Activity Center passcode | Static `Pos@123` in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
+| 5 | Activity Center passcode | A static passcode in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
 | 6 | Xeno SCAN APP login (1:5881) | No QR format and no lookup | `TBR1.` app token + `check_loyalty_balance_by_token` event | Tab inert, no scanner |
 | 7 | Resend OTP (reward redemption) | No endpoint | `resend_redemption_otp` event | No resend button |
 | C | Idempotency, 504/505, MENU_ID, update ack and version, FCM | Answers only | — | See §C |
@@ -273,7 +273,7 @@ Both surfaces still need at least one in-stock `isCartRecommended` item.
 
 ## 5. Server-issued Activity Center operator passcode
 
-**Problem.** Turning off mandatory fullscreen (the step that exposes the browser and the OS) is gated by the passcode `"Pos@123"`. This passcode is a constant compiled into the JS bundle: anyone with the build can read it, it is the same on every kiosk of every tenant, and it can never be rotated. The Activity Center opens from a hidden 3 s hold on the splash screen. Logout, which wipes the device back to registration (`src/hooks/utils/useAuthHook.ts:95-99`), is not gated at all.
+**Problem.** Turning off mandatory fullscreen (the step that exposes the browser and the OS) is gated by a static passcode (src/components/activity/ActivityModal.tsx — deliberately not repeated here). It is a constant compiled into the JS bundle: anyone with the build can read it, it is the same on every kiosk of every tenant, and it can never be rotated. The Activity Center opens from a hidden 3 s hold on the splash screen. Logout, which wipes the device back to registration (`src/hooks/utils/useAuthHook.ts:95-99`), is not gated at all.
 
 **Plugs into**
 - `src/components/activity/ActivityModal.tsx`:
