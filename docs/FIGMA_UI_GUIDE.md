@@ -104,9 +104,9 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 ### Menu
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (Rewards entry 🔲 P7; banners/search 🔲) |
+| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (search descoped D2; banners declined D1; names follow the menu's `ar` aliases) |
 | `1:4571`, `1:5502`, `1:5521` | Product added | `components/menu/ProductAddedModal` | ✅ |
-| `1:5263` | Scroll bar | — | 🔲 (native scroll for now) |
+| `1:5263` | Scroll bar | `components/chrome/ScrollIndicator` (mounted by `pages/Menu` + `pages/Customization`) | ✅ post-P9 — menu 1:2613 top 505 / h 790 (ADA 1:5412 170 / 578), PDP 1:2920 703 / 790 (ADA PDP 1:5442 488 / 394); `right-[12px]`, 11 px, track tb-lilac r2, thumb tb-purple r2; indicator only (D3, aria-hidden, pointer-events-none — sign-off); native bar hidden |
 
 ### PDP / customization (P6)
 | Node(s) | Frame | Impl | Status |

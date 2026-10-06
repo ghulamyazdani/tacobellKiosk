@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-06 (P9f app half merged)** · Gates at last update (Node 22.14):
-> **`yarn validate` green (tsc -b now type-checks unit tests + e2e specs) · unit 1,318/1,318 · e2e 121/121 · guardrails 0 critical / 197 warnings · build+PWA green · boot path 343.2 KiB gzip-9 / 355 (production build 344.4 incl. lazy PostHog) · page JS 1,224.7 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-07 (menu-data merged)** · Gates at last update (Node 22.14):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 1,539/1,539 · e2e 134/134 · guardrails 0 critical / 201 warnings · build+PWA green · boot path 345.6 KiB gzip-9 / 355 · page JS 1,230.6 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -90,8 +90,9 @@ full-stage, and every return to the splash ends ADA for the next guest.
   switch needs setSelectedPipeline+setSelectedTabId+charges refetch+setTabType+
   fetchMenu+cart revalidation (fork has NO such path) → P7 later, decide UX
 - Edit-quantity numpad modal for multi-qty rows (Figma 1:4460) → P7 polish
-- Cart recommendations S3 source (tenant map, useRecommendationHook) → later;
-  P7a rail ships the isCartRecommended engine source only
+- ~~Cart recommendations S3 source~~ ✅ post-P9 29a (menu-data lane) — the tenant
+  S3 map behind `VITE_TENANT_RECOMMENDATIONS_URL` (empty = off), Dexie +
+  memory only; the bag rail prefers it, falling back to isCartRecommended
 - Loyalty deferred set (P7 later / P8): Reelo partner path entirely
   (CartRewardsCard, points-redemption modals, `redeem_points`), SCAN APP tab
   (renders inert — no scanner integration), resend-OTP (no fork endpoint),
@@ -109,16 +110,15 @@ full-stage, and every return to the splash ends ADA for the next guest.
   no consumer yet (fork's ConfirmFirstTierDeleteCustomization equivalent) → P7
 - Variant-shaped upsell items in the MIAM decline path (fork's isVariantUpsell
   branch) → wire when variant upsells enter the TB catalog
-- Menu banner media: user decision 2026-10-06 — SDK guard only, no banner
-  UI (not in the Figma). Menu search: DESCOPED 2026-10-06 (the fork's search
-  is dead code, no Figma). MIAM texts + recommendations prefetch in the boot
-  loader → the `menu-data` lane (P4 leftovers noted in
-  `hooks/utils/useLoaders.ts` (splash media landed in P9d; the loyalty
-  partner in P7c; cluster settings are dead in the fork — `useLoaders.ts:649-657`
-  commented out — so they are not ported))
+- Menu banner media: DECLINED (user D1 2026-10-06 — not in the Figma); the SDK
+  banner walk is guarded (post-P9 25a). Menu search: DESCOPED (user D2
+  2026-10-06 — the fork's search is dead code, no Figma). MIAM texts at boot ✅
+  29c (staged with the kiosk settings; '' when unset → the translated
+  headline) and the recommendations prefetch ✅ 29b (post-commit background
+  refresh). Cluster settings are dead in the fork, so not ported.
 - Payment-terminal socket connects at boot (Geidea/NeoLeap) are deliberately NOT ported
   (the payment-settings fetch landed in P8a; P8b ports only Paytm DQR + EDC)
-- Per-language pipeline/menu names (`secondary_name`) → P6/P7 polish
+- ~~Per-language pipeline/menu names~~ ✅ post-P9 28 — resolved at render (useLocalized); offer/coupon names and the MIAM buttonText1/2 stay English (no data)
 
 ## Open decisions / user-gated items
 
@@ -138,12 +138,12 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | Order Complete QR codes (frames 1:5932 guest "scan to earn points" / 1:3437 promo) have NO CX data source — the panel ships without a QR rather than a placeholder that scans to nothing | client/backend | ⚠️ open |
 | Email receipt: the Figma receipt screen offers EMAIL but **the original kiosk has no email-receipt anything** — `customerInfo.email` exists in the slice, is never written and never reaches the order payload. Tile ships inert; needs a payload contract before it can collect an address | client/backend | ⚠️ open |
 | MIAM "SAVE £X" badge (Figma 1:3070) has NO data source: a full key census of the reference menu (100 distinct keys) found only `price`/`applyAddonsPrice`/`differentialPrice`/`priceChange` — the last two are modifier deltas, not a was-price — and `makeItMeal` carries only subText/buttonText1/buttonText2. Badge is implemented + gated on a real figure and stays hidden; needs a backend data contract to ever appear | client/backend | ⚠️ open |
-| ONE flag gates TWO surfaces: `enable_cart_upsell_screen: false` disables BOTH the `/forYou` interstitial AND the in-bag Complete-Your-Meal rail (both read `shouldShowUpsell`). Fork-faithful, but a tenant wanting the rail without the interstitial needs a second flag | client | ⚠️ open |
+| ONE flag gates TWO surfaces: `enable_cart_upsell_screen: false` disables BOTH the `/forYou` interstitial AND the in-bag Complete-Your-Meal rail (both read `shouldShowUpsell`). Fork-faithful, but a tenant wanting the rail without the interstitial needs a second flag — post-P9: it now gates THREE (the in-bag tenant recommendations too, D7) | client | ⚠️ open |
 | `/forYou` is a design-language screen — the TB Figma has no frame for it (node 1:3070, previously mapped as "pre-cart upsell", is actually the MIAM prompt). The design instead puts Complete-Your-Meal inside the bag. Screen is settings-gated, so dropping it is a config decision | client review | ⚠️ open |
 | Loyalty boot hardness: the `getLoyaltyPartner` call now sits inside the boot try/catch, so on `enable_loyalty` deployments a dead/slow loyalty proxy blocks boot with the retry screen (fork booted loyalty-off silently). Rule 2 says never freeze; the alternative is degrade-over-block via an inner try/catch — one line either way. **User decision 2026-10-01: DEGRADE** — inner try/catch, boot and sell loyalty-off, analytics event + "loyalty unavailable" in the Activity Center; the splash retries the partner once per visit (applied only while the splash is still showing, so loyalty never switches on mid-order) | user | ✅ P9b |
 | Loyalty screens `/phone` + `/customerName` have no idle-timeout coverage — TB still has no mounted idle timer at all (P9 item); a guest abandoning mid-phone-entry does not reset to /start | maintainer | ✅ P9a (IdleGuard covers every route from /second on) |
 | **Node pin vs dependency-cruiser** — `.nvmrc` + CI pin Node **20.19** (EOL 2026-04-30), but dependency-cruiser 18.4 refuses to run below Node 22 (`^22‖^24‖>=26`), so `yarn validate` and CI fail at the depcruise step on the pinned runtime (pre-existing, not P9a; gates were run with depcruise on Node 22.14). **User decision 2026-10-01: bump to Node 22 LTS** — done: `.nvmrc` 22, ci.yml `node-version: 22` ×2, `engines` `>=22.12`, README. Any deploy-image Node pin outside the repo needs the same bump | user | ✅ done |
-| Idle START AGAIN fill `tb-lilac` (#F3D9FF) is 1.3:1 against white — decorative per the design (the label carries 8.7:1), but below WCAG 1.4.11's 3:1 for a meaningful graphic | client | ⚠️ sign-off |
+| Idle START AGAIN fill `tb-lilac` (#F3D9FF) is 1.3:1 against white — decorative per the design (the label carries 8.7:1), but below WCAG 1.4.11's 3:1 for a meaningful graphic; the menu/PDP scroll-indicator track (Figma 1:5263) uses the same fill — decorative and non-interactive, the purple thumb is ~8:1 on it | client | ⚠️ sign-off |
 | **SDK transport timeout (Rule 2)** — the shared base query (`packages/core/src/transport/kioskApi.ts`) has no timeout, so a hung getMenu/placeOrder freezes the UI forever. **User decision 2026-10-01:** 10 s default request timeout, multi-MB menu download 30 s, retries stay per call — **refined the same day to HOST-CONFIGURED**: `configureKioskTransport()` gains the timeout setting (+ per-endpoint overrides), TB turns it on, the fork app stays byte-for-byte as today until its payments owner opts in. Reason: the P9b mapping found a blanket SDK default would abort the fork's card-gateway initiate/park/cancel calls mid-arming and let its post-payment ladder auto-retry timed-out pushes for customers who already paid by card | user | ✅ P9b |
 | `MENU_DOWNLOAD_TIMEOUT_MS` (30 s) is a calibration knob: it needs ~2 Mbps effective for the 7.5 MB reference menu if `getMenu` is not gzip-encoded. Confirm gzip + store bandwidth | backend / ops | ⚠️ open |
 | **Uncertain order + claimed loyalty reward (P9b review M4):** after a timed-out (outcome-unknown) push, the claim is kept and the `/start` teardown refunds it. If the order DID land, the guest got the free item AND the points back; clearing the claim instead strands the points if it did NOT land. Today = refund (fork parity). **User decision 2026-10-01: SKIP the automatic refund when the claim's order push is outcome-unknown** — keep the claim un-refunded, emit the reconciliation event (reward id, claim time, points), staff reconcile | user | ✅ P9d (also requires the reward row in the pushed cart; the `order_push` event carries the reward ids at mark time) |
@@ -176,9 +176,13 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Arabic / a11y sign-off list (P9f mapping):** (S1) an Arabic typeface — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback; (S2) wrapped Arabic paragraphs right-align via `dir="auto"`, single lines keep the layout's alignment; (S3) the kiosk blocks pinch-zoom / text resize (`user-scalable=no`, WCAG 1.4.4) — the axe sweep documents a `meta-viewport` exclusion; (S4) placeholder grey darkened 35 % → 55 % black for contrast; (S6) the 🇬🇧 flag next to "العربية" in the footer; (S7) the pink phone-field border is 2.46:1 non-text contrast | client / compliance | ⚠️ sign-off |
 | **P9f app sign-off list (design-language details):** PAY spans the full bag row on loyalty-off deployments; the PDP "Show more / Show less" is a 44 px toggle below the 2-line-clamped description (it was inline and got clipped); placeholder grey 35 % → 55 % black (Registration, /phone, /customerName); the pack-slot imageless placeholder ink-purple /40 → /60; `dir="auto"` + `text-start` on the offer row's second line only; the language sheet has a CSS entrance and no exit slide; Registration's error banner slide, shake and press are CSS approximations of framer-motion | client | ⚠️ sign-off |
 | **lodash in the boot chunk (95.7 KiB) is SDK-owned** — `billCalculation.js` imports the whole of lodash for four `_.chain` sites, plus redux-persist-transform-filter; rewriting them behind the golden-master gate saves ~23 KiB gzip | SDK maintainer | ⚠️ open |
+| **Menu/data lane defaults (orchestrator 2026-10-06, sign-off):** (D3) the Figma 1:5263 scroll bar ships as a non-interactive INDICATOR (aria-hidden, pointer-events-none; a draggable bar = port the fork's ScrollRail, M); (D4) the order type stays v1 (1:2581; v2 1:2588 not built — nothing selects it); (D5) the ticker shows `pipeline_text_<slot>` when set (secondary slot in a secondary-language session, no cross-language fallback) at the designed speed, else "It's lunch time!" — a real daypart field needs a backend proposal; (D6) `VITE_TENANT_RECOMMENDATIONS_URL` per deployment, never committed — ops to confirm TB's tenant id `5c122fc146aefe2828401642` and that the S3 bucket denies anonymous PUT (its CORS advertises GET, PUT); (D7) `enable_cart_upsell_screen: false` also hides the tenant recommendations (the fork shows them regardless); (D8) the operator's `make_it_meal_*` texts override the Figma MIAM headline (fork parity) | client / ops | ⚠️ sign-off |
+| **Emptied tenant recommendations feed:** an empty or junk 200 body keeps the last good map and reports ErrorOccurred `empty_body` on each boot (the fork clears on `data:[]`), so an emptied S3 file cannot withdraw suggestions — ops must repoint or unset `VITE_TENANT_RECOMMENDATIONS_URL` | client / ops | ⚠️ confirm |
+| **Order payload echoes the pipeline row (pre-existing, fork parity):** `extras.pipeline` carries the selected pipeline row verbatim, so an Arabic session pushes `secondary_name` (Arabic) and `primaryCode: "ar"` (the guest's language in a field named primaryCode); item names, add-ons and source.name stay English. Trim `extras.pipeline` / fix `primaryCode`? | backend | ⚠️ open |
+| Native scrollbar hidden on /menu and the PDP (post-P9 26): on a classic-scrollbar OS this returns ~15 px to the content (the Figma widths); headless e2e cannot see native bars — a physical-kiosk check is owed | hardware | ⚠️ open |
 | **FONT ASSETS ARE MISLABELLED (pre-existing since P1, found 2026-10-06):** `Archivo-Variable.woff2` (the "Archivo" body family, declared weight 100–900) is actually a STATIC "Archivo ExtraCondensed Thin" — every body string renders extra-condensed and thin with faux bold; `Archivo-Condensed-Bold.woff2` ("Archivo Condensed", `.tb-compressed`) is a variable font with only a width axis (62–125, default 100), so the compressed CTAs render at NORMAL width; `Archivo-Expanded-Black.woff2` is correct. Fix = one correct Archivo variable font (wght + wdth axes, latin subset, OFL) used at three widths, plus a visual pass and geometry-assertion updates — its own small lane | orchestrator | 🔲 queued |
 | **Splash sign-off list (P9d, design-language details):** (1) carousel cards crop 1080×1920 art with `object-cover` — ≈6.9 % lost top and bottom on the 680×1043 cards (author carousel art at 680×1043, or accept); (2) the card colour behind a loading slide or a peeking video, and the 0.5 s centre fade, have no Figma spec; (3) the carousel sheen uses the app-wide recipe (40 % soft-light, unrotated), not Figma's 50 % normal rotated −90°; (4) the full-bleed CTA has no scrim over operator media, so its contrast depends on the asset (keep the bottom band dark in the asset spec); (5) WELCOME says "touch anywhere to start" but a short tap in the hidden 180×180 operator corner does nothing; (6) the Arabic splash copy is a draft needing native review; (7) the bell is now decorative (`alt=""`) — the start button's accessible name is the visible copy | client | ⚠️ sign-off |
-| **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open |
+| **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open — UPDATE post-P9 44: non-codec failures (load_error / stalled) are retried 10 min after the LAST failure (`SPLASH_RETRY_MS`, ops knob, D9; fixed interval, no backoff); no_video is never retried within the visit; with Workbox SWR a cached error can take two retry periods to clear |
 | **S7 residue (P9d):** after an outcome-unknown push, "Back to bag" then removing the reward row shows the marked claim's points as returned (BagSheet adds them on screen before the skipped revoke) — display-only, session-scoped; the reconciliation record (`order_push` reward ids + `xeno_revoke_skipped`) is analytics-only, so the `VITE_POST_HOG_TYPE` kill switch drops it outside production | maintainer | ⚠️ open |
 
 ## Engineering notes (learned the hard way — don't relearn)
@@ -362,8 +366,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   a unit agent's temporary breakages made an e2e run hang 90 s).
 
 - **Splash media (P9d): only `{ media: { home_screen } }` is ever stored.** The
-  live menu converter walks `media.banner_image_*` unguarded, so a stored banner
-  key can blank `/menu`. The e2e `**/api/**` catch-all answers getMedia with
+  SDK banner walk, the media merge and `clearMediaDataConvertedItems` are
+  guarded (post-P9 25a); banners are still not stored (D1, user 2026-10-06). The e2e `**/api/**` catch-all answers getMedia with
   `{}` — not a getMedia body — so nothing is stored and every spec lands on the
   WELCOME frame unless it routes getMedia AFTER the catch-all. A made-up
   cross-origin host (`https://splash-media.e2e.test`) fulfilled by `page.route`
@@ -466,7 +470,33 @@ full-stage, and every return to the splash ends ADA for the next guest.
   overlay by role; e2e clicks the container centre or `getByRole("button",
   {name})`. Playwright refuses to click under `aria-disabled="true"`.
 
+- **Names are resolved at RENDER** (`src/hooks/utils/useLocalized.ts`: name /
+  description / pipelineName / text) — never write a result into cart/order
+  state, dispatch payloads, addEntity args, analytics, React keys or Dexie;
+  the push stays primary-language. In RTL they are FSI…PDI-isolated like i18n
+  values; descriptions are a shrink-to-fit (`w-fit`) `dir="auto"` leaf.
+- **The tenant recommendation map lives in Dexie + memory, never
+  redux-persist** (the store is ONE `persist:root` re-serialised on every
+  change), and its S3 fetch never uses the RTK transport (it would send the
+  device auth headers): bounded, bound to its source URL, last good map kept.
+
 ## Session log
+
+- **2026-10-07 (menu-data merged)** · Lane `menu-data` (13 agents; its fix stage
+  resumed after the laptop slept on battery): Arabic menu + pipeline names at
+  render, tenant cart recommendations (env URL, Dexie + memory, outside the
+  transport) + boot prefetch, MIAM texts at boot, the Figma 1:5263 scroll
+  indicator, the splash in-visit retry (10 min knob), operator ticker copy at
+  the designed speed, and the SDK banner-walk / merge / reducer guards (a
+  stored banner key can no longer blank /menu). Reviewers found 5 issues
+  (short Arabic PDP descriptions floating right, a silent empty feed, a stale
+  Dexie copy from another URL, ticker speed) — all fixed. The orchestrator
+  added: per-item names on the tier-2 sheet's steppers (a11y) and isolates not
+  counted in the ticker speed — and caught + fixed literal bidi characters
+  the edit tool had written into source (escape sequences only). Unit 1,318 →
+  1,539, e2e 121 → 134; lane mutation checks 67/67 unit, 25/26 e2e (the
+  survivor is unit-covered). P8b, offers (money follow-ups) and the font lane
+  are in flight.
 
 - **2026-10-06 (P9f app half + lanes)** · Development moved to **parallel git
   worktree lanes** (user choice 2026-10-05: commit + worktrees, one workflow
