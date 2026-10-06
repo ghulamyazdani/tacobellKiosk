@@ -27,6 +27,13 @@ import tbBell from "../../assets/brand/tb-bell.svg";
 const SPLASH_VIDEO_STALL_MS = 15_000;
 
 /**
+ * OPS KNOB (D9): a slide that errored or stalled sits out this long after the
+ * LAST failure, then gets one more try. `no_video` (a codec fact, never a
+ * blip) is not retried within the visit.
+ */
+export const SPLASH_RETRY_MS = 10 * 60_000;
+
+/**
  * `path|kind` → when last reported (monotonic). A broken asset fails on every
  * visit (and twice in a 2-slide peek): one event per asset per hour instead,
  * which still re-surfaces on a kiosk that runs for days (safeVideoPlay's rule).
@@ -60,14 +67,12 @@ const WELCOME_STARS = [
 ] as const;
 
 type Role = "single" | "centre" | "peek";
-type Fail = (
-  index: number,
-  kind: "load_error" | "stalled" | "no_video",
-) => void;
+type Kind = "load_error" | "stalled" | "no_video";
+type Fail = (index: number, kind: Kind) => void;
 
 interface Rotation {
   cur: number;
-  failed: ReadonlySet<number>;
+  failed: ReadonlyMap<number, Kind>;
 }
 
 /** The next live slide from `from` going `step`, wrapping; `from` if none. */
@@ -75,7 +80,7 @@ function live(
   from: number,
   step: 1 | -1,
   n: number,
-  failed: ReadonlySet<number>,
+  failed: { has(i: number): boolean },
 ): number {
   for (let k = 1; k <= n; k += 1) {
     const i = (from + k * (n + step)) % n; // ≡ from + k·step, never negative
@@ -144,12 +149,11 @@ export function SplashWelcome() {
  * The splash composition by PLAYABLE slide count (user decision 2026-10-01):
  * 0 → WELCOME (1:5617) · 1 → full-bleed media (1:5604 frame; the promo words
  * and stars live IN the media) · ≥2 → the 1:2203 peek carousel. A slide that
- * errors or stalls is skipped for the rest of this visit, so the layout
- * degrades 2 → 1 → WELCOME and is never blank or stuck; the next visit
- * (fresh mount) retries everything.
- * ponytail: no timed retry within a visit — a splash idling through a network
- * blip stays degraded until the next guest; clear `failed` on a timer if ops
- * ever see that.
+ * errors or stalls is skipped, so the layout degrades 2 → 1 → WELCOME and is
+ * never blank or stuck; the next visit (fresh mount) retries everything.
+ * ponytail: retry — non-codec failures get one more try 10 min after the LAST
+ * failure; fixed interval, no backoff (a dead URL costs one request / ≤15 s
+ * frozen card per 10 min); back off if the physical soak shows churn.
  */
 export default function SplashMedia() {
   const { t } = useTranslation();
@@ -162,7 +166,7 @@ export default function SplashMedia() {
   const n = slides.length;
   const [{ cur, failed }, setRotation] = useState<Rotation>({
     cur: 0,
-    failed: new Set(),
+    failed: new Map(),
   });
 
   const advance = useCallback(
@@ -184,7 +188,7 @@ export default function SplashMedia() {
       }
       setRotation((r) => {
         if (r.failed.has(index)) return r;
-        const nowFailed = new Set(r.failed).add(index);
+        const nowFailed = new Map(r.failed).set(index, kind);
         // Only the CURRENT slide failing moves the rotation; a failed peek
         // just drops out of the neighbours.
         return {
@@ -195,6 +199,29 @@ export default function SplashMedia() {
     },
     [n, slides],
   );
+
+  // One timer, re-armed by every new failure (`failed` is a new Map each
+  // time), so the retry lands SPLASH_RETRY_MS after the LAST failure.
+  useEffect(() => {
+    // no_video is a codec fact, never a blip: not retried within the visit.
+    if (![...failed.values()].some((kind) => kind !== "no_video")) return;
+    const timer = window.setTimeout(
+      () =>
+        setRotation((r) => {
+          const kept = new Map(
+            [...r.failed].filter(([, kind]) => kind === "no_video"),
+          );
+          // H1: re-point cur — with every slide failed it sits on a failed
+          // index (live() returned `from`); a kept no_video one would stick.
+          return {
+            failed: kept,
+            cur: kept.has(r.cur) ? live(r.cur, 1, n, kept) : r.cur,
+          };
+        }),
+      SPLASH_RETRY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [failed, n]);
 
   const alive = n - failed.size;
   if (alive === 0) return <SplashWelcome />;

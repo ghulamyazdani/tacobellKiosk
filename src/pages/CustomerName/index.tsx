@@ -337,7 +337,7 @@ export default function CustomerName() {
           className="text-[32px] font-medium text-black"
         >
           {inputValue || (
-            <span className="text-black/35">{t("customerName.placeholder")}</span>
+            <span className="text-black/55">{t("customerName.placeholder")}</span>
           )}
         </span>
         {inputValue.length > 0 && (
@@ -396,12 +396,20 @@ export default function CustomerName() {
           data-testid="order-error"
           role="alertdialog"
           aria-modal="true"
+          aria-labelledby="order-error-title"
+          aria-describedby="order-error-message"
           className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-[40px] bg-tb-ink-purple/95 px-[90px] text-center"
         >
-          <h2 className="tb-display text-[64px] leading-[60px] tracking-[-2px] text-tb-surface">
+          <h2
+            id="order-error-title"
+            className="tb-display text-[64px] leading-[60px] tracking-[-2px] text-tb-surface"
+          >
             {t(failedOnTimeout ? "orderError.uncertainTitle" : "orderError.title")}
           </h2>
-          <p className="max-w-[820px] text-[30px] leading-[40px] text-tb-cream">
+          <p
+            id="order-error-message"
+            className="max-w-[820px] text-[30px] leading-[40px] text-tb-cream"
+          >
             {t(
               failedOnTimeout
                 ? "orderError.uncertainMessage"

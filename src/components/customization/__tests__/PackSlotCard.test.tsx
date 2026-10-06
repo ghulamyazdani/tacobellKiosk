@@ -1,6 +1,9 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Provider } from "react-redux";
+import { store } from "../../../redux/app/store";
 import PackSlotCard from "../PackSlotCard";
 import "../../../i18n";
 
@@ -19,6 +22,11 @@ const PREVIEW = {
   image_url: "",
 };
 
+// useLocalized (post-P9 item 28) reads the display language from the store.
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <Provider store={store}>{children}</Provider>
+);
+
 const renderCard = (
   overrides: Partial<Parameters<typeof PackSlotCard>[0]> = {}
 ) => {
@@ -31,7 +39,8 @@ const renderCard = (
       currency="£"
       onOpen={onOpen}
       {...overrides}
-    />
+    />,
+    { wrapper }
   );
   return { onOpen };
 };
@@ -54,6 +63,10 @@ describe("PackSlotCard (Figma 1:4641 — pack slot grid card)", () => {
     // group name appears as placeholder art AND as the title line
     expect(card).toHaveTextContent("Drink");
     expect(card).toHaveTextContent("Select Drink");
+    // P9f contrast: ink-purple/60 on grey-6 is 4.98:1 (/40 was 2.65:1).
+    const [art] = screen.getAllByText("Drink");
+    expect(art).toHaveClass("bg-tb-grey-6", "text-tb-ink-purple/60");
+    expect(art).not.toHaveClass("text-tb-ink-purple/40");
   });
 
   it("selected slot: pick's name, ✓ badge and SWAP CTA", () => {

@@ -1,15 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { emptyMenuData, setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  emptyMenuData,
+  setEntityMap,
+  setMenuData,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  setEnableAccessibilityMode,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   setSelectedPipeline,
   setTabType,
 } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setSelectedTabId } from "@cx-sdk/core/auth/authentication.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import { mutateAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
 import Menu from "../index";
 import i18n from "../../../i18n";
 
@@ -308,9 +318,198 @@ describe("Menu — refetch on a menu-less mount (P9b R8)", () => {
     renderMenu();
     await act(async () => {});
 
-    expect(screen.getByTestId("menu-error")).toHaveAccessibleName("تعذر تحميل القائمة");
+    expect(screen.getByTestId("menu-error")).toHaveAccessibleName(
+      i18n.t("menuError.title")
+    );
     expect(screen.getByTestId("menu-error-start-over")).toHaveTextContent(
-      "البدء من جديد"
+      i18n.t("menuError.startOver")
+    );
+  });
+});
+
+/*
+  Post-P9 26 — the Figma 1:5263 scroll indicator: a direct child of the page
+  root (the containing block), 505/790 normally and 170/578 in the ADA reach
+  zone (1:5412), on the SAME node; the pane hides its native bar.
+*/
+describe("Menu — scroll indicator (post-P9 26)", () => {
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setMenuData({ menu: CONVERTED_MENU }));
+  });
+
+  it("menu-scrollbar sits at top 505 / height 790, a direct child of the page root", () => {
+    renderMenu();
+    const bar = screen.getByTestId("menu-scrollbar");
+
+    expect(bar.style.top).toBe("505px");
+    expect(bar.style.height).toBe("790px");
+    expect(bar).toHaveAttribute("aria-hidden", "true");
+    expect(bar).toHaveClass("pointer-events-none");
+    expect(bar.parentElement).toBe(screen.getByTestId("menu-screen"));
+    expect(screen.getByTestId("menu-scrollbar-thumb")).toBeInTheDocument();
+  });
+
+  it("ADA on: 170 / 578 on the same node (no remount)", () => {
+    renderMenu();
+    const bar = screen.getByTestId("menu-scrollbar");
+
+    act(() => {
+      store.dispatch(setEnableAccessibilityMode(true));
+      store.dispatch(toggleAccessibilityMode());
+    });
+
+    expect(screen.getByTestId("menu-scrollbar")).toBe(bar);
+    expect(bar.style.top).toBe("170px");
+    expect(bar.style.height).toBe("578px");
+  });
+
+  it("the item pane hides its native scrollbar ([scrollbar-width:none] + ::-webkit-scrollbar)", () => {
+    renderMenu();
+    const pane = screen.getByTestId("item-e-plain").closest(".overflow-y-auto");
+
+    expect(pane).not.toBeNull();
+    expect(pane).toHaveClass("[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+  });
+});
+
+/*
+  Post-P9 28 — names are resolved at render from the menu's ar aliases in an
+  Arabic session (FSI…PDI isolated), English otherwise. Accessible names keep
+  the visible label (WCAG 2.5.3 label-in-name).
+*/
+describe("Menu — names in the guest's language (post-P9 28)", () => {
+  const FSI = "\u2068";
+  const PDI = "\u2069";
+  const iso = (s: string) => `${FSI}${s}${PDI}`;
+  const ISOLATES = /[\u2066-\u2069]/;
+  const AR = (value: string) => [{ value, name: "Arabic", code: "ar", dir: "rtl" }];
+  const AR_CATEGORY = "الطلبات الجانبية";
+  const AR_SUB = "جوانب";
+  const AR_FRIES = "بطاطس كبيرة";
+  const AR_SALAD = "سلطة يونانية";
+  const AR_SESSION = { name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" };
+  const EN_SESSION = { name: "English", code: "en", dir: "ltr", type: "primary_language" };
+
+  const SALAD = { id: "e-salad", name: "Greek Salad", price: 4, aliases: AR(AR_SALAD) };
+  const MENU = {
+    categories: [
+      {
+        id: "c1",
+        name: "Side Orders",
+        aliases: AR(AR_CATEGORY),
+        subCategories: [
+          {
+            id: "s1",
+            name: "Sides",
+            aliases: AR(AR_SUB),
+            entities: [{ id: "e-fries", name: "Large Fries", price: 2.5, aliases: AR(AR_FRIES), outOfStock: false }],
+          },
+          {
+            id: "s2",
+            name: "Salads",
+            entities: [{ ...SALAD, outOfStock: false }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const arabicSession = async () => {
+    store.dispatch(setSelectedLanguage(AR_SESSION));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+  };
+  /** The item pane (the product-added modal carries an h2 of its own). */
+  const pane = () => screen.getByTestId("item-e-fries").closest(".overflow-y-auto") as HTMLElement;
+  const h2 = () => within(pane()).getByRole("heading", { level: 2 }).textContent;
+  const h3s = () => within(pane()).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setMenuData({ menu: MENU }));
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("English: rail, H2, H3 and cards are the plain names — no isolate anywhere", () => {
+    renderMenu();
+
+    expect(screen.getByTestId("rail-c1").textContent).toBe("Side Orders");
+    expect(h2()).toBe("Side Orders");
+    expect(h3s()).toEqual(["Sides", "Salads"]);
+    expect(screen.getByRole("button", { name: "Large Fries" })).toBeInTheDocument();
+    expect(screen.getByTestId("menu-screen").textContent).not.toMatch(ISOLATES);
+  });
+
+  it("Arabic: the rail, the H2 and the H3 show the aliases, isolated; no alias → the English name", async () => {
+    await arabicSession();
+    renderMenu();
+
+    expect(screen.getByTestId("rail-c1").textContent).toBe(iso(AR_CATEGORY));
+    expect(h2()).toBe(iso(AR_CATEGORY));
+    expect(h3s()).toEqual([iso(AR_SUB), iso("Salads")]);
+  });
+
+  it("Arabic: a card shows its alias and its overlay is named by it (label-in-name); quick-add is the AR verb", async () => {
+    await arabicSession();
+    renderMenu();
+    const card = screen.getByTestId("item-e-fries");
+
+    expect(card).toHaveTextContent(iso(AR_FRIES), { normalizeWhitespace: false });
+    expect(card).not.toHaveTextContent("Large Fries");
+    const overlay = screen.getByRole("button", { name: iso(AR_FRIES) });
+    expect(card).toContainElement(overlay);
+    expect(screen.getByTestId("quick-add-e-fries")).toHaveAccessibleName(i18n.t("menu.quickAdd"));
+  });
+
+  it("Arabic: the product-added modal's You-Might-Like tile shows the alias", async () => {
+    store.dispatch(setEntityMap({ entityMap: { [SALAD.id]: SALAD } }));
+    await arabicSession();
+    renderMenu();
+
+    act(() => {
+      store.dispatch(
+        mutateAddToCartModal({ isOpen: true, item: { id: "e-fries", recommendedItems: [SALAD.id] } })
+      );
+    });
+
+    const tile = screen.getByTestId(`added-rec-${SALAD.id}`);
+    expect(tile).toHaveTextContent(iso(AR_SALAD), { normalizeWhitespace: false });
+    expect(tile).not.toHaveTextContent("Greek Salad");
+  });
+
+  it("switching back to English restores every name, unisolated", async () => {
+    store.dispatch(setEntityMap({ entityMap: { [SALAD.id]: SALAD } }));
+    await arabicSession();
+    renderMenu();
+    act(() => {
+      store.dispatch(
+        mutateAddToCartModal({ isOpen: true, item: { id: "e-fries", recommendedItems: [SALAD.id] } })
+      );
+    });
+    expect(screen.getByTestId("rail-c1").textContent).toBe(iso(AR_CATEGORY));
+
+    act(() => {
+      store.dispatch(setSelectedLanguage(EN_SESSION));
+    });
+
+    expect(screen.getByTestId("rail-c1").textContent).toBe("Side Orders");
+    expect(h2()).toBe("Side Orders");
+    expect(h3s()).toEqual(["Sides", "Salads"]);
+    expect(screen.getByRole("button", { name: "Large Fries" })).toBeInTheDocument();
+    expect(screen.getByTestId(`added-rec-${SALAD.id}`)).toHaveTextContent("Greek Salad");
+    expect(screen.getByTestId("menu-screen").textContent).not.toMatch(
+      new RegExp(`${AR_FRIES}|${AR_CATEGORY}|${AR_SUB}|${AR_SALAD}`)
     );
   });
 });

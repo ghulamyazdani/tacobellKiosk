@@ -55,6 +55,12 @@ describe("/customerName order-error panel (P9b R4)", () => {
     mount();
 
     const panel = screen.getByTestId("order-error");
+    expect(
+      screen.getByRole("alertdialog", {
+        name: i18n.t("orderError.uncertainTitle"),
+        description: i18n.t("orderError.uncertainMessage"),
+      })
+    ).toBe(panel);
     expect(panel).toHaveTextContent(i18n.t("orderError.uncertainTitle"));
     expect(panel).toHaveTextContent(i18n.t("orderError.uncertainMessage"));
     expect(panel).not.toHaveTextContent(i18n.t("orderError.message"));
@@ -64,6 +70,12 @@ describe("/customerName order-error panel (P9b R4)", () => {
     mount();
 
     const panel = screen.getByTestId("order-error");
+    expect(
+      screen.getByRole("alertdialog", {
+        name: i18n.t("orderError.title"),
+        description: i18n.t("orderError.message"),
+      })
+    ).toBe(panel);
     expect(panel).toHaveTextContent(i18n.t("orderError.title"));
     expect(panel).toHaveTextContent(i18n.t("orderError.message"));
     expect(panel).not.toHaveTextContent(i18n.t("orderError.uncertainTitle"));
@@ -77,5 +89,14 @@ describe("/customerName order-error panel (P9b R4)", () => {
 
     expect(pay.retry).toHaveBeenCalledTimes(1);
     expect(pay.dismissError).not.toHaveBeenCalled();
+  });
+
+  it("the empty-name placeholder is 55 % black (P9f contrast: 35 % was 2.43:1)", () => {
+    pay.failed = false;
+    mount();
+
+    const placeholder = screen.getByText(i18n.t("customerName.placeholder"));
+    expect(placeholder).toHaveClass("text-black/55");
+    expect(placeholder).not.toHaveClass("text-black/35");
   });
 });

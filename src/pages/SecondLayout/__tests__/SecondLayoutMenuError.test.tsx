@@ -254,8 +254,10 @@ describe("SecondLayout — menu-load failure stays on /second (P9b R8)", () => {
     await tapPipeline({});
 
     expect(screen.getByTestId("menu-error")).toHaveAccessibleName(
-      "تعذر تحميل القائمة"
+      i18n.t("menuError.title")
     );
-    expect(screen.getByTestId("menu-error-retry")).toHaveTextContent("حاول مرة أخرى");
+    expect(screen.getByTestId("menu-error-retry")).toHaveTextContent(
+      i18n.t("menuError.retry")
+    );
   });
 });

@@ -22,6 +22,7 @@ import { getAllLoyaltyItemsFromMenu } from "@cx-sdk/ordering/loyalty/loyaltyEngi
 import { getLoyaltyRedemptionError } from "@cx-sdk/ordering/loyalty/loyaltyRedemption";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useLocalized from "../../hooks/utils/useLocalized";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import { resolveEntityImage } from "../../utils/entityImage";
@@ -89,6 +90,7 @@ interface SheetBodyProps {
  */
 function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const dispatch = useDispatch();
 
   const coupons = useSelector(selectCoupons) as any[] | undefined;
@@ -391,7 +393,7 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         <span className="flex min-w-0 flex-1 flex-col items-start gap-[8px] text-left">
           <span className="flex flex-wrap items-center gap-[12px]">
             <span className="text-[24px] font-bold leading-[28px] tracking-[-0.5px] text-black">
-              {entity?.name ?? entity?.coupon_name}
+              {name(entity) || entity?.coupon_name}
             </span>
             <span className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface">
               {chip}

@@ -49,6 +49,7 @@ import { closeBottomSheet } from "../../redux/features/menuSelections/menuSelect
 import useCustomization from "../../hooks/customization/useCustomization";
 import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServices";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 
 // Unique id for a repeat-capable tier-1 row (fork's generateUniqueId).
@@ -80,6 +81,7 @@ const generateUniqueId = (id: any) => `${Date.now()}_${id}`;
  */
 export default function Tier2CustomizationSheet() {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const dispatch = useDispatch();
   const cartRef = useRef(null);
   const { triggerNotification } = useGlobalTriggerServices();
@@ -424,7 +426,7 @@ export default function Tier2CustomizationSheet() {
   const entityCal = (() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
-    return value ? ` | ${value} Cal` : "";
+    return value ? ` | ${t("pack.cal", { value })}` : "";
   })();
 
   const itemMeta = (item: any) => {
@@ -434,7 +436,7 @@ export default function Tier2CustomizationSheet() {
     if (Number(item?.price) > 0) {
       parts.push(`+${currency}${Number(item.price).toFixed(2)}`);
     }
-    if (calValue) parts.push(`${calValue} Cal`);
+    if (calValue) parts.push(t("pack.cal", { value: calValue }));
     return parts.join(" | ");
   };
 
@@ -467,7 +469,7 @@ export default function Tier2CustomizationSheet() {
         className={`mb-[40px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
       >
         <div className="mb-[16px] flex items-baseline gap-4">
-          <h3 className="text-[24px] font-bold text-black">{group?.name}</h3>
+          <h3 className="text-[24px] font-bold text-black">{name(group)}</h3>
           {min > 0 && (
             <span
               className={`text-[16px] ${errored ? "text-red-600 font-bold" : "text-tb-ink-purple/60"}`}
@@ -497,7 +499,7 @@ export default function Tier2CustomizationSheet() {
                   )}
                   <div className="flex-1">
                     <p className="text-[20px] font-medium capitalize text-black">
-                      {item.name}
+                      {name(item)}
                     </p>
                     {meta && (
                       <p className="text-[16px] text-tb-ink-purple/70">{meta}</p>
@@ -506,7 +508,7 @@ export default function Tier2CustomizationSheet() {
                   <div className="flex items-center gap-[12px]">
                     <button
                       type="button"
-                      aria-label={t("pdp.decrease")}
+                      aria-label={`${t("pdp.decrease")} ${name(item)}`}
                       onClick={() => decreaseCustomization(group, item)}
                       className="h-[44px] w-[44px] rounded-full border-2 border-tb-purple text-[24px] font-bold text-tb-purple"
                     >
@@ -517,7 +519,7 @@ export default function Tier2CustomizationSheet() {
                     </span>
                     <button
                       type="button"
-                      aria-label={t("pdp.increase")}
+                      aria-label={`${t("pdp.increase")} ${name(item)}`}
                       onClick={() =>
                         qty === 0
                           ? addCustomizations(
@@ -564,7 +566,7 @@ export default function Tier2CustomizationSheet() {
                     />
                   )}
                   <p className="text-[18px] font-medium capitalize leading-[22px] text-black">
-                    {item.name}
+                    {name(item)}
                   </p>
                   {meta && (
                     <p className="text-[15px] text-tb-ink-purple/70">{meta}</p>
@@ -602,7 +604,7 @@ export default function Tier2CustomizationSheet() {
         {/* Header: centered display title, X top-right, qty + price line */}
         <div className="relative shrink-0 px-[48px] pb-[20px] pt-[40px]">
           <h2 className="tb-display px-[64px] text-center text-[34px] uppercase leading-[1.05] tracking-[-1px] text-tb-purple">
-            {SelectedEntity?.name}
+            {name(SelectedEntity)}
           </h2>
           <button
             type="button"

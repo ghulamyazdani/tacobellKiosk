@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -12,8 +12,9 @@ import {
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import MakeItAMealPrompt from "../MakeItAMealPrompt";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Plain upsell combo (no modifiers/variants → checkCustomizationType "item"). */
 const COMBO = {
@@ -151,5 +152,118 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(
       screen.getByTestId("miam-combo-combo-1").closest(".overflow-y-auto")
     ).not.toBeNull();
+  });
+});
+
+/*
+  Post-P9 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
+  headline, read from the GUEST's slot only (no cross-language fallback); a
+  staged "" (the boot's unset value) shows the translated miam.title. 28: the
+  combo name is the menu's ar alias, isolated, in an Arabic session.
+*/
+describe("MakeItAMealPrompt — headline per language slot (post-P9 29c)", () => {
+  const FSI = "\u2068";
+  const PDI = "\u2069";
+  const iso = (s: string) => `${FSI}${s}${PDI}`;
+  const AR_OPERATOR = "هل تريدها وجبة؟";
+  const AR_COMBO = "صندوق الأحلام";
+  const AR_SESSION = { name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" };
+
+  /** What the boot stages from kiosk_settings.make_it_meal_<slot>. */
+  const stageTexts = (primary: string, secondary: string) => {
+    store.dispatch({ type: "makeItAMeal/setPrimaryMakeItAMealText", payload: primary });
+    store.dispatch({ type: "makeItAMeal/setSecondaryMakeItAMealText", payload: secondary });
+  };
+  const arabicSession = async () => {
+    store.dispatch(setSelectedLanguage(AR_SESSION));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+  };
+  const headline = () => screen.getByRole("heading").textContent;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("'' (no operator text) shows the English miam.title", () => {
+    stageTexts("", "");
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe(i18n.t("miam.title"));
+    expect(headline()).toBe("Would you like to make it a meal?");
+  });
+
+  it("'' in an Arabic session shows the Arabic miam.title", async () => {
+    stageTexts("", "");
+    await arabicSession();
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe(i18n.t("miam.title"));
+    expect(headline()).toContain(FSI);
+    expect(headline()).not.toContain("meal");
+  });
+
+  it("an operator primary text shows in English, trimmed and unisolated", () => {
+    stageTexts("  Meal deal? ", "");
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe("Meal deal?");
+  });
+
+  it("an operator secondary text shows in Arabic, isolated — never the primary one", async () => {
+    stageTexts("Meal deal?", AR_OPERATOR);
+    await arabicSession();
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe(iso(AR_OPERATOR));
+    expect(screen.getByTestId("miam-prompt")).not.toHaveTextContent("Meal deal?");
+  });
+
+  it("Arabic with only a primary text shows the Arabic i18n copy (no cross-language fallback)", async () => {
+    stageTexts("Meal deal?", "");
+    await arabicSession();
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe(i18n.t("miam.title"));
+    expect(screen.getByTestId("miam-prompt")).not.toHaveTextContent("Meal deal?");
+  });
+
+  it("a non-string slot (persisted junk) falls back to miam.title", () => {
+    store.dispatch({ type: "makeItAMeal/setPrimaryMakeItAMealText", payload: 42 });
+    openPrompt();
+    renderPrompt();
+
+    expect(headline()).toBe(i18n.t("miam.title"));
+  });
+
+  it("28: the combo card shows its ar alias, isolated, in an Arabic session — and its English name again after", async () => {
+    const arCombo = { ...COMBO, aliases: [{ value: AR_COMBO, name: "Arabic", code: "ar" }] };
+    await arabicSession();
+    store.dispatch(
+      openMakeItAMealModal({ isOpen: true, selectedItem: { ...BURGER, upsellItems: [arCombo] }, availableCombos: [arCombo] })
+    );
+    renderPrompt();
+
+    const combo = screen.getByTestId("miam-combo-combo-1");
+    expect(combo).toHaveTextContent(iso(AR_COMBO), { normalizeWhitespace: false });
+    expect(combo).not.toHaveTextContent("Dream Box");
+
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr", type: "primary_language" }));
+    });
+    expect(combo).toHaveTextContent("Dream Box");
+    expect(combo.textContent).not.toMatch(/[\u2066-\u2069]/);
   });
 });

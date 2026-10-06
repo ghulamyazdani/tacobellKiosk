@@ -1,13 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { BrowserRouter as Router } from "react-router-dom";
 import { useSelector } from "react-redux";
-import posthog from "posthog-js";
+import { identifyKiosk } from "./utils/analytics";
 import { AppRoutes } from "./routes";
 import { KioskStage } from "./components/stage/KioskStage";
 import { ReachZone } from "./components/stage/ReachZone";
 import NetworkStatusOverlay from "./components/common/NetworkStatusOverlay";
 import { PWAUpdateHandler } from "./components/autoUpdate/PWAUpdateHandler";
 import useFcmRegistration from "./hooks/firebase/useFcmRegistration";
+import useTenantRecommendations from "./hooks/recommendation/useTenantRecommendations";
 import { selectSelectedLanguage } from "./redux/features/multiLanguage/multiLanguage.slice";
 import { selectLicenseDetails } from "@cx-sdk/core/auth/authentication.slice";
 import i18n, { DEFAULT_LANGUAGE } from "./i18n";
@@ -23,11 +24,24 @@ import i18n, { DEFAULT_LANGUAGE } from "./i18n";
  * - FCM (P9e): useFcmRegistration — latch-, config- and permission-gated,
  *   never prompts; firebase is a lazy chunk, never on the boot path.
  *   FullscreenPrompt lands with its feature.
+ * - Tenant recommendations (post-P9 29a): their Dexie copy loads once per
+ *   launch, because a relaunch never boots (P9e) — without it a reload
+ *   loses the bag rail's tenant source until the next boot (≤ 6 h).
  */
 const App = () => {
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const licenseDetails = useSelector(selectLicenseDetails);
   useFcmRegistration();
+  const { loadCached } = useTenantRecommendations();
+  const recommendationsLoaded = useRef(false);
+
+  // Once per launch (the ref survives StrictMode's effect replay). Never
+  // rejects, and never overwrites a map a boot already stored.
+  useEffect(() => {
+    if (recommendationsLoaded.current) return;
+    recommendationsLoaded.current = true;
+    void loadCached();
+  }, [loadCached]);
 
   // Language sync: the shell pushes the store's language into i18n (the
   // detector never reads the store — that coupling stays broken). Every
@@ -38,22 +52,19 @@ const App = () => {
     i18n.changeLanguage(selectedLanguage?.code || DEFAULT_LANGUAGE);
   }, [selectedLanguage]);
 
-  // Tenant identity for analytics (guarded: posthog is init-ed only when
-  // VITE_POST_HOG_TYPE === "production").
+  // Tenant identity for analytics: queued until PostHog loads, dropped when
+  // the VITE_POST_HOG_TYPE kill switch is off; never throws (the adapter
+  // swallows). Payload kept as is (user decision 2026-10-05).
   useEffect(() => {
     if (licenseDetails?.tenant_id) {
-      try {
-        posthog.identify(licenseDetails.tenant_id, {
-          login_code: licenseDetails.login_code,
-          license_key: licenseDetails.license_key,
-          deployment_id: licenseDetails.deployment_id,
-          type: licenseDetails.type,
-          expiry_date: licenseDetails.expiry_date,
-          tenant_id: licenseDetails.tenant_id,
-        });
-      } catch {
-        // analytics must never break the kiosk (Rule 2)
-      }
+      identifyKiosk(licenseDetails.tenant_id, {
+        login_code: licenseDetails.login_code,
+        license_key: licenseDetails.license_key,
+        deployment_id: licenseDetails.deployment_id,
+        type: licenseDetails.type,
+        expiry_date: licenseDetails.expiry_date,
+        tenant_id: licenseDetails.tenant_id,
+      });
     }
   }, [licenseDetails]);
 

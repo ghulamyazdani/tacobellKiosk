@@ -42,6 +42,8 @@ This file only records what DIFFERS in this repo:
 8. **Boot order is load-bearing** (once P1 lands): installChunkErrorRecovery()
    first, setAnalyticsPort() before render, apiSlice imported only via
    `src/redux/app/apiSlice.ts` (transport config side effect).
+   startAnalytics() right after setAnalyticsPort(); never import posthog-js
+   statically (only `src/utils/analytics/posthogRuntime.ts` imports it).
 
 9. **Keep `docs/PROGRESS.md` current.** It is the project's living tracker
    (phase status, deferred items, open decisions, engineering notes, session

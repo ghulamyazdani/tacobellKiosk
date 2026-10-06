@@ -110,9 +110,11 @@ describe("ErrorBoundary — the crash screen recovers by itself (P9b R9)", () =>
     });
     crash(HEALTHY);
 
-    expect(screen.getByTestId("app-error")).toHaveAccessibleName("حدث خطأ ما");
+    expect(screen.getByTestId("app-error")).toHaveAccessibleName(
+      i18n.t("errorBoundary.title")
+    );
     expect(screen.getByTestId("app-error-start-over")).toHaveTextContent(
-      "البدء من جديد"
+      i18n.t("errorBoundary.startOver")
     );
   });
 

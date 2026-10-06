@@ -3,11 +3,9 @@ import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
 import { CookiesProvider } from "react-cookie";
 import { PersistGate } from "redux-persist/integration/react";
-import posthog from "posthog-js";
-import { PostHogProvider } from "posthog-js/react";
 import { setAnalyticsPort } from "@cx-sdk/core";
 import { installChunkErrorRecovery } from "./utils/chunkRecovery";
-import { captureKioskEvent } from "./utils/analytics";
+import { captureKioskEvent, startAnalytics } from "./utils/analytics";
 import { store, persistor } from "./redux/app/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import App from "./App.tsx";
@@ -22,8 +20,8 @@ installChunkErrorRecovery();
 // engine call drops events.
 setAnalyticsPort({ capture: captureKioskEvent });
 
-// PostHog kill switch: initialize ONLY in production analytics mode.
-const ENABLE_POSTHOG = import.meta.env.VITE_POST_HOG_TYPE === "production";
+// PostHog loads off the boot chunk; calls made before it arrives are queued (P9f).
+void startAnalytics();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -44,19 +42,4 @@ const app = (
   </CookiesProvider>
 );
 
-createRoot(rootElement).render(
-  <StrictMode>
-    {ENABLE_POSTHOG ? (
-      <PostHogProvider
-        client={posthog.init(import.meta.env.VITE_PUBLIC_POSTHOG_KEY, {
-          api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
-          defaults: "2025-05-24",
-        })}
-      >
-        {app}
-      </PostHogProvider>
-    ) : (
-      app
-    )}
-  </StrictMode>
-);
+createRoot(rootElement).render(<StrictMode>{app}</StrictMode>);

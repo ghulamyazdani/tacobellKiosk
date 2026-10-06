@@ -663,6 +663,9 @@ test.describe("P7c XENO loyalty", () => {
 
     await addCheeseBurgerViaPdp(page, "£8.00");
     await openBag(page);
+    // P9f: loyalty on keeps LOG-IN & GET REWARDS beside PAY (it is hidden
+    // only on loyalty-off deployments — bag.spec BAG BASICS).
+    await expect(page.getByTestId("bag-login-rewards")).toBeVisible();
     // round(8 * 1.15) = £9 — exclusive VAT, see header.
     await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
 

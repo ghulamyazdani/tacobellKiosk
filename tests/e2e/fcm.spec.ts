@@ -275,6 +275,20 @@ const readAutoUpdate = (page: Page) =>
         .autoUpdate as unknown as AutoUpdateState
   );
 
+/** Distinct statuses of the update_cx_fcm_key mutations RTK holds in the store. */
+const fcmKeyMutationStatuses = (page: Page) =>
+  page.evaluate(() => {
+    const mutations = (window as unknown as KioskWindow).__kioskStore.getState().api
+      .mutations as Record<string, { endpointName?: string; status?: string }>;
+    return [
+      ...new Set(
+        Object.values(mutations)
+          .filter((m) => m.endpointName === "updateCxFcmKey")
+          .map((m) => m.status)
+      ),
+    ];
+  });
+
 const permissionRequests = (page: Page) =>
   page.evaluate(() => (window as unknown as KioskWindow).__e2ePermissionRequests);
 
@@ -331,6 +345,14 @@ const fcmWorker = (page: Page) =>
           script: new URL(registration.active.scriptURL).pathname,
         }
       : null;
+  }, FCM_SCOPE);
+
+/** Titles of the notifications the FCM push worker has shown (it must never show one). */
+const fcmNotifications = (page: Page) =>
+  page.evaluate(async (scope) => {
+    const registration = await navigator.serviceWorker.getRegistration(scope);
+    const shown = await registration?.getNotifications();
+    return shown ? shown.map((n) => n.title) : null;
   }, FCM_SCOPE);
 
 const tokenCookie = async (context: BrowserContext) =>
@@ -479,6 +501,23 @@ test.describe("P9e FCM brand updates (real Firebase SDK)", () => {
     await expect(page).toHaveURL(/\/second$/);
     expect(backend.acks).toEqual([]);
     expect(watch.errors).toEqual([]);
+    // Relayed silently: never an OS notification over the customer screen.
+    // The push event outlives its post, so a showNotification could land
+    // after the relay: sample for a 1 s window (lint bans fixed sleeps) —
+    // "waiting" keeps the poll going, any notification is returned as the
+    // failing value, and only a window that closes empty passes.
+    const windowEnds = Date.now() + 1_000;
+    await expect
+      .poll(
+        async () => {
+          const shown = await fcmNotifications(page);
+          // null = no FCM registration: fail rather than pass vacuously.
+          if (shown === null || shown.length > 0) return shown;
+          return Date.now() >= windowEnds ? [] : "waiting";
+        },
+        { timeout: 5_000, intervals: [100] }
+      )
+      .toEqual([]);
   });
 
   test("E11 a minted token is registered ONCE per page load with the exact body and stored only after the backend took it; a reload re-registers without re-minting", async ({
@@ -524,8 +563,10 @@ test.describe("P9e FCM brand updates (real Firebase SDK)", () => {
       await expect
         .poll(() => backend.fcmKeyPosts.length, { timeout: 20_000 })
         .toBe(status === 401 ? 1 : 3);
-      // Recovery would run as the last answer lands: give it a moment to show.
-      await page.waitForTimeout(1_000);
+      // The base query runs any session recovery synchronously BEFORE RTK
+      // marks the mutation rejected: once every update_cx_fcm_key mutation
+      // has settled as rejected (none pending), a recovery would have run.
+      await expect.poll(() => fcmKeyMutationStatuses(page)).toEqual(["rejected"]);
       expect(backend.fcmKeyPosts).toHaveLength(status === 401 ? 1 : 3);
       await expect(page).toHaveURL(/\/start$/);
       await expect(page.getByTestId("start-screen")).toBeVisible();

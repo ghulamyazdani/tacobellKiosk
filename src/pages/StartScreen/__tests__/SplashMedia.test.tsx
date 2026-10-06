@@ -3,13 +3,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { Provider } from "react-redux";
 import { setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
-import SplashMedia from "../SplashMedia";
+import SplashMedia, { SPLASH_RETRY_MS } from "../SplashMedia";
 import "../../../i18n";
 
 /*
   P9d — the splash media layer. Layout by PLAYABLE slide count (0 → WELCOME
   1:5617, 1 → full-bleed 1:5604, ≥2 → the 1:2203 peek carousel), the image
-  rotation, per-visit skipping of a failed slide, the video lifecycle
+  rotation, skipping a failed slide (load_error / stalled come back after
+  SPLASH_RETRY_MS, post-P9 44; no_video stays out for the visit), the video lifecycle
   (watchdog, plays, teardown, hidden page, StrictMode) and the rate-limited
   failure report. jsdom decodes nothing: the media methods are stubbed and
   media events are fired by hand. The report limiter is MODULE state keyed by
@@ -194,7 +195,7 @@ describe("image rotation", () => {
   });
 });
 
-describe("a failed slide is skipped for the visit — never blank, never stuck", () => {
+describe("a failed slide is skipped (until the in-visit retry) — never blank, never stuck", () => {
   it("a centre image error skips it at once and reports load_error with its slide_index", () => {
     seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
     renderSplash();
@@ -226,7 +227,7 @@ describe("a failed slide is skipped for the visit — never blank, never stuck",
       failure("load_error", 1),
       failure("load_error", 2),
     ]);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1); // only the in-visit retry (SPLASH_RETRY_MS)
   });
 
   it("a failed PEEK drops out without moving the centre or restarting its dwell", () => {
@@ -509,6 +510,142 @@ describe("failure reporting — one event per URL path|kind per hour", () => {
     expect(splashEvents()).toEqual([failure("load_error", 1)]);
     expect(layout()).toBe("full-bleed");
     expect(srcOf(fullBleed())).toBe(u("a.jpg"));
+  });
+});
+
+// Post-P9 44 (D9): load_error / stalled slides get one more try SPLASH_RETRY_MS
+// after the LAST failure, within the same visit; no_video never comes back.
+describe("in-visit retry (post-P9 44, contract §7(7) a–f)", () => {
+  const MIN = 60_000;
+  const HOLD = 3_600; // max image dwell (s): no rotation inside the windows below
+
+  it("the ops knob is 10 minutes", () => {
+    expect(SPLASH_RETRY_MS).toBe(10 * MIN);
+  });
+
+  it("(a) a centre image error, then +SPLASH_RETRY_MS, restores the carousel and re-requests the src", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: HOLD },
+      { url: u("b.jpg"), iteration_time: HOLD },
+      { url: u("c.jpg"), iteration_time: HOLD },
+    ]);
+    renderSplash();
+    const broken = media("centre");
+
+    fireEvent.error(broken);
+    expect(cards()).toEqual([u("c.jpg"), u("b.jpg"), u("c.jpg")]);
+    expect(broken.isConnected).toBe(false);
+
+    tick(SPLASH_RETRY_MS - 1);
+    expect(cards()).toEqual([u("c.jpg"), u("b.jpg"), u("c.jpg")]);
+
+    tick(1);
+    expect(layout()).toBe("carousel");
+    expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("c.jpg")]);
+    // A NEW element carries the src again — the browser requests it afresh.
+    expect(media("prev")).not.toBe(broken);
+    expect(srcOf(media("prev"))).toBe(u("a.jpg"));
+  });
+
+  it("(b) no_video is never retried and arms no timer", () => {
+    seed([{ url: u("v.mp4") }]);
+    renderSplash();
+
+    fireEvent.loadedMetadata(fullBleed() as HTMLVideoElement); // jsdom: videoWidth 0
+    expect(layout()).toBe("welcome");
+    expect(splashEvents()).toEqual([failure("no_video", 0)]);
+    expect(vi.getTimerCount()).toBe(0);
+
+    tick(5 * SPLASH_RETRY_MS);
+    expect(layout()).toBe("welcome");
+    expect(host().querySelector("video")).toBeNull();
+  });
+
+  it("(c) H1: slide 0 stalled then slide 1 no_video → WELCOME; at +10 min slide 0 shows full-bleed, never slide 1", () => {
+    seed([{ url: u("v0.mp4") }, { url: u("v1.mp4") }]);
+    renderSplash();
+    expect(srcOf(media("centre"))).toBe(u("v0.mp4"));
+
+    tick(STALL_MS); // slide 0 stalls → the rotation moves to slide 1
+    expect(srcOf(fullBleed())).toBe(u("v1.mp4"));
+    fireEvent.loadedMetadata(fullBleed() as HTMLVideoElement); // slide 1: no_video
+    expect(layout()).toBe("welcome");
+    expect(splashEvents()).toEqual([failure("stalled", 0), failure("no_video", 1)]);
+    expect(vi.getTimerCount()).toBe(1);
+
+    tick(SPLASH_RETRY_MS);
+    // `cur` sat on slide 1 (every slide failed); the retry keeps its no_video
+    // and must move off it — rendering it again would stick on a dead card.
+    expect(layout()).toBe("full-bleed");
+    expect(srcOf(fullBleed())).toBe(u("v0.mp4"));
+    expect(host().querySelector(`video[src="${u("v1.mp4")}"]`)).toBeNull();
+
+    for (let i = 0; i < 6; i += 1) {
+      tick(STALL_MS - 1_000);
+      fireEvent.timeUpdate(fullBleed() as HTMLVideoElement); // slide 0 plays on
+    }
+    expect(srcOf(fullBleed())).toBe(u("v0.mp4"));
+    expect(host().querySelectorAll("video")).toHaveLength(1);
+  });
+
+  it("(d) a second failure at +9 min postpones the retry to +19 min", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderSplash();
+
+    fireEvent.error(media("centre")); // a fails at 0 → full-bleed b (no dwell)
+    expect(srcOf(fullBleed())).toBe(u("b.jpg"));
+    tick(9 * MIN);
+    fireEvent.error(fullBleed() as HTMLImageElement); // b fails at +9 min
+    expect(layout()).toBe("welcome");
+
+    tick(MIN); // +10 min: the first failure's retry no longer applies
+    expect(layout()).toBe("welcome");
+    tick(9 * MIN - 1);
+    expect(layout()).toBe("welcome");
+    expect(vi.getTimerCount()).toBe(1);
+
+    tick(1); // +19 min = 10 min after the LAST failure
+    expect(layout()).toBe("carousel");
+    expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("a.jpg")]); // cur stayed on b
+  });
+
+  it("(e) unmount clears the retry timer (StrictMode's replay arms exactly one)", () => {
+    seed([{ url: u("a.jpg") }]);
+    const view = renderSplash({ reactStrictMode: true });
+
+    fireEvent.error(fullBleed() as HTMLImageElement);
+    expect(layout()).toBe("welcome");
+    expect(vi.getTimerCount()).toBe(1);
+
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("(f) a re-failure inside the hour emits no second event — and the retry is re-armed", () => {
+    seed([{ url: u("x.jpg") }]);
+    renderSplash();
+
+    fireEvent.error(fullBleed() as HTMLImageElement);
+    expect(splashEvents()).toEqual([failure("load_error", 0)]);
+
+    tick(SPLASH_RETRY_MS);
+    expect(layout()).toBe("full-bleed");
+    fireEvent.error(fullBleed() as HTMLImageElement); // still broken, 10 min later
+
+    expect(layout()).toBe("welcome");
+    expect(splashEvents()).toEqual([failure("load_error", 0)]);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("advancing slides never postpones a pending retry (only a NEW failure does)", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderSplash();
+
+    fireEvent.error(media("next")); // b (a peek) fails at 0; a / c rotate every 8 s
+    expect(cards().includes(u("b.jpg"))).toBe(false);
+
+    tick(SPLASH_RETRY_MS);
+    expect(cards()).toContain(u("b.jpg"));
   });
 });
 

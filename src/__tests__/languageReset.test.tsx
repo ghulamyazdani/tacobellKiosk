@@ -33,7 +33,7 @@ describe("after a reset the next customer is back in the default language", () =
     });
   });
 
-  it("App: an emptied language code puts i18n back on DEFAULT_LANGUAGE", async () => {
+  it("App: an emptied language code puts i18n — and <html lang> (P9f) — back on DEFAULT_LANGUAGE", async () => {
     store.dispatch(setSelectedLanguage(ARABIC));
     render(
       <Provider store={store}>
@@ -41,6 +41,7 @@ describe("after a reset the next customer is back in the default language", () =
       </Provider>
     );
     await waitFor(() => expect(i18n.language).toBe("ar"));
+    expect(document.documentElement.lang).toBe("ar");
 
     act(() => {
       store.dispatch(emptySelectedLanguage());
@@ -48,6 +49,7 @@ describe("after a reset the next customer is back in the default language", () =
 
     await waitFor(() => expect(i18n.language).toBe(DEFAULT_LANGUAGE));
     expect(DEFAULT_LANGUAGE).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
   });
 
   it("FooterBar: an emptied language name reads English, not a blank label", () => {

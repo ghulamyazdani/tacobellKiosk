@@ -50,7 +50,7 @@ const ENTITY_MAP = {
 };
 
 const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(Provider, { store }, children);
+  createElement(Provider, { store, children });
 
 const loadMenu = (entityMap: Record<string, unknown> = ENTITY_MAP) => {
   store.dispatch(setEntityMap({ entityMap }));

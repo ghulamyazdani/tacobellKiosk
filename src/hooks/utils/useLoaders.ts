@@ -25,6 +25,10 @@ import {
   turnOfLoyalty,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
+  setPrimaryMakeItAMealText,
+  setSecondaryMakeItAMealText,
+} from "@cx-sdk/ordering/state/makeItAMeal.slice";
+import {
   setAutoAdjustFontSize,
   setEnableAccessibilityMode,
   setEnableBannerCollapse,
@@ -55,6 +59,7 @@ import { useGetDeploymentPaymentPartnersMutation } from "@cx-sdk/payments/servic
 import { setLanguages } from "../../redux/features/multiLanguage/multiLanguage.slice";
 import useAppSettings from "./useAppSettings";
 import useFetchColors from "./colorManagement/useFetchColors";
+import useTenantRecommendations from "../recommendation/useTenantRecommendations";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 
 /** The registration blob the two settings fetches are keyed on. */
@@ -126,14 +131,16 @@ const mirrorSetting = (key: string, value: string) => {
 };
 
 /**
- * P3 boot loader — posistKiosk's LoadResourcesInitially in the SAME ORDER,
- * with not-yet-ported subsystems deferred (each marked):
+ * P3 boot loader — posistKiosk's LoadResourcesInitially in the SAME ORDER:
  *   language → skin → pipelines → theme → splash media → kiosk settings
- *   → deployment info → payment settings → loyalty partner → success
- * Deferred: MIAM texts (P6), recommendations (P7). Splash media landed in
- * P9d (home_screen only; menu banners are not built). Cluster settings are
- * dead in the fork (posistKiosk useLoaders.ts:649-657 is commented out), so
- * there is nothing to port.
+ *   (+ MIAM texts) → deployment info → payment settings → loyalty partner
+ *   → commit → tenant recommendations (background) → success
+ * Splash media landed in P9d (home_screen only); menu banners are not built
+ * (user decision 2026-10-06). Post-P9: the MIAM texts (29c) are staged with
+ * the kiosk settings; the tenant recommendations refresh (29b) starts only
+ * after the commit, as a background task, never a staged step. Cluster
+ * settings are dead in the fork (posistKiosk useLoaders.ts:649-657 is
+ * commented out), so there is nothing to port.
  *
  * P8a added deployment info + payment settings and NOTHING ELSE. In the fork
  * those two fetches are immediately followed by `connectTOGeideaSocket(...)`
@@ -157,6 +164,7 @@ function useLoaders() {
     | undefined;
   const { FetchThemeData } = useFetchColors();
   const { getDeploymentInfoApi, getAllIds } = useAppSettings();
+  const { refresh: refreshTenantRecommendations } = useTenantRecommendations();
 
   const [getLanguageFromApi] = useGetLanguageMutation();
   const [getCxSkinData] = useGetCxSkinDataMutation();
@@ -179,10 +187,10 @@ function useLoaders() {
    * A valid body without home_screen stores [] (the operator removed it).
    * The write is staged, so it is stored only if the whole boot succeeds.
    *
-   * ONLY `{ media: { home_screen } }` is stored. The live menu converter
-   * walks media.banner_image_* unguarded (SDK legacyMenuConverters.ts:1143,
-   * useMenuConverters.ts getMediaUrl), so a stored banner key can blank
-   * /menu. Guard that in the SDK before menu banners are ever built.
+   * ONLY `{ media: { home_screen } }` is stored: menu banners are not built
+   * (user decision 2026-10-06). The SDK's banner walk is guarded since
+   * post-P9 25a (getMediaUrl, the converter walk, clearMediaDataConvertedItems),
+   * so a stored banner_image_* key can no longer blank /menu.
    */
   const loadSplashMedia = async (stage: Stage): Promise<void> => {
     try {
@@ -433,6 +441,15 @@ function useLoaders() {
       stage(setHidePlusIconFromItem(settingsData?.hide_plus_icon_from_item !== false));
       stage(setAutoAdjustFontSize(Boolean(settingsData?.auto_adjust_font_size)));
       stage(setShowUpsellingItemAsSeperateItem(Boolean(settingsData?.show_upselling_item_as_seperate_item)));
+      // Post-P9 29c: the operator's MIAM headline per language slot. ALWAYS
+      // staged ("" when unset) so the prompt falls back to the translated
+      // miam.title — the slice's built-in default is an English string that
+      // never let it. No localStorage mirror (fork): nothing in TB reads one.
+      // `as never`: the SDK reducers take `action: any`, which RTK types as a
+      // creator whose parameter is never; the payload is a plain string.
+      const miamText = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      stage(setPrimaryMakeItAMealText(miamText(settingsData?.make_it_meal_primary) as never));
+      stage(setSecondaryMakeItAMealText(miamText(settingsData?.make_it_meal_secondary) as never));
 
       //// Deployment ordering settings (P8a) — populates
       // appSettings.deploymentInfoSettings, which is the ONLY input to
@@ -452,9 +469,6 @@ function useLoaders() {
       // payment half feeds the gateway option list. Best-effort: see the
       // function's doc comment. NO socket connectors follow this call.
       await fetchPaymentSettings(stage);
-
-      // TODO(P6): make-it-a-meal primary/secondary texts
-      // TODO(P7): recommendations prefetch
 
       //// Loyalty partner (P7c) — posistKiosk useLoaders.ts:633-646. The fork
       // runs this AFTER its boot try/catch closes, so a dead loyalty proxy is
@@ -490,9 +504,10 @@ function useLoaders() {
       // No Dexie wipe here (the fork's boot ran resetDatabase first): with D1
       // a boot runs ≥ 4×/day, and each wipe cost the next guest the full
       // menu download. A cached menu is reused only on the server's 304 for
-      // that same menu id, /start's mount clears the cart rows, nothing reads
-      // the recommendations table, and registration, logout and the 401
-      // recovery still wipe everything.
+      // that same menu id, /start's mount clears the cart rows, the tenant
+      // recommendations copy is device data that only a good answer
+      // replaces (below), and registration, logout and the 401 recovery
+      // still wipe everything.
       staged.forEach((action) => dispatch(action));
       // D1: the boot age the splash's scheduled refresh reads. Stamped only
       // here, so only a fully successful boot of any kind counts.
@@ -504,6 +519,11 @@ function useLoaders() {
         "showUpsellItemsInMenu",
         String(Boolean(settingsData?.show_upsell_items_in_menu))
       );
+      // Post-P9 29b: the tenant recommendations, a post-commit BACKGROUND
+      // task — never awaited (a dead S3 can never delay or fail a boot), never
+      // run for a failed boot (it sits after the commit), and it never
+      // rejects. Only the bag rail's suggestions change when it lands.
+      void refreshTenantRecommendations();
 
       successCallback();
     } catch (error) {

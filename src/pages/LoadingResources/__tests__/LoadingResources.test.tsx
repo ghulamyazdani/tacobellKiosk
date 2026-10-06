@@ -323,10 +323,10 @@ describe("LoadingResources — boot recovery (P9b R7)", () => {
     await failLatest("unavailable");
 
     const error = screen.getByTestId("loading-error");
-    expect(error).toHaveAccessibleName("تعذر الاتصال");
-    expect(note()).toBe("إعادة المحاولة خلال 10 ث");
+    expect(error).toHaveAccessibleName(i18n.t("loading.unavailableTitle"));
+    expect(note()).toBe(i18n.t("loading.retryIn", { seconds: 10 }));
     expect(screen.getByTestId("loading-error-retry")).toHaveTextContent(
-      "حاول مرة أخرى الآن"
+      i18n.t("loading.retryNow")
     );
   });
 });

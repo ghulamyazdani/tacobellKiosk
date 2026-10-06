@@ -193,7 +193,13 @@ export default function OfferRow({
           )}
         </span>
         {secondLine && (
-          <span className="text-[20px] leading-[24px] text-tb-ink-purple/70">
+          // dir="auto" on this LEAF only (never a container): a wrapped
+          // Arabic line right-aligns; text-start because the parent sets
+          // physical text-left.
+          <span
+            dir="auto"
+            className="text-start text-[20px] leading-[24px] text-tb-ink-purple/70"
+          >
             {secondLine}
           </span>
         )}
@@ -261,6 +267,7 @@ export default function OfferRow({
   return (
     <div
       data-testid={`offer-row-${id}`}
+      aria-disabled={gone ? "true" : undefined}
       className={`flex w-full items-center gap-[24px] border-b border-tb-grey-4 py-[24px] ${
         gone ? "opacity-50" : ""
       }`}

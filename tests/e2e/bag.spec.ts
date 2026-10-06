@@ -234,6 +234,18 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     // Total = round(8 * 1.15) — exclusive VAT@15%, see header.
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
 
+    // P9f (user decision 2026-10-05): loyalty is off here, so LOG-IN & GET
+    // REWARDS is not rendered and PAY takes the whole CTA row.
+    await expect(page.getByTestId("bag-login-rewards")).toHaveCount(0);
+    const payShortfall = await page.getByTestId("bag-pay").evaluate((pay) => {
+      const row = pay.parentElement as HTMLElement;
+      const style = getComputedStyle(row);
+      const rowContent =
+        row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return rowContent - (pay as HTMLElement).offsetWidth;
+    });
+    expect(Math.abs(payShortfall)).toBeLessThanOrEqual(1);
+
     // Increase: every money surface agrees (cta-total sits under the sheet —
     // toContainText reads the covered bar's text, which is the point; the
     // cta bar shows the SUBTOTAL, the bag total the taxed net).
