@@ -284,11 +284,9 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page).toHaveURL(/\/payment$/);
     // The TOTAL bar shows the same net the bag checked out with.
     await expect(page.getByTestId("payment-total")).toContainText("£9.00");
-    // The card tile exists but is inert — P8a can reach no gateway at all.
-    await expect(page.getByTestId("payment-card")).toHaveAttribute(
-      "aria-disabled",
-      "true"
-    );
+    // No Paytm gateway is configured in this fixture, so there is no card
+    // tile at all (P8b renders one only for a usable PaytmEdc option).
+    await expect(page.getByTestId("payment-card")).toHaveCount(0);
 
     // Nothing may have been placed before the customer chose a method.
     expect(checkout.placeOrderCount).toBe(0);
@@ -560,6 +558,40 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page.getByTestId("cta-total")).toContainText("0.00");
 
     // The reset must not have re-sent anything.
+    expect(checkout.placeOrderCount).toBe(1);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("BROWSER BACK is a no-op: on /payment and on Order Complete the screen stays and nothing is placed again", async ({
+    page,
+  }) => {
+    test.slow();
+    const checkout = await bootToBagWithOneBurger(page);
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    // A trusted Back (key / gesture) never reaches the router: no bag.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/payment$/);
+    await expect(page.getByTestId("payment-screen")).toBeVisible();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+
+    await payAtCounterThroughBuffer(page);
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Back on Order Complete used to reopen /receipt, whose NO THANKS placed
+    // a SECOND order. Twice: the trap keeps the history depth.
+    await page.goBack();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/orderSuccess$/);
+    await expect(page.getByTestId("order-success")).toBeVisible();
+    await expect(page.getByTestId("receipt-screen")).toHaveCount(0);
+
     expect(checkout.placeOrderCount).toBe(1);
     expectNothingDangerousWasContacted(checkout);
   });

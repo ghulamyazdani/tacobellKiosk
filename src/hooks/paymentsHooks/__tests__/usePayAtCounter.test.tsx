@@ -405,6 +405,26 @@ describe("usePayAtCounter — the only order-push path in P8a", () => {
       });
     });
 
+    it.each(["PaytmEdc", "PaytmDynamicQr"])(
+      "P8b: directOrder clears a %s left armed by an abandoned /payment visit BEFORE the push is built",
+      async (stale) => {
+        // pushOrder places NOTHING for a Paytm type (the backend places those),
+        // so the zero-bill order would reach Order Complete unplaced.
+        store.dispatch(setKioskPaymentType({ type: stale }));
+        mount();
+        tap("fire-start-direct");
+        expect(state().payment.paymentType).toBe("");
+        await advance(0);
+        await settle();
+
+        expect(pushSnapshots).toHaveLength(1);
+        expect(pushSnapshots[0].paymentType).toBe("");
+        expect(mockNavigate).toHaveBeenCalledWith("/orderSuccess", {
+          state: { receipt: "none" },
+        });
+      }
+    );
+
     it("does not clobber a payment type the counter path already pinned", async () => {
       store.dispatch(setKioskPaymentType({ type: PAY_AT_COUNTER_PAYMENT_TYPE }));
       mount();
@@ -855,7 +875,15 @@ describe("usePayAtCounter — the only order-push path in P8a", () => {
         phoneNumber: "9953833675",
         merchantId: "xeno-merchant-uuid-1",
       };
-      const MARKED = { isClaimed: true, couponData: { ...CLAIMED, orderOutcomeUnknown: true } };
+      // P8b: the mark is scoped to the order that set it (orderOutcomeClaim.ts).
+      const MARKED = {
+        isClaimed: true,
+        couponData: {
+          ...CLAIMED,
+          orderOutcomeUnknown: true,
+          outcomeUnknownOrderId: "TB-ORDER-ABCDE12345",
+        },
+      };
       const REWARD_ROW = {
         id: "5dd1093829754a432f2c32e2",
         itemId: "lr-1",
@@ -949,6 +977,19 @@ describe("usePayAtCounter — the only order-push path in P8a", () => {
             claim_datetime: CLAIMED.datetime,
             points: 3000,
           },
+        ]);
+      });
+
+      it("P8b: an EARLIER order's mark (e.g. a Paytm session) is never overwritten — its ids are still reported", async () => {
+        const earlier = { ...CLAIMED, orderOutcomeUnknown: true, outcomeUnknownOrderId: "PAYTM-EARLIER" };
+        store.dispatch(setClaimedCoupon(earlier));
+        store.dispatch(setCartItems([...state().cart.cartItems, REWARD_ROW]));
+        await confirm(["timeout"]);
+
+        expect(status()).toBe("failed");
+        expect(claim()).toEqual({ isClaimed: true, couponData: earlier });
+        expect(pushEvents()).toEqual([
+          expect.objectContaining({ outcome_unknown: true, reward_id: "static6562", points: 3000 }),
         ]);
       });
 

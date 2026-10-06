@@ -54,6 +54,7 @@
     "react-dom": "^19.3.0",
     "react-i18next": "^17.0.15",
     "react-idle-timer": "^5.7.3",
+    "react-qr-code": "2.0.15",
     "react-redux": "^9.3.0",
     "react-router-dom": "^7.18.4",
     "redux-persist": "^6.0.0",

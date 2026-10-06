@@ -24,6 +24,7 @@ import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import useLongPress from "../../hooks/utils/useLongPress";
 import useSessionReset from "../../hooks/utils/useSessionReset";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import usePaytmSessionRelease from "../../hooks/paymentsHooks/usePaytmSessionRelease";
 import useCartIndexedDb from "../../hooks/cartHooks/useCartIndexedDb";
 import useAutoUpdate from "../../hooks/autoUpdates/useAutoUpdate";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
@@ -57,6 +58,7 @@ export default function StartScreen() {
   const [activityOpen, setActivityOpen] = useState(false);
   const { resetSession } = useSessionReset();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
+  const releasePaytmSession = usePaytmSessionRelease();
   const { clearIndexedDbCart } = useCartIndexedDb();
 
   // True only while the splash is on screen — gates the late re-empty below.
@@ -87,6 +89,11 @@ export default function StartScreen() {
     // which the reset wipes. Fire-and-forget: a dead xeno.in must never hold
     // the splash (Rule 2).
     checkAndRevokeLoyaltyReward().catch(() => {});
+    // P8b-12: a Paytm session still open (unknown panel → FINISH, idle on an
+    // end panel, crash recovery, relaunch) gets one status read — and an EDC
+    // void only after a fresh "pending" — built from the store NOW, before
+    // the reset empties the payment slice. Fire-and-forget, never throws.
+    releasePaytmSession();
     resetSession("full");
     // Reload race: a relaunch lands on "/" and is redirected here one
     // transition commit later, so AppRoutes' Dexie rehydrate may already be
@@ -97,7 +104,13 @@ export default function StartScreen() {
     void clearIndexedDbCart().then(() => {
       if (onSplashRef.current) dispatch(emptyCart());
     });
-  }, [checkAndRevokeLoyaltyReward, resetSession, clearIndexedDbCart, dispatch]);
+  }, [
+    checkAndRevokeLoyaltyReward,
+    releasePaytmSession,
+    resetSession,
+    clearIndexedDbCart,
+    dispatch,
+  ]);
 
   // Loyalty that degraded at boot (P9b, R6) is retried HERE: TB boots only
   // after registration — a relaunch with a token lands straight on /start —

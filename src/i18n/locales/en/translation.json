@@ -369,5 +369,55 @@
     "startAgain": "Start again",
     "continue": "continue ordering",
     "countdownA11y": "Starting again in {{seconds}} seconds"
+  },
+  "paytm": {
+    "methodQr": "Pay with UPI QR",
+    "redirecting": "Getting your payment ready…",
+    "wait": {
+      "title": "Please wait",
+      "confirming": "We confirm your order",
+      "preparing": "Setting up your payment",
+      "cancelling": "Cancelling your payment"
+    },
+    "instructions": {
+      "title": "Follow payment instructions",
+      "downHere": "Down here!"
+    },
+    "edc": {
+      "hint": "Tap, insert or swipe your card on the card machine",
+      "pressYes": "Press YES on the card machine to cancel, or NO to keep paying",
+      "pressYesToCancel": "Press YES on the card machine to cancel the payment",
+      "approveOnMachine": "Please approve the cancel request on the card machine"
+    },
+    "qr": {
+      "title": "Scan to pay",
+      "hint": "Scan the QR code with any UPI app",
+      "unavailable": "QR code unavailable. Please cancel and pay another way."
+    },
+    "timeLeft": "Time left {{time}}",
+    "cancel": "Cancel payment",
+    "cancelConfirm": {
+      "title": "Cancel payment?",
+      "message": "If you've already paid, tap Keep paying.",
+      "messageQr": "If you've already paid, tap Keep paying. After cancelling, don't approve this payment in your UPI app.",
+      "keep": "Keep paying",
+      "confirm": "Yes, cancel"
+    },
+    "failed": {
+      "title": "Unable to process payment",
+      "cancelled": "The payment was cancelled.",
+      "expired": "Time ran out and the payment was cancelled. If you were charged, please speak to a team member.",
+      "start": "We couldn't start the payment. Please try again or pay another way.",
+      "busy": "The card machine is busy. Please ask a team member or pay another way.",
+      "tryAgain": "Try again",
+      "payAnotherWay": "Pay another way"
+    },
+    "unknown": {
+      "title": "We couldn't confirm your payment",
+      "message": "Please don't pay again. Show this screen to a team member. Order {{order}}",
+      "checking": "Checking with the payment provider…",
+      "checkAgain": "Check again",
+      "finish": "Finish"
+    }
   }
 }
