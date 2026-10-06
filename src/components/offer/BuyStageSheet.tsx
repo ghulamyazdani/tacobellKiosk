@@ -20,6 +20,7 @@ import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import type { BuyStage } from "../../hooks/offerHooks/useBuyStage";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
+import useLocalized from "../../hooks/utils/useLocalized";
 import { resolveEntityImage } from "../../utils/entityImage";
 import {
   CART_UPSELL_IMAGE_HEIGHT_PX,
@@ -104,6 +105,8 @@ export default function BuyStageSheet({
     doesItemExistInCart,
   } = useCartHook();
   const { openBuyItemTierModal } = useMakeItAMeal();
+  // Menu names at render; offer and buy-group labels stay English (no data).
+  const { name: localName } = useLocalized();
 
   const [guard, setGuard] = useState<GuardKey | null>(null);
   // CONTINUE tapped while locked → name the gap inline (the fork popped its
@@ -223,7 +226,7 @@ export default function BuyStageSheet({
       cartItems,
       excludeLoyalty,
     );
-    const name = `${entity?.name ?? ""}${
+    const name = `${localName(entity)}${
       group.requiredVariantId && group.requiredVariantName
         ? ` (${group.requiredVariantName})`
         : ""
@@ -353,9 +356,11 @@ export default function BuyStageSheet({
       />
       {/* RewardsSheet's cap: the X and the CTA bar stay on screen in the
           1122 ADA reach zone; only the tile grid scrolls. */}
+      {/* Named dialog; NOT aria-modal — the in-bag PDP (OfferTierHost,
+          z-[85]) stacks over it for a customizable buy item. */}
       <div
         role="dialog"
-        aria-label={offer?.name ?? ""}
+        aria-labelledby="buy-stage-title"
         style={{ animation: "tbBuyStageSheetEnter 0.2s ease-out both" }}
         className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
@@ -363,7 +368,10 @@ export default function BuyStageSheet({
           <p className="text-[18px] font-bold uppercase leading-[22px] tracking-[2px] text-tb-ink-purple/70">
             {t("offers.buyStage.step")}
           </p>
-          <h2 className="tb-display mt-[12px] line-clamp-2 text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
+          <h2
+            id="buy-stage-title"
+            className="tb-display mt-[12px] line-clamp-2 text-[36px] leading-[40px] tracking-[-1px] text-tb-purple"
+          >
             {offer?.name}
           </h2>
           <p className="mt-[12px] text-[22px] leading-[26px] text-tb-ink-purple/80">

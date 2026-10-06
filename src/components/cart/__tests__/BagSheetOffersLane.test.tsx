@@ -455,7 +455,8 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     render(<BagUi />);
     await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
 
-    await userEvent.click(screen.getByTestId("bag-rewards-applied"));
+    // P9f overlay-button pattern: the applied row's named overlay opens the sheet.
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
     await userEvent.click(screen.getByTestId("offer-row-min-three-1"));
     await userEvent.click(screen.getByTestId("rewards-save"));
     await waitFor(() => expect(slotId()).toBe("min-three-1"));

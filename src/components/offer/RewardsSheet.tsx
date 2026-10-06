@@ -28,6 +28,7 @@ import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
+import useLocalized from "../../hooks/utils/useLocalized";
 import { resolveEntityImage } from "../../utils/entityImage";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
@@ -138,6 +139,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   const { selectOfferAndCommit } = useOfferApply();
   const { items: upsellPool } = useCartUpsell();
   const { addEntity, getAddIntent } = useAddEntityToCart();
+  // Menu names at render; offer names stay English (no per-language data).
+  const { name } = useLocalized();
 
   const currency =
     currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
@@ -302,7 +305,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         key={entity?.id}
         type="button"
         data-testid={`offer-suggested-item-${entity?.id}`}
-        aria-label={entity?.name ?? ""}
+        aria-label={name(entity)}
         onClick={() => handleRailTap(entity)}
         className="relative flex shrink-0 flex-col items-stretch justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 text-left"
         style={{
@@ -318,7 +321,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
               maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
             }}
           >
-            {entity?.name}
+            {name(entity)}
           </span>
           <span className="block text-[18px] leading-[20px] text-tb-ink-purple">
             {priceLine(entity)}
@@ -390,6 +393,9 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
           1470); in the 1122 ADA reach zone the sheet is 1026, so the X and
           SAVE stay on screen and only the list scrolls. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rewards-sheet-title"
         style={{ animation: "tbRewardsSheetEnter 0.2s ease-out both" }}
         className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
@@ -400,7 +406,10 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
               className="h-[36px] w-[40px] bg-tb-purple"
               style={bellMaskStyle}
             />
-            <p className="tb-display text-center text-[40px] leading-[40px] tracking-[-1px] text-tb-purple">
+            <p
+              id="rewards-sheet-title"
+              className="tb-display text-center text-[40px] leading-[40px] tracking-[-1px] text-tb-purple"
+            >
               {t("offers.title")}
             </p>
           </div>

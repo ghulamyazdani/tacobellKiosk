@@ -19,6 +19,7 @@ import {
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
+import useLocalized from "../../hooks/utils/useLocalized";
 import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
@@ -110,6 +111,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   const { commitPickedFreebies } = useOfferApply();
   const { emptyGetItems, redeemGetItem, removeGetItemsById } = useCartHook();
   const { openGetItemTierModal } = useMakeItAMeal();
+  const { name } = useLocalized();
   const stagedRows: StagedRow[] = useSelector(selectGetItems) ?? [];
   const currencySettings = useSelector(selectCurrency) as any;
   const currency =
@@ -360,12 +362,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
           <span className="text-[24px] font-bold capitalize leading-[28px] text-black">
             {qtyPrefix}
-            {entity?.name}
+            {name(entity)}
           </span>
           {/* A fixed-size grant names its size (BagItemRow's variant line). */}
           {entity?.isVariantSelected === true && entity?.selectedVariant?.name && (
             <span className="text-[20px] leading-[24px] text-tb-ink-purple">
-              {entity.selectedVariant.name}
+              {name(entity.selectedVariant)}
             </span>
           )}
           <span className="text-[20px] leading-[24px] text-tb-ink-purple/70">
@@ -412,7 +414,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           <button
             type="button"
             data-testid={`freebie-dec-${entityIdOf(entry)}`}
-            aria-label={t("offers.buyStage.decrease", { name: entity?.name ?? "" })}
+            aria-label={t("offers.buyStage.decrease", { name: name(entity) })}
             onClick={() => handleRemoveUnit(entry)}
             className="flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-[1.72px] border-[#b9b9b9] text-tb-purple"
           >
@@ -457,11 +459,18 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           → the reach container) minus a 96 px scrim band: 1200 on the 1920
           stage, 1026 in the 1122 ADA reach zone. Title/X and CONFIRM keep
           their content height; only the options shrink and scroll. */}
+      {/* Named dialog; NOT aria-modal — the in-bag PDP (OfferTierHost,
+          z-[85]) stacks over it for a customizable freebie. */}
       <div
+        role="dialog"
+        aria-labelledby="freebie-picker-title"
         style={{ animation: "tbFreebieSheetEnter 0.2s ease-out both" }}
         className="absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
       >
-        <h2 className="tb-display mb-[8px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
+        <h2
+          id="freebie-picker-title"
+          className="tb-display mb-[8px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
+        >
           {t("offers.freebieTitle")}
         </h2>
         <p className="mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80">
