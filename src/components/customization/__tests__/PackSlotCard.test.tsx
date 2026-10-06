@@ -54,6 +54,10 @@ describe("PackSlotCard (Figma 1:4641 — pack slot grid card)", () => {
     // group name appears as placeholder art AND as the title line
     expect(card).toHaveTextContent("Drink");
     expect(card).toHaveTextContent("Select Drink");
+    // P9f contrast: ink-purple/60 on grey-6 is 4.98:1 (/40 was 2.65:1).
+    const [art] = screen.getAllByText("Drink");
+    expect(art).toHaveClass("bg-tb-grey-6", "text-tb-ink-purple/60");
+    expect(art).not.toHaveClass("text-tb-ink-purple/40");
   });
 
   it("selected slot: pick's name, ✓ badge and SWAP CTA", () => {

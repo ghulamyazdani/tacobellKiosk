@@ -411,6 +411,20 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     await expect(page.getByTestId("bag-total")).toContainText("£22.00");
     await expect(page.getByTestId("bag-pay")).toContainText("Order & Pay");
     await expect(page.getByTestId("bag-pay")).toContainText("£22.00");
+
+    // P9f overlay-button pattern: the bell is part of the row's tap target
+    // too — the overlay is LAST in the DOM, so it paints over the bell's
+    // opacity layer (first in the DOM, the bell would swallow this tap).
+    const applied = page.getByTestId("bag-rewards-applied");
+    const rowBox = (await applied.boundingBox())!;
+    const bellBox = (await applied.locator('span[aria-hidden="true"]').first().boundingBox())!;
+    await applied.click({
+      position: {
+        x: bellBox.x - rowBox.x + bellBox.width / 2,
+        y: bellBox.y - rowBox.y + bellBox.height / 2,
+      },
+    });
+    await expect(page.getByTestId("rewards-sheet")).toBeVisible();
   });
 
   test("REMOVE: bag Remove clears the applied row and Discounts line, totals restore to £8/£9, CTA reverts to PAY — and NO removal notice (direct removal is silent)", async ({

@@ -96,7 +96,7 @@ export default function PackSlotCard({
             }`}
           />
         ) : (
-          <span className="tb-compressed mb-[14px] mt-[20px] flex h-[150px] w-full items-center justify-center rounded-[8px] bg-tb-grey-6 px-[8px] text-center text-[24px] leading-[24px] text-tb-ink-purple/40">
+          <span className="tb-compressed mb-[14px] mt-[20px] flex h-[150px] w-full items-center justify-center rounded-[8px] bg-tb-grey-6 px-[8px] text-center text-[24px] leading-[24px] text-tb-ink-purple/60">
             {group?.name}
           </span>
         )}

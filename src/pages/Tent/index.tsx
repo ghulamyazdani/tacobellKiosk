@@ -298,6 +298,8 @@ export default function Tent() {
       {/* Value display — one cell per possible digit, dot placeholders. */}
       <div
         data-testid="tent-display"
+        role="textbox"
+        aria-readonly="true"
         aria-label={t("tent.displayLabel")}
         dir="ltr"
         className={`absolute left-1/2 ${ada ? "top-[346px]" : "top-[819px]"} flex h-[90px] w-[400px] -translate-x-1/2 items-center justify-center gap-[28px] rounded-[10px] bg-tb-surface`}

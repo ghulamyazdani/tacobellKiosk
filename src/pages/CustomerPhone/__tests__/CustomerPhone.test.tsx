@@ -7,7 +7,7 @@ import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import CustomerPhone from "../index";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /*
   P9a (D10, Rule 1): the check_loyalty_balance continuation dispatches and
@@ -121,5 +121,19 @@ describe("CustomerPhone — a late lookup never navigates (P9a, D10)", () => {
     await lookup.fail(new Error("loyalty proxy 502"));
 
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe("CustomerPhone placeholder (P9f contrast)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  it("the empty-number placeholder is 55 % black (35 % was 2.43:1)", () => {
+    mount();
+
+    const placeholder = screen.getByText(i18n.t("phone.placeholder"));
+    expect(placeholder).toHaveClass("text-black/55");
+    expect(placeholder).not.toHaveClass("text-black/35");
   });
 });

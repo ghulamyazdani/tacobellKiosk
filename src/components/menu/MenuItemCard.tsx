@@ -15,12 +15,6 @@ interface MenuItemCardProps {
   onQuickAdd: (entity: any) => void;
 }
 
-const calorieLabel = (entity: any): string => {
-  const cal = entity?.calorieCount ?? entity?.nutritionalInfo?.calorieCount;
-  const value = typeof cal === "object" ? cal?.value : cal;
-  return value ? ` | ${value} Cal` : "";
-};
-
 const isNew = (entity: any): boolean =>
   Array.isArray(entity?.badges) &&
   entity.badges.some((b: any) => /new/i.test(b?.name ?? b ?? ""));
@@ -28,7 +22,11 @@ const isNew = (entity: any): boolean =>
 /**
  * Menu item card — Figma "Menu-Item". `large` renders the arch-top hero
  * (504px, promo/NEW items); default is the 240px grid card. Out-of-stock
- * renders the UNAVAILABLE treatment and blocks interaction.
+ * renders the UNAVAILABLE treatment and blocks interaction (aria-disabled).
+ *
+ * Overlay-button pattern: the card is a div (the quick-add button cannot
+ * nest inside another button); a full-card button named by the item opens
+ * it, and the quick-add sits above that overlay via z-10.
  */
 export default function MenuItemCard({
   entity,
@@ -39,15 +37,19 @@ export default function MenuItemCard({
 }: MenuItemCardProps) {
   const { t } = useTranslation();
   const unavailable = entity?.outOfStock === true;
-  const priceLine = `${currency}${entity?.price ?? ""}${calorieLabel(entity)}`;
+  const cal = entity?.calorieCount ?? entity?.nutritionalInfo?.calorieCount;
+  const value = typeof cal === "object" ? cal?.value : cal;
+  const priceLine = `${currency}${entity?.price ?? ""}${
+    value ? ` | ${t("pack.cal", { value })}` : ""
+  }`;
   const imageUrl = resolveEntityImage(entity);
 
   if (large) {
     return (
       <div
         data-testid={`item-${entity?.id}`}
-        className={`relative col-span-2 flex h-[578px] w-full flex-col items-center justify-between overflow-hidden rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px] ${unavailable ? "" : "cursor-pointer"}`}
-        onClick={() => !unavailable && onOpen(entity)}
+        aria-disabled={unavailable ? "true" : undefined}
+        className="relative col-span-2 flex h-[578px] w-full flex-col items-center justify-between overflow-hidden rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
       >
         <div className={`flex flex-col items-center gap-[16px] ${unavailable ? "opacity-40" : ""}`}>
           {isNew(entity) && (
@@ -67,6 +69,14 @@ export default function MenuItemCard({
             className={`h-[326px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
           />
         )}
+        {!unavailable && (
+          <button
+            type="button"
+            aria-label={entity?.name}
+            onClick={() => onOpen(entity)}
+            className="absolute inset-0"
+          />
+        )}
         {unavailable ? (
           <span className="tb-display absolute bottom-[24px] left-1/2 -translate-x-1/2 rounded-[4px] bg-tb-ink-purple/80 px-4 py-2 text-[18px] text-tb-surface">
             {t("menu.unavailable")}
@@ -80,7 +90,7 @@ export default function MenuItemCard({
               e.stopPropagation();
               onQuickAdd(entity);
             }}
-            className="absolute bottom-[12px] right-[12px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
+            className="absolute bottom-[12px] right-[12px] z-10 flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
           >
             <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
           </button>
@@ -92,8 +102,8 @@ export default function MenuItemCard({
   return (
     <div
       data-testid={`item-${entity?.id}`}
-      className={`relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${unavailable ? "" : "cursor-pointer"}`}
-      onClick={() => !unavailable && onOpen(entity)}
+      aria-disabled={unavailable ? "true" : undefined}
+      className="relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6"
     >
       <div className={`flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px] ${unavailable ? "opacity-40" : ""}`}>
         <p className="text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
@@ -106,6 +116,14 @@ export default function MenuItemCard({
           alt=""
           src={imageUrl}
           className={`h-[172px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
+        />
+      )}
+      {!unavailable && (
+        <button
+          type="button"
+          aria-label={entity?.name}
+          onClick={() => onOpen(entity)}
+          className="absolute inset-0"
         />
       )}
       {unavailable ? (
@@ -121,7 +139,7 @@ export default function MenuItemCard({
             e.stopPropagation();
             onQuickAdd(entity);
           }}
-          className="absolute right-[12px] top-[12px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
+          className="absolute right-[12px] top-[12px] z-10 flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
         >
           <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
         </button>

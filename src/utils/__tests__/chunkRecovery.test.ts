@@ -37,13 +37,14 @@ describe("planCrashRecovery (P9b R9)", () => {
 });
 
 /*
-  P9e — a failed lazy chunk normally reloads the page (a deploy re-hashed it),
-  but FCM is optional: its chunk (fcmRuntime) failing must never reload the
-  kiosk, least of all mid-order. The handler still preventDefault()s it, so
-  import() resolves undefined and useFcmRegistration reports "import" and
-  leaves FCM off. Every other chunk keeps the P9b recovery.
+  P9e/P9f — a failed lazy chunk normally reloads the page (a deploy re-hashed
+  it), but FCM and analytics are optional: their chunks (fcmRuntime,
+  posthogRuntime) failing must never reload the kiosk, least of all mid-order.
+  The handler still preventDefault()s them, so import() resolves undefined:
+  useFcmRegistration reports "import" and leaves FCM off, startAnalytics leaves
+  analytics off. Every other chunk keeps the P9b recovery.
 */
-describe("installChunkErrorRecovery — the FCM chunk is exempt (P9e)", () => {
+describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P9e/P9f)", () => {
   const reload = vi.fn();
 
   /** What Vite's preload helper dispatches for a chunk that failed to load. */
@@ -73,12 +74,20 @@ describe("installChunkErrorRecovery — the FCM chunk is exempt (P9e)", () => {
 
   it.each([
     [
-      "the production chunk",
+      "the FCM production chunk",
       "Failed to fetch dynamically imported module: https://kiosk.example/assets/fcmRuntime-9ypKZIdg.js",
     ],
     [
-      "the dev-server module",
+      "the FCM dev-server module",
       "Failed to fetch dynamically imported module: http://localhost:5373/src/hooks/firebase/fcmRuntime.ts",
+    ],
+    [
+      "the PostHog production chunk",
+      "Failed to fetch dynamically imported module: https://kiosk.example/assets/posthogRuntime-C3xq0Lr9.js",
+    ],
+    [
+      "the PostHog dev-server module",
+      "Failed to fetch dynamically imported module: http://localhost:5373/src/utils/analytics/posthogRuntime.ts",
     ],
   ])("%s failing: handled (no crash screen) but NEVER reloads", (_label, message) => {
     const event = preloadError(new Error(message));

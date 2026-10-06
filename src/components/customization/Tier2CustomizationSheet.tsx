@@ -424,7 +424,7 @@ export default function Tier2CustomizationSheet() {
   const entityCal = (() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
-    return value ? ` | ${value} Cal` : "";
+    return value ? ` | ${t("pack.cal", { value })}` : "";
   })();
 
   const itemMeta = (item: any) => {
@@ -434,7 +434,7 @@ export default function Tier2CustomizationSheet() {
     if (Number(item?.price) > 0) {
       parts.push(`+${currency}${Number(item.price).toFixed(2)}`);
     }
-    if (calValue) parts.push(`${calValue} Cal`);
+    if (calValue) parts.push(t("pack.cal", { value: calValue }));
     return parts.join(" | ");
   };
 

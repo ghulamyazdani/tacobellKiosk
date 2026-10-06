@@ -90,6 +90,12 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
     await advance(60_000);
 
     expect(mockPushOrder).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("alertdialog", {
+        name: i18n.t("orderError.uncertainTitle"),
+        description: i18n.t("orderError.uncertainMessage"),
+      })
+    ).toBe(panel());
     expect(panel()).toHaveTextContent(i18n.t("orderError.uncertainTitle"));
     expect(panel()).toHaveTextContent(i18n.t("orderError.uncertainMessage"));
     expect(panel()).not.toHaveTextContent(i18n.t("orderError.message"));
@@ -105,6 +111,12 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
     await advance(3_000);
 
     expect(mockPushOrder).toHaveBeenCalledTimes(4);
+    expect(
+      screen.getByRole("alertdialog", {
+        name: i18n.t("orderError.title"),
+        description: i18n.t("orderError.message"),
+      })
+    ).toBe(panel());
     expect(panel()).toHaveTextContent(i18n.t("orderError.title"));
     expect(panel()).toHaveTextContent(i18n.t("orderError.message"));
     expect(panel()).not.toHaveTextContent(i18n.t("orderError.uncertainTitle"));
@@ -146,6 +158,9 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
     mount();
     await placeOrder();
 
-    expect(panel()).toHaveTextContent("لم نتمكن من تأكيد طلبك");
+    // Key-driven (P9f: AR copy renders inside FSI…PDI isolates).
+    const title = i18n.t("orderError.uncertainTitle");
+    expect(title).toMatch(/\p{Script=Arabic}/u);
+    expect(screen.getByRole("alertdialog", { name: title })).toBe(panel());
   });
 });

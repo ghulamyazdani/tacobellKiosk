@@ -78,6 +78,10 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     expect(row).toHaveAttribute("aria-checked", "false");
     expect(row).toHaveTextContent("£2 off your order");
     expect(row).toHaveTextContent("Save £2.00");
+    expect(screen.getByText("Save £2.00")).toHaveAttribute("dir", "auto"); // the leaf, never the row
+    // text-start: without it the parent's physical text-left keeps a wrapped AR line left-aligned.
+    expect(screen.getByText("Save £2.00")).toHaveClass("text-start");
+    expect(row).not.toHaveAttribute("dir");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
     expect(screen.queryByTestId("offer-row-nudge-offer-flat-2")).not.toBeInTheDocument();
     await userEvent.click(row);
@@ -134,6 +138,8 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     const row = screen.getByTestId("offer-row-offer-percent-25");
     // Locked rows are informational — never a pressable radio.
     expect(row.tagName).toBe("DIV");
+    // …but NOT disabled: the nudge is live copy (axe must check its contrast).
+    expect(row).not.toHaveAttribute("aria-disabled");
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(screen.queryByTestId("offer-radio-offer-percent-25")).not.toBeInTheDocument();
     const nudge = screen.getByTestId("offer-row-nudge-offer-percent-25");
@@ -182,6 +188,7 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     });
     const row = screen.getByTestId("offer-row-offer-gone");
     expect(row.tagName).toBe("DIV");
+    expect(row).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("Expired offer")).toHaveClass("line-through");
     expect(row).toHaveTextContent("Not available right now");
     expect(screen.queryByTestId("offer-radio-offer-gone")).not.toBeInTheDocument();

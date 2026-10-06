@@ -212,8 +212,8 @@ export default function Customization() {
   const calLabel = useMemo(() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
-    return value ? ` | ${value} Cal` : "";
-  }, [SelectedEntity]);
+    return value ? ` | ${t("pack.cal", { value })}` : "";
+  }, [SelectedEntity, t]);
 
   if (!sessionOpen || !SelectedEntity?.id) return null;
 
@@ -364,13 +364,13 @@ export default function Customization() {
                   <div className="flex-1">
                     <p className="text-[20px] font-medium capitalize text-black">{item.name}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
-                      {Number(item.price) > 0 ? `+${currency}${Number(item.price).toFixed(2)}` : `0 Cal`}
+                      {Number(item.price) > 0 ? `+${currency}${Number(item.price).toFixed(2)}` : t("pack.cal", { value: 0 })}
                     </p>
                   </div>
                   <div className="flex items-center gap-[12px]">
                     <button
                       type="button"
-                      aria-label={`decrease ${item.name}`}
+                      aria-label={`${t("pdp.decrease")} ${item.name}`}
                       onClick={() => decreaseCustomization(group, item)}
                       className="h-[44px] w-[44px] rounded-full border-2 border-tb-purple text-[24px] font-bold text-tb-purple"
                     >
@@ -379,7 +379,7 @@ export default function Customization() {
                     <span className="w-[36px] text-center text-[22px] font-bold">{qty}</span>
                     <button
                       type="button"
-                      aria-label={`increase ${item.name}`}
+                      aria-label={`${t("pdp.increase")} ${item.name}`}
                       onClick={() =>
                         qty === 0
                           ? addCustomizations(group, { ...item, quantity: 1 }, null, nextGroup, false)
@@ -477,16 +477,21 @@ export default function Customization() {
           {calLabel}
         </p>
         {SelectedEntity?.description && (
-          <p className={`mt-[12px] max-w-[860px] text-[18px] leading-[24px] text-tb-ink-purple/80 ${showFullDescription ? "" : "line-clamp-2"}`}>
-            {SelectedEntity.description}{" "}
+          <>
+            <p className={`mt-[12px] max-w-[860px] text-[18px] leading-[24px] text-tb-ink-purple/80 ${showFullDescription ? "" : "line-clamp-2"}`}>
+              {SelectedEntity.description}
+            </p>
+            {/* Outside the clamp: inside it, a long description hid the
+                toggle in the clipped overflow. 44 px tall touch target. */}
             <button
               type="button"
+              data-testid="pdp-show-more"
               onClick={() => setShowFullDescription((v) => !v)}
-              className="font-bold underline"
+              className="inline-flex min-h-[44px] items-center text-[18px] font-bold leading-[24px] text-tb-ink-purple/80 underline"
             >
               {showFullDescription ? t("pdp.showLess") : t("pdp.showMore")}
             </button>
-          </p>
+          </>
         )}
 
         {needsVariantPick ? (

@@ -309,18 +309,15 @@ describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
       );
     });
 
-    it("with loyalty OFF the CTA stays P7a-inert (zero regression — trap 10)", async () => {
+    it("with loyalty OFF the CTA is not rendered, even with openers wired (user decision 2026-10-05 — hide)", () => {
       store.dispatch(setCartItems([{ ...BURGER_ROW }]));
-      const onOpenLoyaltyLogin = vi.fn();
-      const onOpenLoyaltyRewards = vi.fn();
-      renderSheet({ onOpenLoyaltyLogin, onOpenLoyaltyRewards });
+      renderSheet({
+        onOpenLoyaltyLogin: vi.fn(),
+        onOpenLoyaltyRewards: vi.fn(),
+      });
 
-      const cta = screen.getByTestId("bag-login-rewards");
-      expect(cta).toHaveAttribute("aria-disabled", "true");
-      await userEvent.click(cta);
-      expect(onOpenLoyaltyLogin).not.toHaveBeenCalled();
-      expect(onOpenLoyaltyRewards).not.toHaveBeenCalled();
-      expect(cta).toHaveTextContent("Coming soon");
+      expect(screen.queryByTestId("bag-login-rewards")).not.toBeInTheDocument();
+      expect(screen.getByTestId("bag-pay")).toBeInTheDocument();
     });
   });
 });

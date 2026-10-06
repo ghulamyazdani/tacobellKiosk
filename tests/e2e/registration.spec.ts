@@ -75,6 +75,42 @@ test.describe("registration + boot (mocked backend)", () => {
     await page.goto("/");
     await expect(page.getByTestId("registration-screen")).toBeVisible();
 
+    // P9f: the error banner is pure CSS now (no framer-motion). An empty
+    // ACTIVATE slides it down from above the stage and shakes the button;
+    // the banner slides back out by itself 3 s later.
+    const banner = page.getByTestId("registration-error");
+    const bannerEdges = () =>
+      banner.evaluate((el) => {
+        const stage = document.querySelector('[data-testid="kiosk-stage"]') as Element;
+        const top = stage.getBoundingClientRect().top;
+        const box = el.getBoundingClientRect();
+        return { top: Math.round(box.top - top), bottom: Math.round(box.bottom - top) };
+      });
+    expect((await bannerEdges()).bottom).toBeLessThanOrEqual(0);
+    await page.getByTestId("registration-submit").click();
+    await expect(banner).toHaveText("Length of code should be greater than 0");
+    // Same commit as the text, and gone with it after 3 s — check it first.
+    await expect(page.getByTestId("registration-submit")).toHaveAttribute(
+      "style",
+      /tbRegistrationShake/
+    );
+    // …and the keyframes it names exist (a renamed @keyframes = a dead shake).
+    const keyframes = await page.evaluate(() =>
+      [...document.styleSheets]
+        .flatMap((sheet) => {
+          try {
+            return [...sheet.cssRules];
+          } catch {
+            return []; // a cross-origin sheet
+          }
+        })
+        .filter((rule) => rule instanceof CSSKeyframesRule)
+        .map((rule) => (rule as CSSKeyframesRule).name)
+    );
+    expect(keyframes).toContain("tbRegistrationShake");
+    await expect.poll(async () => (await bannerEdges()).top).toBe(0);
+    await expect.poll(async () => (await bannerEdges()).bottom).toBeLessThanOrEqual(0);
+
     // Type the license code on the on-screen keyboard.
     // Figma keyboard: digits live behind the 123 layer toggle.
     await page.getByRole("button", { name: "t", exact: true }).click();
@@ -180,7 +216,13 @@ test.describe("menu via REAL converters (mocked backend, slim fixture)", () => {
       })
     );
     await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-    await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
+    // Large Fries is out of stock (the converter's OOS feed shape).
+    const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (r) =>
+      r.fulfill({
+        json: [{ item_id: LARGE_FRIES, type: "item", partners: { inStock: false } }],
+      })
+    );
     await page.route("**/api/tenants/getServerTime", (r) =>
       r.fulfill({ json: { serverTime: new Date().toISOString() } })
     );
@@ -214,6 +256,13 @@ test.describe("menu via REAL converters (mocked backend, slim fixture)", () => {
     await expect(page.getByTestId("category-rail")).toContainText(/Meals/);
     // At least one entity card rendered from converted data.
     await expect(page.locator('[data-testid^="item-"]').first()).toBeVisible();
+
+    // P9f overlay-button pattern: an out-of-stock card is inert — no open
+    // overlay, no quick-add — and says so.
+    const fries = page.getByTestId(`item-${LARGE_FRIES}`);
+    await expect(fries).toHaveAttribute("aria-disabled", "true");
+    await expect(fries).toContainText(/unavailable/i);
+    await expect(fries.getByRole("button")).toHaveCount(0);
   });
 });
 
@@ -237,11 +286,12 @@ test.describe("operator activity center", () => {
     await expect(page.getByTestId("activity-modal")).not.toBeVisible();
     await expect(page.getByTestId("start-screen")).toBeVisible();
 
-    // Real 3-second hold.
+    // Real 3-second hold: useLongPress fires its timer WHILE pressed, so keep
+    // the button down until the modal shows, then release.
     const box = (await hotspot.boundingBox())!;
     await page.mouse.move(box.x + 40, box.y + 40);
     await page.mouse.down();
-    await page.waitForTimeout(3300);
+    await expect(page.getByTestId("activity-modal")).toBeVisible({ timeout: 10_000 });
     await page.mouse.up();
     await expect(page.getByTestId("activity-modal")).toBeVisible();
     await expect(page.getByTestId("activity-modal")).toContainText(/activity center/i);
@@ -312,7 +362,8 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
     await expect(page.getByTestId("cta-total")).toContainText("£34.00");
 
     // Cheese Burger (3 modifier groups) → customization placeholder (P6b).
-    await page.getByText("Cheese Burger", { exact: false }).first().click();
+    // A card opens through its named overlay button, which covers its text.
+    await page.getByRole("button", { name: /cheese burger/i }).first().click();
     await expect(page.getByTestId("customization-screen")).toBeVisible();
   });
 });
@@ -327,6 +378,15 @@ test.describe("P6b PDP customization (real converter + useCustomization + commit
         "utf-8"
       )
     );
+    // The fixture's description fits on one line: give Cheese Burger one
+    // long enough for the PDP's 2-line clamp to bite.
+    const LONG_DESCRIPTION = Array(6)
+      .fill("The classic Cheese Burger with Herfy special take, grilled to order.")
+      .join(" ");
+    for (const category of slimMenu.categories)
+      for (const sub of category.subCategories)
+        for (const entity of sub.entities)
+          if (entity.id === "5dd10936712f5b622a66aab7") entity.description = LONG_DESCRIPTION;
     await mockBootEndpoints(page);
     await page.route("**/api/cx/kiosk/getPipelines", (r) =>
       r.fulfill({
@@ -364,8 +424,45 @@ test.describe("P6b PDP customization (real converter + useCustomization + commit
 
     // Open Cheese Burger (3 real modifier groups, price £8) — by exact id
     // ("Kiddie Meal Cheese burger" also substring-matches the name).
-    await page.getByTestId("item-5dd10936712f5b622a66aab7").click();
+    const card = page.getByTestId("item-5dd10936712f5b622a66aab7");
+    // P9f overlay-button pattern: the card opens through a full-card button
+    // named by the item (the tap below lands on it).
+    await expect(
+      card.getByRole("button", { name: "Cheese Burger", exact: true })
+    ).toHaveCount(1);
+    await card.click();
     await expect(page.getByTestId("customization-screen")).toBeVisible();
+
+    // P9f: "Show more" sits below the clamped description as a ≥44 design-px
+    // touch target, and flips the clamp both ways.
+    const showMore = page.getByTestId("pdp-show-more");
+    const description = page.getByText(LONG_DESCRIPTION);
+    await expect(showMore).toHaveText("Show more");
+    const showMoreDesignHeight = await showMore.evaluate((button) => {
+      const stage = document.querySelector('[data-testid="kiosk-stage"]') as Element;
+      const scale = stage.getBoundingClientRect().height / 1920;
+      return button.getBoundingClientRect().height / scale;
+    });
+    expect(showMoreDesignHeight).toBeGreaterThanOrEqual(44);
+    // OUTSIDE the clamp: inside it, the long text would clip the toggle away.
+    expect(
+      await showMore.evaluate((button) => {
+        const box = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return button.contains(hit);
+      })
+    ).toBe(true);
+    const clampedHeight = (await description.boundingBox())!.height;
+    await showMore.click();
+    await expect(showMore).toHaveText("Show less");
+    await expect
+      .poll(async () => (await description.boundingBox())!.height)
+      .toBeGreaterThan(clampedHeight);
+    await showMore.click();
+    await expect(showMore).toHaveText("Show more");
+    await expect
+      .poll(async () => (await description.boundingBox())!.height)
+      .toBe(clampedHeight);
     // All three groups render from the converter's modifierMap.
     await expect(page.getByText("Choose From Extra for Cheese Burger")).toBeVisible();
     await expect(page.getByText("Choose From Without for Cheese Burger")).toBeVisible();

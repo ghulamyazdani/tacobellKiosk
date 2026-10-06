@@ -244,6 +244,21 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(pay).toHaveTextContent("£6.60");
   });
 
+  it("applied row: its named overlay (LAST child) reopens the RewardsSheet — the only path to a swap", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    renderSheet();
+
+    const overlay = screen.getByRole("button", { name: "Rewards & Offers" });
+    // Last in the row so it paints over the bell's opacity/mask layer; Remove sits above it.
+    expect(screen.getByTestId("bag-rewards-applied").lastElementChild).toBe(overlay);
+    expect(screen.getByTestId("bag-rewards-remove")).toHaveClass("relative", "z-10");
+    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
+
+    await userEvent.click(overlay);
+    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+  });
+
   it("Remove (direct removal): clears the slot with NO notice; discounts line and CTA flip back", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(applyOffer({ offer: FLAT_OFFER }));
@@ -263,6 +278,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     // Direct removal is notice-free (fork parity — scenario 4).
     expect(cartState().offerRemovalModal.isOpen).toBe(false);
     expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument(); // Remove never opens the sheet
   });
 
   it("committed freebie row (scenario 5): Free chip, struck £17.00 over £0.00, no stepper; bill reflects the row-stamp discount", () => {

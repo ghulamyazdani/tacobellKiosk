@@ -308,9 +308,11 @@ describe("Menu — refetch on a menu-less mount (P9b R8)", () => {
     renderMenu();
     await act(async () => {});
 
-    expect(screen.getByTestId("menu-error")).toHaveAccessibleName("تعذر تحميل القائمة");
+    expect(screen.getByTestId("menu-error")).toHaveAccessibleName(
+      i18n.t("menuError.title")
+    );
     expect(screen.getByTestId("menu-error-start-over")).toHaveTextContent(
-      "البدء من جديد"
+      i18n.t("menuError.startOver")
     );
   });
 });

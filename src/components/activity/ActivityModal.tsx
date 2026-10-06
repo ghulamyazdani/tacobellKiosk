@@ -211,6 +211,9 @@ export default function ActivityModal({
                 <button
                   type="button"
                   data-testid="activity-fullscreen-toggle"
+                  role="switch"
+                  aria-checked={Boolean(mandatoryFullscreen)}
+                  aria-label={t("activity.fullscreen")}
                   onClick={handleToggleFullscreen}
                   className={`h-[44px] w-[88px] rounded-full p-[4px] transition-colors ${mandatoryFullscreen ? "bg-tb-purple" : "bg-tb-grey-4"}`}
                 >
@@ -230,6 +233,7 @@ export default function ActivityModal({
                   type="password"
                   value={passcode}
                   data-testid="activity-passcode-input"
+                  aria-label={t("activity.passcodePrompt")}
                   onChange={(e) => setPasscode(e.target.value)}
                   className="mb-3 h-[56px] w-full rounded-[8px] border-2 border-tb-purple/30 px-4 text-[22px] text-tb-purple outline-none"
                 />

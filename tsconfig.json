@@ -3,6 +3,8 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.test.json" },
+    { "path": "./tsconfig.e2e.json" },
     { "path": "../posistKiosk-cx-sdk/packages/core" },
     { "path": "../posistKiosk-cx-sdk/packages/catalog" },
     { "path": "../posistKiosk-cx-sdk/packages/ordering" },
