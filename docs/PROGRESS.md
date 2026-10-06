@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-06 (P9e)** · Gates at last update (Node 22.14):
-> **`yarn validate` green · unit 1,216/1,216 · e2e 121/121 · guardrails 0 critical / 197 warnings · build+PWA green · JS 1,663.6 KB / 2,000 budget · fork app `tsc -b` green**
+> Last updated: **2026-10-06 (P9f app half merged)** · Gates at last update (Node 22.14):
+> **`yarn validate` green (tsc -b now type-checks unit tests + e2e specs) · unit 1,318/1,318 · e2e 121/121 · guardrails 0 critical / 197 warnings · build+PWA green · boot path 343.2 KiB gzip-9 / 355 (production build 344.4 incl. lazy PostHog) · page JS 1,224.7 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -17,13 +17,13 @@
 | P1 | App shell: createKioskStore + persistence manifest (19 SDK + 6 UI slices + RTKQ), transport + 401/5xx session recovery, analytics port, Dexie, chunkRecovery, hardening, router+guards, PWAUpdateHandler, Figma splash | ✅ done |
 | P2 | Design system: folded into per-screen work (tokens `tb-*`, fonts, KioskStage, chrome components built as screens landed) | ✅ absorbed |
 | P3 | Auth + boot: Registration (license→authApi), LoadingResources (language→skin→pipelines→theme→settings), stale-token 401 → auto-logout | ✅ done |
-| P4 | Order type: pipeline cards + open/closed states, daypart ticker, footer bar, language sheet (EN↔AR text switch — **correction 2026-10-01:** the `dir` is stored in redux but was never applied to the DOM, so Arabic is NOT RTL yet; RTL text lands in P9f) | ✅ done |
+| P4 | Order type: pipeline cards + open/closed states, daypart ticker, footer bar, language sheet (EN↔AR text switch — Arabic renders as RTL text runs inside the LTR layout since P9f) | ✅ done |
 | P5 | Menu: category rail, hero/grid cards, price+cal, UNAVAILABLE, TOTAL/VIEW MY BAG bar; hook vertical ported (~3.2k lines); real fetchMenu→converter e2e over StandardMenu fixture | ✅ done |
 | — | Activity Center: hidden 3s top-left hold on splash → operator diagnostics (info rows, passcode-gated fullscreen toggle, logout) | ✅ done |
 | P6 | PDP/customization — **P6a ✅** quick-add spine · **P6b ✅** PDP bound to useCustomization Tier1-style (all groups one Figma scroll, defaults seeded, min/max via commit, VARIANT+CUSTOMIZABLE commits, return-path navigation) · **P6c ✅** Order-a-Pack slot cards + SELECT sheets, tier-2 nested customize, BYO via generic group path, MIAM upsell prompt · repeat-sheet → P7 | ✅ done |
 | P7 | Cart + Offers + Loyalty + ForYou — **P7a ✅** My Bag sheet over /menu (route-driven /cart): rows w/ addon lines + steppers, remove-confirm + cancel-order modals (session reset), edit-from-bag (PDP edit mode), repeat sheet, Complete-Your-Meal rail (cart-upsell engine), checkout preflight → /checkout stub, Dexie crash-recovery rehydrate · **P7b ✅** Rewards/offers sheet (Figma reward-states adapted to CX mechanics), apply/swap/remove cores, freebie flows (atomic + picker), bill Discounts line + ORDER & PAY, six-check revalidation + removal notice · **P7c ✅** Xeno loyalty replicated from the fork (boot partner fetch, /phone lookup, rewards sheet + 4-digit OTP redemption chain, loyalty cart rows, revoke-before-reset, auto-reversal, /customerName) · **P7d ✅** MIAM prompt re-skinned to its real frame (1:3070) + `/forYou` pre-cart upsell (capacity-bounded grid, session-seen gate, detour-safe baseline) + overlays hoisted to the routes level | ✅ done |
 | P8 | Checkout + Payment + Success — **P8a ✅** real route fan-out (/tent, /payment, /receipt, /orderSuccess) replacing the stub, PAY AT COUNTER end-to-end with a hardened retry ladder, order push, Order Complete + gated print · **P8b 🔄** Paytm Dynamic QR + Paytm EDC (user decision 2026-10-05; India deployment) — building in the `p8b-paytm` worktree lane | 🔄 P8a done |
-| P9 | Close-out, mapped 2026-10-01 by an 8-reader workflow (contracts in the session scratchpad, summarised below) — **P9a ✅** idle timeout (Figma 1:4514: IdleGuard + IdleTimeoutModal, holds, ≤120 s) + `/start` owns the session teardown + late-async guards · **P9b ✅** Rule 2 hardening: redeem-failure money fix, host-configured SDK timeout (TB 10 s / menu 30 s), timed-out pushes never auto-retried, menu-load error + Retry, boot auto-retry, ErrorBoundary recovery, loyalty boot degrade, Xeno revoke bounded · **P9c ✅** ADA reach-zone view (1:5392/1:5413/1:5445; stable-tree ReachZone, overlay caps, PDP footer strip, WCAG 2.2.1 timer off in ADA) + design-language re-flows of 7 frameless screens · **P9d ✅** splash media pipeline (getMedia `home_screen` → WELCOME 1:5617 when none / full-bleed 1:5604 / carousel 1:2203, slides that fail or stall are skipped) + the uncertain-order refund skip (S7) · **P9e ✅** updates apply only at the splash (whole-app reload / FCM brand refresh / a SCHEDULED boot refresh when the data is >6 h old, 15 s untouched + a 5 s countdown) + Activity Center Reload resources + an atomic boot commit + the telemetry recovery exemption (D2) + the hardened update hook + FCM (lazy, config- and permission-gated, never prompts) · **P9f 🔲** e2e parity suite (the 7 rulebook flows, page objects, axe-core a11y) + bundle budgets + Arabic RTL text · proximity welcome ⏸ deferred (see open decisions) | 🔄 |
+| P9 | Close-out, mapped 2026-10-01 by an 8-reader workflow (contracts in the session scratchpad, summarised below) — **P9a ✅** idle timeout (Figma 1:4514: IdleGuard + IdleTimeoutModal, holds, ≤120 s) + `/start` owns the session teardown + late-async guards · **P9b ✅** Rule 2 hardening: redeem-failure money fix, host-configured SDK timeout (TB 10 s / menu 30 s), timed-out pushes never auto-retried, menu-load error + Retry, boot auto-retry, ErrorBoundary recovery, loyalty boot degrade, Xeno revoke bounded · **P9c ✅** ADA reach-zone view (1:5392/1:5413/1:5445; stable-tree ReachZone, overlay caps, PDP footer strip, WCAG 2.2.1 timer off in ADA) + design-language re-flows of 7 frameless screens · **P9d ✅** splash media pipeline (getMedia `home_screen` → WELCOME 1:5617 when none / full-bleed 1:5604 / carousel 1:2203, slides that fail or stall are skipped) + the uncertain-order refund skip (S7) · **P9e ✅** updates apply only at the splash (whole-app reload / FCM brand refresh / a SCHEDULED boot refresh when the data is >6 h old, 15 s untouched + a 5 s countdown) + Activity Center Reload resources + an atomic boot commit + the telemetry recovery exemption (D2) + the hardened update hook + FCM (lazy, config- and permission-gated, never prompts) · **P9f 🔄** app half ✅ (Arabic RTL text via FSI/PDI isolates, a11y fixes, lazy PostHog + framer-motion removed, fail-closed boot-path budget, type-checked tests, per-PR CI e2e job — merged 2026-10-06 from the `p9f-app` lane); the shared e2e harness + page objects + the missing rulebook flows + the axe sweep 🔲 (runs last, on main) · proximity welcome ⏸ deferred (see open decisions) | 🔄 |
 
 ## What exists right now (flow you can walk)
 
@@ -66,7 +66,7 @@ data and retries after 30 min. The Activity Center shows when the data last
 loaded. The FCM token, version report and update ack can no longer log out or
 de-register the kiosk. FCM stays inert until Firebase keys exist AND
 notification permission is pre-granted (it never prompts).
-Language switch EN↔العربية anywhere via the footer (text only — RTL lands in P9f).
+Language switch EN↔العربية anywhere via the footer (RTL text, LTR layout — P9f).
 **Idle (P9a):** on every screen from `/second` on, 100 s without a touch opens
 "You have been inactive" (START AGAIN fills over 20 s · CONTINUE ORDERING or a
 backdrop tap re-arms); at 120 s (or `ideal_time` if shorter, floor 60 s) the
@@ -90,8 +90,6 @@ full-stage, and every return to the splash ends ADA for the next guest.
   switch needs setSelectedPipeline+setSelectedTabId+charges refetch+setTabType+
   fetchMenu+cart revalidation (fork has NO such path) → P7 later, decide UX
 - Edit-quantity numpad modal for multi-qty rows (Figma 1:4460) → P7 polish
-- LOG-IN & GET REWARDS on loyalty-OFF deployments still shows and answers
-  "coming soon" (live since P7c when loyalty is on) → user decision 2026-10-05: hide
 - Cart recommendations S3 source (tenant map, useRecommendationHook) → later;
   P7a rail ships the isCartRecommended engine source only
 - Loyalty deferred set (P7 later / P8): Reelo partner path entirely
@@ -111,11 +109,13 @@ full-stage, and every return to the splash ends ADA for the next guest.
   no consumer yet (fork's ConfirmFirstTierDeleteCustomization equivalent) → P7
 - Variant-shaped upsell items in the MIAM decline path (fork's isVariantUpsell
   branch) → wire when variant upsells enter the TB catalog
-- Menu banner media (`banner_image_*`) + MIAM texts + recommendations
-  prefetch in the boot loader → P4 leftovers noted in
+- Menu banner media: user decision 2026-10-06 — SDK guard only, no banner
+  UI (not in the Figma). Menu search: DESCOPED 2026-10-06 (the fork's search
+  is dead code, no Figma). MIAM texts + recommendations prefetch in the boot
+  loader → the `menu-data` lane (P4 leftovers noted in
   `hooks/utils/useLoaders.ts` (splash media landed in P9d; the loyalty
   partner in P7c; cluster settings are dead in the fork — `useLoaders.ts:649-657`
-  commented out — so they are not ported)
+  commented out — so they are not ported))
 - Payment-terminal socket connects at boot (Geidea/NeoLeap) are deliberately NOT ported
   (the payment-settings fetch landed in P8a; P8b ports only Paytm DQR + EDC)
 - Per-language pipeline/menu names (`secondary_name`) → P6/P7 polish
@@ -155,7 +155,7 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | `/LoadingResources` auto-retry keeps counting while the operator has the Activity Center open; a successful background boot navigates to `/start` and closes the diagnostics mid-use | client | ⚠️ sign-off |
 | Fork follow-ups surfaced by the P9b mapping (NOT TB work): the fork's Polling ladder would duplicate paid orders if it ever opts into timeouts; its gateway initiators need an explicit ambiguous-timeout UX; RTK 2.7 in the fork bounds only time-to-headers (TB's deduped 2.12 bounds the whole request — a mid-body timeout surfaces as `PARSING_ERROR` "TimeoutError", so classify timeouts with a shared predicate, never `status === "TIMEOUT_ERROR"` alone) | fork payments owner | ⚠️ open |
 | **Order push after a TIMEOUT** — placeOrder idempotency on the client orderId is unknown. **User decision 2026-10-01:** no auto-retry after a timeout (show the Retry / Back-to-bag panel); clean errors (network down, 5xx) keep the existing 4-attempt ladder. Backend still to confirm idempotency | user / backend | ✅ P9b (also covers a 2xx whose body was lost) |
-| `@axe-core/playwright` devDependency for the a11y e2e (contrast, names, roles) — **approved 2026-10-01** (devDependency, 0 bytes shipped) | user | 📌 decided → P9f |
+| `@axe-core/playwright` devDependency for the a11y e2e (contrast, names, roles) — **approved 2026-10-01** (devDependency, 0 bytes shipped) | user | ✅ installed P9f (`@axe-core/playwright` ^4.13.0, same change that removed framer-motion); the sweep itself lands with the harness |
 | **Arabic layout** — **user decision 2026-10-01:** RTL text, LTR layout (the Figma has no RTL frames); Arabic text blocks get `dir="rtl"`. Client sign-off still wanted | user / client | 📌 decided → P9f |
 | **Idle timing (P9a, orchestrator default)** — Rule 1's 120 s is a CEILING: total = clamp(server `ideal_time`, 60, 120) s, fallback 120; the "You have been inactive" prompt covers the last 20 s (WCAG 2.2.1 minimum). The fork reset at (ideal−10)/2+10 s (65 s for 120) — fixed, not ported. Boot no longer throws on a missing `ideal_time` | maintainer | 📌 decided |
 | **Proximity welcome — deferred.** The fork's feature is always-on camera motion detection on the splash (getUserMedia, no enable key; the delay setting only tunes it). Needs an explicit backend enable key, data-protection (India DPDP Act) assessment + signage sign-off, a front camera with pre-granted permission, and on-site calibration — and it depends on the idle timer (P9a). Not built | client / legal / hardware | ⏸ deferred |
@@ -163,17 +163,20 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Background telemetry vs session recovery — user decision 2026-10-05: OPT-IN EXEMPTION.** `configureKioskTransport()` gains a host-configured list of background endpoints (`update_cx_fcm_key`, `update_cx_software`, `update_device_status`) that skip the 401 / 504 / 505 recovery, so a gateway hiccup on telemetry can no longer log out or de-register a healthy kiosk; TB opts in, the fork configures nothing and stays byte-identical (the P9b timeout pattern) | user | ✅ P9e (488-row A/B on RTK 2.7 + 2.12: fork identical) |
 | **P9e sign-off list (design-language, no Figma frames):** (1) the update countdown modal (invisible 0–10 s, "Starting in Ns" 10–15 s, then "Updating…"; z-80); (2) a guest tap in the final 5 s is swallowed — non-dismissable, ≤5 s, fork parity (OV8); (3) the Activity Center's "Reload resources" button and "Data loaded" row; (4) the Arabic update strings are drafts. Calibration knobs: `BOOT_DATA_MAX_AGE_MS` 6 h, `BOOT_REFRESH_RETRY_MS` 30 min (no jitter yet — `withJitter` is the upgrade if a fleet power-cycled together refreshes together) | client / ops | ⚠️ sign-off |
 | **Visual regression — user decision 2026-10-05: CAPTURE ONLY.** P9f's flow specs attach screenshots at the key steps (splash, order type, menu, bag, payment, complete) to the e2e report for human review; no pixel assertions until the GT America font is licensed and a CI rendering image is fixed | user | 📌 decided → P9f |
-| **CI e2e — user decision 2026-10-05: PER-PR JOB, 2 SHARDS.** P9f adds an e2e job to every PR. The first estimate (~3–4 min) was wrong: the suite needs ~12–18 min on one CI worker, so the job runs as 2 parallel shards (~8–10 min wall per PR; user decision the same day). The job waits for lint + type-check, and its build sets `VITE_POST_HOG_TYPE=production` so the bundle budget measures the production layout (lazy PostHog chunk included). Default SDK checkout: the local SDK clone's origin `PosistGit/posistKiosk` at branch `cx-sdk/extraction` (workflow-level `SDK_REPO` / `SDK_REF`) — change it if the SDK moves to its own repo. It needs the SDK checked out beside this repo, so it stays red until the real SDK repo slug and an `SDK_REPO_TOKEN` secret are filled in (`.github/workflows/ci.yml` placeholders) | user / devops | 📌 decided → P9f (slug + secret owed) |
-| **Bundle budget — user decision 2026-10-05: ENTRY + TOTAL.** P9f fixes `scripts/check-bundle-size.mjs` (fail closed on a malformed budget, exclude the service worker), keeps the 2,000 KB total-JS budget, and adds an entry-chunk gzip budget set just above the post-P9f size (after lazy PostHog and dropping framer-motion), so boot-path regressions fail the gate | user | 📌 decided → P9f |
+| **CI e2e — user decision 2026-10-05: PER-PR JOB, 2 SHARDS.** P9f adds an e2e job to every PR. The first estimate (~3–4 min) was wrong: the suite needs ~12–18 min on one CI worker, so the job runs as 2 parallel shards (~8–10 min wall per PR; user decision the same day). The job waits for lint + type-check, and its build sets `VITE_POST_HOG_TYPE=production` so the bundle budget measures the production layout (lazy PostHog chunk included). Default SDK checkout: the local SDK clone's origin `PosistGit/posistKiosk` at branch `cx-sdk/extraction` (workflow-level `SDK_REPO` / `SDK_REF`) — change it if the SDK moves to its own repo. It needs the SDK checked out beside this repo, so it stays red until the real SDK repo slug and an `SDK_REPO_TOKEN` secret are filled in (`.github/workflows/ci.yml` placeholders) | user / devops | ✅ job landed P9f (`.github/workflows/ci.yml` e2e: needs lint-typecheck, 2 shards, fail-fast false, 30 min, playwright-report-1/2 always uploaded; the build sets VITE_POST_HOG_TYPE=production) — STILL OWED before a green run: confirm SDK_REPO / SDK_REF, create the SDK_REPO_TOKEN secret, push the SDK branch |
+| **Bundle budget — user decision 2026-10-05: ENTRY + TOTAL.** P9f fixes `scripts/check-bundle-size.mjs` (fail closed on a malformed budget, exclude the service worker), keeps the 2,000 KB total-JS budget, and adds an entry-chunk gzip budget set just above the post-P9f size (after lazy PostHog and dropping framer-motion), so boot-path regressions fail the gate | user | ✅ P9f — boot path (the module script + every modulepreload chunk, gzip-9, summed) 344.4 KiB on a production build (was 478.2; raw 1,590 → 1,179 KiB) ⇒ ENTRY budget ceil5(M+10) = 355 KiB; TOTAL 2,000 KB kept (SW scripts excluded); the gate fails closed on bad args, a missing dist, an ambiguous entry or an internal error |
 | **Arabic mechanism — user decision 2026-10-05: ISOLATES + `dir="auto"`.** P9f gets "RTL text, LTR layout" through the i18n layer: every translated Arabic string (and every interpolated value) is wrapped in Unicode direction isolates (FSI…PDI) by an i18next post-processor, `<html lang>` follows the language, and multi-line Arabic paragraphs get `dir="auto"` so they right-align — one file for the runs, zero component rewrites, English byte-identical. `dir="rtl"` on elements was rejected: it mirrors any flex row it lands on (~125 rows in 48 files). Client still signs off the look | user / client | 📌 decided → P9f |
-| **PostHog identify payload — user decision 2026-10-05: KEEP AS IS.** `posthog.identify` keeps sending `license_key` and `login_code` with the tenant/deployment ids (fork parity), also after P9f's lazy analytics loader | user | 📌 decided |
-| **CLAUDE.md rule 8 — user approval 2026-10-05:** P9f adds "startAnalytics() right after setAnalyticsPort(); never import posthog-js statically" to the boot-order rule when the lazy PostHog loader lands | user | 📌 decided → P9f |
+| **PostHog identify payload — user decision 2026-10-05: KEEP AS IS.** `posthog.identify` keeps sending `license_key` and `login_code` with the tenant/deployment ids (fork parity), also after P9f's lazy analytics loader | user | ✅ kept (identifyKiosk sends the same six fields) |
+| **CLAUDE.md rule 8 — user approval 2026-10-05:** P9f adds "startAnalytics() right after setAnalyticsPort(); never import posthog-js statically" to the boot-order rule when the lazy PostHog loader lands | user | ✅ P9f (line added) |
 | **P9f orchestrator defaults (2026-10-05):** the Registration ACTIVATE button's white-on-pink (2.46:1) is fixed in code (ink-purple text, 7.73:1 — Registration has no Figma frame); Playwright `expect.timeout` 10 s and an ESLint ban on `page.waitForTimeout` under `tests/e2e`; the back-to-bag re-PAY order id stays an annotation, not an assertion, until the backend confirms placeOrder idempotency; P9e's specs are written in today's per-spec style and P9f's harness migration absorbs them; the optional idle sweep over 5 more screens and the boot-config parity cases go to the backlog (CI time) | orchestrator | 📌 decided |
 | **Loyalty partner — user decision 2026-10-05: XENO ONLY.** The fork's Reelo path (6-digit OTP, points redemption, `redeem_points`) is NOT ported; a Reelo-configured store would have no working rewards in TB | user | 📌 decided |
-| **Bag rewards button on loyalty-off deployments — user decision 2026-10-05: HIDE.** LOG-IN & GET REWARDS renders only when loyalty is on (today it shows and answers "coming soon") | user | 📌 decided → backlog build |
+| **Bag rewards button on loyalty-off deployments — user decision 2026-10-05: HIDE.** LOG-IN & GET REWARDS renders only when loyalty is on (today it shows and answers "coming soon") | user | ✅ P9f — LOG-IN & GET REWARDS renders only when loyalty is on; PAY takes the full row (frameless → sign-off) |
 | **Backend contract proposals — user decision 2026-10-05: WRITE THEM.** One proposed contract each (fields, endpoints, payloads, kiosk behaviour) for: email receipt, Order Complete QR codes, the MIAM "SAVE £X" badge, a separate in-bag meal-rail flag, a server-issued Activity Center passcode, SCAN APP login, resend OTP — in `docs/BACKEND_CONTRACT_PROPOSALS.md` for the backend team | user | ✅ written 2026-10-06 (7 proposals + 5 confirm-only questions; notable: a wrong operator passcode must never answer 401 — the transport logs out on any 401) |
 | **Menu cache across boots (P9e review F2):** the boot no longer wipes the Dexie menu cache (the fork wiped it on every boot, incl. brand refreshes), so menu freshness between boots relies only on the server's `MENU_ID` / 304 — which TB already trusts within a session. Backend: confirm that every Cockpit change affecting the menu payload bumps `MENU_ID` (if a brand push must force a full download, it is one line: clear `db.menus` on trigger `brand`) | maintainer / backend | ⚠️ open |
 | **Arabic / a11y sign-off list (P9f mapping):** (S1) an Arabic typeface — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback; (S2) wrapped Arabic paragraphs right-align via `dir="auto"`, single lines keep the layout's alignment; (S3) the kiosk blocks pinch-zoom / text resize (`user-scalable=no`, WCAG 1.4.4) — the axe sweep documents a `meta-viewport` exclusion; (S4) placeholder grey darkened 35 % → 55 % black for contrast; (S6) the 🇬🇧 flag next to "العربية" in the footer; (S7) the pink phone-field border is 2.46:1 non-text contrast | client / compliance | ⚠️ sign-off |
+| **P9f app sign-off list (design-language details):** PAY spans the full bag row on loyalty-off deployments; the PDP "Show more / Show less" is a 44 px toggle below the 2-line-clamped description (it was inline and got clipped); placeholder grey 35 % → 55 % black (Registration, /phone, /customerName); the pack-slot imageless placeholder ink-purple /40 → /60; `dir="auto"` + `text-start` on the offer row's second line only; the language sheet has a CSS entrance and no exit slide; Registration's error banner slide, shake and press are CSS approximations of framer-motion | client | ⚠️ sign-off |
+| **lodash in the boot chunk (95.7 KiB) is SDK-owned** — `billCalculation.js` imports the whole of lodash for four `_.chain` sites, plus redux-persist-transform-filter; rewriting them behind the golden-master gate saves ~23 KiB gzip | SDK maintainer | ⚠️ open |
+| **FONT ASSETS ARE MISLABELLED (pre-existing since P1, found 2026-10-06):** `Archivo-Variable.woff2` (the "Archivo" body family, declared weight 100–900) is actually a STATIC "Archivo ExtraCondensed Thin" — every body string renders extra-condensed and thin with faux bold; `Archivo-Condensed-Bold.woff2` ("Archivo Condensed", `.tb-compressed`) is a variable font with only a width axis (62–125, default 100), so the compressed CTAs render at NORMAL width; `Archivo-Expanded-Black.woff2` is correct. Fix = one correct Archivo variable font (wght + wdth axes, latin subset, OFL) used at three widths, plus a visual pass and geometry-assertion updates — its own small lane | orchestrator | 🔲 queued |
 | **Splash sign-off list (P9d, design-language details):** (1) carousel cards crop 1080×1920 art with `object-cover` — ≈6.9 % lost top and bottom on the 680×1043 cards (author carousel art at 680×1043, or accept); (2) the card colour behind a loading slide or a peeking video, and the 0.5 s centre fade, have no Figma spec; (3) the carousel sheen uses the app-wide recipe (40 % soft-light, unrotated), not Figma's 50 % normal rotated −90°; (4) the full-bleed CTA has no scrim over operator media, so its contrast depends on the asset (keep the bottom band dark in the asset spec); (5) WELCOME says "touch anywhere to start" but a short tap in the hidden 180×180 operator corner does nothing; (6) the Arabic splash copy is a draft needing native review; (7) the bell is now decorative (`alt=""`) — the start button's accessible name is the visible copy | client | ⚠️ sign-off |
 | **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open |
 | **S7 residue (P9d):** after an outcome-unknown push, "Back to bag" then removing the reward row shows the marked claim's points as returned (BagSheet adds them on screen before the skipped revoke) — display-only, session-scoped; the reconciliation record (`order_push` reward ids + `xeno_revoke_skipped`) is analytics-only, so the `VITE_POST_HOG_TYPE` kill switch drops it outside production | maintainer | ⚠️ open |
@@ -182,8 +185,9 @@ full-stage, and every return to the splash ends ADA for the next guest.
 
 - **Vite 8/Rolldown CJS interop**: default-import of CJS yields the namespace →
   fixed in SDK (`createFilter`, `autoMergeLevel2`); use named imports or `es/` builds.
-- **No framer-motion for critical/operator UI**: rAF freezes in occluded
-  windows → pure-CSS entrances (`tb-modal-enter` pattern).
+- **framer-motion is gone (P9f)**: every animation is CSS (rAF froze in
+  occluded windows anyway) — one transform owner per element; Tailwind 4
+  translate/scale/rotate are separate properties that compose.
 - **Tailwind 4 translate classes use the CSS `translate` property** — they STACK
   with keyframe/inline `transform`. One owner per element.
 - **Playwright route mocks**: newest-registered wins; always catch-all
@@ -375,10 +379,12 @@ full-stage, and every return to the splash ends ADA for the next guest.
 - **Module-level rate limiters leak across tests in one file** (SplashMedia's
   report map, safeVideoPlay's budget): use distinct URLs or `vi.resetModules()`
   + a dynamic import. Vitest 5 fakes `performance.now` by default.
-- **`tsc -b` type-checks NEITHER unit test files nor e2e specs**
-  (`tsconfig.app.json` excludes `__tests__` / `*.test.*`; `tests/` is in no
-  project). Agents type-checked them with scratch tsconfigs — wiring a real
-  project is P9f.
+- **Tests are type-checked (P9f).** `tsc -b` (yarn type-check, yarn build, CI)
+  covers unit tests through `tsconfig.test.json` and e2e through
+  `tsconfig.e2e.json` — a test or spec type error fails the build. Include
+  globs need `/**/*` (TS5010 rejects a trailing `**`), `exclude: []` must be
+  explicit (or the inherited app exclude drops every test), and each project
+  owns its tsbuildinfo under node_modules/.tmp.
 - **Workbox regex routes match a cross-origin URL only at index 0**, so the old
   same-origin regex never cached S3 media. The image route matches
   `({ request }) => request.destination === "image"` (StaleWhileRevalidate:
@@ -419,7 +425,73 @@ full-stage, and every return to the splash ends ADA for the next guest.
   checkout: SDK edits happen only in a lane's build stage, additive, in files
   no other lane touches — every lane's dev server hot-reloads them.
 
+- **Arabic runs are FSI…PDI-isolated (P9f)** by the i18n post-processor
+  (`bidiIsolate`) plus the interpolation `escape` hook in `src/i18n/index.ts`:
+  in an RTL language every translated string and every interpolated value is
+  a first-strong isolate, so numbers, prices and Latin names inside Arabic
+  stay LTR; English is byte-identical. Assert Arabic via `i18n.t()` (exact
+  matchers compare the wrapped value) or substrings — never literal Arabic in
+  an exact matcher, never a substring that spans a {{placeholder}}.
+- **Never `dir` on a flex/grid container** (rows, grids, `justify-between`,
+  `start-*` and scroll origins mirror). `dir="auto"` goes only on wrapping
+  leaf text (+ `text-start` under a physical `text-left`); today only the
+  offer row's second line. Caveat: HTML `dir="auto"` takes the first strong
+  character ANYWHERE in the leaf, including inside value isolates, so Arabic
+  copy that starts with a Latin {{value}} (offers.removedBody) resolves LTR.
+- **PostHog loads lazily (P9f):** `startAnalytics()` right after
+  `setAnalyticsPort()`; the kill switch is compile-time (off = not shipped,
+  never fetched); pre-load calls queue (cap 100) and replay in order; any
+  failure = analytics off for the page load. `posthogRuntime.ts` is the only
+  importer and chunkRecovery exempts `/fcmRuntime|posthogRuntime/` (renaming
+  either file restores the reload). Load optional lazy chunks with
+  `await import()`, NEVER `import().then(handler)`: Vite moves a chained
+  `.then` into `__vitePreload`, so a failed chunk skips the handler and a
+  handler throw becomes `vite:preloadError` → reload.
+- **The bundle gate budgets the BOOT PATH** (`scripts/check-bundle-size.mjs`):
+  the module script in `dist/index.html` plus every `<link rel="modulepreload">`
+  chunk, gzip level 9, KiB = 1024 B; TOTAL = page JS incl. lazy chunks, SW
+  scripts excluded and listed. The ENTRY budget (355 KiB) = ceil5(measured +
+  10) and is raised only with user approval; every bad input fails closed.
+- **e2e: `page.waitForTimeout` is lint-banned under tests/e2e.** Wait on state
+  (expect / expect.poll / waitForResponse) or drive time with `page.clock`;
+  expect.timeout is 10 s. To prove a negative over a window, sample with
+  `expect.poll` until the window closes (fcm.spec E10). Long-press: keep the
+  mouse down until the result is visible. After an RTK request, poll the
+  store's `api.mutations` until the entries are `rejected` (fcm.spec E12).
+- **Overlay-button pattern (P9f)** for a clickable card with a nested control:
+  the container keeps the testid and `relative`, no onClick; a named
+  `<button type="button" class="absolute inset-0">` opens it and goes LAST in
+  the DOM (a later stacking-context sibling would paint above it and leave a
+  dead tap zone); the nested control is `relative z-10`. jsdom tests click the
+  overlay by role; e2e clicks the container centre or `getByRole("button",
+  {name})`. Playwright refuses to click under `aria-disabled="true"`.
+
 ## Session log
+
+- **2026-10-06 (P9f app half + lanes)** · Development moved to **parallel git
+  worktree lanes** (user choice 2026-10-05: commit + worktrees, one workflow
+  per phase): `../tb-<lane>` siblings with their own installs and ports
+  (`TB_E2E_PORT`, 5374+), at most 3 at once; the orchestrator gates, commits
+  and merges each lane into main (never pushes). The first night's lanes
+  stalled because the laptop slept on battery (a `caffeinate -s` assertion now
+  keeps it awake on AC). **Lane `p9f-app` merged** (13-agent lane workflow):
+  Arabic as FSI/PDI-isolated RTL runs in the LTR layout; a11y fixes (overlay
+  buttons for menu cards and the applied-reward row, named dialogs, read-only
+  textboxes, 44 px PDP toggle, contrast, aria-disabled dimmed rows, " Cal" and
+  PDP labels through i18n, the bag hides LOG-IN & GET REWARDS on loyalty-off);
+  lazy PostHog + framer-motion removed (boot path 478.2 → 344.4 KiB gzip-9) and
+  a fail-closed boot-path budget (reviewers found it first ignored
+  modulepreload chunks — fixed); tsc -b type-checks tests and specs;
+  `page.waitForTimeout` banned; the per-PR CI e2e job (2 shards). The
+  orchestrator also fixed a pre-existing Registration timer leak (one dismiss
+  timer, cleared on unmount — new test, both halves mutation-checked). Unit
+  1,216 → 1,318, e2e 119 → 121 (P9e e2e strengthening); lane mutation checks
+  41/44 unit + 34/36 e2e caught (rest equivalent or caught by unit). Merge fix:
+  fcm.spec E10's 1 s settle became an `expect.poll` window (re-verified 3/3
+  against a notification-showing worker). Also today: the P9e e2e mutation
+  pass (57/58), `docs/BACKEND_CONTRACT_PROPOSALS.md`, user decisions (India
+  deployment; Paytm DQR + EDC with `react-qr-code@2.0.15`; Xeno only; banners =
+  guard only; search descoped), and the mislabelled-font finding (queued).
 
 - **2026-10-06 (P9e)** · **Updates apply only at the splash.** Re-baselined
   2026-10-05 by a 3-reader workflow against the post-P9a–d code, then a 9-agent

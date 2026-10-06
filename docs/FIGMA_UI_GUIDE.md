@@ -78,6 +78,7 @@ Archivo stand-ins until the client licenses it — FLAGGED):
 | Text/Small | Rg 18/20 | base Archivo |
 | CTA/Bold Medium | Exp Bl 18/16 | `.tb-display text-[18px] leading-[16px]` |
 | Text/Title large | Rg 28/32 | base Archivo `text-[28px] leading-[32px]` |
+Arabic: no brand face — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback font (sign-off S1). ⚠️ The committed files are MISLABELLED (found 2026-10-06; fix queued — see PROGRESS): `Archivo-Variable.woff2` is a static ExtraCondensed Thin cut and `Archivo-Condensed-Bold.woff2` is width-variable (62–125, default 100).
 Fonts committed: `Archivo-Variable.woff2` (upright latin),
 `Archivo-Expanded-Black.woff2` (wdth125/wght900), `Archivo-Condensed-Bold.woff2` (wdth62/wght700).
 
@@ -89,14 +90,14 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
 | `1:5617` WELCOME (no media) · `1:5604` full-bleed (1 slide) · `1:2203` carousel (≥2) · `1:2184` poster (retired P9d) | Splash - Single/Carousel | `pages/StartScreen` + `pages/StartScreen/SplashMedia` (SDK engine `@cx-sdk/catalog/media/splashMedia`, boot step `useLoaders` → `loadSplashMedia`) | ✅ P9d — layout by PLAYABLE slide count; a slide that errors/stalls is skipped (carousel → full-bleed → WELCOME, never blank); 1:5604's promo words + stars live IN the operator media; sign-off items in PROGRESS |
-| — (no frame) | Registration (operator) | `pages/Registration` | ✅ design-language, flag for sign-off |
+| — (no frame) | Registration (operator) | `pages/Registration` | ✅ design-language, flag for sign-off · P9f: ACTIVATE label ink-purple (7.73:1, was white 2.46:1), placeholder 55 % black, error-banner slide / shake / press are pure CSS — sign-off |
 | `1:5598` loading, `1:5600` Error, `1:5602` Credit card | illustrations | `pages/LoadingResources` | 🔄 progress UI built. **These boards hold 1000×1000 VIDEO fills** — the MCP exports posters only (Error = solid black, loading = the REWARDS seal on black), so they are unusable until design supplies source media (MP4/WebM/Lottie). P9b's boot error uses `ErrorModal` instead |
 
 ### Order type + chrome
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
 | `1:2581` v1 / `1:2588` v2 | Dine In / Take Out / Daypart | `pages/SecondLayout` | ✅ v1 (v2 variant 🔲) |
-| `1:4488` | Select Language | `components/language/LanguageSheet` | ✅ |
+| `1:4488` | Select Language | `components/language/LanguageSheet` | ✅ · P9f: CSS entrance only, no exit slide |
 | in `1:2581` | Daypart ticker | `components/chrome/DaypartTicker` | ✅ (server-driven copy 🔲) |
 | in `1:2581` | Footer bottom (Cancel/ADA/lang) | `components/chrome/FooterBar` | ✅ |
 
