@@ -333,6 +333,14 @@ const fcmWorker = (page: Page) =>
       : null;
   }, FCM_SCOPE);
 
+/** Titles of the notifications the FCM push worker has shown (it must never show one). */
+const fcmNotifications = (page: Page) =>
+  page.evaluate(async (scope) => {
+    const registration = await navigator.serviceWorker.getRegistration(scope);
+    const shown = await registration?.getNotifications();
+    return shown ? shown.map((n) => n.title) : null;
+  }, FCM_SCOPE);
+
 const tokenCookie = async (context: BrowserContext) =>
   (await context.cookies()).find((c) => c.name === "token")?.value;
 
@@ -479,6 +487,10 @@ test.describe("P9e FCM brand updates (real Firebase SDK)", () => {
     await expect(page).toHaveURL(/\/second$/);
     expect(backend.acks).toEqual([]);
     expect(watch.errors).toEqual([]);
+    // Relayed silently: never an OS notification over the customer screen.
+    // The push event outlives its post: give a showNotification time to land.
+    await page.waitForTimeout(1_000);
+    expect(await fcmNotifications(page)).toEqual([]);
   });
 
   test("E11 a minted token is registered ONCE per page load with the exact body and stored only after the backend took it; a reload re-registers without re-minting", async ({

@@ -618,6 +618,38 @@ test.describe("P9e updates apply only at the splash", () => {
       expect(backend.acks).toHaveLength(1);
     });
 
+    test("E5 never mid-order: a push on /menu with a bag changes nothing in 120 s (no ack, no refresh); the guest's cancel → /start → the ack and the refresh 15 s later", async ({
+      page,
+    }) => {
+      test.slow();
+      const backend = await mockKioskBackend(page);
+      await registerToStart(page);
+      await startOrderToMenu(page);
+      await addGreekSaladOneTap(page, "(1)");
+
+      await dispatch(page, brandPush("e2e-upd-2"));
+      // 120 s mid-order; a touch at 60 s keeps the guest under the 100 s idle prompt.
+      await page.clock.runFor(60_000);
+      await page.mouse.move(540, 700);
+      await page.clock.runFor(60_000);
+      await expect(page).toHaveURL(/\/menu$/);
+      await expect(countdown(page)).toHaveCount(0);
+      await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+      expect(backend.acks).toEqual([]);
+      expect(backend.hits.getLanguage).toBe(1);
+      expect((await readAutoUpdate(page)).shouldBrandUpdate).toBe(true);
+
+      await page.getByTestId("footer-cancel").click();
+      await page.getByTestId("cancel-order-confirm").click();
+      await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+      await stepClockUntil(page, () => backend.hits.getLanguage === 2);
+      await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+      await expect.poll(() => backend.acks).toEqual([
+        { app: "kiosk", device_update_id: "e2e-upd-2" },
+      ]);
+      expect((await readAutoUpdate(page)).shouldBrandUpdate).toBe(false);
+    });
+
     for (const status of [500, 504] as const) {
       test(`E6 an ack answering ${status} (3 attempts) still refreshes exactly ONCE: no loop, no logout, no page error`, async ({
         page,
@@ -703,12 +735,13 @@ test.describe("P9e updates apply only at the splash", () => {
     }) => {
       const backend = await mockKioskBackend(page);
       await registerToStart(page);
-      const booted = (await readAutoUpdate(page)).lastBootAt;
+      const { lastBootAt: booted, now } = await readAutoUpdate(page);
 
-      // One jump fires the pending ≤15 min re-check ONCE at the target — the
-      // wall-clock jump it exists to notice; it re-arms for the remaining minute.
-      await page.clock.fastForward("05:59:00");
-      await page.clock.runFor(500);
+      // One jump to a minute short of the 6 h age fires the pending ≤15 min
+      // re-check ONCE at the target — the wall-clock jump it exists to notice;
+      // it re-arms for the last minute, and a full dwell there starts nothing.
+      await page.clock.fastForward(booted + 6 * HOUR - MINUTE - now);
+      await page.clock.runFor(20_000);
       await expect(countdown(page)).toHaveCount(0);
       expect(backend.hits.getLanguage).toBe(1);
 
@@ -760,18 +793,21 @@ test.describe("P9e updates apply only at the splash", () => {
         failed.lastRefreshFailedAt
       );
 
-      // No hot loop: nothing for the 30 min backoff. The jump fires the
-      // pending 15 min re-check once; it re-arms for the remaining ~2 min.
+      // No hot loop: nothing for the 30 min backoff. The jump to 1 min short
+      // of it fires the pending 15 min re-check once (it re-arms for the last
+      // minute), and a full dwell there still starts nothing — a shorter
+      // backoff would have armed and refreshed by now.
       await page.clock.runFor(60_000);
       expect(backend.hits.getPipelines).toBe(2);
-      await page.clock.fastForward(27 * MINUTE);
-      await page.clock.runFor(500);
+      const { now } = await readAutoUpdate(page);
+      await page.clock.fastForward(failed.lastRefreshFailedAt + 29 * MINUTE - now);
+      await page.clock.runFor(20_000);
       expect(backend.hits.getPipelines).toBe(2);
       await expect(countdown(page)).toHaveCount(0);
 
       // Past 30 min → the next attempt; the backend is back.
       backend.pipelines = ok([PIPELINE_P1]);
-      await page.clock.fastForward(3 * MINUTE);
+      await page.clock.fastForward(2 * MINUTE);
       await stepClockUntil(page, () => backend.hits.getPipelines === 3);
       await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
       await expect
@@ -892,6 +928,28 @@ test.describe("P9e updates apply only at the splash", () => {
       expect(backend.hits).toEqual({ getLanguage: 2, getPipelines: 2, settings: 2 });
       expect((await readAutoUpdate(page)).lastBootAt).toBeGreaterThan(booted);
       expect(backend.acks).toEqual([]);
+    });
+
+    test("S3 a FAILED Reload resources (getPipelines 500) is a refresh too: straight back to /start on the OLD data with the failure stamped — never the boot error ladder", async ({
+      page,
+    }) => {
+      const backend = await mockKioskBackend(page);
+      await registerToStart(page);
+      const before = await bootData(page);
+      const booted = (await readAutoUpdate(page)).lastBootAt;
+      backend.pipelines = fail(500);
+      const paths = trackPaths(page);
+
+      await holdHotspot(page, "activity-hotspot");
+      await page.getByTestId("activity-reload-resources").click();
+      await expect.poll(() => backend.hits.getPipelines).toBe(2);
+      await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+      await expect(page).toHaveURL(/\/start$/);
+      expect(paths).toEqual(["/LoadingResources", "/start"]);
+      const after = await readAutoUpdate(page);
+      expect(after.lastRefreshFailedAt).toBeGreaterThan(0);
+      expect(after.lastBootAt).toBe(booted);
+      expect(await bootData(page)).toEqual(before);
     });
 
     test("S3 the boot screen's Activity Center offers no Reload resources (only the splash does)", async ({
