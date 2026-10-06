@@ -21,6 +21,13 @@ export interface OfferRowProps {
   onPick: () => void;
   /** Interaction latch (e.g. while a commit is in flight). */
   disabled: boolean;
+  /**
+   * Buy-stage entry (offers lane, item 31). Only a LOCKED bogoBuySide row
+   * renders it — as an ADD ITEMS text button in the nudge slot; the sheet
+   * passes it only when a buy stage can finish the offer. Every other locked
+   * kind ignores it and stays informational.
+   */
+  onAddItems?: () => void;
 }
 
 const money = (currency: string, value: number): string =>
@@ -64,6 +71,7 @@ export default function OfferRow({
   currency,
   onPick,
   disabled,
+  onAddItems,
 }: OfferRowProps) {
   const { t } = useTranslation();
 
@@ -155,6 +163,9 @@ export default function OfferRow({
     return null;
   })();
 
+  const showAddItems =
+    !!onAddItems && presentation?.labelKind === "bogoBuySide";
+
   const inner = (
     <>
       {/* 84px thumb — grey plate + tinted bell placeholder (photos deferred). */}
@@ -195,6 +206,19 @@ export default function OfferRow({
         >
           {nudge}
         </span>
+      ) : showAddItems ? (
+        // A sibling of the row's text inside a div — never a nested button.
+        <button
+          type="button"
+          data-testid={`offer-row-add-items-${id}`}
+          disabled={disabled}
+          onClick={onAddItems}
+          className={`inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-[8px] text-[18px] font-bold tracking-[-0.08px] text-tb-purple underline ${
+            disabled ? "opacity-40" : ""
+          }`}
+        >
+          {t("offers.buyStage.addItems")}
+        </button>
       ) : (
         entry.eligible && (
           <span
@@ -233,6 +257,7 @@ export default function OfferRow({
 
   // Locked / gone rows are informational, never targets — a div, not a
   // disabled button (nothing to press, nothing to announce as pressable).
+  // A bogoBuySide row's ADD ITEMS is its own button inside the div.
   return (
     <div
       data-testid={`offer-row-${id}`}

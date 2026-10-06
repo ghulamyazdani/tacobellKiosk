@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
@@ -6,10 +6,21 @@ import { selectCartOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
+  selectEntityMap,
+  selectSubCategoryMap,
+  selectVariantObject,
+} from "@cx-sdk/catalog/state/Menu.slice";
+import {
   hasOffer,
   lockedGapPresentation,
   sectionRankedOffers,
 } from "@cx-sdk/ordering/offer/offersSheetLogic";
+import {
+  resolveBuyStageView,
+  type BuyStageOffer,
+  type BuyStageView,
+} from "@cx-sdk/ordering/offer/buyStageUtils";
+import { canOfferBuyStage } from "@cx-sdk/ordering/offer/offerCommitRules";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
@@ -42,7 +53,19 @@ export interface RewardsSheetProps {
    * offer to hand it.
    */
   onNeedsPicker?: (offer: SavingsOffer) => void;
+  /**
+   * ADD ITEMS on a locked bogoBuySide row (offers lane, item 31): fired
+   * (before onClose) with the offer and its resolved buy stage — the page
+   * owns the BuyStageSheet. Rows only offer it when canOfferBuyStage holds;
+   * every other locked row stays inert (no /menu fallback).
+   */
+  onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
 }
+
+/** resolveBuyStageView's menu inputs, as the untyped Menu slice holds them. */
+type EntityMapIn = Parameters<typeof resolveBuyStageView>[1];
+type SubCategoryMapIn = Parameters<typeof resolveBuyStageView>[2];
+type VariantObjectIn = Parameters<typeof resolveBuyStageView>[3];
 
 /**
  * Converted menu entities widen the engine's RecommendedEntity with
@@ -83,6 +106,7 @@ const noop = () => undefined;
 interface SheetBodyProps {
   onClose: () => void;
   onNeedsPicker?: (offer: SavingsOffer) => void;
+  onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
 }
 
 /**
@@ -90,7 +114,7 @@ interface SheetBodyProps {
  * house pattern), so the radio state re-seeds from the applied offer on every
  * (re)open without a setState-in-effect.
  */
-function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
+function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   const { t } = useTranslation();
 
   const filteredOffers = useSelector(selectFilteredOffers) as
@@ -102,11 +126,15 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
     | { symbol?: string; currency_symbol?: string }
     | null
     | undefined;
+  const entityMap = useSelector(selectEntityMap) as EntityMapIn;
+  const subCategoryMap = useSelector(selectSubCategoryMap) as SubCategoryMapIn;
+  const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
 
   const { rank } = useOfferSavings();
   // Verified against the landed apply core: selectOfferAndCommit(offer) →
-  // Promise<OfferCommitResult> ({ applied, needsPicker? }) — the swapCartOffer
-  // atomic / directly-applicable / picker-verdict recipes live inside it.
+  // Promise<OfferCommitResult> ({ applied, needsPicker?, offer?, blocked? }) —
+  // the swapCartOffer atomic / directly-applicable / picker-verdict recipes
+  // and the sameOrLess ceiling live inside it.
   const { selectOfferAndCommit } = useOfferApply();
   const { items: upsellPool } = useCartUpsell();
   const { addEntity, getAddIntent } = useAddEntityToCart();
@@ -140,6 +168,20 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
   // mounting note). SAVE compares against the live appliedId at commit time.
   const [pickedId, setPickedId] = useState<string | undefined>(() => appliedId);
   const [committing, setCommitting] = useState(false);
+  // SAVE refused (the sameOrLess ceiling, or an item offer with nothing to
+  // grant) — inline, because TB mounts no global error modal; cleared by the
+  // next pick.
+  const [notApplicable, setNotApplicable] = useState(false);
+
+  // The commit is awaited: an idle reset or bag close can unmount the sheet
+  // mid-flight, and nothing may hand a picker offer to the page after that.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const savable = eligibleRows.length > 0;
 
@@ -147,7 +189,9 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
    * SAVE SELECTION (locked decision 2): unchanged selection → just close;
    * a new pick commits through the apply core (atomic swap recipes live
    * there), and a `needsPicker` signal hands the offer to the page's
-   * FreebiePickerSheet via onNeedsPicker before closing.
+   * FreebiePickerSheet via onNeedsPicker before closing — the ceiling-
+   * filtered offer when the apply core returns one. A `blocked` verdict
+   * keeps the sheet open with the inline not-applicable line.
    */
   const handleSave = async () => {
     if (!savable || committing) return;
@@ -163,14 +207,52 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
     setCommitting(true);
     try {
       const result = await selectOfferAndCommit(entry.offer);
-      if (result?.needsPicker) onNeedsPicker?.(entry.offer);
+      if (!mountedRef.current) return;
+      if (result?.blocked) {
+        setNotApplicable(true);
+        return;
+      }
+      if (result?.needsPicker) onNeedsPicker?.(result.offer ?? entry.offer);
       onClose();
     } catch {
       // The apply core failed — never a frozen or crashed sheet (Rule 2):
       // stay open with the selection intact so the customer can retry or X out.
     } finally {
-      setCommitting(false);
+      if (mountedRef.current) setCommitting(false);
     }
+  };
+
+  // Buy stages for the locked bogoBuySide rows — only where TB can finish
+  // the offer (canOfferBuyStage: no group mode, no get-categories). A row
+  // whose view fails to resolve (or throws on a malformed payload) simply
+  // stays inert, as before.
+  const buyStageViews = useMemo(() => {
+    const views = new Map<string, BuyStageView>();
+    sections.lockedRows.forEach((row) => {
+      if (lockedGapPresentation(row.offer, row.gap).labelKind !== "bogoBuySide") {
+        return;
+      }
+      try {
+        const view = resolveBuyStageView(
+          row.offer as BuyStageOffer,
+          entityMap,
+          subCategoryMap,
+          variantObject,
+        );
+        if (view && canOfferBuyStage(row.offer, view)) {
+          views.set(String(row.offer?._id ?? ""), view);
+        }
+      } catch {
+        // Inert row — never a crashed sheet (Rule 2).
+      }
+    });
+    return views;
+  }, [sections.lockedRows, entityMap, subCategoryMap, variantObject]);
+
+  const handleAddItems = (offer: SavingsOffer, view: BuyStageView) => {
+    if (committing) return;
+    onAddItems?.(offer, view);
+    onClose();
   };
 
   // Suggested rail (locked decision 4): only when the TOP locked offer has a
@@ -267,6 +349,7 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
 
   const renderRow = (row: RankedOffer<SavingsOffer>, interactive: boolean) => {
     const id = String(row.offer?._id ?? "");
+    const view = onAddItems ? buyStageViews.get(id) : undefined;
     return (
       <OfferRow
         key={id}
@@ -274,8 +357,18 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
         selected={interactive && pickedId === id}
         applied={appliedId === id}
         currency={currency}
-        disabled={!interactive || committing}
-        onPick={interactive ? () => setPickedId(id) : noop}
+        // Locked/gone rows render a div that ignores this latch; only their
+        // ADD ITEMS button reads it.
+        disabled={committing}
+        onPick={
+          interactive
+            ? () => {
+                setPickedId(id);
+                setNotApplicable(false);
+              }
+            : noop
+        }
+        onAddItems={view ? () => handleAddItems(row.offer, view) : undefined}
       />
     );
   };
@@ -372,6 +465,16 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
         </div>
 
         <div className="shrink-0 p-[24px] drop-shadow-[0px_0px_64px_rgba(0,0,0,0.08)]">
+          {/* Always mounted: a live region must exist before its text does. */}
+          <p
+            data-testid="rewards-not-applicable"
+            role="status"
+            className={`text-center text-[20px] font-medium leading-[24px] text-tb-pink-dark ${
+              notApplicable ? "mb-[16px]" : ""
+            }`}
+          >
+            {notApplicable ? t("offers.notApplicable") : null}
+          </p>
           <button
             type="button"
             data-testid="rewards-save"
@@ -399,13 +502,21 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
  *
  * Conditionally mounted so each open re-seeds selection from the applied
  * offer. Reads Redux + useOfferSavings directly; commits through the P7b
- * apply core (useOfferApply).
+ * apply core (useOfferApply). Locked bogoBuySide rows that a buy stage can
+ * finish carry ADD ITEMS, handed to the page via onAddItems.
  */
 export default function RewardsSheet({
   open,
   onClose,
   onNeedsPicker,
+  onAddItems,
 }: RewardsSheetProps) {
   if (!open) return null;
-  return <SheetBody onClose={onClose} onNeedsPicker={onNeedsPicker} />;
+  return (
+    <SheetBody
+      onClose={onClose}
+      onNeedsPicker={onNeedsPicker}
+      onAddItems={onAddItems}
+    />
+  );
 }

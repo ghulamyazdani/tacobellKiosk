@@ -2,7 +2,7 @@
  * Offer and cart-row fixtures mirror the untyped SDK cart slice / converter
  * output; typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -13,9 +13,21 @@ import {
   addGetItemsRdx,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import { store } from "../../../redux/app/store";
 import useOfferApply from "../useOfferApply";
+import {
+  getCelebratedBarKey,
+  resetAppliedBarCelebration,
+  setCelebratedBarKey,
+} from "../../../utils/offerCelebration";
 import "../../../i18n";
+
+const mockCapture = vi.fn();
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
 
 /** Paid CUSTOMIZABLE row, £8.60 line (P7a BagSheet fixture parity). */
 const BURGER_ROW = {
@@ -307,6 +319,111 @@ describe("useOfferApply (P7b apply/remove core — contract recipes)", () => {
     expect(cartState().cartItems).toHaveLength(1);
   });
 
+  it.each([
+    [
+      "auto-applied ITEM offer (getItems: {})",
+      { ...FREE_SALAD_OFFER, _id: "offer-free-drink", autoApplied: true, getItems: {} },
+    ],
+    [
+      "every freebie 86'd (entities: {})",
+      {
+        ...FREE_SALAD_OFFER,
+        _id: "offer-sold-out",
+        getItems: { items: [{ ...SALAD_ENTRY, entities: {} }] },
+      },
+    ],
+  ])(
+    "an item offer with nothing to grant is blocked — no £0 swap, no celebration: %s",
+    async (_label, offer) => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+      const verdict = await execApply((api) => api.selectOfferAndCommit(offer));
+
+      expect(verdict).toEqual({ applied: false, blocked: "noGetItems" });
+      expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+      expect(cartState().offerModal?.isOpen).toBeFalsy();
+      expect(cartState().cartItems).toHaveLength(1);
+    }
+  );
+
+  it("a least-value offer (empty get side by design) still takes the atomic swap", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const LEAST_OFFER = {
+      ...offerBase,
+      _id: "offer-least",
+      name: "Cheapest one free",
+      type: { name: "item", value: 0 },
+      getLeastValueItem: true,
+      leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
+      getItems: { items: [], categories: [] },
+    };
+
+    const verdict = await execApply((api) => api.selectOfferAndCommit(LEAST_OFFER));
+
+    expect(verdict).toEqual({ applied: true });
+    expect(cartState().cartOffer._id).toBe("offer-least");
+  });
+
+  it("sameOrLess judges a fixed-size (variant-id) freebie by its OWN size — a cheaper sibling cannot carry it", async () => {
+    // Buy the £8 burger; the "and" grant is LARGE fries (£9): over the
+    // ceiling although the base's Small (£2) is under it.
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const SMALL = { id: "fries-s", name: "Small", price: 2, isActive: true };
+    const LARGE = { id: "fries-l", name: "Large", price: 9, isActive: true };
+    const SOL_FRIES_OFFER = {
+      ...offerBase,
+      _id: "offer-sol-fries",
+      name: "Burger + large fries",
+      type: { name: "item", value: 0 },
+      sameOrLess: true,
+      isAndOffer: true,
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [
+          {
+            item: { baseItemId: "cheese-burger", name: "Cheese Burger" },
+            quantity: 1,
+            relation: "and",
+          },
+        ],
+      },
+      getItems: {
+        items: [
+          {
+            _id: "gi-fries-l",
+            baseItemId: "fries-l",
+            name: "Fries",
+            relation: "and",
+            discountType: "percent",
+            value: 100,
+            quantity: 1,
+            entities: {
+              id: "fries",
+              name: "Fries",
+              price: 0,
+              hasVariant: true,
+              type: "VARIANT",
+              isVariantSelected: true,
+              variants: [SMALL, LARGE],
+              selectedVariant: { ...LARGE, isGetItem: true },
+              selectedVariantId: "fries-l",
+              variantPrice: 9,
+              discounted_total_price: 0,
+              undiscounted_total_price: 9,
+              isGetItem: true,
+            },
+          },
+        ],
+      },
+    };
+
+    const verdict = await execApply((api) => api.selectOfferAndCommit(SOL_FRIES_OFFER));
+
+    expect(verdict).toEqual({ applied: false, blocked: "sameOrLess" });
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(getItemRows()).toEqual([]);
+  });
+
   it("refuses to commit over a loyalty-owned slot (applied:false, slot intact)", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(
@@ -387,5 +504,361 @@ describe("useOfferApply (P7b apply/remove core — contract recipes)", () => {
     expect(cartState().cartOffer._id).toBe("offer-free-sauce-choice");
     // Staging list is left empty — rows were COMMITTED, not staged.
     expect(cartState().getItems).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane "offers": routing gate (G2), sameOrLess ceiling (31b), the
+ * celebration trigger (33) and the auto-apply latch / machine apply (34).
+ * ------------------------------------------------------------------ */
+
+/** Paid Tortilla Sauce (£2) — the buy side of the sameOrLess BOGOs below. */
+const SAUCE_ROW = {
+  id: "tortilla-sauce",
+  itemId: "ts-1",
+  uniqueItemId: "ts-1",
+  name: "Tortilla Sauce",
+  quantity: 1,
+  type: "ITEM",
+  price: 2,
+  total_price: 2,
+  customizations: {},
+};
+
+/** Plain BOGO with sameOrLess ON: buy one £2 sauce. */
+const SOL_BASE = {
+  ...offerBase,
+  name: "Buy a sauce, get a side",
+  type: { name: "item", value: 0 },
+  sameOrLess: true,
+  applicable: {
+    ...offerBase.applicable,
+    rawItems: [
+      { item: { baseItemId: "tortilla-sauce", name: "Tortilla Sauce" }, quantity: 1, relation: "or" },
+    ],
+  },
+};
+
+/** "or": the £17 salad is over the £2 ceiling, the £2 Caesar is not. */
+const SOL_OR_OFFER = {
+  ...SOL_BASE,
+  _id: "offer-sol-or",
+  isAndOffer: false,
+  getItems: { items: [{ ...SALAD_ENTRY, relation: "or" }, CAESAR_ENTRY] },
+};
+
+/** "and": the salad would be dropped → the whole offer is not applicable. */
+const SOL_AND_OFFER = {
+  ...SOL_BASE,
+  _id: "offer-sol-and",
+  isAndOffer: true,
+  getItems: { items: [SALAD_ENTRY, { ...CAESAR_ENTRY, relation: "and" }] },
+};
+
+/** Converter CUSTOMIZABLE branch: no price stamps (the G2 trap). */
+const CUSTOMIZABLE_FREEBIE_OFFER = {
+  ...FREE_SALAD_OFFER,
+  _id: "offer-free-burger",
+  name: "Free burger",
+  getItems: {
+    items: [
+      {
+        _id: "gi-burger",
+        baseItemId: "cheese-burger",
+        name: "Cheese Burger",
+        relation: "and",
+        discountType: "percent",
+        value: 100,
+        quantity: 1,
+        entities: {
+          id: "cheese-burger",
+          name: "Cheese Burger",
+          price: 8,
+          modifiers: ["sauce_group"],
+          hasVariant: false,
+          discountType: "percent",
+          discountValue: 100,
+          isGetItem: true,
+          type: "CUSTOMIZABLE",
+          customizations: { sauce_group: [] },
+          baseItem: { id: "cheese-burger", name: "Cheese Burger", price: 8 },
+          baseItemPrice: 8,
+        },
+      },
+    ],
+  },
+};
+
+const VARIANT_FREEBIE_OFFER = {
+  ...FREE_SALAD_OFFER,
+  _id: "offer-free-fries",
+  name: "Free fries",
+  getItems: {
+    items: [
+      {
+        _id: "gi-fries",
+        baseItemId: "fries",
+        name: "Fries",
+        relation: "and",
+        discountType: "percent",
+        value: 100,
+        quantity: 1,
+        entities: {
+          id: "fries",
+          name: "Fries",
+          price: 3,
+          hasVariant: true,
+          discountType: "percent",
+          discountValue: 100,
+          isGetItem: true,
+          type: "VARIANT",
+          discounted_total_price: 0,
+          undiscounted_total_price: 3,
+          variants: [{ id: "fries-m", name: "Medium", price: 3, isActive: true }],
+        },
+      },
+    ],
+  },
+};
+
+const sessionState = () =>
+  (store.getState() as any).offerSession as {
+    autoApplyOptOut: boolean;
+    autoAppliedOfferId: string | null;
+  };
+const slotIsEmpty = () => Object.keys(cartState().cartOffer ?? {}).length === 0;
+
+/** One call per mount — unlike execApply, several may run in one test. */
+const runOnce = async (
+  run: (api: OfferApplyApi) => Promise<unknown> | unknown
+): Promise<any> => {
+  let result: unknown;
+  let done = false;
+  const view = render(
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/cart"]}>
+        <Harness
+          run={run}
+          onDone={(r) => {
+            result = r;
+            done = true;
+          }}
+        />
+      </MemoryRouter>
+    </Provider>
+  );
+  await userEvent.click(screen.getByTestId("run-apply"));
+  await waitFor(() => expect(done).toBe(true));
+  view.unmount();
+  return result;
+};
+
+/** Dispatched action types (thunks have none) while `fn` runs. */
+const typesDispatchedDuring = async (fn: () => Promise<unknown>): Promise<string[]> => {
+  const spy = vi.spyOn(store, "dispatch");
+  try {
+    await fn();
+    return spy.mock.calls
+      .map(([action]) => (action as { type?: string })?.type)
+      .filter((type): type is string => typeof type === "string");
+  } finally {
+    spy.mockRestore();
+  }
+};
+
+describe("useOfferApply — lane offers (routing, sameOrLess, celebration, auto-apply latch)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    resetAppliedBarCelebration();
+    mockCapture.mockClear();
+  });
+
+  it.each([
+    ["atomic swap", FLAT_OFFER],
+    ["direct apply", FREE_SALAD_OFFER],
+  ])("applied (%s) → the celebration opens with {id, name} and the latch is set", async (_label, offer) => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(offer));
+
+    expect(verdict).toEqual({ applied: true });
+    expect(cartState().offerModal).toEqual({
+      isOpen: true,
+      data: { id: offer._id, name: offer.name },
+    });
+    expect(sessionState().autoApplyOptOut).toBe(true);
+  });
+
+  it("needsPicker → no celebration, and `offer` is OMITTED when the ceiling filtered nothing", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(CHOICE_OFFER));
+
+    expect(verdict).toEqual({ applied: false, needsPicker: true });
+    expect("offer" in verdict).toBe(false);
+    expect(cartState().offerModal.isOpen).toBe(false);
+  });
+
+  it("a sameOrLess-filtered picker verdict carries the FILTERED offer (the £17 salad gone), never the input", async () => {
+    store.dispatch(setCartItems([{ ...SAUCE_ROW }]));
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(SOL_OR_OFFER));
+
+    expect(verdict.applied).toBe(false);
+    expect(verdict.needsPicker).toBe(true);
+    expect(verdict.offer).not.toBe(SOL_OR_OFFER);
+    expect(verdict.offer._id).toBe("offer-sol-or");
+    expect(verdict.offer.getItems.items.map((e: any) => e.baseItemId)).toEqual(["caesar-dressing"]);
+    expect(SOL_OR_OFFER.getItems.items).toHaveLength(2); // input untouched
+    expect(slotIsEmpty()).toBe(true);
+    expect(cartState().offerModal.isOpen).toBe(false);
+  });
+
+  it("sameOrLess-blocked → {applied:false, blocked:'sameOrLess'} with NO cart or slot write (only the latch)", async () => {
+    store.dispatch(setCartItems([{ ...SAUCE_ROW }]));
+    const before = structuredClone(cartState().cartItems);
+
+    let verdict: unknown;
+    const types = await typesDispatchedDuring(async () => {
+      verdict = await runOnce((api) => api.selectOfferAndCommit(SOL_AND_OFFER));
+    });
+
+    expect(verdict).toEqual({ applied: false, blocked: "sameOrLess" });
+    expect(types).toEqual(["offerSession/optOutOfAutoApply"]);
+    expect(cartState().cartItems).toEqual(before);
+    expect(slotIsEmpty()).toBe(true);
+    expect(cartState().offerModal.isOpen).toBe(false);
+  });
+
+  it.each([
+    ["CUSTOMIZABLE", CUSTOMIZABLE_FREEBIE_OFFER],
+    ["VARIANT", VARIANT_FREEBIE_OFFER],
+  ])("G2: a single 'and' %s freebie → exactly needsPicker, cart and slot untouched (no £0 swap)", async (_label, offer) => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(offer));
+
+    expect(verdict).toEqual({ applied: false, needsPicker: true });
+    expect(slotIsEmpty()).toBe(true);
+    expect(cartState().cartItems).toHaveLength(1);
+    expect(getItemRows()).toEqual([]);
+    expect(cartState().getItems).toEqual([]);
+  });
+
+  it.each([
+    ["a needsPicker", CHOICE_OFFER, BURGER_ROW],
+    ["a sameOrLess-blocked", SOL_AND_OFFER, SAUCE_ROW],
+  ])("%s attempt still latches auto-apply off (decision 4: any customer offer action)", async (_label, offer, row) => {
+    store.dispatch(setCartItems([{ ...row }]));
+    expect(sessionState().autoApplyOptOut).toBe(false);
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(offer));
+
+    expect(verdict.applied).toBe(false);
+    expect(sessionState().autoApplyOptOut).toBe(true);
+  });
+
+  it("commitPickedFreebies resolves true on success, celebrates and latches", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+    const ok = await runOnce((api) =>
+      api.commitPickedFreebies({ offer: CHOICE_OFFER, picks: [TORTILLA_ENTRY] })
+    );
+
+    expect(ok).toBe(true);
+    expect(cartState().cartOffer._id).toBe("offer-free-sauce-choice");
+    expect(cartState().offerModal).toEqual({
+      isOpen: true,
+      data: { id: "offer-free-sauce-choice", name: "Free Sauce" },
+    });
+    expect(sessionState().autoApplyOptOut).toBe(true);
+  });
+
+  it("commitPickedFreebies: a throwing applyOfferByItem rolls the landed rows back and resolves false", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    // An entity redeemGetItem cannot read: applyOfferByItem rejects.
+    const poisoned = new Proxy(
+      { id: "poison" },
+      {
+        get() {
+          throw new Error("unreadable freebie entity");
+        },
+      }
+    );
+    const picks = [TORTILLA_ENTRY, { ...CAESAR_ENTRY, entities: poisoned }];
+
+    let ok: unknown;
+    const types = await typesDispatchedDuring(async () => {
+      ok = await runOnce((api) => api.commitPickedFreebies({ offer: CHOICE_OFFER, picks }));
+    });
+
+    expect(ok).toBe(false);
+    // The good pick DID land, then the rollback swept it.
+    expect(types).toContain("cart/addItemToCartRdx");
+    expect(types).toContain("cart/deleteItemFromCart");
+    expect(types).not.toContain("cart/applyOffer");
+    expect(getItemRows()).toEqual([]);
+    expect(cartState().getItems).toEqual([]);
+    expect(slotIsEmpty()).toBe(true);
+    expect(cartState().offerModal.isOpen).toBe(false);
+  });
+
+  it("autoApplyOffer → ONE swapCartOffer + markOfferAutoApplied + an OfferAutoApplied event; no celebration, no latch", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+
+    let landed: unknown;
+    const types = await typesDispatchedDuring(async () => {
+      landed = await runOnce((api) => api.autoApplyOffer(FLAT_OFFER as unknown as SavingsOffer));
+    });
+
+    expect(landed).toBe(true);
+    expect(types.filter((t) => t === "cart/swapCartOffer")).toHaveLength(1);
+    expect(types).toContain("offerSession/markOfferAutoApplied");
+    expect(types).not.toContain("cart/openOfferModal");
+    expect(types).not.toContain("offerSession/optOutOfAutoApply");
+    expect(cartState().cartOffer._id).toBe("offer-flat-2");
+    expect(cartState().offerModal.isOpen).toBe(false);
+    expect(sessionState()).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: "offer-flat-2" });
+    expect(mockCapture).toHaveBeenCalledWith("offer_auto_applied", {
+      offer_id: "offer-flat-2",
+      saving: 2,
+      certainty: "exact",
+    });
+  });
+
+  it("autoApplyOffer never replaces an occupied slot", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(applyOffer({ offer: FREE_SALAD_OFFER }));
+
+    const landed = await runOnce((api) => api.autoApplyOffer(FLAT_OFFER as unknown as SavingsOffer));
+
+    expect(landed).toBe(false);
+    expect(cartState().cartOffer._id).toBe("offer-free-salad");
+    expect(sessionState().autoAppliedOfferId).toBeNull();
+  });
+
+  it("removeAppliedOffer latches AND resets the celebration spent key", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    setCelebratedBarKey("offer-flat-2:2.00");
+
+    await runOnce((api) => api.removeAppliedOffer());
+
+    expect(sessionState().autoApplyOptOut).toBe(true);
+    expect(getCelebratedBarKey()).toBeNull();
+    expect(slotIsEmpty()).toBe(true);
+  });
+
+  it("handleCartDrivenRemoval resets the spent key but does NOT latch (a machine path)", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    setCelebratedBarKey("offer-flat-2:2.00");
+
+    await runOnce((api) => api.handleCartDrivenRemoval(false));
+
+    expect(getCelebratedBarKey()).toBeNull();
+    expect(sessionState().autoApplyOptOut).toBe(false);
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
   });
 });

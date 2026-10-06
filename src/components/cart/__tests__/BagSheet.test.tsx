@@ -125,11 +125,57 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
     expect(screen.getByTestId("bag-total")).toHaveTextContent("£15.00");
   });
 
-  it("empty cart auto-exits: clears instructions, empties the cart, and calls onClose (contract A3)", () => {
+  it("empty cart auto-exits once the bag held rows: clears instructions, empties the cart, and calls onClose (contract A3)", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(setCartInstructions("extra ketchup"));
     const { onClose } = renderSheet(true);
+    expect(onClose).not.toHaveBeenCalled();
+
+    act(() => {
+      store.dispatch(setCartItems([]));
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(cartState().instructions).toBe("");
+    expect(cartState().cartItems).toEqual([]);
+  });
+
+  it("an open bag that has not held rows yet (crash-reload: the Dexie rehydrate is still on its way) does NOT exit", () => {
+    store.dispatch(setCartInstructions("extra ketchup"));
+    const { onClose } = renderSheet(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().instructions).toBe("extra ketchup");
+  });
+
+  it("the held-rows latch re-arms: reopened over new rows, the same bag exits again on its next real empty (no rehydrate signal, so the latch is the only gate)", () => {
+    // Mutation verifier: a latch armed once per mount kept a real empty bag
+    // open the second time and no test noticed.
+    const onClose = vi.fn();
+    const sheet = (open: boolean) => (
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <BagSheet open={open} onClose={onClose} />
+        </MemoryRouter>
+      </Provider>
+    );
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const { rerender } = render(sheet(true));
+    act(() => {
+      store.dispatch(setCartItems([]));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Closed onto /menu; the guest adds again and reopens the same bag.
+    rerender(sheet(false));
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    });
+    rerender(sheet(true));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      store.dispatch(setCartItems([]));
+    });
+    expect(onClose).toHaveBeenCalledTimes(2);
     expect(cartState().cartItems).toEqual([]);
   });
 

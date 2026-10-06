@@ -230,7 +230,45 @@
     "removedNewTotal": "أصبح إجمالي طلبك الآن {{amount}}",
     "removedReasonItemsOne": "أضف عنصرًا واحدًا إضافيًا إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
     "removedReasonItemsOther": "أضف {{count}} عناصر إضافية إلى طلبك لتكون مؤهلاً لاستبدال هذه المكافأة",
-    "gotIt": "حسنًا"
+    "gotIt": "حسنًا",
+    "notApplicable": "لا يمكن تطبيق هذه المكافأة على طلبك الحالي",
+    "buyStage": {
+      "addItems": "أضف عناصر",
+      "step": "افتح هذه المكافأة",
+      "subtitleAnd": "أضف كل العناصر أدناه لفتح المكافأة",
+      "subtitleOr": "أضف أي خيار واحد أدناه لفتح المكافأة",
+      "subtitleLeast": "أضف أي {{count}} من الأصناف أدناه — الأرخص يصبح مجانيًا",
+      "addedCount": "تمت إضافة {{have}} من {{need}}",
+      "groupNeed": "أي {{need}} من {{label}}",
+      "groupFallbackLabel": "هذه الأصناف",
+      "hintMoreOne": "أضف صنفًا مؤهلًا واحدًا آخر لفتح المكافأة",
+      "hintMoreOther": "أضف {{count}} أصناف مؤهلة أخرى لفتح المكافأة",
+      "unlocked": "تم فتح المكافأة!",
+      "add": "أضف",
+      "continue": "متابعة",
+      "apply": "طبّق المكافأة",
+      "back": "رجوع",
+      "leastNote": "أرخص صنف مؤهل في طلبك يصبح مجانيًا",
+      "cartEmptyGuard": "احتفظ بصنف واحد على الأقل في طلبك",
+      "loyaltyRowGuard": "أُضيف هذا الصنف كمكافأة ولاء — يمكنك إدارته من حقيبتك",
+      "increase": "أضف واحدًا من {{name}}",
+      "decrease": "أزل واحدًا من {{name}}"
+    },
+    "picker": {
+      "customize": "تخصيص",
+      "customized": "تم التخصيص — اضغط للتغيير",
+      "addFreebie": "أضف إلى المكافأة",
+      "groupSubtitle": "اختر {{count}} عناصر لاستبدالها مع مكافأتك.",
+      "groupHintOne": "اختر عنصرًا واحدًا آخر للمتابعة",
+      "groupHintOther": "اختر {{count}} عناصر أخرى للمتابعة"
+    },
+    "celebrate": {
+      "title": "تم تطبيق المكافأة!",
+      "saving": "أنت توفر {{amount}}"
+    },
+    "auto": {
+      "appliedForYou": "تم تطبيقها لك"
+    }
   },
   "removeItem": {
     "title": "إزالة الصنف",

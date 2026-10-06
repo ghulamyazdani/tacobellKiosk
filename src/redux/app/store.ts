@@ -27,6 +27,7 @@ import {
   recommendationSlice,
   kioskOpenStatusSlice,
   filterSlice,
+  offerSessionSlice,
 } from "../features";
 import { apiSlice } from "./apiSlice";
 // "…/es/storage" (real ESM), not "…/lib/storage" (CJS): under Vite 8/Rolldown
@@ -148,6 +149,16 @@ const persistence: PersistencePolicy = {
         "deploymentCharges",
       ],
     },
+    // Persisted ON PURPOSE (lane "offers", decision 4): a crash-reload keeps
+    // the Dexie cart and the persisted cartOffer, so the auto-apply latch must
+    // survive too — otherwise an offer the customer removed would be
+    // re-applied after the reload. Stuck, the worst case is no auto-apply.
+    // Cleared only by resetSession (both scopes) and RESET_STATE.
+    {
+      slice: "offerSession",
+      scope: "customer",
+      whitelist: ["autoApplyOptOut", "autoAppliedOfferId"],
+    },
     {
       slice: "payment",
       scope: "customer",
@@ -255,6 +266,7 @@ const handle = createKioskStore({
     recommendation: recommendationSlice,
     kioskOpenStatus: kioskOpenStatusSlice,
     filter: filterSlice,
+    offerSession: offerSessionSlice,
     [apiSlice.reducerPath]: apiSlice.reducer,
   },
   persistence,
