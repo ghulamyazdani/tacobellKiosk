@@ -1856,4 +1856,44 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await noRawKeys();
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
+
+  test("E19 CHUNK FAILURE: the lazy /paymentPolling screen never arrives — the staff panel (never blank, never a reload); FINISH → /start, whose release sends one status + one void; no second initiate", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page);
+    const { paytm } = mocks;
+    // The dev server serves the lazy screen as its source module; a build
+    // serves assets/paytmRuntime-<hash>.js, which chunkRecovery never reloads
+    // for (chunkRecovery.test, PaytmPaymentRoute.test).
+    await page.route("**/src/pages/PaytmPayment/paytmRuntime.ts*", (route) => route.abort());
+    await chooseMethod(page, "payment-card");
+    // A reload would drop this marker.
+    await page.evaluate(() => {
+      (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
+    });
+    await freezeClock(page);
+    await page.getByTestId("receipt-none").click();
+
+    const panel = page.getByRole("alertdialog", { name: en.paytm.unknown.title });
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/paymentPolling$/);
+    await expect(panel).toContainText(paytm.bodies.edcInit[0].posBillNo.slice(-5));
+    await expect(page.getByTestId("paytm-screen")).toHaveCount(0);
+    expect(
+      await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)
+    ).toBe(true);
+    // Nothing on the panel polls or voids.
+    expect(paytm.counts.edcStatus).toBe(0);
+    expect(paytm.counts.edcCancel).toBe(0);
+
+    await page.getByTestId("paytm-unavailable-finish").click();
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    // /start's release: one status read, still pending → one void.
+    await expect.poll(() => paytm.counts.edcCancel).toBe(1);
+    expect(paytm.counts.edcStatus).toBe(1);
+    expectEdcReadsCarry(paytm);
+    expect((await paymentSlice(page)).posBillNo).toBe("");
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
 });

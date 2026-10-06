@@ -44,7 +44,7 @@ describe("planCrashRecovery (P9b R9)", () => {
   useFcmRegistration reports "import" and leaves FCM off, startAnalytics leaves
   analytics off. Every other chunk keeps the P9b recovery.
 */
-describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P9e/P9f)", () => {
+describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks are exempt (P9e/P9f/P8b)", () => {
   const reload = vi.fn();
 
   /** What Vite's preload helper dispatches for a chunk that failed to load. */
@@ -88,6 +88,16 @@ describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P
     [
       "the PostHog dev-server module",
       "Failed to fetch dynamically imported module: http://localhost:5373/src/utils/analytics/posthogRuntime.ts",
+    ],
+    // P8b: /paymentPolling loads right after an initiate — a payment may be
+    // live, so PaytmPaymentRoute shows its staff panel instead of a reload.
+    [
+      "the Paytm screen production chunk",
+      "Failed to fetch dynamically imported module: https://kiosk.example/assets/paytmRuntime-DOoFgvtw.js",
+    ],
+    [
+      "the Paytm screen dev-server module",
+      "Failed to fetch dynamically imported module: http://localhost:5373/src/pages/PaytmPayment/paytmRuntime.ts",
     ],
   ])("%s failing: handled (no crash screen) but NEVER reloads", (_label, message) => {
     const event = preloadError(new Error(message));

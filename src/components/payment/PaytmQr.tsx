@@ -1,8 +1,9 @@
 import { useTranslation } from "react-i18next";
 // NAMED + STATIC on purpose. Named: the package is CJS, and a default import
 // under Vite 8 / Rolldown yields the namespace object, not the component
-// (src/types/react-qr-code.d.ts). Static: a lazy chunk that fails to load
-// trips chunkRecovery, which reloads the kiosk — mid-payment.
+// (src/types/react-qr-code.d.ts). Static: it rides in the /paymentPolling
+// chunk (paytmRuntime, loaded before any poll — see PaytmPaymentRoute); a
+// chunk of its own would be a second failure point mid-payment.
 import { QRCode } from "react-qr-code";
 import { ErrorBoundary } from "../../ErrorBoundary";
 

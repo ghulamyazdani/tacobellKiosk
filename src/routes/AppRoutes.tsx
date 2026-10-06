@@ -4,6 +4,7 @@ import ProtectedRoute from "./ProtectedRoute";
 import ProtectedRouteIfAuthenticated from "./ProtectedRouteIfAuthenticated";
 import IdleGuard from "./IdleGuard";
 import PaytmResumeGuard from "./PaytmResumeGuard";
+import PaytmPaymentRoute from "./PaytmPaymentRoute";
 import Registration from "../pages/Registration";
 import StartScreen from "../pages/StartScreen";
 import SecondLayout from "../pages/SecondLayout";
@@ -16,7 +17,6 @@ import CustomerName from "../pages/CustomerName";
 import Tent from "../pages/Tent";
 import PaymentSelection from "../pages/PaymentSelection";
 import ReceiptPreference from "../pages/ReceiptPreference";
-import PaytmPayment from "../pages/PaytmPayment";
 import OrderSuccess from "../pages/OrderSuccess";
 import NotFound from "../pages/NotFound";
 import MakeItAMealPrompt from "../components/makeItAMeal/MakeItAMealPrompt";
@@ -288,8 +288,9 @@ export function AppRoutes() {
             </Route>
             {/* P8b Paytm settlement. Inside IdleGuard on purpose (the fork
                 keeps it outside): the screen holds idle only while a payment
-                is in flight, so its end panels still time out. */}
-            <Route path="/paymentPolling" element={<PaytmPayment />} />
+                is in flight, so its end panels still time out. A lazy chunk
+                (paytmRuntime): see PaytmPaymentRoute. */}
+            <Route path="/paymentPolling" element={<PaytmPaymentRoute />} />
             <Route path="/orderSuccess" element={<OrderSuccess />} />
             {/* Inside the guard on purpose: a stray URL self-heals to Splash. */}
             <Route path="*" element={<NotFound />} />
