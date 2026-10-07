@@ -299,7 +299,7 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     const close = screen.getByTestId("rewards-close");
 
     expect(
-      close.closest('[class*="h-[min(1470px,calc(100%_-_96px))]"]')
+      close.closest('[class*="h-[min(1480px,calc(100%_-_96px))]"]')
     ).not.toBeNull();
     expect(close.closest(".overflow-y-auto")).toBeNull();
     expect(

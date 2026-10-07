@@ -21,6 +21,7 @@ import {
   type BuyStageView,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
 import { canOfferBuyStage } from "@cx-sdk/ordering/offer/offerCommitRules";
+import { isOfferLockedByLoyaltyReward } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
@@ -109,6 +110,10 @@ const bellMaskStyle: CSSProperties = {
 
 const noop = () => undefined;
 
+/** Only the slice the D3 lock reads (house pattern). */
+const selectCartItems = (state: { cart?: { cartItems?: unknown } }): unknown =>
+  state?.cart?.cartItems;
+
 interface SheetBodyProps {
   onClose: () => void;
   onNeedsPicker?: (offer: SavingsOffer) => void;
@@ -128,6 +133,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     | null
     | undefined;
   const appliedOffer = useSelector(selectCartOffer) as SavingsOffer | undefined;
+  const cartItems = useSelector(selectCartItems);
   const currencySettings = useSelector(selectCurrency) as
     | { symbol?: string; currency_symbol?: string }
     | null
@@ -191,7 +197,12 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     };
   }, []);
 
-  const savable = eligibleRows.length > 0;
+  // D3 (fork parity): a XENO reward in the bag locks offers while none is
+  // applied — every row inert, no rail, no ADD ITEMS, SAVE disabled. The
+  // apply core enforces the same lock (a race still lands on the inline
+  // not-applicable line).
+  const lockedByReward = isOfferLockedByLoyaltyReward(cartItems, appliedOffer);
+  const savable = !lockedByReward && eligibleRows.length > 0;
 
   /**
    * SAVE SELECTION (locked decision 2): unchanged selection → just close;
@@ -357,7 +368,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
 
   const renderRow = (row: RankedOffer<SavingsOffer>, interactive: boolean) => {
     const id = String(row.offer?._id ?? "");
-    const view = onAddItems ? buyStageViews.get(id) : undefined;
+    const view =
+      onAddItems && !lockedByReward ? buyStageViews.get(id) : undefined;
     return (
       <OfferRow
         key={id}
@@ -365,6 +377,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         selected={interactive && pickedId === id}
         applied={appliedId === id}
         currency={currency}
+        blocked={lockedByReward}
         // Locked/gone rows render a div that ignores this latch; only their
         // ADD ITEMS button reads it.
         disabled={committing}
@@ -392,33 +405,34 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
-      {/* Height is capped by the containing block (the bag's inset-0 root
-          → Menu's h-full root → the reach container) minus a 96 px scrim
-          band — Tier2's top-[96px]. Never binds on the 1920 stage (1824 >
-          1470); in the 1122 ADA reach zone the sheet is 1026, so the X and
-          SAVE stay on screen and only the list scrolls. */}
+      {/* Height (Figma 1:3842: 1480) is capped by the containing block (the
+          bag's inset-0 root → Menu's h-full root → the reach container)
+          minus a 96 px scrim band — Tier2's top-[96px]. Never binds on the
+          1920 stage (1824 > 1480); in the 1122 ADA reach zone the sheet is
+          1026, so the X and SAVE stay on screen and only the list scrolls. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="rewards-sheet-title"
+        aria-describedby={lockedByReward ? "rewards-loyalty-lock" : undefined}
         style={{ animation: "tbRewardsSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
-        <div className="relative shrink-0 pb-[32px] pt-[54px]">
-          <div className="flex items-center justify-center gap-[16px]">
+        <div className="relative shrink-0 pb-[64px] pt-[54px]">
+          <div className="flex items-center justify-center gap-[8px] px-[104px]">
             <span
               aria-hidden="true"
-              className="h-[36px] w-[40px] bg-tb-purple"
+              className="h-[39px] w-[44px] shrink-0 bg-tb-purple"
               style={bellMaskStyle}
             />
             <p
               id="rewards-sheet-title"
-              className="tb-display text-center text-[40px] leading-[40px] tracking-[-1px] text-tb-purple"
+              className="tb-display min-w-0 text-center text-[48px] leading-[44px] tracking-[-1px] text-tb-purple"
             >
               {t("offers.title")}
             </p>
           </div>
-          <p className="mt-[16px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80">
+          <p className="mt-[16px] px-[104px] text-center text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
             {t("offers.subtitle")}
           </p>
           <button
@@ -433,6 +447,18 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Design language (no frame): why every row is inert — never a
+              "remove the reward" instruction (a XENO row is removable only
+              when out of stock, fork parity). */}
+          {lockedByReward && (
+            <p
+              id="rewards-loyalty-lock"
+              data-testid="rewards-loyalty-lock"
+              className="mx-[24px] mb-[24px] text-center text-[24px] leading-[28px] tracking-[-0.12px] text-tb-pink-dark"
+            >
+              {t("loyalty.offersLocked")}
+            </p>
+          )}
           {ranked.length === 0 ? (
             <div className="flex flex-col items-center gap-[12px] px-[48px] py-[120px] text-center">
               <p className="text-[28px] font-bold text-black">
@@ -444,9 +470,12 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
             </div>
           ) : (
             <div
-              role="radiogroup"
-              aria-label={t("offers.subtitle")}
-              className="border-t border-tb-grey-4 px-[24px]"
+              // A radiogroup only while it holds a radio (axe
+              // aria-required-children): not under the lock, not without
+              // eligible rows.
+              role={savable ? "radiogroup" : undefined}
+              aria-label={savable ? t("offers.subtitle") : undefined}
+              className="px-[24px]"
             >
               {/* Figma section order (locked decision 3): eligible (top-ranked
                   first), then locked, then gone — one flat list. */}
@@ -456,7 +485,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
             </div>
           )}
 
-          {railShort !== null && railItems.length > 0 && (
+          {!lockedByReward && railShort !== null && railItems.length > 0 && (
             <section
               data-testid="offer-suggested-rail"
               className="w-full pb-[24px] pt-[48px]"
@@ -518,6 +547,10 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
  * offer. Reads Redux + useOfferSavings directly; commits through the P7b
  * apply core (useOfferApply). Locked bogoBuySide rows that a buy stage can
  * finish carry ADD ITEMS, handed to the page via onAddItems.
+ *
+ * Lane loyalty-visual: Figma 1:3842 geometry (D2) and the D3 lock — with a
+ * XENO reward in the bag and no offer applied, a pink line explains that
+ * offers can't be combined with it and every row is inert.
  */
 export default function RewardsSheet({
   open,

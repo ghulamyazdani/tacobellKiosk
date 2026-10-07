@@ -28,6 +28,12 @@ export interface OfferRowProps {
    * kind ignores it and stays informational.
    */
   onAddItems?: () => void;
+  /**
+   * D3 lock (a XENO reward in the bag, no offer applied): every row — also
+   * an eligible one — renders the inert div, dimmed and aria-disabled, with
+   * no radio, nudge or ADD ITEMS.
+   */
+  blocked?: boolean;
 }
 
 const money = (currency: string, value: number): string =>
@@ -35,10 +41,11 @@ const money = (currency: string, value: number): string =>
 
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired), so the
- * 84px thumb renders the brand bell, purple-tinted via CSS mask, as a
- * placeholder over the grey plate. The url() is quoted (as in
- * OfferAppliedCelebration): the inlined SVG data URI carries ' ( ), so an
- * unquoted url() is invalid and the bell paints as a solid square.
+ * 152px plate renders the brand bell, purple-tinted via CSS mask, as a
+ * placeholder over the grey plate (the bag applied-row precedent). The url()
+ * is quoted (as in OfferAppliedCelebration): the inlined SVG data URI carries
+ * ' ( ), so an unquoted url() is invalid and the bell paints as a solid
+ * square.
  */
 const bellMaskStyle: CSSProperties = {
   WebkitMaskImage: `url("${tbBell}")`,
@@ -62,6 +69,10 @@ const bellMaskStyle: CSSProperties = {
  *    from lockedGapPresentation().short.
  *  - eligible rows carry a radio (decision 2 — radio + SAVE SELECTION, not
  *    the fork's instant tap); locked rows no radio; gone rows struck.
+ *  - geometry (lane loyalty-visual D2, Figma 1:3842): hairline above each
+ *    row inside the 24 top gap (pt-23 → 200 pitch), 152 plate, title 32/36,
+ *    second line 24/24; locked rows top-align with the nudge in a 206
+ *    column (D3-blocked rows show no nudge, so they centre like the rest).
  *
  * Presentational only: no Redux, no apply logic — the sheet owns selection
  * state and the commit.
@@ -74,6 +85,7 @@ export default function OfferRow({
   onPick,
   disabled,
   onAddItems,
+  blocked = false,
 }: OfferRowProps) {
   const { t } = useTranslation();
 
@@ -153,7 +165,7 @@ export default function OfferRow({
   })();
 
   const nudge = ((): string | null => {
-    if (!locked || !presentation) return null;
+    if (blocked || !locked || !presentation) return null;
     if (presentation.labelKind === "minBill" && presentation.short > 0) {
       return t("offers.addNudge", {
         amount: money(currency, presentation.short),
@@ -166,23 +178,23 @@ export default function OfferRow({
   })();
 
   const showAddItems =
-    !!onAddItems && presentation?.labelKind === "bogoBuySide";
+    !blocked && !!onAddItems && presentation?.labelKind === "bogoBuySide";
 
   const inner = (
     <>
-      {/* 84px thumb — grey plate + tinted bell placeholder (photos deferred). */}
-      <span className="flex h-[84px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
+      {/* 152px plate — grey plate + tinted bell placeholder (photos deferred). */}
+      <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
         <span
           aria-hidden="true"
-          className="h-[40px] w-[45px] bg-tb-purple opacity-25"
+          className="h-[64px] w-[72px] bg-tb-purple opacity-25"
           style={bellMaskStyle}
         />
       </span>
 
-      <span className="flex min-w-0 flex-1 flex-col items-start gap-[8px] text-left">
+      <span className="flex min-w-0 flex-1 flex-col items-start gap-[10px] text-left">
         <span className="flex flex-wrap items-center gap-[12px]">
           <span
-            className={`text-[24px] font-bold leading-[28px] tracking-[-0.5px] text-black ${
+            className={`text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black ${
               gone ? "line-through" : ""
             }`}
           >
@@ -200,7 +212,7 @@ export default function OfferRow({
           // physical text-left.
           <span
             dir="auto"
-            className="text-start text-[20px] leading-[24px] text-tb-ink-purple/70"
+            className="text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
           >
             {secondLine}
           </span>
@@ -208,9 +220,12 @@ export default function OfferRow({
       </span>
 
       {nudge ? (
+        // A wrapping LEAF (P9f rule): start-aligned like Figma 1:3824 in
+        // English; an Arabic nudge resolves RTL and right-aligns.
         <span
           data-testid={`offer-row-nudge-${id}`}
-          className="w-[240px] shrink-0 text-right text-[18px] font-medium leading-[22px] text-tb-pink-dark"
+          dir="auto"
+          className="w-[206px] shrink-0 pt-[48px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-pink-dark"
         >
           {nudge}
         </span>
@@ -228,7 +243,8 @@ export default function OfferRow({
           {t("offers.buyStage.addItems")}
         </button>
       ) : (
-        entry.eligible && (
+        entry.eligible &&
+        !blocked && (
           <span
             data-testid={`offer-radio-${id}`}
             aria-hidden="true"
@@ -245,7 +261,7 @@ export default function OfferRow({
     </>
   );
 
-  if (entry.eligible) {
+  if (entry.eligible && !blocked) {
     return (
       <button
         type="button"
@@ -254,7 +270,7 @@ export default function OfferRow({
         data-testid={`offer-row-${id}`}
         disabled={disabled}
         onClick={onPick}
-        className={`flex min-h-[44px] w-full items-center gap-[24px] border-b border-tb-grey-4 py-[24px] text-left ${
+        className={`flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
           disabled ? "opacity-60" : ""
         }`}
       >
@@ -263,15 +279,18 @@ export default function OfferRow({
     );
   }
 
-  // Locked / gone rows are informational, never targets — a div, not a
-  // disabled button (nothing to press, nothing to announce as pressable).
-  // A bogoBuySide row's ADD ITEMS is its own button inside the div.
+  // Locked / gone / D3-blocked rows are informational, never targets — a
+  // div, not a disabled button (nothing to press, nothing to announce as
+  // pressable). A bogoBuySide row's ADD ITEMS is its own button inside the
+  // div. Gone and blocked rows are inactive (aria-disabled, dimmed — exempt
+  // from WCAG 1.4.3).
+  const inactive = gone || blocked;
   return (
     <div
       data-testid={`offer-row-${id}`}
-      aria-disabled={gone ? "true" : undefined}
-      className={`flex w-full items-center gap-[24px] border-b border-tb-grey-4 py-[24px] ${
-        gone ? "opacity-50" : ""
+      aria-disabled={inactive ? "true" : undefined}
+      className={`flex w-full ${locked && !blocked ? "items-start" : "items-center"} gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] ${
+        inactive ? "opacity-50" : ""
       }`}
     >
       {inner}

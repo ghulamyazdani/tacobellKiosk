@@ -640,3 +640,148 @@ describe("BagSheet — buy-stage hand-offs", () => {
     expect(screen.getByTestId("buy-stage-guard")).toBeEmptyDOMElement();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Lane loyalty-visual: a XENO reward in the bag (an ordinary discounted
+ * cart row — it never touches cartOffer).
+ *  - D3: the machine never auto-applies an offer while the reward is in the
+ *    bag and the slot is empty.
+ *  - F1: the applied-offer row, its pop key and the celebration carry the
+ *    OFFER's own saving; the Discounts line and ORDER & PAY keep the total.
+ * ------------------------------------------------------------------ */
+
+/** Redeemed 100 % XENO reward: £17 discounted to £0 (redeemItem shape). */
+const REWARD_ROW: Row = {
+  id: "5dd1093829754a432f2c32e2",
+  itemId: "lr-1",
+  uniqueItemId: "lr-1-u",
+  name: "Greek Salad",
+  quantity: 1,
+  type: "ITEM",
+  isLoyaltyItem: true,
+  isRedeemed: true,
+  coupon_code: "static6562",
+  discount_type: "percentage",
+  discount_value: 100,
+  price: 0,
+  total_price: 0,
+  undiscounted_price: 17,
+  undiscounted_total_price: 17,
+  extra_fields: [{ name: "Points Value", value: 3000 }],
+  customizations: {},
+};
+const FLAT_TWO = flat("flat-two", 2);
+const discountsLine = () => screen.getByTestId("bag-discounts");
+
+describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", () => {
+  beforeEach(() => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+
+  it("D3: a flagged offer is never auto-applied while the reward is in the bag and the slot is empty — across cart edits and a reopen; it lands once the reward leaves", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    store.dispatch(setFilteredOffers([AUTO_FLAT]));
+    const spy = vi.spyOn(store, "dispatch");
+    const view = render(<BagUi />);
+    expect(slotId()).toBeUndefined();
+
+    setCart([{ ...BURGER_ROW }, drinkRow(2), { ...REWARD_ROW }]);
+    view.rerender(<BagUi open={false} />);
+    view.rerender(<BagUi open />);
+
+    expect(slotId()).toBeUndefined();
+    expect(swapCount(spy)).toBe(0);
+    expect(state().offerSession).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: null });
+
+    // Control: the same bag without the reward is auto-applied.
+    setCart([{ ...BURGER_ROW }, drinkRow(2)]);
+    await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
+  });
+
+  it("F1: offer + reward — the applied row shows only the offer's £2; Discounts and ORDER & PAY keep the £19 total", () => {
+    store.dispatch(applyOffer({ offer: FLAT_TWO }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    render(<BagUi />);
+
+    const applied = screen.getByTestId("bag-rewards-applied");
+    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(applied).toHaveTextContent("−£2.00");
+    expect(applied).not.toHaveTextContent("19.00");
+    // Bill: 8.60 + 17.00 = 25.60; discounts 17.00 (reward) + 2.00 (offer).
+    expect(screen.getByTestId("bag-subtotal")).toHaveTextContent("£25.60");
+    expect(discountsLine()).toHaveTextContent("−£19.00");
+    expect(screen.getByTestId("bag-total")).toHaveTextContent("£6.60");
+    const pay = screen.getByTestId("bag-pay");
+    expect(pay).toHaveTextContent("Order & Pay");
+    expect(pay).toHaveTextContent("£6.60");
+  });
+
+  it("F1: offer only — the row and the Discounts line both read the offer's £2 (unchanged)", () => {
+    store.dispatch(applyOffer({ offer: FLAT_TWO }));
+    render(<BagUi />);
+
+    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("−£2.00");
+    expect(discountsLine()).toHaveTextContent("−£2.00");
+    expect(screen.getByTestId("bag-pay")).toHaveTextContent("Order & Pay");
+  });
+
+  it("F1: reward only — no applied row; the Discounts line carries the reward's £17", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    render(<BagUi />);
+
+    expect(screen.queryByTestId("bag-rewards-applied")).toBeNull();
+    expect(discountsLine()).toHaveTextContent("−£17.00");
+    expect(screen.getByTestId("bag-total")).toHaveTextContent("£8.60");
+    // The CTA label follows the bill's discount, the reward's included.
+    expect(screen.getByTestId("bag-pay")).toHaveTextContent("Order & Pay");
+  });
+
+  it("F1: an applied offer that saves nothing never borrows the reward's saving — no Save line, no £17 on its row", () => {
+    store.dispatch(applyOffer({ offer: flat("flat-zero", 0) }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    render(<BagUi />);
+
+    const applied = screen.getByTestId("bag-rewards-applied");
+    expect(within(applied).queryByText(/^Save /)).toBeNull();
+    expect(applied).not.toHaveTextContent("17.00");
+    expect(discountsLine()).toHaveTextContent("−£17.00");
+  });
+
+  it("F1: the applied-row pop does NOT replay when the reward lands under an unchanged offer (barKey = the offer's own saving)", () => {
+    const view = render(<BagUi />);
+    act(() => void store.dispatch(applyOffer({ offer: FLAT_TWO })));
+    expect(savePop()).not.toBeNull();
+    view.rerender(<BagUi open={false} />);
+    view.rerender(<BagUi open />);
+    expect(savePop()).toBeNull();
+    const line = saveLine();
+
+    setCart([{ ...BURGER_ROW }, { ...REWARD_ROW }]);
+
+    expect(discountsLine()).toHaveTextContent("−£19.00"); // the total moved…
+    expect(saveLine()).toBe(line); // …but the row was not remounted
+    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(savePop()).toBeNull();
+    expect(pulse()).toBeNull();
+  });
+
+  it("F1: a SAVE swap with the reward in the bag (allowed: an offer was applied first) celebrates the NEW offer's own saving", async () => {
+    store.dispatch(setFilteredOffers([PLAIN_FLAT, FLAT_TWO]));
+    store.dispatch(applyOffer({ offer: PLAIN_FLAT }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    render(<BagUi />);
+    expect(saveLine()).toHaveTextContent("Save £1.00");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-flat-two"));
+    await userEvent.click(screen.getByTestId("rewards-save"));
+
+    await waitFor(() => expect(slotId()).toBe("flat-two"));
+    const card = await screen.findByTestId("offer-applied-celebration");
+    expect(card).toHaveTextContent("You save £2.00");
+    expect(card).not.toHaveTextContent("19.00");
+    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(discountsLine()).toHaveTextContent("−£19.00");
+  });
+});

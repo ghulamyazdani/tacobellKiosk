@@ -3,7 +3,7 @@
  * P7+ domain passes. Do not add NEW anys.
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OfferRow from "../OfferRow";
 import "../../../i18n";
@@ -309,5 +309,118 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
     renderRow({ onAddItems: vi.fn() });
     expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveAttribute("role", "radio");
     expect(screen.queryByTestId("offer-row-add-items-offer-flat-2")).not.toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane loyalty-visual.
+ *  - D3 `blocked` (a XENO reward in the bag, no offer applied): every row
+ *    — an eligible one too — is the inert div, aria-disabled and dimmed,
+ *    with no radio, nudge or ADD ITEMS; it centres (no nudge column).
+ *  - D2 geometry (Figma 1:3842): hairline above each row inside the 24 gap
+ *    (200 pitch), 152 plate, 32/36 title, 24/24 line, 206 nudge column.
+ * ------------------------------------------------------------------ */
+describe("OfferRow — D3 blocked + D2 geometry (lane loyalty-visual)", () => {
+  const MIN_BILL_LOCKED = {
+    offer: PERCENT_OFFER,
+    saving: { amount: 0, certainty: "exact", kind: "percentComplete", requiresChoice: false, lockReason: "minBill" },
+    eligible: false,
+    gap: { reason: "minBill", amountShort: 16.4 },
+  };
+  const BOGO_LOCKED = {
+    offer: {
+      ...offerBase,
+      _id: "offer-bogo",
+      name: "Buy 2 sauces get a Caesar free",
+      type: { name: "item", value: 0 },
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [{ item: { baseItemId: "tortilla-sauce" }, quantity: 2, relation: "and" }],
+      },
+    },
+    saving: { amount: 2, certainty: "exact", kind: "bogo", requiresChoice: false, lockReason: "bogoBuySide" },
+    eligible: false,
+    gap: { reason: "bogoBuySide" },
+  };
+  const GONE = {
+    offer: { ...FLAT_OFFER, _id: "offer-gone", name: "Expired offer", isAvailable: false },
+    saving: { amount: 1, certainty: "exact", kind: "amountComplete", requiresChoice: false, lockReason: "unavailable" },
+    eligible: false,
+    gap: { reason: "unavailable" },
+  };
+
+  it("blocked eligible row: the inert div — aria-disabled, dimmed, no radio; the saving still reads; a tap never picks", async () => {
+    const { onPick } = renderRow({ blocked: true, selected: true });
+    const row = screen.getByTestId("offer-row-offer-flat-2");
+
+    expect(row.tagName).toBe("DIV");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveClass("opacity-50", "items-center");
+    expect(row).not.toHaveAttribute("role");
+    expect(row).not.toHaveAttribute("aria-checked");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByTestId("offer-radio-offer-flat-2")).toBeNull();
+    expect(row).toHaveTextContent("£2 off your order");
+    expect(row).toHaveTextContent("Save £2.00");
+
+    await userEvent.click(row);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("blocked locked minBill row: no nudge, and it centres; unblocked it keeps the nudge, top-aligned and live", () => {
+    renderRow({ entry: MIN_BILL_LOCKED, blocked: true });
+    const row = screen.getByTestId("offer-row-offer-percent-25");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveClass("opacity-50", "items-center");
+    expect(row).not.toHaveClass("items-start");
+    expect(screen.queryByTestId("offer-row-nudge-offer-percent-25")).toBeNull();
+    cleanup();
+
+    renderRow({ entry: MIN_BILL_LOCKED });
+    const live = screen.getByTestId("offer-row-offer-percent-25");
+    expect(live).not.toHaveAttribute("aria-disabled");
+    expect(live).not.toHaveClass("opacity-50");
+    expect(live).toHaveClass("items-start");
+    expect(screen.getByTestId("offer-row-nudge-offer-percent-25")).toBeInTheDocument();
+  });
+
+  it("blocked bogoBuySide row handed onAddItems: no ADD ITEMS (no button at all)", () => {
+    const onAddItems = vi.fn();
+    renderRow({ entry: BOGO_LOCKED, onAddItems, blocked: true });
+    const row = screen.getByTestId("offer-row-offer-bogo");
+
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByTestId("offer-row-add-items-offer-bogo")).toBeNull();
+    expect(row.querySelector("button")).toBeNull();
+  });
+
+  it("blocked gone row: still struck, inactive and dimmed", () => {
+    renderRow({ entry: GONE, blocked: true });
+    const row = screen.getByTestId("offer-row-offer-gone");
+
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveClass("opacity-50");
+    expect(screen.getByText("Expired offer")).toHaveClass("line-through");
+    expect(row).toHaveTextContent("Not available right now");
+  });
+
+  it("D2: both row kinds carry the hairline ABOVE inside the 24 gap, the 152 plate, 32/36 title and 24/24 line; the nudge is the 206 column", () => {
+    renderRow();
+    const button = screen.getByTestId("offer-row-offer-flat-2");
+    expect(button).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]", "gap-[24px]");
+    expect(button).not.toHaveClass("border-b");
+    expect(button.querySelector(".h-\\[152px\\].w-\\[152px\\]")).not.toBeNull();
+    expect(screen.getByText("£2 off your order")).toHaveClass("text-[32px]", "leading-[36px]", "font-medium", "capitalize");
+    expect(screen.getByText("Save £2.00")).toHaveClass("text-[24px]", "leading-[24px]", "text-tb-ink-purple");
+    cleanup();
+
+    renderRow({ entry: MIN_BILL_LOCKED });
+    const div = screen.getByTestId("offer-row-offer-percent-25");
+    expect(div).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]");
+    expect(div.querySelector(".h-\\[152px\\].w-\\[152px\\]")).not.toBeNull();
+    const nudge = screen.getByTestId("offer-row-nudge-offer-percent-25");
+    expect(nudge).toHaveClass("w-[206px]", "pt-[48px]", "text-[24px]", "leading-[24px]", "text-start");
+    // A wrapping leaf: start-aligned in English, right-aligned when Arabic resolves RTL.
+    expect(nudge).toHaveAttribute("dir", "auto");
   });
 });

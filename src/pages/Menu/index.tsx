@@ -2,7 +2,7 @@
  * The converted menu tree flows through untyped from the legacy converters;
  * typed with the SDK menu types in the P6 pass. Do not add NEW anys.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -15,8 +15,10 @@ import {
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
+  closeLoyaltyItemsModal,
   openLoyaltyItemsModal,
   selectCoupons,
+  selectLoyaltyItemsModal,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
 import {
@@ -47,11 +49,45 @@ import BagSheet from "../../components/cart/BagSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import ErrorModal from "../../components/common/ErrorModal";
 import LoyaltyLoginModal from "../../components/loyalty/LoyaltyLoginModal";
-import LoyaltyRewardsSheet from "../../components/loyalty/LoyaltyRewardsSheet";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
 import LoyaltyErrorModal from "../../components/loyalty/LoyaltyErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { ErrorBoundary } from "../../ErrorBoundary";
+
+// D9 — the Xeno rewards sheet rides the ONE lazy UI chunk (bagLazyParts: a
+// second dynamic entry grows the boot path). `await import()`, never
+// `.then`: a failed chunk must reach chunkRecovery.
+const LoyaltyRewardsSheet = lazy(async () => ({
+  default: (await import("../../components/cart/bagLazyParts"))
+    .LoyaltyRewardsSheet,
+}));
+
+/**
+ * The rewards sheet while its code is not here (still loading, or a failed
+ * chunk inside chunkRecovery's no-reload window): open → its own scrim,
+ * closing like it; closed → nothing. It only closes the sheet — never
+ * navigates, never resets, never holds idle (a stalled download must not
+ * trap the guest or the idle timer). Its own component: the open flag
+ * re-renders this button only, never Menu's card grid.
+ */
+function LoyaltyRewardsFallback() {
+  const { t } = useTranslation();
+  const dispatch = useDispatch();
+  const open = Boolean(
+    (useSelector(selectLoyaltyItemsModal) as { isOpen?: boolean } | undefined)
+      ?.isOpen
+  );
+  if (!open) return null;
+  return (
+    <button
+      type="button"
+      data-testid="loyalty-rewards-loading"
+      aria-label={t("loyalty.close")}
+      onClick={() => dispatch(closeLoyaltyItemsModal())}
+      className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
+    />
+  );
+}
 
 /**
  * Menu browse — Figma "Menu-basic agency" (1:2595): category rail + item
@@ -523,8 +559,16 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           the login modal both open it by dispatching
           openLoyaltyItemsModal({isTimerOn:true}), and it reads that slice
           state itself — which is also how the post-lookup auto-open lands
-          when the guest arrives here from /phone. */}
-      <LoyaltyRewardsSheet />
+          when the guest arrives here from /phone. It is lazy (D9) and
+          ALWAYS mounted (null while closed), so its chunk loads at /menu
+          entry; the local boundary keeps a failed chunk from crashing /menu
+          (LoyaltyRewardsFallback, z-50, stands in for it). No key on either
+          boundary: a remount would drop the parked OTP step. */}
+      <ErrorBoundary fallback={<LoyaltyRewardsFallback />}>
+        <Suspense fallback={<LoyaltyRewardsFallback />}>
+          <LoyaltyRewardsSheet />
+        </Suspense>
+      </ErrorBoundary>
       <LoyaltyLoginModal
         open={loyaltyLoginOpen}
         onClose={() => setLoyaltyLoginOpen(false)}

@@ -20,6 +20,7 @@ import {
 } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { isSameOrLessViolated } from "@cx-sdk/ordering/offer/offerCommitRules";
+import { getBillOfferDiscount } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import {
   addLoyaltyPoints,
   selectCoupons,
@@ -852,10 +853,13 @@ export default function BagSheet({
     bill && Object.keys(bill).length > 0
       ? Number(bill.getTotalDiscount?.() ?? 0)
       : 0;
+  // F1: the applied offer row and its celebration show the OFFER's own
+  // saving — a XENO reward's item discount is in the total, not the offer's.
+  const offerDiscount = getBillOfferDiscount(bill);
   const bestRankedName: string = rankedOffers[0]?.offer?.name ?? "";
   const sheetHeight = adaActive ? ADA_SHEET_HEIGHT : BAG_SHEET_HEIGHT;
   // One celebration per applied VALUE (see AppliedRowPop).
-  const barKey = `${cartOffer?._id}:${appliedDiscount.toFixed(2)}`;
+  const barKey = `${cartOffer?._id}:${offerDiscount.toFixed(2)}`;
   const loyaltyOn = getIsLoyaltyOn();
 
   // The other order type's pipeline (first in list order: not the current
@@ -1037,14 +1041,14 @@ export default function BagSheet({
                               {t("offers.auto.appliedForYou")}
                             </span>
                           )}
-                          {appliedDiscount > 0 && (
+                          {offerDiscount > 0 && (
                             <p
                               className={`text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple ${
                                 play ? "tb-chip-pop" : ""
                               }`}
                             >
                               {t("offers.save", {
-                                amount: `${currency}${appliedDiscount.toFixed(2)}`,
+                                amount: `${currency}${offerDiscount.toFixed(2)}`,
                               })}
                             </p>
                           )}
@@ -1062,7 +1066,7 @@ export default function BagSheet({
                         </div>
                         <p className="shrink-0 text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
                           −{currency}
-                          {appliedDiscount.toFixed(2)}
+                          {offerDiscount.toFixed(2)}
                         </p>
                         <button
                           type="button"
@@ -1283,7 +1287,7 @@ export default function BagSheet({
           mount, so an apply that lands while the chunk loads still plays. */}
       <Suspense fallback={null}>
         <OfferAppliedCelebration
-          discount={appliedDiscount}
+          discount={offerDiscount}
           currency={currency}
           sheetHeight={sheetHeight}
         />

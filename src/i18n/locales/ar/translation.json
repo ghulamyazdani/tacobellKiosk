@@ -318,7 +318,11 @@
     "back": "رجوع",
     "successTitle": "المكافآت في الطريق",
     "sealText": "مكافآت تاكو بيل",
-    "tryAgain": "حاول مرة أخرى"
+    "tryAgain": "حاول مرة أخرى",
+    "pointsBalanceLine": "لديك {{points}} نقطة",
+    "pointsBalanceLineAlias": "لديك {{points}} {{alias}}",
+    "pointsCostAlias": "\u200f{{points}} {{alias}}",
+    "offersLocked": "لا يمكن الجمع بين العروض والمكافأة المستبدلة"
   },
   "phone": {
     "title": "ما هو رقم هاتفك؟",

@@ -318,7 +318,11 @@
     "back": "Back",
     "successTitle": "Rewards Incoming",
     "sealText": "Taco Bell Rewards",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "pointsBalanceLine": "You have {{points}} points",
+    "pointsBalanceLineAlias": "You have {{points}} {{alias}}",
+    "pointsCostAlias": "{{points}} {{alias}}",
+    "offersLocked": "Offers can't be combined with a redeemed reward"
   },
   "phone": {
     "title": "What's your number?",

@@ -497,16 +497,18 @@ test.describe("Post-P9 tenant recommendations (bag rail)", () => {
     // Precondition: the tenant list IS loaded.
     await expect.poll(() => tenantMapKeys(page)).toEqual([CHEESE_BURGER]);
     expect(s3.requests).toHaveLength(1);
-    await startOrderToMenu(page);
-    await addCheeseBurgerViaPdp(page);
 
     // The rail is a lazy chunk (BagSheet), so "no rail" right after the
     // first open could just mean "not loaded yet". Wait for the chunk (dev
     // server module path), then reopen the bag: the resolved rail now renders
-    // in the SAME commit as the sheet, so its absence is final.
+    // in the SAME commit as the sheet, so its absence is final. The chunk
+    // loads at /menu entry (the Menu's lazy loyalty rewards sheet shares it —
+    // lane loyalty-visual D9), so the wait starts before /menu.
     const railChunk = page.waitForResponse((r) =>
       r.url().includes("/src/components/cart/CompleteYourMealRail")
     );
+    await startOrderToMenu(page);
+    await addCheeseBurgerViaPdp(page);
     await openBag(page);
     await railChunk;
     await page.getByTestId("bag-close").click();
