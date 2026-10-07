@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import en from "../i18n/locales/en/translation.json";
 import ar from "../i18n/locales/ar/translation.json";
+import enLazy from "../i18n/locales/en/lazy.json";
+import arLazy from "../i18n/locales/ar/lazy.json";
 
 /*
   EN and AR must stay key-for-key identical: a key missing from one locale
   renders as its raw key path on a customer screen in that language (the
   splash resets the session to EN, so most AR copy is only reachable here).
   Each value must be non-blank copy with the same {{placeholders}}, or the
-  interpolated value (a countdown, a price) silently drops out.
+  interpolated value (a countdown, a price) silently drops out. lazy.json
+  (copy the lazy chunks register — i18n/lazyCopy) is held to the same rules.
 */
 
 /** "a.b.c" → value, for every leaf. */
@@ -18,8 +21,8 @@ const flatten = (node: unknown, prefix = ""): Array<[string, unknown]> =>
       )
     : [[prefix, node]];
 
-const EN = new Map(flatten(en));
-const AR = new Map(flatten(ar));
+const EN = new Map([...flatten(en), ...flatten(enLazy)]);
+const AR = new Map([...flatten(ar), ...flatten(arLazy)]);
 const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
 
@@ -61,5 +64,18 @@ describe("locale parity — en ↔ ar", () => {
       expect(AR.get(key), key).toEqual(expect.any(String));
     }
     expect(placeholders(AR.get("update.countdown"))).toEqual(["seconds"]);
+  });
+
+  it("lazy.json never shadows a boot key and resolves in both languages once i18n/lazyCopy ran", async () => {
+    // Before the merge: i18next deep-merges INTO the imported translation objects.
+    const boot = new Set(flatten(en).map(([key]) => key));
+    expect(flatten(enLazy).filter(([key]) => boot.has(key))).toEqual([]);
+    const { default: i18n } = await import("../i18n");
+    await import("../i18n/lazyCopy");
+    for (const [lng, copy] of [["en", enLazy], ["ar", arLazy]] as const) {
+      for (const [key, value] of flatten(copy)) {
+        expect(i18n.getResource(lng, "translation", key), `${lng} ${key}`).toBe(value);
+      }
+    }
   });
 });

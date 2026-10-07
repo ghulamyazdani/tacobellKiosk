@@ -3,7 +3,7 @@
  * vertical port). The anys are inherited; typed in later domain passes. Do not
  * add NEW anys.
  */
-import { shallowEqual, useDispatch, useSelector } from "react-redux";
+import { shallowEqual, useDispatch, useSelector, useStore } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { gridWiseSetting } from "@cx-sdk/catalog/state/theme.slice";
 import {
@@ -23,7 +23,7 @@ import useLoyalty from "../loyalty/useLoyalty";
 import useCartHook from "../menuHooks/useCartHook";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import useMenuConverters from "../menuHooks/useMenuConverters";
-import { useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useAppSettings from "../utils/useAppSettings";
 import useGlobalTriggerServices from "../globals/useGlobalTriggerServices";
 import AutoScroll from "../../utils/autoScroll";
@@ -58,7 +58,6 @@ import {
   applyDecreaseCustomization,
   applyIncreaseCustomization,
   applyMultiPunchSelection,
-  applyQuantityUpdate,
   applySinglePunchSelection,
   checkCustomizationCount,
   insertLeadingItemsAfterModifier,
@@ -67,28 +66,28 @@ import {
 import {
   checkIfAllVariantIds,
   findFirstMinMaxViolation,
-  isGroupMinMaxSatisfied,
   sortModifierIdsByOrder,
   validateVariantSelections,
 } from "@cx-sdk/ordering/customization/groupCompletion";
+import type { SplitEditInput, SplitEditPlan } from "@cx-sdk/ordering/cart/splitEdit";
+import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
+import { selectCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import {
   getAccumulatedQuantity,
   getTotalValue,
   getTotalValueWithApplyAddonPrice,
 } from "@cx-sdk/ordering/customization/pricing";
 import {
-  buildCartUpdatePayload,
   buildCustomizableCommitPayload,
   buildVariantCommitPayload,
   mergeCustomizations,
   stripBuyStageMarkers,
 } from "@cx-sdk/ordering/customization/commitPayload";
+import { buildVariantEditCommitPayload } from "@cx-sdk/ordering/customization/variantEditCommitPayload";
 import {
   buildEmptySelectionsForModifiers,
   convertModifiersAccordingly,
   findVariantModifier,
-  getAvailableConstituentItems,
-  locateModifierGroup,
 } from "@cx-sdk/ordering/customization/sessionState";
 
 const useCustomization = ({
@@ -98,7 +97,6 @@ const useCustomization = ({
   SelectedEntity,
   addTier2CustomizationToMIAMCart,
 }: any) => {
-  // console.log("Customization");
   // const makeItMealRdx = useSelector(modalMakeItAMeal);
   const navigate = useNavigate();
   const selectThemeRdx = useSelector(gridWiseSetting, shallowEqual);
@@ -179,7 +177,6 @@ const useCustomization = ({
     status: any,
     whichModal: any,
   ) => {
-    // console.log("Value", isOpenBottomSheet);
     dispatch(
       setBottomSheet({
         isOpen: openType,
@@ -194,7 +191,6 @@ const useCustomization = ({
     status: any,
     whichModal: any,
   ) => {
-    // console.log("Value", isOpenBottomSheet);
     dispatch(
       setTier1BottomSheet({
         isOpen: openType,
@@ -208,7 +204,6 @@ const useCustomization = ({
     status: any,
     whichModal: any,
   ) => {
-    // console.log("Value", isOpenBottomSheet);
     dispatch(
       setTier2BottomSheet({
         isOpen: openType,
@@ -306,7 +301,71 @@ const useCustomization = ({
     generateUniqueId,
     addGetItemToRdx,
     addLoyaltyItemToCart,
+    replaceCartItems,
   } = useCartHook();
+  // Store handle, not a subscription: the split-edit commit plans against
+  // the LIVE cart and DP session at commit time.
+  const store = useStore();
+  // The split-edit planner rides in the bag's lazy chunk (D7 boot budget).
+  // A split edit only starts from that chunk's numpad, so the chunk is
+  // already loaded when the PDP opens with the marker: this just takes a
+  // synchronous handle for the commit. No handle = the commit refuses.
+  const splitEditMarker = isOpenBottomSheet?.splitEdit;
+  const splitPlanner = useRef<((input: SplitEditInput) => SplitEditPlan) | null>(null);
+  useEffect(() => {
+    if (!splitEditMarker || splitPlanner.current) return;
+    let live = true;
+    void (async () => {
+      try {
+        const { planSplitEditCommit } = await import("../../components/cart/bagLazyParts");
+        if (live) splitPlanner.current = planSplitEditCommit;
+      } catch {
+        // No planner: the split commit writes nothing; BACK still works.
+      }
+    })();
+    return () => void (live = false);
+  }, [splitEditMarker]);
+
+  /*
+    Edit commit (item 20). Without the bag's split marker this is exactly
+    today's whole-row update (its DP verdict ignored, as before). With it
+    (`splitEdit` — the guest edits k of the row's N units) the SDK plans ONE
+    write: split / merge = one replaceCartItems; noop writes nothing; a
+    rejection (source gone, DP cap — or no planner handle) writes nothing and
+    returns false so the PDP stays open — silent, like every DP rejection today.
+  */
+  const commitEdit = (
+    payload: unknown,
+    itemType: "CUSTOMIZABLE" | "VARIANT",
+  ): boolean => {
+    const splitEdit = isOpenBottomSheet?.splitEdit;
+    if (!splitEdit) {
+      updateItemCart(payload);
+      return true;
+    }
+    const state = store.getState();
+    const plan = splitPlanner.current?.({
+      cartItems: selectCart(state)?.cartItems,
+      sourceItemId: splitEdit.sourceItemId,
+      editQuantity: splitEdit.editQuantity,
+      editedPayload: payload,
+      itemType,
+      currentSession: selectCurrentSession(state),
+    });
+    if (!plan || plan.kind === "rejected") return false;
+    if (plan.kind === "replace") {
+      updateItemCart(payload);
+      return true;
+    }
+    if (plan.kind === "noop") return true;
+    replaceCartItems(plan.nextCartItems);
+    captureKioskEvent(KioskEventName.CartModified, {
+      modification_type: "split_edit",
+      item_id: SelectedEntity?.id,
+      quantity: splitEdit.editQuantity,
+    });
+    return true;
+  };
   // const SelectedEntity = useSelector(selectMenuSelections);
 
   const [isScrollingDown, setIsScrollingDown] = useState(false);
@@ -353,28 +412,6 @@ const useCustomization = ({
   //functions for functional group wise view elements
   //completed modifiers
   const [completedModifiers, setCompletedModifiers] = useState<any>([]);
-  // useEffect(() => {
-  //   // console.log("This is the completed modifiers", completedModifiers);
-  // }, [completedModifiers]);
-  //function to check wether the modifier group min max condition is satisfied or not
-  const checkMinMaxConditionsForGroup = (modifierGroup: any) => {
-    return isGroupMinMaxSatisfied({
-      modifierGroup,
-      selectedItems: selectedCustomizations[modifierGroup?._id],
-      allowMultiplePunch: isAllowMultiplePunch(),
-      tier1CustOpen,
-      tier2CustOpen,
-    });
-  };
-  //quantity related operations
-  const increaseQuantity = () => {
-    setQuantity(quantity + 1);
-    captureKioskEvent(KioskEventName.ItemQuantityIncreaseViaCustomization, {
-      item_id: SelectedEntity?.id,
-      new_quantity: quantity + 1,
-    });
-  };
-
   // //useEffect to set quantity if edit modal opened
   // useEffect(() => {
   //   if (isOpenBottomSheet?.openType === "edit") {
@@ -383,21 +420,6 @@ const useCustomization = ({
   //     setLoaderVariantEdit(false);
   //   }
   // }, [isOpenBottomSheet]);
-
-  const decreaseQuantity = () => {
-    if (quantity > 1) {
-      setQuantity(quantity - 1);
-      captureKioskEvent(KioskEventName.ItemQuantityDecreaseViaCustomization, {
-        item_id: SelectedEntity?.id,
-        new_quantity: quantity - 1,
-      });
-    }
-    //close the modal if quantity is less than 1
-    else {
-      closeModalStates();
-      dispatch(closeMakeItAMealSession());
-    }
-  };
 
   // useEffect(() => {
   //   // alert("Selected Entity");
@@ -479,27 +501,6 @@ const useCustomization = ({
   };
   // getTotalValue and checkIfAllVariantIds now live in the engine
   // (@cx-sdk/ordering/customization/pricing and .../groupCompletion).
-
-  //close backdrop with selected variants or addons or variants
-  const closeDependentOnAddonsOrVariants = () => {
-    // alert(JSON.stringify(selectedVariant));
-
-    if (SelectedEntity?.hasVariant) {
-      //check if the variant exixts
-      if (Object.keys(selectedVariant)?.length > 0) {
-        return;
-      } else {
-        closeModalStates();
-      }
-      return;
-    } else {
-      if (!checkIfAllVariantIds(selectedCustomizations)) {
-        closeModalStates();
-      } else {
-        return;
-      }
-    }
-  };
 
   //function to check for each modifier
   const setErroredSectionForModifier = (modifier: any) => {
@@ -691,14 +692,6 @@ const useCustomization = ({
       }
     } else if (outcome.branch === "first-add") {
       if (quickCustomizationRdx) {
-        console.log(
-          "next modifier",
-          nextModifier,
-          checkCustomizationCount(customizations, modifier?._id),
-          max,
-          modifier,
-        );
-
         if (
           checkCustomizationCount(customizations, modifier?._id) == max &&
           !item?.isAllModifersOptional
@@ -797,13 +790,6 @@ const useCustomization = ({
             }
           }
 
-          console.log(
-            "hello world in the world",
-            !isShowGridViewEnabled(),
-            // !SelectedEntity?.hasSecondTier,
-            checkCustomizationQuantity(customizations, modifier?.id, max),
-          );
-
           if (
             !isShowGridViewEnabled() &&
             // !SelectedEntity?.hasSecondTier &&
@@ -899,7 +885,6 @@ const useCustomization = ({
 
     // }
     // else {
-    //   console.log("Single Punch");
     //   return handleSinglePunch(modifier, item, {}, forceSelected);
     // }
     // });
@@ -907,113 +892,6 @@ const useCustomization = ({
 
   // mergeCustomizations now lives in
   // @cx-sdk/ordering/customization/commitPayload (imported above).
-
-  const updateCustomizableItemInCart = (
-    selectedEntity: any,
-    selectedVariant: any,
-    tier1Customizations: any,
-    tier2Customizations: any,
-    isMakeItAMealSessionActive: boolean,
-  ) => {
-    // Helper function to handle notifications
-    const notifyError = (message: string) => {
-      triggerNotification(message);
-      return false;
-    };
-
-    // Payload shape lives in the engine (buildCartUpdatePayload); the
-    // closured quantity / variant price / MIAM flag now travel as explicit
-    // parameters carrying the same values. sortModifierIdsByOrder keeps the
-    // legacy in-place sort side effect of the old processModifiers.
-
-    // Validate customizations
-    const validateCustomizations = () => {
-      if (!checkMinMaxForWholeCustomizations(selectedCustomizations)) {
-        return notifyError("Please select all the customizations");
-      }
-      return true;
-    };
-
-    if (selectedEntity?.customizations?.selectedEntity?.hasVariant) {
-      // Variant case
-      if (Object.keys(selectedVariant).length === 0) {
-        notifyError("Please select the variant first");
-        return;
-      }
-
-      const itemToUpdate = buildCartUpdatePayload({
-        baseItem: {
-          ...selectedEntity.customizations.selectedEntity,
-          selectedVariantId: selectedVariant.id,
-          selectedVariantName: selectedVariant?.name,
-        },
-        type: "VARIANT",
-        customizations: mergeCustomizations(
-          selectedCustomizations,
-          MIAMSelectedCustomizationRdx,
-        ),
-        quantity,
-        selectedVariantPrice: selectedVariant?.price,
-        isMakeItAMealItem: isMakeItAMealSessionActive,
-        additionalFields: {
-          variantPrice: selectedVariant?.price,
-          selectedVariantModifiers: selectedVariant?.modifiers,
-        },
-      });
-
-      sortModifierIdsByOrder(fetchModifierProperties(selectedVariant.modifiers));
-
-      if (!validateCustomizations()) return false;
-
-      // Update the item in the cart
-      updateItemCart(itemToUpdate);
-      setIsFlippedToShowSubTotal(true);
-      setIsFlippedModalData({
-        mainHeading: "Item Updated Successfully",
-        subHeading: `Item worth ${
-          getTotalValue(selectedCustomizations) + selectedVariant?.price
-        } updated in the cart`,
-      });
-
-      return true;
-    }
-
-    if (selectedEntity?.customizations?.selectedEntity?.modifiers?.length > 0) {
-      // Customizable case
-      const itemToUpdate = buildCartUpdatePayload({
-        baseItem: selectedEntity.customizations.selectedEntity,
-        type: "CUSTOMIZABLE",
-        customizations: mergeCustomizations(
-          tier1Customizations,
-          tier2Customizations,
-        ),
-        quantity,
-        selectedVariantPrice: selectedVariant?.price,
-        isMakeItAMealItem: isMakeItAMealSessionActive,
-        additionalFields: {
-          // nestedCustomizations: makeItMealRdx || {},
-        },
-      });
-
-      sortModifierIdsByOrder(
-        fetchModifierProperties(
-          selectedEntity.customizations.selectedEntity.modifiers,
-        ),
-      );
-
-      if (!validateCustomizations()) return false;
-
-      // Update the item in the cart
-      updateItemCart(itemToUpdate);
-      closeModalStates();
-
-      return true;
-    }
-
-    return false;
-  };
-
-  const openRepeatItemModalForRespectiveItem = (_entity: any, _group: any) => {};
 
   // const addTier2CustomizationToMIAMCart = () => {
   //   var baseCustomizations = JSON.parse(
@@ -1079,19 +957,9 @@ const useCustomization = ({
   //       }
   //     });
   //   }
-  //   // console.log("Base Customizations", baseCustomizations);
   //   dispatch(addTier2CustomizationsToTier1(baseCustomizations));
   //   dispatch(closeTier2Modal());
   // };
-
-  const updateMIAMCart = (_entity: any) => {
-    // if (MIAMTier2Customization?.isOpen) {
-    //   updateTier2CustomizationToMIAMCart(entity.itemId);
-    // } else {
-    // alert("Update Tier 1");
-    addTier1CustomizationToMIAMCart();
-    // }
-  };
 
   const addCustomizationToCart = (customization: any) => {
     try {
@@ -1130,6 +998,7 @@ const useCustomization = ({
           customized: true,
         });
       }
+      return wasAdded;
     } catch (error) {
       console.error("addCustomizationToCart failed", error);
     }
@@ -1171,8 +1040,14 @@ const useCustomization = ({
 
       const mergedCustomizations = getMergedCustomizations();
 
-      // build the returnable object once (shape lives in the engine)
-      const returnableFinalObject = buildVariantCommitPayload({
+      // build the returnable object once (shape lives in the engine). An edit's
+      // SelectedEntity is the bag row: the edit builder keeps the session's
+      // size, prices and customizations over the row's old ones.
+      const buildPayload =
+        isOpenBottomSheet?.openType === "edit"
+          ? buildVariantEditCommitPayload
+          : buildVariantCommitPayload;
+      const returnableFinalObject = buildPayload({
         selectedEntity: SelectedEntity,
         selectedVariant,
         mergedCustomizations,
@@ -1180,12 +1055,6 @@ const useCustomization = ({
         isMakeItAMealItem: MIAMSession,
         makeItAMealSelectedItem: MIAMSession ? MIAMSelectedItem : {},
       });
-
-      console.log(
-        "Returnable Object of variant",
-        returnableFinalObject,
-        selectedVariant,
-      );
 
       // prepare modifier properties for the variant and run min/max checks
       const properties =
@@ -1212,8 +1081,7 @@ const useCustomization = ({
 
       // EDIT vs ADD flows preserved exactly
       if (isOpenBottomSheet?.openType === "edit") {
-        console.log("Edit mode for variant item", returnableFinalObject);
-        updateItemCart(returnableFinalObject);
+        if (!commitEdit(returnableFinalObject, "VARIANT")) return false;
         setIsFlippedToShowSubTotal(true);
         setIsFlippedModalData({
           mainHeading: "Item Updated SuccessFully",
@@ -1248,7 +1116,6 @@ const useCustomization = ({
             suppressAddedModal: true,
           });
         } else {
-          console.log("Adding item to cart variant", returnableFinalObject);
           addItemToCart(returnableFinalObject, "VARIANT");
         }
       }
@@ -1283,10 +1150,7 @@ const useCustomization = ({
         getMergedCustomizations(),
       );
 
-      console.log("All check passed", allCheckPassed);
-
       if (!allCheckPassed) {
-        console.log("Checks failed ", selectedCustomizations);
         dispatch(
           setShowErrorModalGlobal({
             showErrorModal: true,
@@ -1297,7 +1161,7 @@ const useCustomization = ({
       }
 
       if (isOpenBottomSheet?.openType === "edit") {
-        updateItemCart(returnableFinalObject);
+        if (!commitEdit(returnableFinalObject, "CUSTOMIZABLE")) return false;
 
         const newUpdatedItem = updatedBaseItemListRdx.filter(
           (id: any) => id !== returnableFinalObject?.itemId,
@@ -1338,10 +1202,6 @@ const useCustomization = ({
             { suppressAddedModal: true },
           );
         } else {
-          console.log(
-            "returnableFinalObjectaksdjasdjkjkasdj",
-            returnableFinalObject,
-          );
           addItemToCart(returnableFinalObject, "CUSTOMIZABLE");
         }
 
@@ -1442,17 +1302,6 @@ const useCustomization = ({
       // Case 1: Modifier requires exactly one item from many options
       let newModifiers: any;
       if (modifier?.isLeadingGrp) {
-        console.log(
-          "Modifier groups sidharth",
-          sortedModifiers,
-          modifier?._id,
-          item?.id,
-          insertLeadingItemsAfterModifier(
-            sortedModifiers,
-            item?.id,
-            modifier?._id,
-          ),
-        );
         newModifiers = insertLeadingItemsAfterModifier(
           sortedModifiers,
           item?.id,
@@ -1467,8 +1316,6 @@ const useCustomization = ({
         !item?.isAllModifersOptional
       ) {
         if (customizations[modifier._id].length === modifierMax) {
-          console.log("Modifier groups sidharth", modifier);
-
           //add customization
 
           //perform operations to change the modifier groups according to the leading modifiers
@@ -1594,17 +1441,6 @@ const useCustomization = ({
                 document.getElementById(nextModifier?._id)?.offsetTop,
                 450,
               );
-              console.log(
-                "Items for testing",
-                document.getElementById(
-                  tier1CustOpen && tier2CustOpen
-                    ? "scrollCustomizableItem2"
-                    : "scrollCustomizableItem",
-                ),
-                document.getElementById(nextModifier?._id)?.offsetTop,
-                nextModifier,
-                (tier1CustOpen && tier2CustOpen) || tier2CustOpen,
-              );
             } else if (isOpenBottomSheet?.openType !== "edit") {
               if (tier2CustOpen) {
                 addTier2CustomizationToMIAMCart(customizations);
@@ -1653,15 +1489,14 @@ const useCustomization = ({
     return customizations;
   };
 
-  const [swipeDirection, setSwipeDirection] = useState<any | null>(null);
+  // Returned state; its only writers were the deleted dead group-navigation
+  // members (no consumer ever moved it off null).
+  const [swipeDirection] = useState<any | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<Record<
     string,
     any
   > | null>(null);
 
-  // useEffect(() => {
-  //   console.log("SelectedGroup", selectedGroup);
-  // }, [selectedGroup]);
 
   const [currentIndex, setCurrentIndex] = useState<number>(1);
   const [confirmedVariant, setConfirmedVariant] = useState(false);
@@ -1671,179 +1506,6 @@ const useCustomization = ({
 
   // convertModifiersAccordingly now lives in
   // @cx-sdk/ordering/customization/sessionState (imported above).
-
-  const fetchPreviousModifierGroup = useCallback(
-    (currentModifierGroup: any, currentModifiers: any[]) => {
-      const indexField = currentModifiers.findIndex(
-        (entity) => entity?._id === currentModifierGroup._id,
-      );
-
-      const availableModifiers = getAvailableConstituentItems(
-        currentModifiers[indexField - 1],
-      );
-
-      // // console.log(
-      //   "Sidharth modifiers",
-      //   currentModifiers[indexField - 1]?.min,
-      //   currentModifiers[indexField - 1]?.max,
-      //   availableModifiers.length,
-      // );
-      // skip the modifier groups if min = max = constituent items length
-      // (verbatim note: the original computed unused `min`/`max` locals here
-      // from isAllowMultiplePunch(); removed under noUnusedLocals — the
-      // predicate is a pure settings read, so behavior is unchanged.)
-
-      if (isOpenBottomSheet?.type === "variant") {
-        if (currentModifiers[indexField - 1]) {
-          // if (
-          //   min === max &&
-          //   availableModifiers.length === min &&
-          //   currentIndex > 0
-          // ) {
-          //   console.log("Previous selected");
-          //   return;
-          // }
-        }
-
-        setSwipeDirection("right");
-
-        setCloseRendering(true);
-        // setSelectedGroup(currentModifiers[indexField - 1]);
-        // if (indexField - 1 === 0) {
-        //   alert(indexField - 1);
-        setSelectedGroup(
-          currentModifiers[indexField - 1]
-            ? currentModifiers[indexField - 1]
-            : null,
-        );
-        // } else {
-        //   alert("Condition" + indexField);
-        //   setSelectedGroup(currentModifiers[indexField]);
-        // }
-        // alert("Current index")
-        setCurrentIndex(indexField - 1);
-
-        if (indexField - 1 < 0) {
-          // setSelectedGroup(null);
-          // setSelectedVariant({});
-          setCloseRendering(true);
-
-          console.log("Sorted Modifiers", sortedModifiers);
-
-          //if we want normal flow we can again set sortedModifiers and make it 0
-          setSelectedGroup(sortedModifiers[0] ? sortedModifiers[0] : null);
-          setConfirmedVariant(false);
-          setCurrentIndex(-1);
-          return;
-        }
-      }
-
-      //need to be checkeed please check all the cases or uncomment it
-
-      if (
-        currentModifiers[indexField - 1]?.min ===
-          currentModifiers[indexField - 1]?.max &&
-        availableModifiers.length === currentModifiers[indexField - 1]?.min &&
-        currentIndex > 0
-      ) {
-        return;
-      }
-
-      if (indexField !== -1) {
-        // alert("helo world")
-        if (indexField - 1 >= 0) {
-          setSwipeDirection("right");
-          setSelectedGroup(
-            currentModifiers[indexField - 1]
-              ? currentModifiers[indexField - 1]
-              : null,
-          );
-          // alert("Current index")
-          setCurrentIndex(indexField - 1);
-        }
-      }
-    },
-    [isOpenBottomSheet, currentIndex, sortedModifiers],
-  );
-
-  const fetchNextModifierGroup = (
-    currentModifierGroup: any,
-    currentModifiers: any[],
-  ) => {
-    const indexField = currentModifiers.findIndex(
-      (entity) => entity?._id === currentModifierGroup._id,
-    );
-    if (indexField !== -1) {
-      const modifierMinMaxCheck =
-        checkMinMaxConditionsForGroup(currentModifierGroup);
-      console.log(
-        "Fetch next",
-        currentModifierGroup,
-        currentModifiers,
-        modifierMinMaxCheck,
-      );
-      if (modifierMinMaxCheck) {
-        // Only add to completedModifiers if it is not already present
-        if (
-          !completedModifiers.some(
-            (mod: any) => mod._id === currentModifierGroup._id,
-          )
-        ) {
-          setCompletedModifiers((prev: any) => [...prev, currentModifierGroup]);
-          // setVisitedModifierGroups((prev: any) => [
-          //   ...prev,
-          //   currentModifierGroup,
-          // ]);
-        }
-
-        if (indexField + 1 < currentModifiers.length) {
-          setSwipeDirection("left");
-          setSelectedGroup(
-            currentModifiers[indexField + 1]
-              ? currentModifiers[indexField + 1]
-              : null,
-          );
-          setCurrentIndex(indexField + 1);
-          enableDisablePreviousButton();
-        } else {
-          setSelectedGroup(null);
-          setCurrentIndex(indexField + 1);
-        }
-      } else {
-        // Handle min/max error
-        // dispatch(
-        //   setShowErrorModalGlobal({
-        //     showErrorModal: true,
-        //     errorMessage: `Please Select Valid Customizations`,
-        //   }),
-        // );
-        triggerNotification("Please Select Valid Customizations");
-      }
-    } else {
-      console.error("No Modifier present in the list.");
-    }
-  };
-
-  const updateQuantity = (
-    modifier: any,
-    item: any,
-    quantityToBeUpdated?: number,
-  ) => {
-    // Quantity math lives in the engine; an invalid modifier id returns the
-    // untouched clone without dispatching, matching the original's early
-    // return before its dispatch.
-    const customizations = applyQuantityUpdate(
-      selectedCustomizations,
-      modifier,
-      item,
-      quantityToBeUpdated,
-    );
-
-    if (!modifier?._id) return customizations;
-
-    dispatch(setSelectedCustomizations(customizations));
-    return customizations;
-  };
 
   //function to set the setSelected Variant to true and fetching the related addons if available
   const fetchAddonsForSelectedVariant = (variant: any) => {
@@ -1866,7 +1528,6 @@ const useCustomization = ({
     //set emtpy modifiers for selected customizations (built in the engine)
     const returnableObject = buildEmptySelectionsForModifiers(variant?.modifiers);
     dispatch(setSelectedCustomizations(returnableObject));
-    console.log("Returnable object", returnableObject);
     //fetching the addons for the selected variant
     if (variant?.modifiers?.length > 0) {
       const modifierGroups = fetchModifierProperties(variant?.modifiers);
@@ -1879,67 +1540,6 @@ const useCustomization = ({
   const [functionLoading, setFunctionLoading] = useState<boolean>(false);
   // getAccumulatedQuantity now lives in
   // @cx-sdk/ordering/customization/pricing (imported above).
-
-  // add this inside useCustomization (near fetchNextModifierGroup / fetchPreviousModifierGroup)
-  const goToModifierGroupById = (modifierId: string) => {
-    if (!modifierId) return false;
-
-    // Group lookup (sortedModifiers → fetchedModifierGroups → entity ids)
-    // lives in the engine; the navigation state, swipe hint and scrolling
-    // below stay here.
-    const located = locateModifierGroup({
-      modifierId,
-      sortedModifiers,
-      fetchedModifierGroups,
-      entityModifierIds:
-        SelectedEntity?.customizations?.selectedEntity?.modifiers,
-      fetchModifierProperties,
-    });
-
-    if (!located) {
-      return false; // not found
-    }
-    const { index, sourceList } = located;
-
-    // set navigation state
-    const prevIndex = currentIndex;
-    setSelectedGroup(sourceList[index] ? sourceList[index] : null);
-    setCurrentIndex(index);
-
-    // set swipeDirection to hint animators / consumers
-    if (prevIndex === -1) {
-      setSwipeDirection("left");
-    } else if (index > prevIndex) {
-      setSwipeDirection("left");
-    } else if (index < prevIndex) {
-      setSwipeDirection("right");
-    } else {
-      setSwipeDirection(null);
-    }
-
-    // ensure previous button enabled/disabled state is correct
-    if (index > 0) enableDisablePreviousButton();
-
-    // scroll to the modifier DOM node (container id respects tier flags like other code)
-    try {
-      const containerId =
-        tier1CustOpen && tier2CustOpen
-          ? "scrollCustomizableItem2"
-          : "scrollCustomizableItem";
-      const container = document.getElementById(containerId);
-      const target = document.getElementById(modifierId);
-      if (container && target) {
-        AutoScroll(container, target.offsetTop, 450);
-      } else if (target) {
-        // fallback: scroll the window to the element
-        target.scrollIntoView({ behavior: "smooth", block: "start" } as any);
-      }
-    } catch (e) {
-      console.warn("goToModifierGroupById: scrolling failed", e);
-    }
-
-    return true;
-  };
 
   //find quantity excluding current quantity
   // var findQuantityForConstituentItemExcludedCurrent = (
@@ -1967,7 +1567,6 @@ const useCustomization = ({
   //return the functions
   return {
     closeModalStates,
-    updateCustomizableItemInCart,
     //all states
     selectedModifier,
     selectedVariant,
@@ -2010,16 +1609,10 @@ const useCustomization = ({
     //functions
     addCustomizations,
     addCustomizationToCart,
-    increaseQuantity,
-    decreaseQuantity,
     fetchAddonsForSelectedVariant,
-    fetchNextModifierGroup,
-    fetchPreviousModifierGroup,
     convertModifiersAccordingly,
     checkIfAllVariantIds,
-    closeDependentOnAddonsOrVariants,
     getTotalValue,
-    checkMinMaxConditionsForGroup,
     setErroredSectionForModifier,
     getVariantProperties,
     //useCustomization
@@ -2057,9 +1650,6 @@ const useCustomization = ({
 
     //nested customizations
     // addNestedCustomizationToRelatedConstituentItem,
-    updateQuantity,
-    openRepeatItemModalForRespectiveItem,
-    updateMIAMCart,
     getAccumulatedQuantity,
     // increaseQuantity2,
     // decreaseQuantity2,
@@ -2072,7 +1662,6 @@ const useCustomization = ({
     // testFunction,
     contradictoryItems,
 
-    goToModifierGroupById,
     setContradictoryItems,
   };
 };

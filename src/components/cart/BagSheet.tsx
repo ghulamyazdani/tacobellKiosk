@@ -76,6 +76,18 @@ import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
 import closeIcon from "../../assets/icons/close.svg";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import {
+  orderTypeKindOf,
+  resolveOrderTypeSwitchTarget,
+  type SwitchablePipeline,
+} from "@cx-sdk/ordering/cart/orderTypeTarget";
+import {
+  selectPipelines,
+  selectSelectedPipeline,
+} from "@cx-sdk/catalog/state/pipeline.slice";
+import { selectOrderTypeSwitchNotice } from "../../redux/features/menuSelections/menuSelections.slice";
+import useKioskOpenServices from "../../hooks/kioskOpen/useKioskOpenServices";
+import { ErrorBoundary } from "../../ErrorBoundary";
 
 // Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
 // entry would grow the boot path). `await import()`, never `.then`: a failed
@@ -100,6 +112,18 @@ const OfferAppliedCelebration = lazy(async () => ({
 
 /** Figma 1:3171: the sheet's top sits at stage y 244. ADA: ADA_SHEET_HEIGHT. */
 const BAG_SHEET_HEIGHT = 1676;
+
+// bag-pdp lane — the order-type switch flow + its removal notice and the
+// "edit how many" numpad, in the same ONE dynamic module.
+const OrderTypeSwitchFlow = lazy(async () => ({
+  default: (await import("./bagLazyParts")).OrderTypeSwitchFlow,
+}));
+const OrderTypeSwitchNotice = lazy(async () => ({
+  default: (await import("./bagLazyParts")).OrderTypeSwitchNotice,
+}));
+const EditHowManyModal = lazy(async () => ({
+  default: (await import("./bagLazyParts")).EditHowManyModal,
+}));
 
 /**
  * How long the CTA bar swallows taps after a rewards / picker / buy-stage
@@ -182,10 +206,10 @@ function AppliedRowPop({
 
 /**
  * MY BAG — Figma "My Bag / Populated" (1:3171 / 1:3236): white rounded-top
- * sheet over the purple-tinted menu. Header MY BAG (n) + X, read-only
- * EAT IN / TAKE OUT toggle (locked decision 2), consolidated cart rows,
- * Complete Your Meal rail, Sub Total / Total bill lines, LOG-IN & GET
- * REWARDS + PAY (checkout preflight, locked decision 5).
+ * sheet over the purple-tinted menu. Header MY BAG (n) + X, the EAT IN /
+ * TAKE OUT toggle (bag-pdp lane: switches via OrderTypeSwitchFlow),
+ * consolidated cart rows, Complete Your Meal rail, Sub Total / Total bill
+ * lines, LOG-IN & GET REWARDS + PAY (checkout preflight, locked decision 5).
  *
  * Route-driven (locked decision 1): /cart renders the Menu page with this
  * sheet open; onClose navigates back to /menu. Reads redux directly; the
@@ -235,6 +259,11 @@ export default function BagSheet({
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
   const customerPhone = useSelector(selectPhoneNumber) as any;
   const autoAppliedOfferId = useSelector(selectAutoAppliedOfferId);
+  const pipelines = useSelector(selectPipelines) as SwitchablePipeline[] | null;
+  const selectedPipeline = useSelector(selectSelectedPipeline) as
+    | { _id?: string }
+    | null;
+  const orderTypeSwitchNotice = useSelector(selectOrderTypeSwitchNotice);
   const adaActive = useAdaActive();
   const cartRehydrated = useCartRehydrated();
 
@@ -247,7 +276,9 @@ export default function BagSheet({
   const { getCalculatedBill } = useOrderHook();
   const { fetchMenu } = useMenuConverters();
   const { updateCartItemsByMenu } = useSchedulerConverter();
-  const { getIsLoyaltyOn, shouldSkipCRM } = useAppSettings();
+  const { getIsLoyaltyOn, shouldSkipCRM, getDeactivatedPipelines } =
+    useAppSettings();
+  const { checkPipelineClosedFromRedux } = useKioskOpenServices();
   const { isItemWiseOfferApplicable, isBOGOOfferApplicable, isLeastValueItemOffer } =
     useOfferHook();
   const { rank } = useOfferSavings();
@@ -262,6 +293,10 @@ export default function BagSheet({
   const [pickerOffer, setPickerOffer] = useState<any>(null);
   /** Inline "can't be applied" for a blocked/failed buy-stage CONTINUE (TB mounts no global error modal). */
   const [stageBlocked, setStageBlocked] = useState<string | null>(null);
+  /** The pipeline the order-type switch flow is open for (null = closed). */
+  const [switchTarget, setSwitchTarget] = useState<SwitchablePipeline | null>(null);
+  /** The multi-quantity row whose "edit how many" numpad is open. */
+  const [editHowManyRow, setEditHowManyRow] = useState<unknown>(null);
   const comingSoonTimer = useRef<number | null>(null);
   const stage = useBuyStage(open);
 
@@ -282,7 +317,7 @@ export default function BagSheet({
 
   const currency = currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const displayRows: any[] = consolidateGetItemsForDisplay(cartRdx?.cartItems);
-  const isTakeOut = /take|away|out/i.test(String(tabType ?? ""));
+  const isTakeOut = orderTypeKindOf(tabType) === "takeOut";
   const hasAppliedOffer = Boolean(cartOffer && Object.keys(cartOffer).length > 0);
   // "Identified" = the XENO lookup has a phone to key on (setPhoneNumberRdx on
   // /phone, or from the login modal). No phone ⇒ the login modal, not the
@@ -464,7 +499,12 @@ export default function BagSheet({
   useOfferAutoApply({
     open,
     ranked: rankedOffers,
-    blocked: rewardsOpen || !!pickerOffer || !!stage.buyStage,
+    blocked:
+      rewardsOpen ||
+      !!pickerOffer ||
+      !!stage.buyStage ||
+      !!switchTarget ||
+      !!editHowManyRow,
   });
 
   // Least-value freebie allocation follows the cart (contract / fork
@@ -504,12 +544,29 @@ export default function BagSheet({
     };
   }, []);
 
+  // The order-type switch's removal notice: redux-driven like the offer one
+  // (it survives the empty-cart exit when the switch emptied the bag). Its
+  // chunk is in by then (the switch ran from it); a notice that fails to
+  // render hides itself.
+  const orderTypeNotice = orderTypeSwitchNotice && (
+    <ErrorBoundary fallback={null}>
+      <Suspense fallback={null}>
+        <OrderTypeSwitchNotice />
+      </Suspense>
+    </ErrorBoundary>
+  );
+
   if (!open) {
     // The removal notice is redux-driven and must survive the bag's
     // empty-exit (scenario 7: the customer lands back on the menu and the
     // "reward removed" notice is still up until GOT IT). It renders null
     // while cart.offerRemovalModal is closed.
-    return <OfferRemovalNotice />;
+    return (
+      <>
+        <OfferRemovalNotice />
+        {orderTypeNotice}
+      </>
+    );
   }
 
   /**
@@ -519,8 +576,15 @@ export default function BagSheet({
    * `setTeir1SelectedEntity({...row})` MUST carry itemId — the PDP commit
    * spreads selectedEntity into the update payload and updateItemCartRdx
    * matches on itemId (trap 2).
+   *
+   * Split edit (Figma 1:4460, I6): editQuantity k < the row's N seeds the PDP
+   * with k units and tells the commit to split k off the source row
+   * (`splitEdit`, read by useCustomization). No k, or k ≥ N, is the
+   * whole-row edit with byte-identical dispatches.
    */
-  const handleEditRow = (row: any) => {
+  const handleEditRow = (row: any, editQuantity?: number) => {
+    const split =
+      editQuantity !== undefined && editQuantity < Number(row?.quantity);
     dispatch(
       openMakeItAMealModal({
         isOpen: false,
@@ -534,7 +598,7 @@ export default function BagSheet({
       setTeir1SelectedEntity({
         ...row,
         itemId: row?.itemId,
-        quantity: row?.quantity,
+        quantity: split ? editQuantity : row?.quantity,
         subcategoryId: row?.subCategoryId,
       }),
     );
@@ -545,6 +609,9 @@ export default function BagSheet({
         status: row?.type === "VARIANT" ? "variant" : "customizableItem",
         openType: "edit",
         editCustomizationContent: row,
+        ...(split
+          ? { splitEdit: { sourceItemId: row?.itemId, editQuantity } }
+          : {}),
       }),
     );
     dispatch(setTier1SelectedCustomization(row?.customizations));
@@ -554,6 +621,19 @@ export default function BagSheet({
       item_id: row?.id,
     });
     navigate("/customization", { state: { direction: "cart" } });
+  };
+
+  // Edit on a multi-unit row asks how many to edit first; one unit edits
+  // straight away (today's path).
+  const handleEditTap = (row: { quantity?: unknown }) => {
+    if (Number(row?.quantity) > 1) setEditHowManyRow(row);
+    else handleEditRow(row);
+  };
+
+  const handleEditHowManyConfirm = (editQuantity: number) => {
+    const row = editHowManyRow;
+    setEditHowManyRow(null);
+    if (row && editQuantity >= 1) handleEditRow(row, editQuantity);
   };
 
   const handleConfirmRemove = () => {
@@ -683,7 +763,9 @@ export default function BagSheet({
         item_count: totalQuantity,
         cart_total: getCheckoutNetAmount(bill),
       });
-      dispatch(setAppliedCharges(bill?.charges?.detail));
+      // A COPY: Immer freezes what the store holds, and this memoised bill's
+      // next getNetAmount() re-assigns each charge's `amount`.
+      dispatch(setAppliedCharges(structuredClone(bill?.charges?.detail)));
       setCheckoutInProgress(false);
       navigate(`/${decision.route}`, { state: { checkoutRoute: decision.route } });
     } catch {
@@ -776,6 +858,35 @@ export default function BagSheet({
   const barKey = `${cartOffer?._id}:${appliedDiscount.toFixed(2)}`;
   const loyaltyOn = getIsLoyaltyOn();
 
+  // The other order type's pipeline (first in list order: not the current
+  // one, has a tab, not device-deactivated, open), or null → inert segment.
+  const switchCandidate = resolveOrderTypeSwitchTarget({
+    pipelines,
+    currentPipelineId: selectedPipeline?._id,
+    targetKind: isTakeOut ? "eatIn" : "takeOut",
+    deactivatedPipelineIds: getDeactivatedPipelines(),
+    isPipelineOpen: (id) => checkPipelineClosedFromRedux(id).status,
+  });
+  const canSwitch = !!switchCandidate && !checkoutInProgress;
+
+  // A lazy overlay's loading / failed-chunk stand-in: its scrim, which closes
+  // it (BuyStageSheet's buy-stage-loading precedent).
+  const lazyDismiss = (testId: string, z: string, close: () => void) => (
+    <button
+      type="button"
+      aria-label={t("language.close")}
+      data-testid={testId}
+      onClick={close}
+      className={`absolute inset-0 ${z} h-full w-full bg-tb-purple/80`}
+    />
+  );
+  const switchDismiss = lazyDismiss("bag-ordertype-loading", "z-[80]", () =>
+    setSwitchTarget(null),
+  );
+  const editHowManyDismiss = lazyDismiss("edit-how-many-loading", "z-50", () =>
+    setEditHowManyRow(null),
+  );
+
   const orderTypeSegment = (
     key: "eatin" | "takeout",
     label: string,
@@ -785,7 +896,10 @@ export default function BagSheet({
       type="button"
       data-testid={`bag-ordertype-${key}`}
       aria-pressed={active}
-      aria-disabled={!active}
+      aria-disabled={!active && !canSwitch}
+      onClick={
+        !active && canSwitch ? () => setSwitchTarget(switchCandidate) : undefined
+      }
       className={`flex h-[52px] min-w-[44px] flex-1 items-center justify-center gap-[8px] rounded-[30px] ${
         active ? "bg-tb-surface" : ""
       }`}
@@ -850,8 +964,9 @@ export default function BagSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="px-[24px]">
-            {/* EAT IN / TAKE OUT — read-only in P7a (locked decision 2):
-                active = current pipeline; the inactive segment is a no-op. */}
+            {/* EAT IN / TAKE OUT — active = the current pipeline; the other
+                segment opens the switch flow (inert without a target or
+                while PAY runs). */}
             <div className="mb-[24px] flex w-full items-center rounded-[60px] bg-tb-grey-4 p-[4px]">
               {orderTypeSegment("eatin", t("bag.eatIn"), !isTakeOut)}
               {orderTypeSegment("takeout", t("bag.takeOut"), isTakeOut)}
@@ -863,7 +978,7 @@ export default function BagSheet({
                   key={row?.itemId ?? index}
                   row={row}
                   currency={currency}
-                  onEdit={handleEditRow}
+                  onEdit={handleEditTap}
                   onRequestRemove={setRemoveCandidate}
                   onRemoveLoyalty={handleRemoveLoyaltyRow}
                 />
@@ -1174,6 +1289,37 @@ export default function BagSheet({
         />
       </Suspense>
       <OfferRemovalNotice bill={bill ?? undefined} />
+      {/* bag-pdp lane overlays (z-stack above): EditHowManyModal z-50 ·
+          switch dialogs z-[80] · switch in-flight z-[85] · switch notice
+          z-[89] (fixed). Lazy, each behind a scrim that closes it — while the
+          chunk loads, and (boundary) for a part that fails to render. A chunk
+          that fails to LOAD never gets this far: the rail and the rewards
+          sheets load it with the bag, unguarded, so chunkRecovery reloads
+          (cart kept) or, on a page under 60 s old, the crash screen shows. */}
+      {switchTarget && (
+        <ErrorBoundary fallback={switchDismiss}>
+          <Suspense fallback={switchDismiss}>
+            <OrderTypeSwitchFlow
+              target={switchTarget}
+              targetKind={orderTypeKindOf(switchTarget.tab_type)}
+              onDone={() => setSwitchTarget(null)}
+              onRemoveLoyaltyRow={handleRemoveLoyaltyRow}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+      {!!editHowManyRow && (
+        <ErrorBoundary fallback={editHowManyDismiss}>
+          <Suspense fallback={editHowManyDismiss}>
+            <EditHowManyModal
+              row={editHowManyRow}
+              onCancel={() => setEditHowManyRow(null)}
+              onConfirm={handleEditHowManyConfirm}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+      {orderTypeNotice}
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * Entities/groups flow untyped from the legacy converters + makeItAMeal
  * slice; typed in later domain passes. Do not add NEW anys.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,15 @@ import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import backspaceIcon from "../../assets/icons/key-backspace.svg";
+
+// Item 23's completion warning — lazy, through the bag's ONE dynamic entry
+// (D7). `await import()`, never `.then`: in a build a failed chunk reaches
+// chunkRecovery, which reloads (the customisation in progress is lost, the
+// cart is kept); only on a page under 60 s old, or on the dev server, does it
+// reach the boundary below, which leaves the ringed PDP as it is.
+const PdpIncompleteWarning = lazy(async () => ({
+  default: (await import("../../components/cart/bagLazyParts")).PdpIncompleteWarning,
+}));
 
 /**
  * PDP / customization — Figma "PDP - Single Product" (1:2614) + "PDP -
@@ -127,6 +136,8 @@ export default function Customization({
   const [openSlotGroupId, setOpenSlotGroupId] = useState<string | null>(null);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
+  // Item 23: each failed ADD TO BAG (re)mounts the completion warning (0 = closed).
+  const [incompleteTap, setIncompleteTap] = useState(0);
   const initialisedFor = useRef<string | null>(null);
 
   const isVariantFlow = isOpenBottomSheet?.type === "variant";
@@ -251,6 +262,13 @@ export default function Customization({
     fetchAddonsForSelectedVariant(variant);
     setCurrentIndex(0);
     setConfirmedVariant(true);
+  };
+
+  // ---- Completion warning (item 23, Figma 1:2855): a failed ADD TO BAG
+  // names every incomplete group. The ring + AutoScroll already ran inside
+  // the commit; a success navigated / closed, so it never opens then. ----
+  const handleAddToBag = () => {
+    if (addCustomizationToCart(undefined) === false) setIncompleteTap((tap) => tap + 1);
   };
 
   const selectionFor = (group: any): any[] =>
@@ -633,7 +651,7 @@ export default function Customization({
           type="button"
           data-testid="pdp-add-to-bag"
           disabled={needsVariantPick}
-          onClick={() => addCustomizationToCart(undefined)}
+          onClick={handleAddToBag}
           className={`tb-display flex min-h-[44px] items-center gap-4 text-[24px] ${needsVariantPick ? "text-tb-surface/50" : "text-tb-surface"}`}
         >
           {/* A freebie's price is the offer's call (redeemGetItem at CONFIRM),
@@ -677,6 +695,26 @@ export default function Customization({
       />
 
       <Tier2CustomizationSheet />
+
+      {/* Completion warning — Figma Modal 1:945 (no icon, one full-width
+          GOT IT); z-80 over the PDP, embedded hosts included. Closing it is
+          the only action: the guest finishes the ringed groups. Lazy: while
+          the chunk loads, or if it failed, nothing shows over the ringed PDP. */}
+      {incompleteTap > 0 && (
+        <ErrorBoundary fallback={null}>
+          <Suspense fallback={null}>
+            <PdpIncompleteWarning
+              key={incompleteTap}
+              entity={SelectedEntity}
+              selectedVariant={selectedVariant}
+              customizations={selectedCustomizations}
+              fetchModifierProperties={fetchModifierProperties}
+              isBox={isSlotGroup}
+              onClose={() => setIncompleteTap(0)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
 
       {!embedded && (
         <>

@@ -56,6 +56,13 @@ const slimMenu = JSON.parse(
     "utf-8"
   )
 );
+/** The bag-pdp lane's copy (rendered only by lazy chunks — src/i18n/lazyCopy.ts). */
+const enLazy = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../src/i18n/locales/en/lazy.json", import.meta.url)),
+    "utf-8"
+  )
+);
 
 // ---- Fixture ids (see header) ----
 const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
@@ -65,6 +72,7 @@ const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1, group ..._1573980469_
 const ADD_CHEESE = "5dd1093f188e72ce1b3eb36f"; // +£1, group ..._1686482941_addons
 /** Kiddie Meal Beef Burger, re-shaped by sizedMenu() into a sized item. */
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
+const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7: neither the parent's price nor the other size's
 
 /**
@@ -81,7 +89,7 @@ function sizedMenu() {
           entity.hasVariant = true;
           entity.modifiers = [];
           entity.variants = [
-            ["e2e-size-regular", "Regular", 5],
+            [SIZE_REGULAR, "Regular", 5],
             [SIZE_LARGE, "Large", 7],
           ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
         }
@@ -95,6 +103,8 @@ function sizedMenu() {
  */
 async function mockKioskBackend(page: Page, { comboUpsell = false, sized = false } = {}) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
+  // The print agent is cross-origin: the catch-all above never sees it.
+  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
   await page.route("**/api/cx/kiosk/getLanguage", (r) =>
     r.fulfill({
       json: {
@@ -240,6 +250,50 @@ async function firstBagRowItemId(page: Page): Promise<string> {
   return (testId ?? "").replace("bag-row-", "");
 }
 
+/**
+ * bag-pdp item 20: Cheese Burger + Extra Pickles (£9) bumped to ×3 in the
+ * bag (Sub £27.00), then Edit → the "edit how many" numpad (Figma 1:4460).
+ */
+async function openEditHowManyOnBurgerTimesThree(page: Page): Promise<string> {
+  await addCheeseBurgerViaPdp(page, { addonId: EXTRA_PICKLES, expectedCta: "£9.00" });
+  await openBag(page);
+  const itemId = await firstBagRowItemId(page);
+  await page.getByTestId(`bag-inc-${itemId}`).click();
+  await page.getByTestId(`bag-inc-${itemId}`).click();
+  await expect(page.getByTestId("bag-subtotal")).toContainText("£27.00");
+  await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
+  await page.getByTestId(`bag-edit-${itemId}`).click();
+  await expect(page.getByTestId("edit-how-many")).toBeVisible();
+  return itemId;
+}
+
+/** The Dexie cart mirror's row quantities (KioskDB.cartItems) — what a reload restores. */
+function dexieCartQuantities(page: Page): Promise<number[]> {
+  return page.evaluate(
+    () =>
+      new Promise<number[]>((resolve, reject) => {
+        const open = indexedDB.open("KioskDB");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const request = db.transaction("cartItems", "readonly").objectStore("cartItems").getAll();
+          request.onsuccess = () => {
+            db.close();
+            resolve(
+              (request.result as { quantity?: number }[])
+                .map((row) => Number(row.quantity))
+                .sort((a, b) => a - b)
+            );
+          };
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+        };
+      })
+  );
+}
+
 test.describe("P7a My Bag (bag sheet on /cart)", () => {
   test("BAG BASICS: PDP add lands a £8.00 row; stepper doubles to £16.00 (cta-total agrees) and back", async ({
     page,
@@ -343,9 +397,11 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     const itemId = await firstBagRowItemId(page);
 
     // Edit → PDP opens in edit mode: addon pre-selected, CTA reads UPDATE
-    // at the row's committed price.
+    // at the row's committed price. A qty-1 row edits straight away — the
+    // bag-pdp "edit how many" numpad is for multi-unit rows only.
     await page.getByTestId(`bag-edit-${itemId}`).click();
     await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("edit-how-many")).toHaveCount(0);
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("Update");
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
     await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveClass(
@@ -369,6 +425,159 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     // round(10 * 1.15) = round(11.5) = £12 (Math.round half-up).
     await expect(page.getByTestId("bag-total")).toContainText("£12.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (1)");
+  });
+
+  test("SPLIT EDIT: Edit on a ×3 row asks how many first (EDIT inert at 0, keys past 3 ignored); editing 2 adds Add Cheese to a new ×2 row beside the ×1 — £29.00 — and a reload keeps both rows", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    const itemId = await openEditHowManyOnBurgerTimesThree(page);
+
+    // Figma 1:4460: a dialog named for the row, described by the prompt.
+    const modal = page.getByRole("dialog", {
+      name: enLazy.bag.editHowMany.title
+        .replace("{{qty}}", "3")
+        .replace("{{name}}", "Cheese Burger"),
+    });
+    await expect(modal).toBeVisible();
+    await expect(modal).toHaveAccessibleDescription(enLazy.bag.editHowMany.body);
+    const value = page.getByTestId("edit-how-many-value");
+    const editCta = page.getByTestId("edit-how-many-confirm");
+    await expect(value).toHaveText("0");
+    await expect(editCta).toHaveAttribute("aria-disabled", "true");
+    // EDIT at 0 does nothing (forced past Playwright's aria-disabled refusal).
+    await editCta.click({ force: true });
+    await expect(page.getByTestId("customization-screen")).toHaveCount(0);
+    await expect(modal).toBeVisible();
+
+    // A key past N is ignored; N = 3 has one digit, so a second key is too.
+    await page.getByTestId("numpad-key-4").click();
+    await expect(value).toHaveText("0");
+    await page.getByTestId("numpad-key-2").click();
+    await expect(value).toHaveText("2");
+    await page.getByTestId("numpad-key-1").click();
+    await expect(value).toHaveText("2");
+    await expect(editCta).toHaveAttribute("aria-disabled", "false");
+    await test.info().attach("edit-how-many", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await editCta.click();
+
+    // The PDP edits 2 units: seeded with the row's pickles, CTA UPDATE at 2 × £9.
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("edit-how-many")).toHaveCount(0);
+    await expect(page.getByTestId("pdp-qty")).toHaveText("2");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("Update");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£18.00");
+    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveClass(
+      /border-tb-purple/
+    );
+    await page.getByTestId(`pdp-option-${ADD_CHEESE}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£20.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+
+    // Back in the bag: the source row keeps 1 unit as it was, the 2 edited
+    // units are a new row right after it. Sub = 1 × 9 + 2 × 10.
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(bagRows(page)).toHaveCount(2);
+    const kept = bagRows(page).nth(0);
+    const edited = bagRows(page).nth(1);
+    await expect(kept).toHaveAttribute("data-testid", `bag-row-${itemId}`);
+    await expect(kept).toContainText("Extra Pickles");
+    await expect(kept).not.toContainText("Add Cheese");
+    await expect(kept).toContainText("£9.00");
+    await expect(edited).toContainText("Extra Pickles");
+    await expect(edited).toContainText("Add Cheese");
+    await expect(edited).toContainText("£20.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£29.00");
+    // round(29 × 1.15 = 33.35) = £33.
+    await expect(page.getByTestId("bag-total")).toContainText("£33.00");
+    await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
+
+    // Crash-reload: both rows come back from Dexie (money without "£" — header).
+    await expect.poll(() => dexieCartQuantities(page)).toEqual([1, 2]);
+    await page.reload();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(bagRows(page).nth(0)).not.toContainText("Add Cheese");
+    await expect(bagRows(page).nth(0)).toContainText("9.00");
+    await expect(bagRows(page).nth(1)).toContainText("Add Cheese");
+    await expect(bagRows(page).nth(1)).toContainText("20.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("29.00");
+  });
+
+  test("SPLIT EDIT, BACK: leaving the split PDP with BACK writes nothing — the single ×3 row stays; X on the numpad cancels too", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    const itemId = await openEditHowManyOnBurgerTimesThree(page);
+
+    // X cancels the numpad: still the bag, nothing opened.
+    await page.getByTestId("edit-how-many-close").click();
+    await expect(page.getByTestId("edit-how-many")).toHaveCount(0);
+    await expect(page.getByTestId("customization-screen")).toHaveCount(0);
+
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    // The − / + pill (Figma 1:4460) is clamped to 0…N: four taps on + stop at 3.
+    const value = page.getByTestId("edit-how-many-value");
+    for (let tap = 0; tap < 4; tap++) {
+      await page.getByTestId("edit-how-many-increase").click();
+    }
+    await expect(value).toHaveText("3");
+    await page.getByTestId("edit-how-many-decrease").click();
+    await expect(value).toHaveText("2");
+    await page.getByTestId("edit-how-many-confirm").click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("pdp-qty")).toHaveText("2");
+    await page.getByTestId(`pdp-option-${ADD_CHEESE}`).click();
+    await page.getByTestId("pdp-back").click();
+
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(bagRows(page).first()).toHaveAttribute("data-testid", `bag-row-${itemId}`);
+    await expect(bagRows(page).first()).toContainText("Extra Pickles");
+    await expect(bagRows(page).first()).not.toContainText("Add Cheese");
+    await expect(bagRows(page).first()).toContainText("£27.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£27.00");
+    await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
+    await expect.poll(() => dexieCartQuantities(page)).toEqual([3]);
+  });
+
+  test("SPLIT EDIT, MERGE: editing 2 of 3 without changing the recipe but raising the PDP quantity to 3 merges back into one ×4 row — £36.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    const itemId = await openEditHowManyOnBurgerTimesThree(page);
+
+    await page.getByTestId("numpad-key-2").click();
+    await page.getByTestId("edit-how-many-confirm").click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("pdp-qty")).toHaveText("2");
+    await page.getByTestId("pdp-qty-increase").click();
+    await expect(page.getByTestId("pdp-qty")).toHaveText("3");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("Update");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£27.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+
+    // Same recipe → no second row: the source holds N − k + q = 3 − 2 + 3.
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(bagRows(page).first()).toHaveAttribute("data-testid", `bag-row-${itemId}`);
+    await expect(bagRows(page).first()).toContainText("Extra Pickles");
+    await expect(bagRows(page).first()).toContainText("£36.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£36.00");
+    await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (4)");
+    await expect.poll(() => dexieCartQuantities(page)).toEqual([4]);
   });
 
   test("REPEAT: tapping an in-cart item opens the repeat sheet; inc bumps the row, NEW CUSTOMIZATIONS opens a fresh PDP, backing out leaves the bag intact", async ({
@@ -565,5 +774,57 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-subtotal")).toContainText("£7.00");
     await expect(page.getByTestId("bag-total")).toContainText("£8.00");
     await expect(page.getByTestId("bag-pay")).toContainText("£8.00");
+  });
+
+  test("SIZE EDIT: editing a PDP-built VARIANT row from the bag keeps the new size — the whole ×1 row becomes Large; 1 of ×2 splits off as a Regular row beside the kept Large", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true });
+    await bootRegisteredToMenu(page);
+    // A card tap (not the quick-add fast lane) runs the PDP size picker.
+    const card = page.getByTestId(`item-${SIZED_ITEM}`);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await page.getByTestId(`pdp-variant-${SIZE_REGULAR}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£5.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await openBag(page);
+    const itemId = await firstBagRowItemId(page);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£5.00");
+
+    // Whole-row edit (×1): the PDP opens on the row's size; switch to Large.
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-change-size").click();
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£7.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId(`bag-row-${itemId}`)).toContainText("Large");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£7.00");
+
+    // Split edit: ×2, edit 1 of them back to Regular → a new row after the
+    // kept Large. Sub = 7 + 5; Total = round(12 × 1.15 = 13.8) = £14.
+    await page.getByTestId(`bag-inc-${itemId}`).click();
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£14.00");
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    await page.getByTestId("numpad-key-1").click();
+    await page.getByTestId("edit-how-many-confirm").click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-change-size").click();
+    await page.getByTestId(`pdp-variant-${SIZE_REGULAR}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£5.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(bagRows(page).nth(0)).toHaveAttribute("data-testid", `bag-row-${itemId}`);
+    await expect(bagRows(page).nth(0)).toContainText("Large");
+    await expect(bagRows(page).nth(1)).toContainText("Regular");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£14.00");
   });
 });

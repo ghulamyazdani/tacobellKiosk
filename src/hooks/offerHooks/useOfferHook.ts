@@ -16,6 +16,7 @@
  * behaves exactly as before (a fresh reference every render).
  */
 import { useDispatch } from "react-redux";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   useGetCxOffersMutation,
   useGetCxValidOffersMutation,
@@ -84,7 +85,6 @@ function useOfferHook() {
   const applyDirectlyApplicableGetItemsOffer = async (offer: any) => {
     offer?.getItems?.items?.forEach((item: any) => {
       if (item?.entities && Object.keys(item?.entities).length > 0) {
-        // console.log("item?.entities", item?.entities);
         for (let i = 0; i < (item?.type === "ITEM" ? 1 : item?.quantity); i++) {
           const itemToAdd = redeemGetItem(
             item?.entities,
@@ -112,7 +112,6 @@ function useOfferHook() {
         item?.value,
         item?.type === "ITEM",
       );
-      // console.log("item?.entities", itemToAdd, item);
       addGetItemToCart(itemToAdd, itemToAdd?.type ? itemToAdd?.type : "ITEM");
     }
   };
@@ -164,10 +163,16 @@ function useOfferHook() {
    * learned it happened. Now it is bounded (8s × up to 3 attempts) and the
    * failure is recorded in state so the cart can say so and offer a retry.
    * (CLAUDE.md Rule 2 · docs/OFFERS_REDESIGN.md §5.1 P4)
+   *
+   * `apply` defaults to dispatch; the in-bag order-type switch passes its
+   * stage so nothing lands before its one commit (fetchMenu opts).
    */
-  const getCxOffers = async (tabType: any) => {
+  const getCxOffers = async (
+    tabType: any,
+    apply: (action: UnknownAction) => unknown = dispatch,
+  ) => {
     const offerTabType = tabType ? tabType : getTabType();
-    dispatch(setOffersFetchLoading());
+    apply(setOffersFetchLoading());
 
     const result = await withTimeoutRetry(
       async () => {
@@ -183,7 +188,7 @@ function useOfferHook() {
     );
 
     if (!result.ok) {
-      dispatch(setOffersFetchFailed({ attempts: result.attempts }));
+      apply(setOffersFetchFailed({ attempts: result.attempts }));
       captureKioskEvent(KioskEventName.OffersFetchFailed, {
         attempts: result.attempts,
         timed_out: result.timedOut,
@@ -193,7 +198,7 @@ function useOfferHook() {
       return undefined;
     }
 
-    dispatch(setOffers(result.data));
+    apply(setOffers(result.data));
     return result.data;
   };
 
@@ -203,7 +208,6 @@ function useOfferHook() {
   const getBuyItemsDescription = (offer: any) => {
     const getItemsDescription = offer?.applicable?.rawItems
       ?.map((entity: any, index: any) => {
-        // console.log("entityentitybuy",entity)
         if (entity?.isRawItemAvailable && entity?.item?.name) {
           return ` ${
             entity?.quantity && entity?.quantity > 0
@@ -247,8 +251,6 @@ function useOfferHook() {
         }
       })
       ?.join("");
-
-    // console.log("getItemsDescription",getItemsDescription,isAnyItemExist,relation)
 
     const getCategoryText = offer?.getItems?.categories
       ?.map((category: any, index: any) => {

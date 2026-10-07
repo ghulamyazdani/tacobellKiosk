@@ -13,3 +13,11 @@ export { default as FreebiePickerSheet } from "../offer/FreebiePickerSheet";
 export { default as BuyStageSheet } from "../offer/BuyStageSheet";
 export { default as OfferAppliedCelebration } from "../offer/OfferAppliedCelebration";
 export { default as ActivityModal } from "../activity/ActivityModal";
+export { default as OrderTypeSwitchFlow } from "./OrderTypeSwitchFlow";
+export { default as OrderTypeSwitchNotice } from "./OrderTypeSwitchNotice";
+export { default as EditHowManyModal } from "./EditHowManyModal";
+// The PDP's lazy part too (D7: new PDP surfaces lazy-load through this entry).
+export { default as PdpIncompleteWarning } from "../customization/PdpIncompleteWarning";
+// …and the PDP split-edit planner (useCustomization takes a handle while the
+// numpad's split marker is set — the numpad already loaded this chunk).
+export { planSplitEditCommit } from "@cx-sdk/ordering/cart/splitEdit";

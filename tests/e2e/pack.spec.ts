@@ -21,7 +21,24 @@ import { fileURLToPath } from "node:url";
  *   `enable_combo_upsell` kiosk setting is on.
  * All slot picks are price 0 and no priced addon is selected in these flows,
  * so the committed pack total is exactly the base price: £25.00.
+ *
+ * Lane bag-pdp: item 23 — a failed ADD TO BAG names every incomplete group
+ * in the completion warning (`pdp-incomplete`, Figma 1:2855, lazy) — and
+ * item 24 — "−" at qty 1 in a tier-2 EDIT asks before removing the pick
+ * (`tier2-remove-*`; hide_plus_icon_from_item defaults ON when the kiosk
+ * settings omit it). The Arabic run reads the copy from the AR lazy.json and
+ * the group names from the fixture's `ar` aliases: names and interpolated
+ * values are FSI…PDI isolates in RTL, so Arabic is only ever matched as a
+ * substring, or after stripping the isolates (P9f), never exactly.
  */
+
+const readJson = (relative: string) =>
+  JSON.parse(
+    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
+  );
+const en = readJson("../../src/i18n/locales/en/translation.json");
+const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
+const arLazy = readJson("../../src/i18n/locales/ar/lazy.json");
 
 const LOGIN_OK = {
   licenseDetails: {
@@ -65,13 +82,19 @@ const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
  * get_kiosk_settings payload — the exact field useAddEntityToCart's upsell
  * gate reads out of state.appSettings.kiosk_settings.
  */
-async function mockKioskBackend(page: Page, { comboUpsell = false } = {}) {
+async function mockKioskBackend(
+  page: Page,
+  { comboUpsell = false, arabic = false } = {}
+) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
+  // The print agent is cross-origin: the catch-all above never sees it.
+  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
   await page.route("**/api/cx/kiosk/getLanguage", (r) =>
     r.fulfill({
       json: {
         primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
+        // `arabic` offers the secondary language (menu-arabic.spec.ts).
+        secondary_language: arabic ? { name: "العربية", code: "ar", dir: "rtl" } : {},
       },
     })
   );
@@ -93,6 +116,8 @@ async function mockKioskBackend(page: Page, { comboUpsell = false } = {}) {
     r.fulfill({
       json: {
         start_order_text_primary: "START ORDER",
+        // A secondary language without its splash text fails the boot.
+        ...(arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
         ideal_time: "180",
         ...(comboUpsell ? { enable_combo_upsell: true } : {}),
       },
@@ -122,8 +147,11 @@ async function mockKioskBackend(page: Page, { comboUpsell = false } = {}) {
   await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
 }
 
-/** Register on the on-screen keyboard and land on /menu (converted fixture). */
-async function bootRegisteredToMenu(page: Page) {
+/**
+ * Register on the on-screen keyboard and land on /menu (converted fixture).
+ * `arabic`: the guest picks العربية on /second first (menu-arabic.spec.ts).
+ */
+async function bootRegisteredToMenu(page: Page, { arabic = false } = {}) {
   await page.goto("/");
   // Figma keyboard: digits live behind the 123 layer toggle.
   await page.getByRole("button", { name: "t", exact: true }).click();
@@ -133,6 +161,12 @@ async function bootRegisteredToMenu(page: Page) {
   await page.getByTestId("registration-submit").click();
   await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("start-screen").click();
+  if (arabic) {
+    await expect(page.getByTestId("second-screen")).toBeVisible();
+    await page.getByTestId("footer-language").click();
+    await page.getByTestId("language-ar").click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  }
   await page.getByTestId("pipeline-p1").click();
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
@@ -153,6 +187,64 @@ async function pickSlot(page: Page, groupId: string, itemId: string) {
   await page.getByTestId(`slot-option-${itemId}`).click();
   await page.getByTestId("slot-sheet-save").click();
   await expect(page.getByTestId("slot-sheet")).not.toBeVisible();
+}
+
+/** The completion warning's EN copy for the given (joined) group names. */
+const incompleteBody = (groups: string) =>
+  (enLazy.pdp.incomplete.body as string).replace("{{groups}}", groups);
+
+/**
+ * Item 24 setup: Sides → Customize Large Fries (tier-2 NEW) → Without Salt →
+ * SAVE, then reopen the pick's Customize — now a tier-2 EDIT at qty 1.
+ */
+async function openSidesFriesInTier2Edit(page: Page) {
+  await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
+  await expect(page.getByTestId("slot-sheet")).toBeVisible();
+  await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+  const tier2 = page.getByTestId("tier2-sheet");
+  await expect(tier2).toBeVisible();
+  await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
+  await page.getByTestId("tier2-sheet-save").click();
+  await expect(tier2).not.toBeVisible();
+  const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
+  await expect(sidesCard).toContainText("Large Fries");
+  await expect(sidesCard).toContainText(en.pack.swap);
+
+  // The pick now carries customizations → its Customize opens an EDIT.
+  await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
+  await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+  await expect(tier2).toBeVisible();
+  await expect(page.getByTestId("tier2-qty")).toHaveText("1");
+}
+
+/** The PDP's tier-1 selection keys + the removal flag (DEV-only window.__kioskStore). */
+function tier1Selections(page: Page) {
+  return page.evaluate(() => {
+    const state = (
+      window as unknown as {
+        __kioskStore: {
+          getState: () => {
+            makeItAMeal?: {
+              confirmTier1CustomizationRemoval?: unknown;
+              makeItAMealModal?: {
+                tier1CustomizationModal?: {
+                  customizations?: { selectedCustomizations?: Record<string, unknown[]> };
+                };
+              };
+            };
+          };
+        };
+      }
+    ).__kioskStore.getState();
+    const selections =
+      state.makeItAMeal?.makeItAMealModal?.tier1CustomizationModal?.customizations
+        ?.selectedCustomizations ?? {};
+    return {
+      groups: Object.keys(selections).filter((group) => (selections[group] ?? []).length > 0),
+      keys: Object.keys(selections),
+      removalFlag: state.makeItAMeal?.confirmTier1CustomizationRemoval,
+    };
+  });
 }
 
 test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () => {
@@ -265,11 +357,228 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
       /ring-red-500/
     );
 
+    // bag-pdp item 23: the completion warning (Figma 1:2855, the box title)
+    // names the empty group; GOT IT closes it and the ring stays.
+    const warning = page.getByRole("alertdialog", {
+      name: enLazy.pdp.incomplete.titleBox,
+    });
+    await expect(warning).toBeVisible();
+    await expect(page.getByTestId("pdp-incomplete")).toBeVisible();
+    await expect(warning).toHaveAccessibleDescription(incompleteBody("nuggets"));
+    await expect(page.getByTestId("pdp-incomplete-gotit")).toHaveText(en.offers.gotIt);
+    await test.info().attach("pdp-incomplete", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toHaveClass(
+      /ring-red-500/
+    );
+
     // Leave the PDP: nothing landed in the bag.
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+  });
+
+  test("COMPLETION → FILL: after GOT IT the guest fills the named slot and ADD TO BAG lands the pack at £25.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    await pickSlot(page, G_SIDES, LARGE_FRIES);
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("pdp-incomplete")).toContainText(incompleteBody("nuggets"));
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+
+    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
+    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toContainText(en.pack.swap);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+  });
+
+  test("TIER-2 REMOVE (item 24): '−' at qty 1 in a tier-2 EDIT asks first; YES removes the Sides pick (the slot is back to SELECT, no 'undefined' group) and the completion warning then names sides", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    // Capture-only: the restyled SELECT sheet (Figma 1:2814).
+    await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
+    await expect(page.getByTestId("slot-sheet")).toBeVisible();
+    await expect(page.getByTestId(`slot-customize-${LARGE_FRIES}`)).toBeVisible();
+    await test.info().attach("slot-selection-sheet", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+    await page.getByTestId("slot-sheet-close").click();
+    await expect(page.getByTestId("slot-sheet")).not.toBeVisible();
+
+    await openSidesFriesInTier2Edit(page);
+    expect((await tier1Selections(page)).groups).toContain(G_SIDES);
+
+    await page.getByTestId("tier2-qty-decrease").click();
+    const confirm = page.getByRole("alertdialog", { name: en.pdp.discardTitle });
+    await expect(page.getByTestId("tier2-remove-overlay")).toBeVisible();
+    await expect(confirm).toHaveAccessibleDescription(en.pdp.discardBody);
+    await expect(page.getByTestId("tier2-remove-confirm")).toBeFocused();
+    await page.getByTestId("tier2-remove-confirm").click();
+
+    await expect(page.getByTestId("tier2-remove-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("tier2-sheet")).not.toBeVisible();
+    const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
+    await expect(sidesCard).toContainText(en.pack.selectGroup.replace("{{name}}", "Sides"));
+    await expect(sidesCard).not.toContainText(en.pack.swap);
+    const after = await tier1Selections(page);
+    expect(after.groups).not.toContain(G_SIDES);
+    expect(after.keys).not.toContain("undefined");
+    expect(after.removalFlag).toBe(false);
+
+    // Every other slot filled: the warning names exactly the removed one.
+    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
+    await page.getByTestId("pdp-add-to-bag").click();
+    const warning = page.getByRole("alertdialog", { name: enLazy.pdp.incomplete.titleBox });
+    await expect(warning).toBeVisible();
+    await expect(warning).toHaveAccessibleDescription(incompleteBody("sides"));
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect(sidesCard).toHaveClass(/ring-red-500/);
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+  });
+
+  test("TIER-2 REMOVE, NO (item 24): cancelling the removal keeps the Sides pick — the tier-2 sheet stays open and the full pack lands at £25.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+    await openSidesFriesInTier2Edit(page);
+
+    await page.getByTestId("tier2-qty-decrease").click();
+    await expect(page.getByTestId("tier2-remove-overlay")).toBeVisible();
+    await page.getByTestId("tier2-remove-cancel").click();
+    await expect(page.getByTestId("tier2-remove-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("tier2-sheet")).toBeVisible();
+    await expect(page.getByTestId("tier2-qty")).toHaveText("1");
+    expect((await tier1Selections(page)).removalFlag).toBe(false);
+
+    await page.getByTestId("tier2-sheet-save").click();
+    await expect(page.getByTestId("tier2-sheet")).not.toBeVisible();
+    const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
+    await expect(sidesCard).toContainText("Large Fries");
+    await expect(sidesCard).toContainText(en.pack.swap);
+    expect((await tier1Selections(page)).groups).toContain(G_SIDES);
+
+    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+  });
+
+  test("TIER-2 REMOVE, NEXT CUSTOMER (item 24): a removal confirm left open when the session idles out does not greet the next customer's tier-2 EDIT", async ({
+    page,
+  }) => {
+    test.slow();
+    // Before ANY page script (idle.spec.ts): react-idle-timer binds the page timers.
+    await page.clock.install();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+    await openSidesFriesInTier2Edit(page);
+    await page.getByTestId("tier2-qty-decrease").click();
+    await expect(page.getByTestId("tier2-remove-overlay")).toBeVisible();
+    expect((await tier1Selections(page)).removalFlag).toBe(true);
+
+    // The guest walks away: prompt at 100 s, Splash at 120 s (two jumps — idle.spec.ts).
+    await page.clock.fastForward(100_000);
+    await expect(page.getByTestId("idle-modal")).toBeVisible();
+    await page.clock.fastForward(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    await expect.poll(async () => (await tier1Selections(page)).removalFlag).toBe(false);
+
+    // The next customer's first tier-2 EDIT opens clean — no stale confirm.
+    await page.getByTestId("start-screen").click();
+    await page.getByTestId("pipeline-p1").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await openDreamBoxPack(page);
+    await openSidesFriesInTier2Edit(page);
+    await page.clock.runFor(500);
+    await expect(page.getByTestId("tier2-remove-overlay")).toHaveCount(0);
+  });
+
+  test("ARABIC (item 23): the completion warning reads the AR copy and joins the missing groups' Arabic names with the AR locale's conjunction", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { arabic: true });
+    await bootRegisteredToMenu(page, { arabic: true });
+    await openDreamBoxPack(page);
+    // Leave Drinks and Nuggets empty (scan order: drinks, then nuggets).
+    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    await pickSlot(page, G_SIDES, LARGE_FRIES);
+    await page.getByTestId("pdp-add-to-bag").click();
+
+    const warning = page.getByTestId("pdp-incomplete");
+    await expect(warning).toBeVisible();
+    const title = page.locator("#pdp-incomplete-title");
+    const message = page.locator("#pdp-incomplete-message");
+    await expect(title).toContainText(arLazy.pdp.incomplete.titleBox);
+    // The body around its {{groups}} placeholder (never a substring across it).
+    const [before, after] = (arLazy.pdp.incomplete.body as string).split("{{groups}}");
+    await expect(message).toContainText(before.trim());
+    await expect(message).toContainText(after.trim());
+
+    // The list: the two groups' `ar` aliases, joined by the browser's own AR
+    // list format — compared with every bidi isolate stripped.
+    const aliasOf = (groupId: string): string =>
+      (
+        (slimMenu.modifiers as { _id: string; aliases?: { code: string; value: string }[] }[])
+          .find((group) => group._id === groupId)
+          ?.aliases?.find((alias) => alias.code === "ar")?.value ?? ""
+      ).toLocaleLowerCase("ar");
+    const names = [aliasOf(G_DRINKS), aliasOf(G_NUGGETS)];
+    expect(names.every(Boolean)).toBe(true);
+    const joinedAr = await page.evaluate(
+      (list) => new Intl.ListFormat("ar", { type: "conjunction" }).format(list),
+      names
+    );
+    const joinedEn = await page.evaluate(
+      (list) => new Intl.ListFormat("en", { type: "conjunction" }).format(list),
+      names
+    );
+    expect(joinedAr).not.toBe(joinedEn);
+    const stripIsolates = (text: string | null) => (text ?? "").replace(/[⁦-⁩]/g, "");
+    await expect.poll(async () => stripIsolates(await message.textContent())).toContain(joinedAr);
+    expect(stripIsolates(await message.textContent())).not.toContain(joinedEn);
+    // GOT IT in Arabic closes it like in English.
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(warning).toHaveCount(0);
   });
 });
 

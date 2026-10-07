@@ -2,7 +2,9 @@
  * Recovery for a failed dynamic import.
  *
  * The app code-splits one lazy UI chunk (bagLazyParts: BagSheet's
- * `React.lazy` rail, offers sheets and celebration, and the operator Activity
+ * `React.lazy` rail, offers sheets and celebration, the order-type switch,
+ * its notice and the edit-how-many numpad; the PDP's completion warning and
+ * split-edit planner; and the operator Activity
  * Center) plus three runtime chunks (fcmRuntime, posthogRuntime,
  * paytmRuntime — exempt below), so code can be fetched from the network at
  * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
@@ -20,7 +22,9 @@
  * mount effect in `src/routes/AppRoutes.tsx` (P7a, contract E), so the customer
  * keeps their items; the never-persisted menu is refetched by /menu's own
  * mount (P9b). The Activity Center opens only on the splash and the boot
- * screen, where no order is in progress.
+ * screen, where no order is in progress. A reload on the PDP (its completion
+ * warning) drops the customisation in progress — the PDP's no-session guard
+ * leaves it — never the cart.
  */
 
 /**

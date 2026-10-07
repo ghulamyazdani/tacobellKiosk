@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   selectMenu,
   setMenuData,
@@ -158,13 +159,20 @@ function useMenuConverters() {
   // structuredClone (the SDK compiles without host globals).
   const deepClone = (value: any) => structuredClone(value);
 
-  const convertMenuCharges = (charges: any, taxesMap: any, pipeline: any) => {
+  const convertMenuCharges = (
+    charges: any,
+    taxesMap: any,
+    pipeline: any,
+    tabTypeOverride?: unknown,
+  ) => {
     // Same guards as the SDK function so the app-side getters below are only
     // invoked on the exact paths the original invoked them on.
     if (!charges) {
       return [];
     }
-    const tabType = getTabType();
+    // The staged switch passes the TARGET's tab type; the default path keeps
+    // the render-time getter (stale on /second — handoff, see contract §1.6).
+    const tabType = tabTypeOverride ?? getTabType();
     if (tabType === "table") {
       return [];
     }
@@ -192,12 +200,30 @@ function useMenuConverters() {
   };
 
 
+  /**
+   * `opts` = STAGED mode (the in-bag order-type switch): every dispatch goes
+   * to `apply` and every localStorage write to `mirror` (the dp, offer and
+   * converter internals included); `deploymentCharges` come from opts, never
+   * localStorage; menu charges use `pipeline.tab_type`; `requireOffers` turns
+   * an offers-fetch failure into `{}` (D1b). Only the Dexie menu-cache put
+   * happens before the caller commits. No opts = today's writes, byte-for-byte.
+   */
   const fetchMenu = async (
     tab_id: any,
     checkRedux: boolean,
     shouldReRunConverters?: boolean,
     pipeline?: any,
+    opts?: {
+      apply?: (action: UnknownAction) => unknown;
+      mirror?: (key: string, value: string) => void;
+      deploymentCharges?: unknown[];
+      requireOffers?: boolean;
+    },
   ) => {
+    const apply = opts?.apply ?? dispatch;
+    const mirror =
+      opts?.mirror ??
+      ((key: string, value: string) => window.localStorage.setItem(key, value));
     // loading state for fetching the menu
     setFetchLoading(true);
 
@@ -215,11 +241,10 @@ function useMenuConverters() {
       let dpItemsMap = {};
 
       if (!isDynamicPricingEnabled) {
-        dispatch(setDpItemsMap({}));
+        apply(setDpItemsMap({}));
         // FORK PARITY: posistKiosk mirrors dpItemsMap into localStorage for
         // legacy warm-boot fallbacks; folds into the persistence manifest later.
-        // eslint-disable-next-line no-restricted-globals
-        localStorage.setItem("dpItemsMap", JSON.stringify({}));
+        mirror("dpItemsMap", JSON.stringify({}));
       }
 
       // Initiate both API calls in parallel
@@ -250,12 +275,12 @@ function useMenuConverters() {
               tab_id: tab_id,
             }).unwrap(),
             getServerTimeApi({}).unwrap(),
-            getCxOffers(pipeline.tab_type).catch(() => null),
+            getCxOffers(pipeline.tab_type, apply).catch(() => null),
             isDynamicPricingEnabled
-              ? fetchDpSessions().catch(() => [])
+              ? fetchDpSessions(apply).catch(() => [])
               : Promise.resolve([]),
           ]);
-        dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions);
+        dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions, apply);
       } else {
         let storedMenuId = "";
         let storedMenuFull: any = null;
@@ -283,12 +308,12 @@ function useMenuConverters() {
               tab_id: tab_id,
             }).unwrap(),
             getServerTimeApi({}).unwrap(),
-            getCxOffers(pipeline.tab_type).catch(() => null),
+            getCxOffers(pipeline.tab_type, apply).catch(() => null),
             isDynamicPricingEnabled
-              ? fetchDpSessions().catch(() => [])
+              ? fetchDpSessions(apply).catch(() => [])
               : Promise.resolve([]),
           ]);
-        dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions);
+        dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions, apply);
 
         if (
           menu?.status === 304 ||
@@ -323,32 +348,38 @@ function useMenuConverters() {
       // transport budget (getMenu 30 s) the fetch normally settles before
       // idle can fire, so this is the backstop.
       if (!mountedRef.current) return {};
+      // D1b: a switch never commits a pipeline whose offers it could not load.
+      if (opts?.requireOffers && offers == null) {
+        setFetchLoading(false);
+        return {};
+      }
 
       if (
         menu.settings &&
         menu.settings.allow_multiple_punch &&
         menu.settings.allow_multiple_punch == true
       ) {
-        dispatch(setAllowMultiplePunch(true));
+        apply(setAllowMultiplePunch(true));
       } else {
-        dispatch(setAllowMultiplePunch(false));
+        apply(setAllowMultiplePunch(false));
       }
 
       const categoryMap = new Map<any, any>();
 
       if (menu?.settings?.send_categories === true) {
-        dispatch(setEntpShowCategory({ entpShowCategory: true }));
-        window.localStorage.setItem("entpShowCategory", "true");
+        apply(setEntpShowCategory({ entpShowCategory: true }));
+        mirror("entpShowCategory", "true");
       } else {
-        dispatch(setEntpShowCategory({ entpShowCategory: false }));
-        window.localStorage.setItem("entpShowCategory", "false");
+        apply(setEntpShowCategory({ entpShowCategory: false }));
+        mirror("entpShowCategory", "false");
       }
       if (serverTimeData && serverTimeData.serverTime) {
         const currentServerDate = new Date(serverTimeData.serverTime);
         currentServerDateWithTime = moment(currentServerDate);
       }
 
-      const dpItemsMapToUse = dpItemsMap || dpItemsMapRdx;
+      // Staged: a DP failure prices regular (D1c) — never the CURRENT pipeline's map.
+      const dpItemsMapToUse = dpItemsMap || (opts ? {} : dpItemsMapRdx);
 
       const variantEntityMap = new Map<any, any>();
       const entityMapAfterConversion = new Map<any, any>();
@@ -377,7 +408,7 @@ function useMenuConverters() {
       const taxesMap = new Map<any, any>();
 
       const entityMapObject = Object.fromEntries(entityMap);
-      dispatch(setEntityMap({ entityMap: entityMapObject }));
+      apply(setEntityMap({ entityMap: entityMapObject }));
 
       const convertedData = convertMenuData(
         menuWithChecks,
@@ -389,11 +420,12 @@ function useMenuConverters() {
         categoryMap,
         activeVariantEntityMap,
         entityMap,
+        apply,
       );
 
       const modifierMap = buildLegacyModifierMap(convertedData.modifiers);
 
-      dispatch(
+      apply(
         setModifiersMap({
           modifiersMap: modifierMap,
         }),
@@ -405,7 +437,7 @@ function useMenuConverters() {
           showOnlySupCat,
           showEntpCategory,
         ).forEach((payload: any) => {
-          dispatch(setMenuBasedOnCategory(payload));
+          apply(setMenuBasedOnCategory(payload));
         });
 
         const {
@@ -422,43 +454,43 @@ function useMenuConverters() {
           deepClone,
         );
 
-        dispatch(
+        apply(
           setEntityModifierMap({
             entityAndModifierMap: entityWithModifiersMap,
           }),
         );
 
-        dispatch(
+        apply(
           setCategoryMap({
             categoryMap: categoryMapData,
           }),
         );
 
-        dispatch(
+        apply(
           setSubCategoryMap({
             subCategoryMap: subCategoryMap,
           }),
         );
-        dispatch(
+        apply(
           setSubCategoryMapWhichContainsTopLevelCategoryIdAndName({
             subCategoryMapWhichContainsTopLevelCategoryIdAndName:
               subCategoryMapWhichContainsTopLevelCategoryIdAndName,
           }),
         );
 
-        dispatch(
+        apply(
           setAllMenuWithoutChecks({
             inActiveEntities: inActiveEntityMap,
             inaActiveVariants: inActiveVariantMap,
           }),
         );
         //dispatching the variant
-        dispatch(
+        apply(
           setEntityMenuObject({
             menuEntityObject: entityObject,
           }),
         );
-        dispatch(
+        apply(
           setVariantObject({
             variantObject: variantAndBaseItemMapping,
           }),
@@ -467,19 +499,19 @@ function useMenuConverters() {
         const { inActiveEntityMap, inActiveVariantMap } =
           collectLegacyInactiveMaps(menu, outOfStock);
 
-        dispatch(
+        apply(
           setAllMenuWithoutChecks({
             inActiveEntities: inActiveEntityMap,
             inaActiveVariants: inActiveVariantMap,
           }),
         );
         //dispatching the variant
-        dispatch(
+        apply(
           setEntityMenuObject({
             menuEntityObject: entityObject,
           }),
         );
-        dispatch(
+        apply(
           setVariantObject({
             variantObject: variantAndBaseItemMapping,
           }),
@@ -487,18 +519,24 @@ function useMenuConverters() {
       }
 
       const deploymentCharges: any =
-        window.localStorage.getItem("deploymentCharges") &&
+        opts?.deploymentCharges ??
+        (window.localStorage.getItem("deploymentCharges") &&
         window.localStorage.getItem("deploymentCharges") !== "undefined"
           ? JSON.parse(window.localStorage.getItem("deploymentCharges") || "{}")
-          : [];
+          : []);
 
-      const menuCharges = convertMenuCharges(menu.charges, taxesMap, pipeline);
+      const menuCharges = convertMenuCharges(
+        menu.charges,
+        taxesMap,
+        pipeline,
+        opts ? pipeline?.tab_type : undefined,
+      );
       const allCharges = [...deploymentCharges, ...menuCharges];
 
-      dispatch(pushCharges(allCharges));
-      dispatch(setMenuCharges({ menuCharges: menuCharges }));
-      window.localStorage.setItem("menuCharges", JSON.stringify(menuCharges));
-      window.localStorage.setItem("charges", JSON.stringify(allCharges));
+      apply(pushCharges(allCharges));
+      apply(setMenuCharges({ menuCharges: menuCharges }));
+      mirror("menuCharges", JSON.stringify(menuCharges));
+      mirror("charges", JSON.stringify(allCharges));
 
       converOffersForGetItemByMenu(
         entityMapAfterConversion,
@@ -506,11 +544,12 @@ function useMenuConverters() {
         variantEntityMap,
         fetchModifierProperties,
         offers,
+        apply,
       );
 
       setMenuLocal(convertedData);
 
-      dispatch(setMenuData({ menu: convertedData }));
+      apply(setMenuData({ menu: convertedData }));
       //now create a map for modifiers and there ids
 
       setFetchLoading(false);
@@ -565,6 +604,7 @@ function useMenuConverters() {
     categoryMap: any,
     activeVariantMap: any,
     entityMap?: any,
+    apply: (action: UnknownAction) => unknown = dispatch,
   ) => {
     try {
       const mappedUpsellIds: any = {};
@@ -632,12 +672,12 @@ function useMenuConverters() {
       });
 
       //setting in the redux
-      dispatch(setBannerAvailableItems(availableItems));
+      apply(setBannerAvailableItems(availableItems));
 
       if (selectShowUpsellingItemAsSeperateItemRdx) {
-        dispatch(setMappedUpsellIds({}));
+        apply(setMappedUpsellIds({}));
       } else {
-        dispatch(setMappedUpsellIds(mappedUpsellIds));
+        apply(setMappedUpsellIds(mappedUpsellIds));
       }
 
       const deepCopyParsedMedia = mergeLegacyMediaItemMap(
@@ -649,10 +689,10 @@ function useMenuConverters() {
       //now setting this as final converted data
 
       if (tags?.size > 0) {
-        dispatch(setTags({ tags: Array.from(tags) }));
+        apply(setTags({ tags: Array.from(tags) }));
       }
 
-      dispatch(setMediaDataConverted(deepCopyParsedMedia));
+      apply(setMediaDataConverted(deepCopyParsedMedia));
 
       return newMenuItems;
     } catch (err) {

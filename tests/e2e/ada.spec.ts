@@ -403,6 +403,51 @@ async function watchSplashNeverInZone(page: Page) {
     );
 }
 
+/**
+ * bag-pdp lane: a second, take-away pipeline (p2 / t2) whose menu does not
+ * serve Greek Salad, so the in-bag order-type switch has a target and its
+ * removal notice something to name (orderTypeSwitch.spec.ts). Register it
+ * AFTER mockKioskBackend (newest route wins).
+ */
+async function mockTakeAwayTab(page: Page) {
+  const takeAwayMenu = structuredClone(slimMenu) as {
+    MENU_ID: string;
+    categories: { subCategories: { entities: { id: string }[] }[] }[];
+  };
+  takeAwayMenu.MENU_ID = `${takeAwayMenu.MENU_ID}-t2`;
+  for (const category of takeAwayMenu.categories) {
+    for (const sub of category.subCategories) {
+      sub.entities = sub.entities.filter((entity) => entity.id !== GREEK_SALAD);
+    }
+  }
+  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
+    r.fulfill({
+      json: [
+        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
+        { _id: "p2", tab_id: "t2", tab_type: "take_away", primary_name: "Take Away" },
+      ],
+    })
+  );
+  await page.route("**/api/cx/kiosk/getMenu", (route) => {
+    let tab: unknown;
+    try {
+      tab = (route.request().postDataJSON() as { tab_id?: unknown } | null)?.tab_id;
+    } catch {
+      tab = undefined;
+    }
+    return route.fulfill({ json: tab === "t2" ? takeAwayMenu : slimMenu });
+  });
+}
+
+/** A dialog's card (the centred `tb-modal-enter` box) lies wholly inside the reach zone. */
+async function expectCardInZone(dialog: Locator) {
+  const card = await stageBox(dialog.locator(".tb-modal-enter").first());
+  expect(card.y, "card top").toBeGreaterThanOrEqual(ADA_BRAND_ZONE_HEIGHT);
+  expect(card.y + card.height, "card bottom").toBeLessThanOrEqual(STAGE_HEIGHT);
+  expect(card.x, "card left").toBeGreaterThanOrEqual(0);
+  expect(card.x + card.width, "card right").toBeLessThanOrEqual(STAGE_WIDTH);
+}
+
 /** The next customer meets the full-stage view, toggle released. */
 async function expectNextSessionStartsOff(page: Page) {
   await startToSecond(page);
@@ -494,6 +539,83 @@ test.describe("P9c ADA reach-zone view", () => {
     await page.getByTestId("bag-close").click();
     await expect(bag).toHaveCount(0);
     await expect(page).toHaveURL(/\/menu$/);
+    await expectAdaLayout(page);
+  });
+
+  test("REACH (bag-pdp lane): in the zone view the edit-how-many numpad, the order-type switch confirm, its removal notice and the PDP completion warning sit inside the zone with every control reachable", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await mockKioskBackend(page);
+    await mockTakeAwayTab(page);
+    await bootRegisteredToMenu(page);
+    await footerAda(page).click();
+    await expectAdaLayout(page);
+
+    // A ×2 customizable row (Edit → the numpad) and a row t2 does not serve.
+    const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
+    await burger.scrollIntoViewIfNeeded();
+    await burger.click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId("added-continue").click();
+    await addGreekSaladOneTap(page, "(2)");
+    await openBag(page);
+    const burgerRow = page
+      .locator('[data-testid^="bag-row-"]')
+      .filter({ hasText: "Cheese Burger" });
+    const burgerRowId = ((await burgerRow.getAttribute("data-testid")) ?? "").replace(
+      "bag-row-",
+      ""
+    );
+    await page.getByTestId(`bag-inc-${burgerRowId}`).click();
+    await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
+
+    // Item 20: the numpad (Figma 1:4460) inside the 765 px ADA bag.
+    await page.getByTestId(`bag-edit-${burgerRowId}`).click();
+    const numpad = page.getByTestId("edit-how-many");
+    await expect(numpad).toBeVisible();
+    await expectReachable(page, numpad);
+    await expectCardInZone(numpad);
+    await page.getByTestId("edit-how-many-close").click();
+    await expect(numpad).toHaveCount(0);
+
+    // Item 19: the switch confirm…
+    await page.getByTestId("bag-ordertype-takeout").click();
+    const confirm = page.getByTestId("bag-ordertype-confirm");
+    await expect(confirm).toBeVisible();
+    await expectReachable(page, confirm);
+    await expectCardInZone(confirm);
+    await page.getByTestId("bag-ordertype-confirm-yes").click();
+
+    // …and the removal notice it leaves (Greek Salad is not served on t2).
+    const notice = page.getByTestId("bag-ordertype-notice");
+    await expect(notice).toBeVisible({ timeout: 20_000 });
+    await expect(notice).toContainText("Greek Salad");
+    await expectReachable(page, notice);
+    await expectCardInZone(notice);
+    await page.getByTestId("bag-ordertype-notice-gotit").click();
+    await expect(notice).toHaveCount(0);
+    await expect(page.getByTestId("bag-ordertype-takeout")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+
+    // Item 23: the completion warning over the pack PDP.
+    await page.getByTestId("bag-close").click();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    const box = page.getByTestId("item-68dd79409030ed3064aee28c");
+    await box.scrollIntoViewIfNeeded();
+    await box.click();
+    await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
+    await page.getByTestId("pdp-add-to-bag").click();
+    const warning = page.getByTestId("pdp-incomplete");
+    await expect(warning).toBeVisible();
+    await expectReachable(page, warning);
+    await expectCardInZone(warning);
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(warning).toHaveCount(0);
     await expectAdaLayout(page);
   });
 

@@ -3,6 +3,7 @@
  * inherited; typed in the P6/P7 domain passes. Do not add NEW anys.
  */
 import moment from "dayjs";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
 import {
   selectValidDpSessions,
@@ -29,7 +30,13 @@ function useDynamicPricing() {
 
   useSelector(selectValidDpSessions);
 
-  const fetchDpSessions = async () => {
+  /**
+   * `apply` defaults to dispatch; the in-bag order-type switch passes its
+   * stage so nothing lands before its one commit (fetchMenu opts).
+   */
+  const fetchDpSessions = async (
+    apply: (action: UnknownAction) => unknown = dispatch,
+  ) => {
     try {
       const response: any = await getDpSessionsApi({
         app: "kiosk",
@@ -39,21 +46,24 @@ function useDynamicPricing() {
       let validSessions = {};
 
       if (response?.data) {
-        validSessions = await filterDpSessions(response?.data);
+        validSessions = await filterDpSessions(response?.data, apply);
       }
 
-      // console.log("response fetchDpSessions", response);
       return validSessions;
     } catch (error) {
       console.error("Error fetching dynamic pricing sessions:", error);
     }
   };
-  const fetchDpItems = async (pipeLineId: any, validDpSession: any) => {
+  const fetchDpItems = async (
+    pipeLineId: any,
+    validDpSession: any,
+    apply: (action: UnknownAction) => unknown = dispatch,
+  ) => {
     try {
       const session = pickActiveDpSession(validDpSession);
-      dispatch(setCurrentSession(session));
+      apply(setCurrentSession(session));
       if (!session) {
-        dispatch(setDpItemsMap({}));
+        apply(setDpItemsMap({}));
         // window.localStorage.setItem("dpItemsMap", JSON.stringify({}));
         return {};
       }
@@ -62,27 +72,29 @@ function useDynamicPricing() {
         app: "kiosk",
         pipeline_id: pipeLineId,
       });
-      // console.log("response fetchDpItems", response);
-      // // console.log("filteredSessions id", session?._id, lastSessionIdRdx);
       // if(lastSessionIdRdx !== session?._id){
       //   dispatch(openDpSessionInfoModal(session));
       // }
 
-      return convertDpItemsMap(response?.data);
+      return convertDpItemsMap(response?.data, apply);
     } catch (error) {
       console.error("Error fetching dynamic pricing items:", error);
     }
   };
-  const convertDpItemsMap = (sessionItems: any) => {
+  const convertDpItemsMap = (
+    sessionItems: any,
+    apply: (action: UnknownAction) => unknown = dispatch,
+  ) => {
     const dpEntityMap = buildDpItemsMap(sessionItems);
 
-    // console.log("dpEntityMap", dpEntityMap, sessionItems);
-
-    dispatch(setDpItemsMap(dpEntityMap));
+    apply(setDpItemsMap(dpEntityMap));
     // window.localStorage.setItem("dpItemsMap", JSON.stringify(dpEntityMap));
     return dpEntityMap;
   };
-  const filterDpSessions = async (dpSessions: any) => {
+  const filterDpSessions = async (
+    dpSessions: any,
+    apply: (action: UnknownAction) => unknown = dispatch,
+  ) => {
     let dayIndex = moment().day();
 
     let currentDate = moment();
@@ -101,9 +113,7 @@ function useDynamicPricing() {
       dayIndex,
     );
 
-    // console.log("filteredSessions", filteredSessions, dpSessions);
-
-    dispatch(setValidDpSessions(filteredSessions));
+    apply(setValidDpSessions(filteredSessions));
     return filteredSessions;
   };
   return { convertDpItemsMap, fetchDpSessions, fetchDpItems };
