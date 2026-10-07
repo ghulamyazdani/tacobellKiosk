@@ -39,7 +39,7 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
  */
 const FULLSCREEN_PASSCODE = "Pos@123";
 
-interface ActivityModalProps {
+export interface ActivityModalProps {
   isOpen: boolean;
   onClose: () => void;
   /**
@@ -262,12 +262,14 @@ export default function ActivityModal({
               </div>
             )}
 
+            {/* px-8: the three Archivo Black 20 px labels share the 724 px
+                row on one line (≈670 px); px-10 wrapped two of them. */}
             <div className="flex justify-between gap-[16px]">
               <button
                 type="button"
                 data-testid="activity-logout"
                 onClick={() => setShowLogoutConfirm(true)}
-                className="min-h-[44px] rounded-full bg-red-600 px-10 py-4 text-[20px] font-black uppercase text-white"
+                className="min-h-[44px] rounded-full bg-red-600 px-8 py-4 text-[20px] font-black uppercase text-white"
               >
                 {t("activity.logout")}
               </button>
@@ -276,7 +278,7 @@ export default function ActivityModal({
                   type="button"
                   data-testid="activity-reload-resources"
                   onClick={onReloadResources}
-                  className="min-h-[44px] rounded-full bg-tb-purple px-10 py-4 text-[20px] font-black uppercase text-tb-surface"
+                  className="min-h-[44px] rounded-full bg-tb-purple px-8 py-4 text-[20px] font-black uppercase text-tb-surface"
                 >
                   {t("activity.reloadResources")}
                 </button>
@@ -285,7 +287,7 @@ export default function ActivityModal({
                 type="button"
                 data-testid="activity-close"
                 onClick={onClose}
-                className="min-h-[44px] rounded-full border-2 border-tb-purple px-10 py-4 text-[20px] font-black uppercase text-tb-purple"
+                className="min-h-[44px] rounded-full border-2 border-tb-purple px-8 py-4 text-[20px] font-black uppercase text-tb-purple"
               >
                 {t("activity.close")}
               </button>

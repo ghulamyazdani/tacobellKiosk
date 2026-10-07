@@ -90,10 +90,15 @@ const calorieValue = (
   return cal;
 };
 
-/** Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). */
+/**
+ * Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). The
+ * url() is quoted (as in OfferAppliedCelebration): the inlined SVG data URI
+ * carries ' ( ), so an unquoted url() is invalid and the bell paints as a
+ * solid square.
+ */
 const bellMaskStyle: CSSProperties = {
-  WebkitMaskImage: `url(${tbBell})`,
-  maskImage: `url(${tbBell})`,
+  WebkitMaskImage: `url("${tbBell}")`,
+  maskImage: `url("${tbBell}")`,
   WebkitMaskRepeat: "no-repeat",
   maskRepeat: "no-repeat",
   WebkitMaskSize: "contain",
@@ -315,7 +320,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
       >
         <span className="flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px]">
           <span
-            className="block overflow-hidden text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
+            className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
             style={{
               lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
               maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
@@ -331,12 +336,12 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
           <img
             alt=""
             src={imageUrl}
-            className="w-full object-contain"
+            className="min-h-0 w-full object-contain"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
           />
         ) : (
           <span
-            className="block w-full"
+            className="block min-h-0 w-full"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
           />
         )}

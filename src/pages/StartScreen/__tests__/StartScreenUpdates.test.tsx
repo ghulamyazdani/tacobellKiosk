@@ -17,6 +17,7 @@ import {
 } from "@cx-sdk/devices/updates/updatePolicy";
 import { store } from "../../../redux/app/store";
 import StartScreen from "../index";
+import { loadActivityModal } from "../../../components/activity/loadActivityModal";
 import "../../../i18n";
 
 /*
@@ -122,12 +123,16 @@ const updateEvents = () =>
   h.capture.mock.calls
     .filter(([name]) => name === "update_triggered")
     .map(([, props]) => props);
-/** The hidden 3 s operator hold on the top-left hotspot. */
-const holdHotspot = () => {
+/**
+ * The hidden 3 s operator hold on the top-left hotspot, then the Activity
+ * Center's lazy code (ActivityCenter) — no fake time passes while it loads.
+ */
+const holdHotspot = async () => {
   const hotspot = screen.getByTestId("activity-hotspot");
   fireEvent.mouseDown(hotspot);
   tick(3_000);
   fireEvent.mouseUp(hotspot);
+  await act(() => loadActivityModal());
 };
 
 const seedStale = () => store.dispatch(setLastBootAt(T0 - BOOT_DATA_MAX_AGE_MS));
@@ -266,15 +271,15 @@ describe("StartScreen — the dwell and the apply", () => {
     ["the dwell (stale data)", () => (seedStale(), renderStart(), tick(15_000))],
     [
       "the operator's Reload resources",
-      () => {
+      async () => {
         renderStart();
-        holdHotspot();
+        await holdHotspot();
         fireEvent.click(screen.getByTestId("activity-reload-resources"));
       },
     ],
-  ])("OV4 — no pipelines stored: %s navigates in NORMAL mode (no route state → the boot's retry ladder)", (_label, run) => {
+  ])("OV4 — no pipelines stored: %s navigates in NORMAL mode (no route state → the boot's retry ladder)", async (_label, run) => {
     store.dispatch(setPipelines([]));
-    run();
+    await run();
 
     expect(h.navigate.mock.calls).toEqual([["/LoadingResources", undefined]]);
     expect(refreshState()).toBeNull();
@@ -359,11 +364,11 @@ describe("StartScreen — what defers, pauses or disarms the dwell", () => {
     expect(h.navigate.mock.calls).toEqual([refreshTo("brand")]);
   });
 
-  it("the Activity Center pauses the dwell (60 s: nothing); closing it re-arms a FULL 15 s", () => {
+  it("the Activity Center pauses the dwell (60 s: nothing); closing it re-arms a FULL 15 s", async () => {
     seedStale();
     renderStart();
     tick(5_000);
-    holdHotspot(); // opens at 8 s
+    await holdHotspot(); // opens at 8 s
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
 
     tick(60_000);
@@ -452,9 +457,9 @@ describe("StartScreen — when the scheduled refresh falls due (D1 clock)", () =
 });
 
 describe("StartScreen — the operator and StrictMode", () => {
-  it("the operator's Reload resources (3 s hidden hold) refreshes with trigger 'operator' on fresh data — no update_triggered, no ack", () => {
+  it("the operator's Reload resources (3 s hidden hold) refreshes with trigger 'operator' on fresh data — no update_triggered, no ack", async () => {
     renderStart();
-    holdHotspot();
+    await holdHotspot();
 
     fireEvent.click(screen.getByTestId("activity-reload-resources"));
 

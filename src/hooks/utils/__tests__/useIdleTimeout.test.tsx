@@ -6,6 +6,7 @@ import {
   IDLE_MAX_SECONDS,
   IDLE_PROMPT_SECONDS,
   IdleHoldContext,
+  PAYMENT_IDLE_HOLD_MAX_MS,
   resolveIdleSeconds,
   useIdleHold,
 } from "../useIdleTimeout";
@@ -164,5 +165,66 @@ describe("useIdleHold — the +1/-1 hold IdleGuard counts", () => {
 
     expect(net()).toBe(0);
     expect(adjust).toHaveBeenCalledTimes(4);
+  });
+
+  describe("maxMs — the per-hold cap (P8b D2)", () => {
+    const holdFor = (maxMs?: number) =>
+      renderHook(({ on, cap }: { on: boolean; cap?: number }) => useIdleHold(on, cap), {
+        initialProps: { on: true, cap: maxMs },
+        wrapper: provider,
+      });
+    const after = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+
+    it("PAYMENT_IDLE_HOLD_MAX_MS is 240 s — the 180 s EDC window + 30 s settle + one void extension", () => {
+      expect(PAYMENT_IDLE_HOLD_MAX_MS).toBe(240_000);
+      expect(PAYMENT_IDLE_HOLD_MAX_MS).toBeGreaterThan(IDLE_HOLD_MAX_MS);
+    });
+
+    it("omitted, the cap is IDLE_HOLD_MAX_MS (every pre-P8b caller is unchanged)", () => {
+      holdFor();
+      after(IDLE_HOLD_MAX_MS - 1);
+      expect(net()).toBe(1);
+      after(1);
+      expect(adjust.mock.calls).toEqual([[1], [-1]]);
+    });
+
+    it("a custom cap holds past the default and releases exactly at maxMs, once", () => {
+      const { rerender, unmount } = holdFor(PAYMENT_IDLE_HOLD_MAX_MS);
+      after(IDLE_HOLD_MAX_MS);
+      expect(net()).toBe(1);
+      after(PAYMENT_IDLE_HOLD_MAX_MS - IDLE_HOLD_MAX_MS - 1);
+      expect(net()).toBe(1);
+      after(1);
+      expect(adjust.mock.calls).toEqual([[1], [-1]]);
+
+      rerender({ on: false, cap: PAYMENT_IDLE_HOLD_MAX_MS });
+      unmount();
+      expect(adjust.mock.calls).toEqual([[1], [-1]]);
+    });
+
+    it("a changed cap re-arms: the old hold is given back, a fresh one runs to the NEW cap", () => {
+      const { rerender } = holdFor(IDLE_HOLD_MAX_MS);
+      after(100_000);
+      rerender({ on: true, cap: PAYMENT_IDLE_HOLD_MAX_MS });
+      expect(adjust.mock.calls).toEqual([[1], [-1], [1]]);
+      expect(vi.getTimerCount()).toBe(1);
+
+      after(PAYMENT_IDLE_HOLD_MAX_MS - 1);
+      expect(net()).toBe(1);
+      after(1);
+      expect(net()).toBe(0);
+    });
+
+    it("an unchanged cap across re-renders keeps the same hold (no re-arm)", () => {
+      const { rerender } = holdFor(PAYMENT_IDLE_HOLD_MAX_MS);
+      after(200_000);
+      rerender({ on: true, cap: PAYMENT_IDLE_HOLD_MAX_MS });
+      expect(adjust.mock.calls).toEqual([[1]]);
+      after(PAYMENT_IDLE_HOLD_MAX_MS - 200_000);
+      expect(net()).toBe(0);
+    });
   });
 });

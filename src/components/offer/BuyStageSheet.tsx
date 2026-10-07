@@ -251,8 +251,12 @@ export default function BuyStageSheet({
         }`}
       >
         <span className="flex flex-col gap-[4px] px-[24px] pt-[24px]">
+          {/* line-clamp-2, the rail card's rule: a name past the fixed
+              two-line box ends in an ellipsis, never a sliced third line (a
+              70-character TB India name is 643 px of Archivo at 20 px — three
+              lines in the 264 px box). */}
           <span
-            className="block overflow-hidden text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
+            className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
             style={{
               lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
               height: CART_UPSELL_TITLE_HEIGHT_PX,

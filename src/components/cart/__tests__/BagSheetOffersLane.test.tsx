@@ -5,7 +5,8 @@
  * (useOfferAutoApply: operator-flagged, cart-neutral, never over a customer
  * choice, never while a sheet / picker / buy stage / removal notice is up).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -30,6 +31,25 @@ import {
 import { resetAppliedBarCelebration } from "../../../utils/offerCelebration";
 import BagSheet from "../BagSheet";
 import "../../../i18n";
+
+/**
+ * The ONE lazy chunk, real — except that the buy stage can be held "still
+ * loading" (suspended on `stall.promise`) to show its Suspense fallback.
+ * null (the default) renders the real stage at once.
+ */
+const stall = vi.hoisted(() => ({ promise: null as Promise<void> | null }));
+vi.mock("../bagLazyParts", async (importOriginal) => {
+  const parts = await importOriginal<typeof import("../bagLazyParts")>();
+  const { createElement, use } = await import("react");
+  const Stage = parts.BuyStageSheet;
+  return {
+    ...parts,
+    BuyStageSheet: (props: ComponentProps<typeof Stage>) => {
+      if (stall.promise) use(stall.promise);
+      return createElement(Stage, props);
+    },
+  };
+});
 
 type Row = { id?: string; itemId?: string; isGetItem?: boolean; [key: string]: unknown };
 
@@ -326,7 +346,8 @@ describe("BagSheet — applied-row pop (AppliedRowPop + the spent key)", () => {
 
     await userEvent.click(screen.getByTestId("bag-rewards-remove"));
     await userEvent.click(await screen.findByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-plain-flat-1"));
+    // Lazy (bagLazyParts): the rewards sheet mounts once its chunk resolves.
+    await userEvent.click(await screen.findByTestId("offer-row-plain-flat-1"));
     await userEvent.click(screen.getByTestId("rewards-save"));
 
     await waitFor(() => expect(slotId()).toBe("plain-flat-1"));
@@ -386,7 +407,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     act(() => void store.dispatch(setFilteredOffers([PLAIN_FLAT, AUTO_FLAT])));
     expect(slotId()).toBeUndefined();
 
-    await userEvent.click(screen.getByTestId("rewards-close"));
+    await userEvent.click(await screen.findByTestId("rewards-close"));
     await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
   });
 
@@ -405,7 +426,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     store.dispatch(setFilteredOffers([BUY_TWO_SAUCES]));
     render(<BagUi />);
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-buy-two"));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
     // Lazy (bagLazyParts): the stage mounts once its chunk resolves.
     expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
 
@@ -420,7 +441,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     store.dispatch(setFilteredOffers([SAUCE_CHOICE]));
     render(<BagUi />);
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-offer-sauce-choice"));
+    await userEvent.click(await screen.findByTestId("offer-row-offer-sauce-choice"));
     await userEvent.click(screen.getByTestId("rewards-save"));
     await screen.findByTestId("freebie-picker");
 
@@ -460,7 +481,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
 
     // P9f overlay-button pattern: the applied row's named overlay opens the sheet.
     await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
-    await userEvent.click(screen.getByTestId("offer-row-min-three-1"));
+    await userEvent.click(await screen.findByTestId("offer-row-min-three-1"));
     await userEvent.click(screen.getByTestId("rewards-save"));
     await waitFor(() => expect(slotId()).toBe("min-three-1"));
     expect(caption()).toBeNull();
@@ -533,10 +554,38 @@ describe("BagSheet — buy-stage hand-offs", () => {
 
   const openStage = async (offerId: string) => {
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId(`offer-row-add-items-${offerId}`));
+    await userEvent.click(await screen.findByTestId(`offer-row-add-items-${offerId}`));
     await userEvent.click(await screen.findByTestId(`buy-stage-add-${SAUCE.id}`));
     expect(state().cart.cartItems.map((row) => row.id)).toEqual([BURGER_ROW.id, SAUCE.id]);
   };
+
+  it("while the stage's code still loads, its scrim is the stage's own Close: a tap abandons the journey (nothing added, the bag intact); once the code arrives the stage opens", async () => {
+    let arrive!: () => void;
+    stall.promise = new Promise<void>((resolve) => (arrive = resolve));
+    onTestFinished(() => {
+      stall.promise = null;
+    });
+    store.dispatch(setFilteredOffers([BUY_TWO_SAUCES]));
+    render(<BagUi />);
+    await userEvent.click(screen.getByTestId("bag-rewards-entry"));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+
+    const loading = await screen.findByRole("button", { name: "Close rewards" });
+    expect(loading).toHaveAttribute("data-testid", "buy-stage-loading");
+    expect(screen.queryByTestId("rewards-sheet")).toBeNull();
+    expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
+
+    await userEvent.click(loading);
+    expect(screen.queryByTestId("buy-stage-loading")).toBeNull();
+    expect(state().cart.cartItems).toEqual([BURGER_ROW]);
+    expect(screen.getByTestId("bag-total")).toHaveTextContent("£8.60");
+
+    await act(async () => arrive());
+    await userEvent.click(screen.getByTestId("bag-rewards-entry"));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+    expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
+    expect(screen.queryByTestId("buy-stage-loading")).toBeNull();
+  });
 
   it("BACK abandons the journey (paid rows rolled back) and returns to the rewards list", async () => {
     store.dispatch(setFilteredOffers([BUY_TWO_SAUCES]));

@@ -64,12 +64,14 @@
 | `tb-lilac` | `#F3D9FF` | CTA_Sheet_Fixed Secondary/"Loading" fill (idle START AGAIN, 1:4514) — unbound in Figma, name ours; 1.3:1 on white (decorative fill, flagged for client sign-off) |
 | `--brand-primary/-secondary`, `--brand-1..31` | runtime | theme-API contract (useFetchColors), fallbacks mandatory |
 
-**Type** (design uses **GT America Trial** — commercial; we ship pinned
-Archivo stand-ins until the client licenses it — FLAGGED):
+**Type** (design uses **GT America Trial** — commercial; we ship ONE Archivo
+variable stand-in at three widths until the client licenses it — FLAGGED):
 | Figma style | Spec | Our face/class |
 |---|---|---|
 | Title/H1 | Exp Bl 116/98, -3.27 | `.tb-display` |
 | Title/H2 | Exp Bl 64/0.85, -3 | `.tb-display` |
+| Title/H3 | Exp Bl 48/44, -1 | `.tb-display text-[48px] leading-[44px] tracking-[-1px]` (PDP title; Order Complete's heading is still 76 px) |
+| Title/H4 | Cm Bd 34/38 | `.tb-compressed text-[34px] leading-[38px]` (Order Complete PROCEED line) |
 | Title/H5 | Exp Bl 32/32, -1 | `.tb-display` |
 | CTA/Expanded Medium | Exp Bl 24/32 | `.tb-display` |
 | CTA/Expanded small | Exp Md 16/16 | `.tb-display` + font-medium |
@@ -78,9 +80,12 @@ Archivo stand-ins until the client licenses it — FLAGGED):
 | Text/Small | Rg 18/20 | base Archivo |
 | CTA/Bold Medium | Exp Bl 18/16 | `.tb-display text-[18px] leading-[16px]` |
 | Text/Title large | Rg 28/32 | base Archivo `text-[28px] leading-[32px]` |
-Arabic: no brand face — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback font (sign-off S1). ⚠️ The committed files are MISLABELLED (found 2026-10-06; fix queued — see PROGRESS): `Archivo-Variable.woff2` is a static ExtraCondensed Thin cut and `Archivo-Condensed-Bold.woff2` is width-variable (62–125, default 100).
-Fonts committed: `Archivo-Variable.woff2` (upright latin),
-`Archivo-Expanded-Black.woff2` (wdth125/wght900), `Archivo-Condensed-Bold.woff2` (wdth62/wght700).
+
+Fonts committed (fonts lane, 2026-10-07): `Archivo-wdth-wght-latin.woff2` + `Archivo-wdth-wght-latin-ext.woff2` — the OFL Archivo variable font (Google Fonts CSS2 v25, wght 100–900 × wdth 62–125; latin-ext carries ₹ U+20B9); licence `public/fonts/OFL.txt` (Vite copies it to `dist/fonts/OFL.txt`; outside the Workbox globs, so not precached). ONE family `Archivo` at three widths: body 100 %, `.tb-compressed` 62 % / 700, `.tb-display` 125 % / 900; both classes live in `@layer components`, so Tailwind `font-*` utilities override them (CTA/Expanded small really renders Exp Md = 500).
+
+GT-America-only deltas: Archivo at 62 % runs 3–7 % wider than GT America Compressed (rail SPECIALTIES 133 vs 126 design px), so long rail labels can wrap to 2 lines inside the 64 px pill; letterforms and x-height differ. Not a font delta: CRAVINGS MENU wraps because the rail's text box is 167 px (nav 264 − 2×24 padding − 1 border − 2×24 button padding) against the frame's ~170 px label — it would wrap with GT America too (a one-line fit needs a padding cut — client call).
+
+Arabic: no brand face — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback font (sign-off S1). Under `font-stretch` the macOS fallback (Geeza Pro) keeps its width (only Archivo's space glyph changes); a width-variable Arabic face on the kiosk OS could condense `.tb-compressed` Arabic — on-hardware check owed.
 
 ## 4. Frame → screen map (node IDs are canonical)
 
@@ -96,61 +101,61 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 ### Order type + chrome
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:2581` v1 / `1:2588` v2 | Dine In / Take Out / Daypart | `pages/SecondLayout` | ✅ v1 (v2 variant 🔲) |
+| `1:2581` v1 / `1:2588` v2 | Dine In / Take Out / Daypart | `pages/SecondLayout` | ✅ v1 (v2 variant 🔲) · fonts lane: card labels really Cm Bd (`.tb-compressed` 62 %/700) as in the frame; 3–4 order types: two card rows anchored at the 2-card top (573) under the bell, 5+ the swipe row in normal mode too (design language, sign-off) |
 | `1:4488` | Select Language | `components/language/LanguageSheet` | ✅ · P9f: CSS entrance only, no exit slide |
 | in `1:2581` | Daypart ticker | `components/chrome/DaypartTicker` | ✅ (server-driven copy 🔲) |
-| in `1:2581` | Footer bottom (Cancel/ADA/lang) | `components/chrome/FooterBar` | ✅ |
+| in `1:2581` | Footer bottom (Cancel/ADA/lang) | `components/chrome/FooterBar` | ✅ · fonts lane: labels render Exp Md (`tb-display font-medium` = 125 %/500, CTA/Expanded small) as in 1:2581 — the unlayered class used to force Black |
 
 ### Menu
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (search descoped D2; banners declined D1; names follow the menu's `ar` aliases) |
-| `1:4571`, `1:5502`, `1:5521` | Product added | `components/menu/ProductAddedModal` | ✅ |
+| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (search descoped D2; banners declined D1; names follow the menu's `ar` aliases) · fonts lane: the hero/grid photo yields (`min-h-0`) to a 3–4-line name or a wrapped price/calorie line — no clipping in the fixed 578/277 cards (sign-off); rail labels really compressed, CRAVINGS MENU still wraps (box width, see §3) |
+| `1:4571`, `1:5502`, `1:5521` | Product added | `components/menu/ProductAddedModal` | ✅ · Total = the menu bar's live pre-tax subtotal (`selectSubTotal`; it read the bag-only `netAmount` and showed £0.00 — fixed 2026-10-07); the suggestions strip has no frame and is unclamped, long names take 3–4 lines (sign-off) |
 | `1:5263` | Scroll bar | `components/chrome/ScrollIndicator` (mounted by `pages/Menu` + `pages/Customization`) | ✅ post-P9 — menu 1:2613 top 505 / h 790 (ADA 1:5412 170 / 578), PDP 1:2920 703 / 790 (ADA PDP 1:5442 488 / 394); `right-[12px]`, 11 px, track tb-lilac r2, thumb tb-purple r2; indicator only (D3, aria-hidden, pointer-events-none — sign-off); native bar hidden |
 
 ### PDP / customization (P6)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:5628` incomplete / `1:5683` complete | Select a Size v2 | `components/menu/SelectSizeModal` | ✅ |
-| `1:2920` incomplete · `1:2827` completion warning · `1:2786`,`1:5738`,`1:5780` selection sheets · `1:2856`,`1:5353` all complete · `1:2984` customize · `1:3007`,`1:3037` customize-edit · `1:5477` edits complete | PDP - Builder family | `pages/Customization` | 🔄 core built (single-scroll layout; edit-mode + per-constituent selection sheets refine in P7 edit pass) |
-| `1:5823` nutrition closed · `1:2614`, `1:2728`, `1:5540` | PDP - Single Product | `pages/Customization` | 🔄 core built (nutrition table accordion 🔲) |
-| `1:4590`,`1:4641`,`1:4761`,`1:4692`,`1:4827`,`1:5180` + customize `1:4895`,`1:5051`,`1:5081`,`1:4947`,`1:5115`,`1:5145`,`1:4999` | Order a Pack family | `pages/Customization` + `components/customization/{PackSlotCard,SlotSelectionSheet,Tier2CustomizationSheet}` | 🔄 built from `1:4590`/`1:4641`/`1:4761`/`1:4692`; customize family + completed/warning states NOT pulled (Figma MCP rate limit 2026-09-29) — tier-2 sheet is design-language, needs visual pass |
+| `1:5628` incomplete / `1:5683` complete | Select a Size v2 | `components/menu/SelectSizeModal` | ✅ · captured by visual-offers; a chosen size now bills (its row lacked `variantPrice` — the bag showed NaN since 1bfd95e; bag.spec SIZE FAST LANE). Deltas vs 1:5683 (backlog): 560 px wide vs 680, small-tile radio bottom-right vs top-right, a wrapped name centred vs left. A size whose variant has modifier groups adds nothing (deferred) |
+| `1:2920` incomplete · `1:2827` completion warning · `1:2786`,`1:5738`,`1:5780` selection sheets · `1:2856`,`1:5353` all complete · `1:2984` customize · `1:3007`,`1:3037` customize-edit · `1:5477` edits complete | PDP - Builder family | `pages/Customization` | 🔄 core built (single-scroll layout; edit-mode + per-constituent selection sheets refine in P7 edit pass) · fonts lane: option tiles without a photo get `px-[44px]`, so the centred name stays ≥ 8 px clear of the 26 px radio (no frame has an imageless tile — sign-off); tiles with a photo unchanged |
+| `1:5823` nutrition closed · `1:2614`, `1:2728`, `1:5540` | PDP - Single Product | `pages/Customization` | 🔄 core built (nutrition table accordion 🔲) · fonts lane: title `.tb-display` 48/44, −1 px, `text-tb-ink-purple` per 1:2614 / 1:4641 / 1:5823 (was `.tb-compressed` 56/52, black); pre-existing deltas now visible (backlog): group header body bold 24 vs Md 20/24, −0.5; "Show more" body bold 18 ink/80 vs Exp Bd 16/24 #501098 (1:1688) |
+| `1:4590`,`1:4641`,`1:4761`,`1:4692`,`1:4827`,`1:5180` + customize `1:4895`,`1:5051`,`1:5081`,`1:4947`,`1:5115`,`1:5145`,`1:4999` | Order a Pack family | `pages/Customization` + `components/customization/{PackSlotCard,SlotSelectionSheet,Tier2CustomizationSheet}` | 🔄 built from `1:4590`/`1:4641`/`1:4761`/`1:4692`; customize family + completed/warning states NOT pulled (Figma MCP rate limit 2026-09-29) — tier-2 sheet is design-language, needs visual pass · fonts lane: slot cards fill their grid row (`h-full` card + button) so every SELECT/SWAP CTA sits on the row's bottom edge; tier-2 tiles without a photo get `px-[44px]` (radio clearance) |
 | `1:5264`,`1:5322`,`1:5293` | Build Your Own Pack | `pages/Customization` (generic group grid for min≠1/max≠1 `_combo`) | 🔄 frames not pulled (rate limit) — design-language, flagged |
 | — (no frame) | MIAM upsell prompt | `components/makeItAMeal/MakeItAMealPrompt` | ✅ design-language, flag for sign-off |
 | `1:3070` "Upsell" | **Make It A Meal prompt** (NOT a pre-cart screen — the map previously misread this) | `components/makeItAMeal/MakeItAMealPrompt` | ✅ P7d re-skinned to frame (SAVE badge implemented but dataless — see PROGRESS open decisions) |
 | `1:3202`/`1:3204` CTA_Sheet_Fixed | the LOG-IN & GET REWARDS button component | `components/cart/BagSheet` | ✅ P7a |
-| — (no frame) | `/forYou` pre-cart upsell | `pages/ForYou` + `components/cart/ForYouCard` | ✅ P7d design-language, flag for sign-off — the design puts Complete-Your-Meal in the bag (1:3171) instead |
+| — (no frame) | `/forYou` pre-cart upsell | `pages/ForYou` + `components/cart/ForYouCard` | ✅ P7d design-language, flag for sign-off — the design puts Complete-Your-Meal in the bag (1:3171) instead · fonts lane: names clamp at 2 lines with an ellipsis (was a silent cut); the in-cart count pill moved to the photo strip's bottom-left (it covered the name) — sign-off |
 
 ### Bag / rewards (P7)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:3171` single · `1:3236`,`1:3270` multi · `1:3137`,`1:3973` has-rewards · `1:3205` · `1:4460` order-summary edit | My Bag | `components/cart/{BagSheet,BagItemRow,RemoveItemModal,CompleteYourMealRail,RepeatItemSheet}` + `/cart` route | ✅ P7a from `1:3171`/`1:3236`/`1:3270` (has-rewards states 🔲 P7c; `1:4460` numpad 🔲 polish) |
-| `1:5881`,`1:5904` scan · `1:4406`/`1:4174` code default · `1:4425`/`1:4193` partial · `1:4368`/`1:4136` full · `1:4311`/`1:4079` success · `1:4330`,`1:4098` scan-error · `1:4387`,`1:4155` code-error · `1:4349`,`1:4117` scan-failure · `1:3786`,`1:3805`,`1:4278` rewards-scan states · `1:5927` Modal Rewards | Rewards (scan/code) | `components/loyalty/{LoyaltyLoginModal,LoyaltyRewardsSheet,LoyaltySuccessModal,LoyaltyErrorModal}`, `components/keyboard/KioskNumpad`, `pages/CustomerPhone` | 🔄 P7c — built as the **Xeno** flow (user directive): `1:4174` numpad → phone lookup, `1:4079` success, `1:3786` error, `1:3956` MY REWARDS entry. SCAN APP tab inert (no scanner); `1:5927` LOGIN + scan-state frames 🔲 |
-| `1:3824` default · `1:3858` ineligible · `1:3892` all-available · `1:3924` active | Reward states | `components/offer/{RewardsSheet,OfferRow,FreebiePickerSheet,OfferRemovalNotice}` | ✅ P7b — adapted to CX offer mechanics (mapping decision); loyalty-reward variants 🔲 P7c · post-P9 offers lane: BuyStageSheet, the in-bag freebie PDP, group-mode picker controls and the celebration are design-language (no frames, sign-off); row thumbs need offer photos ⛔ (no image in payload) |
+| `1:3171` single · `1:3236`,`1:3270` multi · `1:3137`,`1:3973` has-rewards · `1:3205` · `1:4460` order-summary edit | My Bag | `components/cart/{BagSheet,BagItemRow,RemoveItemModal,CompleteYourMealRail,RepeatItemSheet}` + `/cart` route | ✅ P7a from `1:3171`/`1:3236`/`1:3270` (has-rewards states 🔲 P7c; `1:4460` numpad 🔲 polish) · fonts lane: rail names clamp at 2 lines with an ellipsis (ForYouCard); the rewards-row bells render (quoted mask `url()`); the Edit link is body bold 16, reportedly Exp Bd in 1:3193 — unverified, sign-off |
+| `1:5881`,`1:5904` scan · `1:4406`/`1:4174` code default · `1:4425`/`1:4193` partial · `1:4368`/`1:4136` full · `1:4311`/`1:4079` success · `1:4330`,`1:4098` scan-error · `1:4387`,`1:4155` code-error · `1:4349`,`1:4117` scan-failure · `1:3786`,`1:3805`,`1:4278` rewards-scan states · `1:5927` Modal Rewards | Rewards (scan/code) | `components/loyalty/{LoyaltyLoginModal,LoyaltyRewardsSheet,LoyaltySuccessModal,LoyaltyErrorModal}`, `components/keyboard/KioskNumpad`, `pages/CustomerPhone` | 🔄 P7c — built as the **Xeno** flow (user directive): `1:4174` numpad → phone lookup, `1:4079` success, `1:3786` error, `1:3956` MY REWARDS entry. SCAN APP tab inert (no scanner); `1:5927` LOGIN + scan-state frames 🔲 · fonts lane: the bells on 1:4174, the rewards sheet and the 1:4079 seal render (an unquoted mask `url()` painted them as squares); seal-ring lettering Exp Md (125 %/500), two copies at 0 % / 50 % (sign-off) |
+| `1:3824` default · `1:3858` ineligible · `1:3892` all-available · `1:3924` active | Reward states | `components/offer/{RewardsSheet,OfferRow,FreebiePickerSheet,OfferRemovalNotice}` | ✅ P7b — adapted to CX offer mechanics (mapping decision); loyalty-reward variants 🔲 P7c · post-P9 offers lane: BuyStageSheet, the in-bag freebie PDP, group-mode picker controls and the celebration are design-language (no frames, sign-off); row thumbs need offer photos ⛔ (no image in payload) · fonts lane: the thumb and header bells render (quoted mask `url()`); Suggested-rail and buy-stage tile names clamp at 2 lines; the nudge wraps to 3 lines, right-aligned (1:3858: 4, left) — sign-off |
 | `1:4009`,`1:4044` | T&C option 1 | — | ⛔ BLOCKED (data): the CX offer payload has no terms or expiry — screenshots pulled 2026-10-06; proposal §8 in docs/BACKEND_CONTRACT_PROPOSALS.md |
 
 ### Checkout / payment / success (P8)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a (card tile disabled until P8b) |
-| `1:3377`,`1:4225` | Payment Preference ("Do you need the receipt?") | `pages/ReceiptPreference` | ✅ P8a (EMAIL inert — no payload contract) |
-| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | — | 🔲 P8 |
-| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b) | 🔄 the modal shell ✅ P9b; the card-payment failure screen itself is P8b |
+| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a + P8b — one row of live tiles: `payment-card` = Paytm EDC (the frame's PAY WITH CARD BELOW tile), `payment-qr` = Paytm DQR "PAY WITH UPI QR" (design language, no frame), `payment-counter` = COD; one tile keeps the Figma 412×412 (P8a's inert card tile is gone), n ≥ 2 are (848 − 24(n−1))/n wide (D9, sign-off); labels and the TOTAL bar in CTA/Compressed Large Cm Bd 48/44 at every tile count (bar 124 px, as 1:3371), 16 px side padding at n = 3, Arabic labels wrap to 2–3 lines (fonts lane). Non-font deltas left as they are: headline 58/56, −1.5 vs Exp Bl 64/0.85, −3; tiles / row 412 / 848 vs 416 / 856 |
+| `1:3377`,`1:4225` | Payment Preference ("Do you need the receipt?") | `pages/ReceiptPreference` | ✅ P8a (EMAIL inert — no payload contract) · PRINT / EMAIL in Cm Bd 48/44 (fonts lane); headline 58/56 vs the frame's 64 left as is |
+| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | `pages/PaytmPayment` (`/paymentPolling`; the lazy `paytmRuntime` chunk, mounted by `routes/PaytmPaymentRoute`) + `components/payment/PaytmQr` | ✅ P8b — EDC from `1:3404` (tb-pink + rotated sheen, purple bell at 128, 884 column at 435 / gap 100, 616 slot with the 431.2×277.2 card, TOTAL bar, DOWN HERE! −27.12° + yellow arrow); DQR = the same skeleton with a 446 px QR in a 616 card and no DOWN HERE (design language — no QR frame). Flagged additions: hint line, "Time left m:ss", CANCEL PAYMENT (bottom-left 480×92), the YES-only terminal-prompt line, the ADA variant (bell dropped, column at 40, slot 360). `1:3392` = terminal photo (video fill, unusable); `1:4240` = a spacing variant (unused); `1:6288` = the layout of the /receipt initiate-failure `ErrorModal` |
+| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b; the Paytm cancel-confirm, not-paid, unknown and chunk-failure panels, P8b) | ✅ P9b shell + P8b panels — actions and copy are design language (the frame has none); the frame's backdrop photo is a video fill (unusable) |
 | `1:3383`,`1:4231` | Email Receipt | keyboard+input pulled → `components/keyboard/KioskKeyboard`, Registration input | 🔄 (keyboard/input ✅ 2026-09-29; email screen itself 🔲 P8) |
-| `1:5932` no-loyalty · `1:3437` has-loyalty | Order Complete | `pages/OrderSuccess` | ✅ P8a (QR omitted — no data source) |
+| `1:5932` no-loyalty · `1:3437` has-loyalty | Order Complete | `pages/OrderSuccess` | ✅ P8a (QR omitted — no data source) · PROCEED line Title/H4 Cm Bd 34/38 (fonts lane); left as they are: heading 76 px vs Title/H3 48/44, order number 112 vs Title/H1 116/98 |
 | `1:4447` | **Tent screen** ("Do you want to be served at your table?" — NOT a wait state; the map misread this) | `pages/Tent` | ✅ P8a |
-| `1:4456`,`1:6301` | Please wait | — | 🔲 P8b |
+| `1:4456`,`1:6301` | Please wait | `components/payment/PleaseWait` (the /receipt initiate, the /paymentPolling settle and chunk load) | ✅ P8b (identical frames) — card content centred as measured from the frame; static hourglass (D8); flagged: the soft-light sheen (lighter than Figma — alpha-flattened JPEG) and the ADA layout (bell dropped, card at 161) |
 
 ### Modals / system (P7–P9)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:4514` | You have been inactive | `components/common/IdleTimeoutModal` + `routes/IdleGuard` (+ `hooks/utils/useIdleTimeout`) | ✅ P9a — START AGAIN "Loading" fill = the countdown (frame has no digits); backdrop = CONTINUE ORDERING |
+| `1:4514` | You have been inactive | `components/common/IdleTimeoutModal` + `routes/IdleGuard` (+ `hooks/utils/useIdleTimeout`) | ✅ P9a — START AGAIN "Loading" fill = the countdown (frame has no digits); backdrop = CONTINUE ORDERING · fonts lane: the EN body wraps to 2 lines and the card is 396 px, as in the frame |
 | `1:4533` | Remove item | `components/cart/RemoveItemModal` | ✅ P7a |
 | `1:4552` | Cancel Order | `components/common/CancelOrderModal` (+ `hooks/utils/useSessionReset`) | ✅ P7a |
 | `1:5392`,`1:5413`,`1:5445` | ADA Home/Customization/Recap | `components/stage/ReachZone` (+ `hooks/utils/useAdaActive`, `ADA_*` in `KioskStage`) | ✅ P9c — reach-zone view: brand zone 0–798 (`ADA_BRAND_ZONE_HEIGHT`, the cabinet calibration knob), content zone 798–1920, nothing scaled; bag sheet 765 (top 1155); PDP gained the Footer-bottom strip in BOTH modes (it is in 1:2614/1:2920/1:5413) |
 | — (no frames) | ADA variants of `/second`, `/phone`, `/customerName`, `/tent`, `/payment`, `/receipt`, `/orderSuccess` + overlay caps | the pages + sheets/modals | ✅ P9c design-language, flag for sign-off (incl. brand-zone tap-to-exit, which Figma does not draw) |
 | — (no frame) | Update countdown (splash) | `components/autoUpdate/UpdateCountdownModal` (+ `pages/StartScreen` apply machine) | ✅ P9e design-language, flag for sign-off (non-dismissable ≤5 s) |
-| — (no frames) | Activity Center, Tent, Phone/OTP, CountryCode | `components/activity/ActivityModal` (✅; P9e adds Reload resources + Data loaded — design-language) / — | design-language builds, flagged |
+| — (no frames) | Activity Center, Tent, Phone/OTP, CountryCode | `components/activity/ActivityModal` (✅; P9e adds Reload resources + Data loaded — design-language) / — | design-language builds, flagged · fonts lane: Activity Center pills px-8 so the three labels share one line |
 
 ## 5. Assets committed (source node → path)
 
@@ -160,6 +165,8 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 - Language `1:4488`: `icons/close.svg`; menu frames: `icons/plus.svg`, `icons/bag.svg`
 - Email Receipt `1:3383`: `icons/key-shift.svg`, `icons/key-backspace.svg`, `icons/input-clear.svg`
 - Payment Failure `1:3427` → Icon L `1:990`: `icons/warning.svg` (P9b ErrorModal)
+- Payment Instructions `1:3404` (P8b): `payment/credit-card.svg` (1:3413), `brand/tb-bell-purple.svg` (1:3425), `icons/down-here-arrow.svg` (1:3426) — md5-identical to the Figma exports
+- Please wait `1:4456` (P8b): `payment/hourglass.png` — the first frame of 1:1171 at 352 px (36,281 B; the source is an 800×800, 99-frame, 2 MB GIF, D8); reuses `splash/bg-texture.png` (= the frame's 240 px tile), `brand/tb-bell.svg` (= 1:4458) and `splash/plastic-overlay.jpg`
 - ADA brand zone `1:5394` (logo lockup assembled from 4 exported parts): `brand/tb-logo-lockup.svg` (P9c)
 - `flags/gb.svg` (canonical Union Jack — see §2.3)
-- Fonts: three Archivo cuts (see §3)
+- Fonts: the Archivo variable font (wght 100–900 × wdth 62–125; Google Fonts v25 latin + latin-ext) in `assets/fonts/`, OFL licence `public/fonts/OFL.txt` (ships in dist) — see §3

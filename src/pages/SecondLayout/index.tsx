@@ -56,6 +56,12 @@ const iconForPipeline = (pipeline: Pipeline) =>
  * the footer (1066–1122) already fit. A second card ROW would not, so with
  * more than two pipelines the cards become one horizontal swipe row at full
  * size (fork parity — cards are never shrunk), the third card peeking in.
+ *
+ * Normal mode with 3–4 pipelines (design-language, no frame — sign-off):
+ * the 2-row block (1214px in EN) centred would climb over the bell
+ * (327–416), so it keeps the 2-card block's top (573, the 1:2581 title) and
+ * grows down to 1787, above the footer (1864). Five or more would not fit
+ * under the bell either: they take the ADA swipe row.
  */
 export default function SecondLayout() {
   const { t } = useTranslation();
@@ -63,7 +69,8 @@ export default function SecondLayout() {
   const dispatch = useDispatch();
   const ada = useAdaActive();
   const pipelines = (useSelector(selectPipelines) ?? []) as Pipeline[];
-  const scrollRow = ada && pipelines.length > 2;
+  const scrollRow = pipelines.length > (ada ? 2 : 4);
+  const twoRows = !scrollRow && pipelines.length > 2;
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const secondaryLanguage = useSelector(selectSecondaryLanguage);
   const { isSecondary, pipelineName, text } = useLocalized();
@@ -229,7 +236,11 @@ export default function SecondLayout() {
         />
       )}
 
-      <div className="absolute left-1/2 top-1/2 w-[856px] -translate-x-1/2 -translate-y-1/2">
+      <div
+        className={`absolute left-1/2 w-[856px] -translate-x-1/2 ${
+          twoRows ? "top-[573px]" : "top-1/2 -translate-y-1/2"
+        }`}
+      >
         <h1 className="tb-display mb-[64px] text-center text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface">
           {t("second.title")}
         </h1>

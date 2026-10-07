@@ -132,7 +132,7 @@ function ForYouCardBase({
     >
       <span className="flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px]">
         <span
-          className="block overflow-hidden text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
+          className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
           style={{
             lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
             maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
@@ -148,7 +148,7 @@ function ForYouCardBase({
         <img
           alt=""
           src={imageUrl}
-          className="w-full object-contain"
+          className="min-h-0 w-full object-contain"
           style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
         />
       ) : (
@@ -156,7 +156,7 @@ function ForYouCardBase({
         // fixed, so an imageless item must keep its text where its neighbours
         // keep theirs.
         <span
-          className="block w-full"
+          className="block min-h-0 w-full"
           style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
         />
       )}
@@ -166,8 +166,11 @@ function ForYouCardBase({
       >
         <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
       </span>
+      {/* The count pill rides the photo band's corner: at the top-left it sat
+          on the first glyphs of the name (pl-24, pt-24). No Figma frame draws
+          it (1:3171's rail has none) — design language, flagged. */}
       {quantity > 0 && (
-        <span className="absolute left-[12px] top-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
+        <span className="absolute bottom-[12px] left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
           {quantity}
         </span>
       )}

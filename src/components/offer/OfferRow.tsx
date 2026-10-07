@@ -36,11 +36,13 @@ const money = (currency: string, value: number): string =>
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired), so the
  * 84px thumb renders the brand bell, purple-tinted via CSS mask, as a
- * placeholder over the grey plate.
+ * placeholder over the grey plate. The url() is quoted (as in
+ * OfferAppliedCelebration): the inlined SVG data URI carries ' ( ), so an
+ * unquoted url() is invalid and the bell paints as a solid square.
  */
 const bellMaskStyle: CSSProperties = {
-  WebkitMaskImage: `url(${tbBell})`,
-  maskImage: `url(${tbBell})`,
+  WebkitMaskImage: `url("${tbBell}")`,
+  maskImage: `url("${tbBell}")`,
   WebkitMaskRepeat: "no-repeat",
   maskRepeat: "no-repeat",
   WebkitMaskSize: "contain",

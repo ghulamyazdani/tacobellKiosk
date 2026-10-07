@@ -22,6 +22,13 @@ export const IDLE_MAX_SECONDS = 120;
 // config without a timeout): no hold may disable the idle reset forever.
 // Ceiling: such a hang delays Splash by up to 120 s + one idle period.
 export const IDLE_HOLD_MAX_MS = 120_000;
+/**
+ * P8b (D2) cap for an in-flight Paytm payment — calibration knob: the 180 s
+ * EDC window + a 30 s settle + one void extension. 120 s would let idle end
+ * the session under an armed terminal. The end panels (not paid / unknown)
+ * release the hold, so idle still covers them within the normal period.
+ */
+export const PAYMENT_IDLE_HOLD_MAX_MS = 240_000;
 
 /**
  * `appSettings.idealTimeout` (server `ideal_time`, seconds) -> the TOTAL
@@ -54,9 +61,14 @@ export const IdleHoldContext = createContext<((delta: 1 | -1) => void) | null>(
  * Suspends the idle clock while `active` — idle must never end a session
  * under work that is still writing to it (an order push, a loyalty call).
  * Release starts a fresh FULL period. Call it in the SHARED hook that owns
- * the async state, so every screen using that hook is covered.
+ * the async state, so every screen using that hook is covered. `maxMs` caps
+ * one hold (default IDLE_HOLD_MAX_MS; a live payment passes
+ * PAYMENT_IDLE_HOLD_MAX_MS).
  */
-export function useIdleHold(active: boolean): void {
+export function useIdleHold(
+  active: boolean,
+  maxMs: number = IDLE_HOLD_MAX_MS,
+): void {
   const adjust = useContext(IdleHoldContext);
   useEffect(() => {
     if (!active || !adjust) return;
@@ -69,7 +81,7 @@ export function useIdleHold(active: boolean): void {
       window.clearTimeout(cap);
       adjust(-1);
     };
-    const cap = window.setTimeout(clearHold, IDLE_HOLD_MAX_MS);
+    const cap = window.setTimeout(clearHold, maxMs);
     return clearHold;
-  }, [active, adjust]);
+  }, [active, adjust, maxMs]);
 }

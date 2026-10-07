@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   paymentSettingsRdx,
   selectCurrency,
   selectDeploymentInfo,
+  setShowErrorModal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { selectCart, selectCartAmount } from "@cx-sdk/ordering/state/cart.slice";
 import { checkIfCODAvailable } from "@cx-sdk/payments/gateways/paymentOptions";
+import { pickPaytmSelections } from "@cx-sdk/payments/gateways/paytmKiosk";
+import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
-import usePayAtCounter from "../../hooks/paymentsHooks/usePayAtCounter";
+import usePayAtCounter, {
+  PAY_AT_COUNTER_PAYMENT_TYPE,
+} from "../../hooks/paymentsHooks/usePayAtCounter";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -27,10 +32,18 @@ interface CurrencySettings {
 }
 
 /**
- * Cancel window between the PAY AT COUNTER tap and the receipt step — the
- * fork's `paymentInitiationBufferTime` (3000ms). Nothing is pushed inside it.
+ * Cancel window between a method tap and the receipt step — the fork's
+ * `paymentInitiationBufferTime` (3000ms). Nothing is sent inside it.
  */
 const PAYMENT_BUFFER_MS = 3000;
+
+/** One method tile in the row (D9). */
+interface MethodTile {
+  testId: string;
+  /** The payment type the tap arms. */
+  type: string;
+  label: string;
+}
 
 /**
  * Shared chrome for both render branches (selection + unavailable). In ADA
@@ -65,10 +78,27 @@ function PaymentChrome({ ada }: { ada: boolean }) {
 /**
  * /payment — "HOW WOULD YOU LIKE TO PAY?" (Figma 1:3364).
  *
- * P8a is PAY-AT-COUNTER ONLY. The frame's second tile (PAY WITH CARD BELOW)
- * is rendered INERT with the established coming-soon treatment: no gateway
- * option list is mapped, no gateway module is imported and no gateway handler
- * is reachable from this file — that is by construction, not by a flag.
+ * P8b (user decision 2026-10-05: Paytm Dynamic QR + Paytm EDC only; every
+ * other gateway stays unported). One row of method tiles, in this order:
+ *   `payment-card`    PaytmEdc        "PAY WITH CARD BELOW" (the frame's tile)
+ *   `payment-qr`      PaytmDynamicQr  design language (no frame), LIVE (D1)
+ *   `payment-counter` PAY AT COUNTER  only when COD is available
+ * The Paytm tiles come from the SDK's `pickPaytmSelections`, which offers an
+ * option only when its credentials are usable (a tile that can only fail is
+ * never shown), and they hide when there is nothing to charge. A tap only
+ * ARMS `payment.paymentType` and opens the same 3 s cancel window as COD —
+ * NOTHING is sent from this screen. The Paytm initiate runs on /receipt
+ * (usePaytmCheckout), so Cancel is always strictly before money moves.
+ * Credentials are never dispatched from here (D11).
+ *
+ * Rule 1: /payment → /receipt for Paytm reuses the existing COD edge; no
+ * transition is added or removed on this screen.
+ *
+ * Layout (D9, design language, flagged): one tile keeps the Figma 412×412;
+ * n ≥ 2 tiles are (848 − 24(n−1))/n wide. Labels and the TOTAL bar are the
+ * frame's CTA/Compressed Large (Cm Bd 48/44 → .tb-compressed) at every n; at
+ * n = 3 only the side padding narrows to 16 px — measured in Archivo
+ * 62 %/700: "RESTAURANT" is 222.4 px, inside the 234.67 px label box.
  *
  * COD gating uses `checkIfCODAvailable` from
  * `@cx-sdk/payments/gateways/paymentOptions`.
@@ -96,21 +126,22 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * ADA (P9c, design-language, flagged — 1:3364 has no ADA variant): both
  * roots render into the 1122px reach zone with the bell dropped. Selection:
- * title 120–232 · total 302–414 · tiles 482–894 · BACK TO MENU keeps its
+ * title 120–232 · total 302–426 · tiles 482–894 · BACK TO MENU keeps its
  * 18px bottom distance (1012–1104). Unavailable: title 120–232 · body
- * 344–384 · the same BACK. The buffer dialog is centred on the page, so it
+ * 344–424 · the same BACK. The buffer dialog is centred on the page, so it
  * follows the page height.
  */
 export default function PaymentSelection() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const ada = useAdaActive();
 
   const netAmountRdx = Number(useSelector(selectCartAmount) ?? 0);
   const deploymentSettings = useSelector(selectDeploymentInfo) as
     | Record<string, unknown>
     | undefined;
-  const paymentOptions = useSelector(paymentSettingsRdx) as unknown[] | undefined;
+  const paymentOptions: unknown = useSelector(paymentSettingsRdx);
   const currencySettings = useSelector(selectCurrency) as
     | CurrencySettings
     | number
@@ -123,7 +154,8 @@ export default function PaymentSelection() {
   // payment.paymentType = "PAY_AT_RESTAURANT" before anything is pushed.
   const { beginCheckout, cancelCheckout } = usePayAtCounter();
 
-  const [bufferOpen, setBufferOpen] = useState(false);
+  // The payment type the open cancel window armed; null = window closed.
+  const [armedType, setArmedType] = useState<string | null>(null);
   const bufferTimer = useRef<number | null>(null);
   const viewedFired = useRef(false);
 
@@ -145,31 +177,45 @@ export default function PaymentSelection() {
     return Boolean(checkIfCODAvailable(tabType, deploymentSettings));
   }, [deploymentSettings, tabType]);
 
-  const gatewayCount = Array.isArray(paymentOptions) ? paymentOptions.length : 0;
+  /** Usable Paytm options; none when there is nothing to charge. */
+  const selections = useMemo(
+    () => (netAmountRdx > 0 ? pickPaytmSelections(paymentOptions) : []),
+    [netAmountRdx, paymentOptions]
+  );
 
-  /**
-   * Fork's unavailable branch is `zero gateways AND no COD`. In P8a no
-   * gateway tile is rendered at all, so a configured gateway is not a
-   * reachable payment method and the condition reduces to `!codAvailable` —
-   * showing a screen whose only tile is inert would be the dead end the fork's
-   * unavailable screen exists to prevent. P8b restores the gateway tiles and
-   * with them the AND.
-   */
-  const showUnavailable = !codAvailable;
+  /** Fork parity: the unavailable branch is `zero gateways AND no COD`. */
+  const showUnavailable = selections.length === 0 && !codAvailable;
 
   const payAtCounterLabel = getIsPayAtCounter()
     ? t("payment.payAtCounter")
     : t("payment.payAtRestaurant");
 
+  const edc = selections.find((option) => option.kind === "paytmEdc");
+  const dqr = selections.find((option) => option.kind === "paytmDqr");
+  const tiles: MethodTile[] = [
+    ...(edc
+      ? [{ testId: "payment-card", type: edc.paymentType, label: t("payment.payWithCard") }]
+      : []),
+    ...(dqr
+      ? [{ testId: "payment-qr", type: dqr.paymentType, label: t("paytm.methodQr") }]
+      : []),
+    ...(codAvailable
+      ? [{ testId: "payment-counter", type: PAY_AT_COUNTER_PAYMENT_TYPE, label: payAtCounterLabel }]
+      : []),
+  ];
+  const tileWidth =
+    tiles.length === 1 ? 412 : (848 - 24 * (tiles.length - 1)) / tiles.length;
+  const narrow = tiles.length === 3;
+
   useEffect(() => {
     if (viewedFired.current) return;
     viewedFired.current = true;
     captureKioskEvent(KioskEventName.PaymentViewed, {
-      method_count: gatewayCount,
+      method_count: selections.length,
       cod_available: codAvailable,
       net_amount: netAmountRdx,
     });
-  }, [codAvailable, gatewayCount, netAmountRdx]);
+  }, [codAvailable, selections.length, netAmountRdx]);
 
   // Nothing to pay for → back to the menu rather than an empty total (Rule 2).
   useEffect(() => {
@@ -195,41 +241,60 @@ export default function PaymentSelection() {
   }, [navigate, shouldSkipCRM]);
 
   /**
-   * PAY AT COUNTER. Arms the push (payment type pinned to
-   * "PAY_AT_RESTAURANT"), then opens the cancel window. The window ends by
-   * navigating to the receipt step — the push happens THERE, so Cancel here
-   * is always strictly before anything is placed.
+   * A method tile. ARMS the payment type (COD via beginCheckout, unchanged;
+   * Paytm by setKioskPaymentType), then opens the cancel window. The window
+   * ends by navigating to the receipt step — the push / initiate happens
+   * THERE, so Cancel here is always strictly before anything is sent.
    *
    * The buffer lives in component state (the fork drove the equivalent effect
    * off `redirectionRef.current` in a dependency array — a ref mutation does
-   * not re-render, so that effect fired on unrelated renders).
+   * not re-render, so that effect fired on unrelated renders). The timer ref
+   * also latches a same-render double tap.
    */
-  const handlePayAtCounter = useCallback(() => {
-    if (bufferOpen) return;
-    captureKioskEvent(KioskEventName.PaymentMethodSelected, {
-      payment_type: "PAY_AT_RESTAURANT",
-      net_amount: netAmountRdx,
-    });
-    beginCheckout();
-    setBufferOpen(true);
-    bufferTimer.current = window.setTimeout(() => {
-      bufferTimer.current = null;
-      navigate("/receipt");
-    }, PAYMENT_BUFFER_MS);
-  }, [beginCheckout, bufferOpen, navigate, netAmountRdx]);
+  const handleMethod = useCallback(
+    (type: string) => {
+      if (armedType !== null || bufferTimer.current !== null) return;
+      captureKioskEvent(KioskEventName.PaymentMethodSelected, {
+        payment_type: type,
+        net_amount: netAmountRdx,
+      });
+      if (type === PAY_AT_COUNTER_PAYMENT_TYPE) {
+        beginCheckout();
+      } else {
+        dispatch(setShowErrorModal({ showErrorModal: false, errorMessage: "" }));
+        dispatch(setKioskPaymentType({ type }));
+      }
+      setArmedType(type);
+      bufferTimer.current = window.setTimeout(() => {
+        bufferTimer.current = null;
+        navigate("/receipt");
+      }, PAYMENT_BUFFER_MS);
+    },
+    [armedType, beginCheckout, dispatch, navigate, netAmountRdx]
+  );
 
   const handleCancelBuffer = useCallback(() => {
     if (bufferTimer.current !== null) {
       window.clearTimeout(bufferTimer.current);
       bufferTimer.current = null;
     }
-    setBufferOpen(false);
+    setArmedType(null);
+    if (armedType !== PAY_AT_COUNTER_PAYMENT_TYPE) {
+      // Paytm: nothing was sent. Disarm, so no stale gateway type survives
+      // into a later payload (planner refinement).
+      captureKioskEvent(KioskEventName.PaymentIniatiationCancelled, {
+        payment_type: armedType,
+        net_amount: netAmountRdx,
+      });
+      dispatch(setKioskPaymentType({ type: "" }));
+      return;
+    }
     cancelCheckout();
     captureKioskEvent(KioskEventName.PaymentIniatiationCancelled, {
       payment_type: "PAY_AT_RESTAURANT",
       net_amount: netAmountRdx,
     });
-  }, [cancelCheckout, netAmountRdx]);
+  }, [armedType, cancelCheckout, dispatch, netAmountRdx]);
 
   if (showUnavailable) {
     return (
@@ -277,12 +342,12 @@ export default function PaymentSelection() {
           (cart.netAmount, written by BagSheet's setAmount(getCheckoutNetAmount)). */}
       <div
         data-testid="payment-total"
-        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[750px]"} flex h-[112px] w-[848px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant px-[36px]`}
+        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[750px]"} flex w-[848px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
       >
-        <span className="tb-display text-[34px] leading-[34px] tracking-[-0.5px] text-tb-surface">
+        <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {t("payment.total")}
         </span>
-        <span className="tb-display text-[34px] leading-[34px] tracking-[-0.5px] text-tb-surface">
+        <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {currency}
           {netAmountRdx.toFixed(2)}
         </span>
@@ -291,33 +356,20 @@ export default function PaymentSelection() {
       <div
         className={`absolute left-1/2 ${ada ? "top-[482px]" : "top-[930px]"} flex -translate-x-1/2 gap-[24px]`}
       >
-        {/* PAY WITH CARD BELOW — INERT in P8a. Disabled at the DOM level and
-            wired to nothing: there is no onClick, no gateway import and no
-            code path from this screen to a terminal or a gateway session.
-            Flagged for P8b. */}
-        <div
-          data-testid="payment-card"
-          aria-disabled="true"
-          className="flex h-[412px] w-[412px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
-        >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
-            {t("payment.payWithCard")}
-          </span>
-          <span className="text-center text-[22px] leading-[26px] font-bold uppercase tracking-[1px] text-tb-purple/70">
-            {t("payment.comingSoon")}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          data-testid="payment-counter"
-          onClick={handlePayAtCounter}
-          className="flex h-[412px] w-[412px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
-        >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
-            {payAtCounterLabel}
-          </span>
-        </button>
+        {tiles.map((tile) => (
+          <button
+            key={tile.testId}
+            type="button"
+            data-testid={tile.testId}
+            onClick={() => handleMethod(tile.type)}
+            style={{ width: tileWidth }}
+            className={`flex h-[412px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
+          >
+            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+              {tile.label}
+            </span>
+          </button>
+        ))}
       </div>
 
       <button
@@ -329,7 +381,7 @@ export default function PaymentSelection() {
         {t("payment.backToMenu")}
       </button>
 
-      {bufferOpen && (
+      {armedType !== null && (
         <div
           data-testid="payment-buffer"
           role="dialog"
@@ -343,7 +395,9 @@ export default function PaymentSelection() {
               id="payment-buffer-title"
               className="tb-display mb-[40px] text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
             >
-              {t("payment.placingOrder")}
+              {armedType === PAY_AT_COUNTER_PAYMENT_TYPE
+                ? t("payment.placingOrder")
+                : t("paytm.redirecting")}
             </h2>
             <button
               type="button"

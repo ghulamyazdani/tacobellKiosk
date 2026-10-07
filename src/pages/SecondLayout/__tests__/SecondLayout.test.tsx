@@ -107,7 +107,8 @@ describe("SecondLayout (order type — Figma 1:2581)", () => {
   in the ADA view the page renders into the 1122px reach zone. The bell is
   dropped (the brand zone above carries the lockup), cards are never shrunk,
   and with more than two pipelines the second card ROW would not fit, so the
-  cards become one horizontal swipe row. Normal mode is unchanged.
+  cards become one horizontal swipe row. Normal mode wraps up to four (two
+  rows under the bell, lane fonts fixer); five or more take the swipe row too.
 */
 describe("SecondLayout in the ADA reach zone (P9c)", () => {
   const THIRD = {
@@ -163,14 +164,24 @@ describe("SecondLayout in the ADA reach zone (P9c)", () => {
     }
   });
 
-  it("the swipe row is ADA-only: three pipelines in normal mode still wrap", () => {
+  it("normal mode wraps three pipelines under the bell; five take the swipe row", () => {
     store.dispatch(setPipelines([...PIPELINES, THIRD]));
-    renderSecond();
+    const { unmount } = renderSecond();
 
     expect(cardRow()?.className).toContain("flex-wrap");
     expect(screen.getByTestId("pipeline-p-drive").className).not.toContain(
       "shrink-0"
     );
+    // Anchored at the 2-card block's top, not centred: centred, the 2-row
+    // block climbs over the bell (visual-entry ORDER TYPE 3/5 measures it).
+    expect(cardRow()?.parentElement?.className).toContain("top-[573px]");
+    unmount();
+
+    const more = [4, 5].map((n) => ({ ...THIRD, _id: `p-${n}`, tab_id: `t${n}` }));
+    store.dispatch(setPipelines([...PIPELINES, THIRD, ...more]));
+    renderSecond();
+    expect(cardRow()?.className).toContain("overflow-x-auto");
+    expect(cardRow()?.parentElement?.className).toContain("top-1/2");
   });
 });
 

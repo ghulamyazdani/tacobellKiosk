@@ -4,7 +4,10 @@ import { useTranslation } from "react-i18next";
 import usePayAtCounter, {
   type ReceiptPreference as ReceiptChoice,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
+import usePaytmCheckout from "../../hooks/paymentsHooks/usePaytmCheckout";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import ErrorModal from "../../components/common/ErrorModal";
+import PleaseWait from "../../components/payment/PleaseWait";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -36,6 +39,13 @@ import tbBell from "../../assets/brand/tb-bell.svg";
  * 1122px reach zone with the bell dropped. BACK stays at 40; title 120–232 ·
  * tiles 292–704 · NO THANKS keeps its 18px bottom distance (1012–1104). The
  * buffer and order-error surfaces are page-relative, so they follow along.
+ *
+ * P8b PAYTM: when /payment armed a Paytm type, the choice starts the Paytm
+ * INITIATE instead (usePaytmCheckout) — the COD path is untouched. While it
+ * runs, PleaseWait (Figma 1:4456) covers the screen and the tiles and BACK
+ * are inert; then /paymentPolling (NEW edge, Rule 1). A failure opens the
+ * ErrorModal (1:6288 layout; copy and actions design-language, flagged): TRY
+ * AGAIN (new ids) or PAY ANOTHER WAY → /payment, and BACK TO BAG → /cart.
  */
 export default function ReceiptPreferenceScreen() {
   const { t } = useTranslation();
@@ -59,6 +69,9 @@ export default function ReceiptPreferenceScreen() {
     retry: retryOrderPush,
     dismissError,
   } = usePayAtCounter();
+  const paytm = usePaytmCheckout();
+  const paytmBusy = paytm.status !== "idle";
+  const { kind: paytmKind, start: startPaytm, dismiss: dismissPaytm } = paytm;
 
   const choose = useCallback(
     (choice: ReceiptChoice) => {
@@ -66,21 +79,33 @@ export default function ReceiptPreferenceScreen() {
       // the push is running must never queue a second order (Rule 2). Once
       // the ladder has failed the tiles are inert as well — the panel below
       // is the only live surface until Retry or Back to bag is taken.
-      if (isPushing || hasFailed) return;
+      if (isPushing || hasFailed || paytmBusy) return;
       captureKioskEvent(KioskEventName.other, {
         screen: "receipt",
         receipt_preference: choice,
       });
-      confirmAndPush(choice);
+      if (paytmKind) startPaytm(choice);
+      else confirmAndPush(choice);
     },
-    [confirmAndPush, hasFailed, isPushing]
+    [confirmAndPush, hasFailed, isPushing, paytmBusy, paytmKind, startPaytm]
   );
 
   /** Nothing has been pushed yet, so returning to the method choice is safe. */
   const handleBack = useCallback(() => {
-    if (isPushing || hasFailed) return;
+    if (isPushing || hasFailed || paytmBusy) return;
     navigate("/payment");
-  }, [hasFailed, isPushing, navigate]);
+  }, [hasFailed, isPushing, navigate, paytmBusy]);
+
+  /** Paytm failure exits: nothing is in flight once the modal is up. */
+  const handlePaytmOtherWay = useCallback(() => {
+    dismissPaytm();
+    navigate("/payment");
+  }, [dismissPaytm, navigate]);
+
+  const handlePaytmBackToBag = useCallback(() => {
+    dismissPaytm();
+    navigate("/cart");
+  }, [dismissPaytm, navigate]);
 
   /**
    * Terminal-failure exit. `dismissError()` returns the hook to "idle" so the
@@ -143,7 +168,7 @@ export default function ReceiptPreferenceScreen() {
           onClick={() => choose("print")}
           className="flex h-[412px] w-[412px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
         >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
+          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.print")}
           </span>
         </button>
@@ -155,7 +180,7 @@ export default function ReceiptPreferenceScreen() {
           aria-disabled="true"
           className="flex h-[412px] w-[412px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
         >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
+          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.email")}
           </span>
           <span className="text-center text-[22px] leading-[26px] font-bold uppercase tracking-[1px] text-tb-purple/70">
@@ -246,6 +271,38 @@ export default function ReceiptPreferenceScreen() {
             {t("orderError.backToBag")}
           </button>
         </div>
+      )}
+
+      {paytm.status === "initiating" && (
+        <PleaseWait testId="paytm-preparing" subtitle={t("paytm.wait.preparing")} />
+      )}
+
+      {paytm.status === "failed" && paytm.failure && (
+        <ErrorModal
+          testId="paytm-initiate-failed"
+          title={t("paytm.failed.title")}
+          message={t(
+            paytm.failure.reason === "busy" ? "paytm.failed.busy" : "paytm.failed.start"
+          )}
+          primary={
+            paytm.failure.retryable
+              ? {
+                  label: t("paytm.failed.tryAgain"),
+                  onClick: paytm.retry,
+                  testId: "paytm-initiate-retry",
+                }
+              : {
+                  label: t("paytm.failed.payAnotherWay"),
+                  onClick: handlePaytmOtherWay,
+                  testId: "paytm-initiate-other",
+                }
+          }
+          secondary={{
+            label: t("orderError.backToBag"),
+            onClick: handlePaytmBackToBag,
+            testId: "paytm-initiate-bag",
+          }}
+        />
       )}
     </div>
   );

@@ -237,11 +237,12 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       navigate("/customization");
       return;
     }
-    // Engine-native variant row: price/dp/id all read from selectedVariant.
+    // Engine-native variant row: dp/id/name read from selectedVariant; the
+    // bill prices a VARIANT row by variantPrice (SDK orderBuilder
+    // calculatePriceNew; buildVariantCommitPayload sets it on the PDP path) —
+    // without it the bag bills £NaN.
     addItemToCart(
       // total_price: the slice's subTotal reducer multiplies it by quantity.
-      // variantPrice: the bill engine rates a VARIANT row from it alone
-      // (orderBuilder calculatePriceNew) — without it the total is NaN.
       {
         ...parent,
         selectedVariant: variant,

@@ -175,7 +175,12 @@ describe("a reward whose order may exist is never auto-refunded (P9d S7, end to 
     expect(status()).toBe("failed");
     expect(claim()).toEqual({
       isClaimed: true,
-      couponData: { ...CLAIMED, orderOutcomeUnknown: true },
+      // P8b: the mark names the order that set it (orderOutcomeClaim.ts).
+      couponData: {
+        ...CLAIMED,
+        orderOutcomeUnknown: true,
+        outcomeUnknownOrderId: pushedOrderIds()[0],
+      },
     });
     expect(eventsWhere("error_source", "order_push")).toEqual([
       expect.objectContaining({
