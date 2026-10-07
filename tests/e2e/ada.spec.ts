@@ -479,8 +479,10 @@ test.describe("P9c ADA reach-zone view", () => {
     await expect(bag).toBeVisible();
     await expect(page).toHaveURL(/\/cart$/);
     await expect(page.getByTestId("bag-rail")).toBeVisible();
+    // The panel is the bag's FIRST div child; the offers lane's always-mounted
+    // celebration live region (role=status, zero height) is a later sibling.
     await expect
-      .poll(() => stageBox(bag.locator(":scope > div")))
+      .poll(() => stageBox(bag.locator(":scope > div").first()))
       .toEqual({
         x: 0,
         y: STAGE_HEIGHT - ADA_SHEET_HEIGHT,

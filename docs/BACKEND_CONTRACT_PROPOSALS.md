@@ -19,6 +19,7 @@
 | 5 | Activity Center passcode | A static passcode in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
 | 6 | Xeno SCAN APP login (1:5881) | No QR format and no lookup | `TBR1.` app token + `check_loyalty_balance_by_token` event | Tab inert, no scanner |
 | 7 | Resend OTP (reward redemption) | No endpoint | `resend_redemption_otp` event | No resend button |
+| 8 | Offer photos + terms & conditions + expiry (1:3924, 1:4009, 1:4044) | The offer payload has no image, terms or validity | `imageUrl`, `terms`, `validTill` on `get_cx_valid_offers` | Bell placeholder; no T&C rows |
 | C | Idempotency, 504/505, MENU_ID, update ack and version, FCM | Answers only | — | See §C |
 
 ## Ground rules (apply to every item)
@@ -492,6 +493,42 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
 **Kiosk-side status: not started.** It is part of the loyalty deferred set in PROGRESS.
 
 ---
+
+## 8. Offer photos, terms & conditions and expiry
+
+**Problem.** The Figma reward rows (1:3924, My Bag 1:3137) show a product photo per offer, and the T&C frames (1:4009, 1:4044) show an "Expires …" line plus terms text clamped to two lines with Show more / Show less (several rows can be open at once; the design notes 1:3782 sort by descending expiry). The kiosk can build none of it: `get_cx_valid_offers` builds each offer explicitly (`posistApp/server/api/cx/cx.controller.js:2795`, `getOffersHelper2` → `tempObj`) with no image, description, terms or validity. The Offer schema has no image or terms field; `valid.date.endDate` exists but is only checked server-side (`api/Utils/utils.js:263`) and never shipped. Today the rows show the bell placeholder and no T&C.
+
+**What the kiosk would read** (additive fields on each offer in the `get_cx_valid_offers` response):
+
+```json
+{
+  "_id": "offer-123",
+  "name": "Free fries with any burrito",
+  "imageUrl": "https://<cdn>/offerImage/<tenant>/offer-123.png",
+  "terms": "One per order. Not valid with other offers.",
+  "termsSecondary": "واحد لكل طلب. لا يجمع مع العروض الأخرى.",
+  "validTill": "2026-12-31T23:59:59+05:30"
+}
+```
+
+| Field | Type | Source | Notes |
+|---|---|---|---|
+| `imageUrl` | https URL or null | `offer._extras.imageUrl` (Cockpit upload to S3 `offerImage/<tenant>/…`) | Square-ish product photo; the kiosk shows it on a grey plate, `object-contain` |
+| `terms` / `termsSecondary` | plain text or null | Cockpit authoring | No HTML; the kiosk clamps to two lines with Show more |
+| `validTill` | ISO 8601 with offset, or null | `valid.date.endDate` | Shown as "Expires 31 Dec"; also lets the kiosk sort by expiry like the Figma notes |
+
+**Kiosk behaviour once it exists.** Built in the offers contract (TB `scratchpad/lanes/offers/contract.md` §6–§7, ready to implement): an `OfferThumb` component (84 / 152 px plates; a failed URL falls back to the bell) and a T&C accordion per row with the expiry line. The Workbox image route already caches offer images (`request.destination === "image"`). Absent or null fields ⇒ exactly today's rows.
+
+**Privacy / security.** Images are public CDN assets (no signed URLs that expire mid-session). Terms are display text only.
+
+**Backward compatibility.** All three fields are optional; the kiosk renders today's rows when they are absent.
+
+**Open questions for the backend.**
+1. Should `validTill` honour `valid.time` / `valid.days` too (an offer valid only 2–4 pm)? If so, send the next window's end, or the full rule.
+2. Per-language terms: one `termsSecondary`, or a map keyed by language code?
+3. Expiry sort (Figma notes) vs today's saving rank (P7b): which should the kiosk use when both apply?
+
+**Kiosk-side status.** Not built (blocked on data); the contract and component designs are ready.
 
 ## C. Confirm — no new API needed
 

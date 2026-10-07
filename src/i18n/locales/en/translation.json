@@ -230,7 +230,45 @@
     "removedNewTotal": "Your total is now {{amount}}",
     "removedReasonItemsOne": "Add 1 more item to your order to be eligible to redeem this reward",
     "removedReasonItemsOther": "Add {{count}} more items to your order to be eligible to redeem this reward",
-    "gotIt": "GOT IT"
+    "gotIt": "GOT IT",
+    "notApplicable": "This reward can't be applied to your current order",
+    "buyStage": {
+      "addItems": "ADD ITEMS",
+      "step": "Unlock this reward",
+      "subtitleAnd": "Add everything below to unlock",
+      "subtitleOr": "Add any one option below to unlock",
+      "subtitleLeast": "Add any {{count}} from below — your cheapest becomes free",
+      "addedCount": "{{have}} of {{need}} added",
+      "groupNeed": "Any {{need}} from {{label}}",
+      "groupFallbackLabel": "these items",
+      "hintMoreOne": "Add 1 more qualifying item to unlock",
+      "hintMoreOther": "Add {{count}} more qualifying items to unlock",
+      "unlocked": "Reward unlocked!",
+      "add": "ADD",
+      "continue": "CONTINUE",
+      "apply": "APPLY REWARD",
+      "back": "BACK",
+      "leastNote": "Your lowest-priced qualifying item becomes free",
+      "cartEmptyGuard": "Keep at least one item in your order",
+      "loyaltyRowGuard": "This item was added as a loyalty reward — manage it from your bag",
+      "increase": "Add one {{name}}",
+      "decrease": "Remove one {{name}}"
+    },
+    "picker": {
+      "customize": "Customize",
+      "customized": "Customized — tap to change",
+      "addFreebie": "ADD TO REWARD",
+      "groupSubtitle": "Select {{count}} items to redeem with your reward.",
+      "groupHintOne": "Select 1 more item to continue",
+      "groupHintOther": "Select {{count}} more items to continue"
+    },
+    "celebrate": {
+      "title": "Reward applied!",
+      "saving": "You save {{amount}}"
+    },
+    "auto": {
+      "appliedForYou": "Applied for you"
+    }
   },
   "removeItem": {
     "title": "Remove Item",

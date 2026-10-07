@@ -24,7 +24,11 @@ import {
   decreaseGetItemQuantity,
   addGetItemsRdx,
 } from "@cx-sdk/ordering/state/cart.slice";
-import { syncSubTotalOnCart } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  selectCartOffer,
+  syncSubTotalOnCart,
+} from "@cx-sdk/ordering/state/cart.slice";
+import { findOrphanedFreebieRows } from "@cx-sdk/ordering/offer/offerCommitRules";
 import { db } from "../../models/db";
 import { useDispatch } from "react-redux";
 import useCartIndexedDb from "../cartHooks/useCartIndexedDb";
@@ -275,7 +279,21 @@ function useCartHook() {
   const syncCartOnReLoad = async () => {
     try {
       await db.open();
-      const cartItems = await db.cartItems.toArray();
+      const restored = await db.cartItems.toArray();
+      // Lane offers 4a: the rows (IndexedDB) and cartOffer (redux-persist,
+      // already rehydrated — PersistGate) are written separately, so a crash
+      // between the two can restore freebie rows the applied offer does not
+      // own, still discounted by their own stamps. Dropped here, before they
+      // ever reach the screen — every fork removal path DELETES freebie rows
+      // (removeAllGetItems), never re-prices them, and un-stamping would
+      // charge for items nobody ordered. Silent: the screen already matches
+      // the persisted reward, so there is nothing the customer saw to explain.
+      const orphans = findOrphanedFreebieRows(
+        selectCartOffer(store.getState()),
+        restored,
+      );
+      orphans.forEach((row) => deleteItemFromIndexedDbCart(row.itemId));
+      const cartItems = restored.filter((row) => !orphans.includes(row));
       dispatch(setCartItems(cartItems));
       dispatch(syncSubTotalOnCart(cartItems)); // Sync with Redux store
     } catch (error) {

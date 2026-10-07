@@ -1,10 +1,11 @@
 /**
  * Recovery for a failed dynamic import.
  *
- * The app code-splits one `React.lazy` component (BagSheet's
- * CompleteYourMealRail) plus three runtime chunks (fcmRuntime, posthogRuntime,
- * paytmRuntime — exempt below), so code can be fetched from the network at
- * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
+ * The app code-splits one `React.lazy` chunk (BagSheet's bagLazyParts: the
+ * CompleteYourMealRail, the offers buy stage and celebration) plus three
+ * runtime chunks (fcmRuntime, posthogRuntime, paytmRuntime — exempt below),
+ * so code can be fetched from the network at the moment a customer taps. On
+ * a kiosk the dangerous case is a deploy: the
  * device has been running for hours against an old index.html, the origin now
  * serves re-hashed chunk files, and the next tap requests a filename that no
  * longer exists. `React.lazy` rejects, React 19

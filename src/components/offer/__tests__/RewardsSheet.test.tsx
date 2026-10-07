@@ -3,13 +3,14 @@
  * output; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems, applyOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import RewardsSheet from "../RewardsSheet";
 import "../../../i18n";
@@ -277,6 +278,21 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     ).toEqual([]);
   });
 
+  it("a SAVE that resolves after the sheet unmounted (idle reset / bag close) hands nothing to the page", async () => {
+    store.dispatch(setFilteredOffers([CHOICE_OFFER]));
+    const { onClose, onNeedsPicker, unmount } = renderSheet();
+    await userEvent.click(screen.getByTestId("offer-row-offer-free-sauce-choice"));
+
+    // Synchronous tap: the commit's continuation is still queued when the
+    // sheet goes away.
+    fireEvent.click(screen.getByTestId("rewards-save"));
+    unmount();
+    await act(async () => {});
+
+    expect(onNeedsPicker).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("ADA (P9c): capped by its containing block with the X and SAVE outside the scroller", () => {
     store.dispatch(setFilteredOffers([FLAT_OFFER]));
     renderSheet();
@@ -292,5 +308,218 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     expect(
       screen.getByTestId("offer-row-offer-flat-2").closest(".overflow-y-auto")
     ).not.toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane "offers": ADD ITEMS hand-off (item 31) and the sameOrLess SAVE
+ * verdicts (31b) — through the REAL apply core.
+ * ------------------------------------------------------------------ */
+
+const SAUCE_ENTITY = {
+  id: "tortilla-sauce",
+  name: "Tortilla Sauce",
+  price: 2,
+  subCategoryId: "sauces",
+  modifiers: [] as any[],
+  hasVariant: false,
+};
+
+/** Paid Tortilla Sauce (£2) — the buy side of the sameOrLess offers. */
+const SAUCE_ROW = {
+  ...SAUCE_ENTITY,
+  itemId: "ts-1",
+  uniqueItemId: "ts-1",
+  quantity: 1,
+  type: "ITEM",
+  total_price: 2,
+  customizations: {},
+};
+
+const getEntry = (id: string, name: string, relation: string, price: number) => ({
+  _id: `gi-${id}`,
+  baseItemId: id,
+  name,
+  relation,
+  discountType: "percent",
+  value: 100,
+  quantity: 1,
+  entities: { ...sauceEntity(id, name), price, undiscounted_total_price: price },
+});
+
+const buyRaw = (baseItemId: string, quantity: number, relation = "and") => ({
+  ...offerBase.applicable,
+  rawItems: [{ item: { baseItemId, name: "Tortilla Sauce" }, quantity, relation }],
+});
+
+/** Buy 2 sauces (cart has none) → locked bogoBuySide with a resolvable view. */
+const BOGO_OFFER = {
+  ...offerBase,
+  _id: "offer-bogo",
+  name: "Buy 2 sauces get a Caesar free",
+  type: { name: "item", value: 0 },
+  applicable: buyRaw("tortilla-sauce", 2),
+  getItems: { items: [getEntry("caesar-dressing", "Caesar Dressing", "and", 2)], categories: [] },
+};
+
+/** sameOrLess, buy one £2 sauce: "and" grant with a £17 salad → blocked. */
+const SOL_AND_OFFER = {
+  ...BOGO_OFFER,
+  _id: "offer-sol-and",
+  name: "Buy a sauce, get a salad and a dressing",
+  sameOrLess: true,
+  applicable: buyRaw("tortilla-sauce", 1),
+  getItems: {
+    items: [
+      getEntry("greek-salad", "Greek Salad", "and", 17),
+      getEntry("caesar-dressing", "Caesar Dressing", "and", 2),
+    ],
+    categories: [],
+  },
+};
+
+/** sameOrLess "or": the £17 salad is filtered out, the £2 Caesar survives. */
+const SOL_OR_OFFER = {
+  ...SOL_AND_OFFER,
+  _id: "offer-sol-or",
+  name: "Buy a sauce, pick a side",
+  isAndOffer: false,
+  getItems: {
+    items: [
+      getEntry("greek-salad", "Greek Salad", "or", 17),
+      getEntry("caesar-dressing", "Caesar Dressing", "or", 2),
+    ],
+    categories: [],
+  },
+};
+
+const renderWithAddItems = (onAddItems?: (...args: any[]) => void) => {
+  const onClose = vi.fn();
+  const onNeedsPicker = vi.fn();
+  render(
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/cart"]}>
+        <RewardsSheet
+          open
+          onClose={onClose}
+          onNeedsPicker={onNeedsPicker}
+          onAddItems={onAddItems}
+        />
+      </MemoryRouter>
+    </Provider>
+  );
+  return { onClose, onNeedsPicker };
+};
+
+describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: SAUCE_ENTITY } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+
+  it("ADD ITEMS on a resolvable locked bogoBuySide row calls onAddItems(offer, view) and THEN onClose", async () => {
+    store.dispatch(setFilteredOffers([BOGO_OFFER, PERCENT_OFFER, GONE_OFFER]));
+    const order: string[] = [];
+    const onAddItems = vi.fn(() => order.push("addItems"));
+    const { onClose } = renderWithAddItems(onAddItems);
+    onClose.mockImplementation(() => order.push("close"));
+
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-bogo"));
+
+    expect(order).toEqual(["addItems", "close"]);
+    const [offer, view] = onAddItems.mock.calls[0] as unknown as [any, any];
+    expect(offer._id).toBe("offer-bogo");
+    expect(view.mode).toBe("plain-and");
+    expect(view.groups.map((group: any) => group.key)).toEqual(["tortilla-sauce"]);
+    // The minBill and gone rows are untouched by the hand-off.
+    expect(screen.queryByTestId("offer-row-add-items-offer-percent-25")).not.toBeInTheDocument();
+    expect(screen.getByTestId("offer-row-nudge-offer-percent-25")).toHaveTextContent(
+      "Add £16.40+ to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("offer-row-add-items-offer-gone")).not.toBeInTheDocument();
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      "group-wise (the picker cannot cap 'pick N')",
+      {
+        ...BOGO_OFFER,
+        _id: "offer-gw",
+        buygetGroupWiseOffer: true,
+        buygetGroupWiseOfferValues: { discountType: "percent", value: "100", getQuantity: 1, buyQuantity: 2 },
+      },
+    ],
+    [
+      "resolvable get-CATEGORIES (the picker cannot list them)",
+      {
+        ...BOGO_OFFER,
+        _id: "offer-get-cat",
+        getItems: { items: [], categories: [{ _id: "sides", quantity: 1, entities: [{ id: "x", price: 2 }] }] },
+      },
+    ],
+    [
+      "an unresolvable buy item (absent from the menu)",
+      { ...BOGO_OFFER, _id: "offer-ghost", applicable: buyRaw("not-on-menu", 1) },
+    ],
+  ])("no ADD ITEMS for %s — the row stays inert", (_label, offer) => {
+    store.dispatch(setFilteredOffers([offer]));
+    renderWithAddItems(vi.fn());
+    // Still a locked bogoBuySide row — only the buy stage is withheld.
+    expect(screen.getByTestId(`offer-row-${offer._id}`)).toHaveTextContent(
+      "Add the qualifying items to unlock this reward"
+    );
+    expect(screen.queryByTestId(`offer-row-add-items-${offer._id}`)).not.toBeInTheDocument();
+  });
+
+  it("no onAddItems prop → no ADD ITEMS at all", () => {
+    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    renderSheet();
+    expect(screen.getByTestId("offer-row-offer-bogo")).toBeInTheDocument();
+    expect(screen.queryByTestId("offer-row-add-items-offer-bogo")).not.toBeInTheDocument();
+  });
+
+  it("a sameOrLess-BLOCKED SAVE keeps the sheet open with the inline not-applicable line; the next pick clears it", async () => {
+    store.dispatch(setCartItems([{ ...SAUCE_ROW }]));
+    store.dispatch(setFilteredOffers([SOL_AND_OFFER, FLAT_OFFER]));
+    const { onClose, onNeedsPicker } = renderSheet();
+    const line = screen.getByTestId("rewards-not-applicable");
+    expect(line).toHaveAttribute("role", "status");
+    expect(line).toBeEmptyDOMElement(); // mounted before its text
+
+    await userEvent.click(screen.getByTestId("offer-row-offer-sol-and"));
+    await userEvent.click(screen.getByTestId("rewards-save"));
+
+    await waitFor(() =>
+      expect(line).toHaveTextContent("This reward can't be applied to your current order")
+    );
+    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onNeedsPicker).not.toHaveBeenCalled();
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(screen.getByTestId("rewards-save")).toBeEnabled();
+
+    await userEvent.click(screen.getByTestId("offer-row-offer-flat-2"));
+    expect(line).toBeEmptyDOMElement();
+  });
+
+  it("onNeedsPicker receives the ceiling-FILTERED offer (result.offer), never the original", async () => {
+    store.dispatch(setCartItems([{ ...SAUCE_ROW }]));
+    store.dispatch(setFilteredOffers([SOL_OR_OFFER]));
+    const { onClose, onNeedsPicker } = renderSheet();
+
+    await userEvent.click(screen.getByTestId("offer-row-offer-sol-or"));
+    await userEvent.click(screen.getByTestId("rewards-save"));
+
+    await waitFor(() => expect(onNeedsPicker).toHaveBeenCalledTimes(1));
+    const handed = onNeedsPicker.mock.calls[0][0];
+    expect(handed._id).toBe("offer-sol-or");
+    expect(handed.getItems.items.map((entry: any) => entry.baseItemId)).toEqual(["caesar-dressing"]);
+    const original = (store.getState() as any).offer.filteredOffers[0];
+    expect(handed).not.toBe(original);
+    expect(original.getItems.items).toHaveLength(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

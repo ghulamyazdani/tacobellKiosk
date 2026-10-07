@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, Route, Routes, useLocation } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import ProtectedRouteIfAuthenticated from "./ProtectedRouteIfAuthenticated";
@@ -23,6 +23,7 @@ import MakeItAMealPrompt from "../components/makeItAMeal/MakeItAMealPrompt";
 import RepeatItemSheet from "../components/cart/RepeatItemSheet";
 import { captureKioskEvent, KioskEventName } from "../utils/analytics";
 import useCartHook from "../hooks/menuHooks/useCartHook";
+import { CartRehydratedContext } from "../hooks/utils/useCartRehydrated";
 
 /**
  * In-session overlay chrome — mounted ONCE for the whole authenticated
@@ -173,6 +174,9 @@ export function AppRoutes() {
   // Ref-guarded so the effect stays one-shot without a stale-closure lint
   // suppression (useCartHook returns a fresh function each render).
   const didRehydrateCart = useRef(false);
+  // Settled (restored or failed) — CartRehydratedContext: until then an
+  // empty cart is not real, so BagSheet's empty-cart exit waits for it.
+  const [cartRehydrated, setCartRehydrated] = useState(false);
   useEffect(() => {
     if (didRehydrateCart.current) return;
     didRehydrateCart.current = true;
@@ -185,6 +189,7 @@ export function AppRoutes() {
         // keeps working independently.
         console.error("[AppRoutes] cart rehydrate from Dexie failed:", error);
       }
+      setCartRehydrated(true);
     };
     void rehydrate();
   }, [syncCartOnReLoad]);
@@ -237,7 +242,7 @@ export function AppRoutes() {
     return () => window.removeEventListener("popstate", trap);
   }, []);
 
-  return (
+  const routes = (
     <Routes>
       <Route element={<ProtectedRouteIfAuthenticated />}>
         <Route path="/" element={<Registration />} />
@@ -298,5 +303,10 @@ export function AppRoutes() {
         </Route>
       </Route>
     </Routes>
+  );
+  return (
+    <CartRehydratedContext.Provider value={cartRehydrated}>
+      {routes}
+    </CartRehydratedContext.Provider>
   );
 }
