@@ -166,8 +166,11 @@ function ForYouCardBase({
       >
         <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
       </span>
+      {/* The count pill rides the photo band's corner: at the top-left it sat
+          on the first glyphs of the name (pl-24, pt-24). No Figma frame draws
+          it (1:3171's rail has none) — design language, flagged. */}
       {quantity > 0 && (
-        <span className="absolute left-[12px] top-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
+        <span className="absolute bottom-[12px] left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
           {quantity}
         </span>
       )}

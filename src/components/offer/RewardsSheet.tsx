@@ -90,10 +90,15 @@ const calorieValue = (
   return cal;
 };
 
-/** Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). */
+/**
+ * Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). The
+ * url() is quoted (as in OfferAppliedCelebration): the inlined SVG data URI
+ * carries ' ( ), so an unquoted url() is invalid and the bell paints as a
+ * solid square.
+ */
 const bellMaskStyle: CSSProperties = {
-  WebkitMaskImage: `url(${tbBell})`,
-  maskImage: `url(${tbBell})`,
+  WebkitMaskImage: `url("${tbBell}")`,
+  maskImage: `url("${tbBell}")`,
   WebkitMaskRepeat: "no-repeat",
   maskRepeat: "no-repeat",
   WebkitMaskSize: "contain",
