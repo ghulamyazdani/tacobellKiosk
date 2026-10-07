@@ -6,13 +6,14 @@
  * useOfferApply — the app-side apply/remove core for the P7b Offers vertical
  * (contract "APPLY / REMOVE RECIPES", fork Cart.tsx parity).
  *
- * Four members, one job each:
- *  - selectOfferAndCommit  sheet SAVE tap → atomic swap, direct freebie
- *                          apply, or "open the picker" verdict
+ * Five members, one job each:
+ *  - selectOfferAndCommit  customer SAVE / buy-stage CONTINUE → atomic swap,
+ *                          direct freebie apply, or "open the picker" verdict
  *  - removeAppliedOffer    explicit customer removal (bag "Remove" tap)
  *  - handleCartDrivenRemoval  revalidation/auto removal (shows the removal
  *                          notice unless silent)
  *  - commitPickedFreebies  freebie-picker CONFIRM commit
+ *  - autoApplyOffer        the machine's apply (useOfferAutoApply only)
  *
  * All cart reads go through store.getState() at CALL time, not the render
  * snapshot — these run from async event handlers and effects, and a stale
@@ -25,20 +26,40 @@
  * first. (The fork's direct-apply branch had removeAllGetItems commented out,
  * which could orphan the outgoing offer's freebie rows; the contract mandates
  * the sweep, so this port restores it.)
+ *
+ * Lane "offers" (2026-10-06):
+ *  - routing has ONE gate, SDK routeOfferCommit (fixes the G2 £0 swap);
+ *  - the sameOrLess ceiling runs on the live cart before every freebie route;
+ *  - auto-apply latch (decision 4): EVERY customer offer action latches
+ *    `offerSession.autoApplyOptOut` whatever its outcome; machine paths
+ *    (handleCartDrivenRemoval, autoApplyOffer) never do;
+ *  - celebration: customer applies open `cart.offerModal`; auto-apply never.
  */
 import { useDispatch, useStore } from "react-redux";
 import {
   applyOffer,
   swapCartOffer,
   removeCartOffer,
+  openOfferModal,
   openOfferRemovalModal,
 } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  applySameOrLessCeiling,
+  routeOfferCommit,
+} from "@cx-sdk/ordering/offer/offerCommitRules";
+import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
+import { hasOffer } from "@cx-sdk/ordering/offer/offersSheetLogic";
 import useCartHook from "../menuHooks/useCartHook";
 import useOfferHook from "./useOfferHook";
 import useOfferSavings from "./useOfferSavings";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { resetAppliedBarCelebration } from "../../utils/offerCelebration";
+import {
+  markOfferAutoApplied,
+  optOutOfAutoApply,
+} from "../../redux/features/offerSession/offerSession.slice";
 
-/** Verdict of a sheet SAVE commit. */
+/** Verdict of a customer commit (sheet SAVE / buy-stage CONTINUE). */
 export interface OfferCommitResult {
   /** True when the offer landed on the bill in this call. */
   applied: boolean;
@@ -47,6 +68,16 @@ export interface OfferCommitResult {
    * caller must open FreebiePickerSheet and later call commitPickedFreebies.
    */
   needsPicker?: boolean;
+  /**
+   * Present ONLY when the sameOrLess ceiling filtered the offer — hand THIS
+   * to the picker (callers use `result.offer ?? offer`).
+   */
+  offer?: SavingsOffer;
+  /**
+   * Refused; nothing was written: the sameOrLess ceiling, or an item offer
+   * whose get side resolved to nothing (it could only land at £0).
+   */
+  blocked?: "sameOrLess" | "noGetItems";
 }
 
 export interface CommitPickedFreebiesArgs {
@@ -55,7 +86,9 @@ export interface CommitPickedFreebiesArgs {
    * The picked getItems entries, applyOfferByItem-shaped: each element is
    * `{...getItemsEntry, entities: pickedEntity, quantity}` — i.e. the
    * converter-resolved `offer.getItems.items` entry for the chosen entity
-   * (relation "or": exactly one; relation "and": every plain entry).
+   * (relation "or": exactly one; relation "and": every plain entry;
+   * group-wise: the SDK getGroupWisePickState commit lines — exactly
+   * getQuantity units, re-stamped with the shared discount).
    */
   picks: any[];
 }
@@ -73,11 +106,8 @@ function useOfferApply() {
   const dispatch = useDispatch();
   const store = useStore();
   const { removeAllGetItems, emptyGetItems } = useCartHook();
-  const {
-    applyDirectlyApplicableGetItemsOffer,
-    applyOfferByItem,
-    isItemBasedGetOnlyOfferDirectlyApplicable,
-  } = useOfferHook();
+  const { applyDirectlyApplicableGetItemsOffer, applyOfferByItem } =
+    useOfferHook();
   const { savingFor } = useOfferSavings();
 
   const liveCart = (): NonNullable<OfferApplyRootState["cart"]> =>
@@ -93,21 +123,37 @@ function useOfferApply() {
     emptyGetItems();
   };
 
+  /** Item 33: a CUSTOMER apply opens the non-blocking celebration card. */
+  const celebrate = (offer: Pick<SavingsOffer, "_id" | "name"> | null | undefined) => {
+    dispatch(openOfferModal({ id: offer?._id, name: offer?.name }));
+  };
+
   /**
-   * Sheet SAVE tap — contract "Sheet select" + "Choice path" recipes.
-   *
-   * No choice needed → ATOMIC swap (swapCartOffer replaces the slot and the
-   * get-item rows in one action, so a rejected commit can never leave
-   * discounted rows attached to no offer). Choice needed → the directly
-   * applicable subset (single fixed grant / "and" list of plain items) is
-   * applied here; a genuine choice returns `needsPicker` for the caller to
-   * open FreebiePickerSheet.
+   * Customer SAVE / buy-stage CONTINUE — contract "Sheet select" + "Choice
+   * path" recipes, routed by the ONE SDK gate (routeOfferCommit):
+   *  - "swap": ATOMIC swap (swapCartOffer replaces the slot and the get-item
+   *    rows in one action, so a rejected commit can never leave discounted
+   *    rows attached to no offer). Bill-wise and least-value offers.
+   *  - "direct": a fixed grant (single item / "and" list of plain items)
+   *    lands as real isGetItem rows, then the offer takes the slot.
+   *  - "picker": a genuine choice (or a customizable/variant freebie) —
+   *    `needsPicker` for the caller to open FreebiePickerSheet. An item offer
+   *    with get candidates NEVER swaps: swapCartOffer stamps no row, so a
+   *    single "and" customizable freebie used to realise £0 (G2).
+   *  - "blocked": an item offer whose get side resolved to nothing — it
+   *    could only land at £0 behind a "Reward applied!" card; refused with
+   *    `blocked`, nothing written (decision 2: blocked, never faked).
+   * Before "direct"/"picker" the sameOrLess ceiling (31b) runs on the LIVE
+   * cart; blocked → no cart writes at all.
    */
   const selectOfferAndCommit = async (offer: any): Promise<OfferCommitResult> => {
     try {
       if (!offer || Object.keys(offer).length === 0) {
         return { applied: false };
       }
+      // Decision 4 — every customer offer action latches auto-apply off for
+      // the session, whatever its outcome.
+      dispatch(optOutOfAutoApply());
       // Loyalty owns the slot: applyOffer would refuse the cross-source
       // write AFTER the freebie rows landed, orphaning them. Refuse up
       // front instead (P7c wires the explicit loyalty↔offer swap).
@@ -116,39 +162,44 @@ function useOfferApply() {
       }
 
       const saving = savingFor(offer);
+      const route = routeOfferCommit(offer, saving);
 
-      // INTEGRATOR FIX (P7b trace): the direct-apply check must be gated on
-      // the OFFER SHAPE (contract "Choice path": type.name==="item" +
-      // getItems — fork handleApplyOffer's exact guard, Cart.tsx:855), NOT
-      // nested under requiresChoice. A single-"and" fixed freebie reports
-      // requiresChoice:false (offerSavings' documented "choice-free"
-      // regression case), and the atomic swap stamps NO cart row — the
-      // freebie would never land and the bill would realise £0 (scenario 5).
-      const hasItemGetSide =
-        offer?.type?.name === "item" &&
-        offer?.getItems &&
-        Object.keys(offer.getItems).length > 0 &&
-        offer?.isAvailable;
+      if (route === "blocked") {
+        return { applied: false, blocked: "noGetItems" };
+      }
 
-      if (hasItemGetSide && isItemBasedGetOnlyOfferDirectlyApplicable(offer)) {
+      if (route === "swap") {
         clearFreebieRows();
-        await applyDirectlyApplicableGetItemsOffer(offer);
-        dispatch(applyOffer({ offer }));
-        // Fork parity: the direct-apply commit emits no analytics event
-        // (only the atomic swap path carries OfferSwapped).
+        dispatch(swapCartOffer({ next: offer, source: "offer" }));
+        captureKioskEvent(KioskEventName.OfferSwapped, {
+          to: offer?._id,
+          saving: saving.amount,
+          certainty: saving.certainty,
+        });
+        celebrate(offer);
         return { applied: true };
       }
-      if (saving.requiresChoice) {
-        return { applied: false, needsPicker: true };
+
+      const ceiling = applySameOrLessCeiling(offer, liveCart()?.cartItems);
+      if (ceiling.kind === "blocked") {
+        return { applied: false, blocked: "sameOrLess" };
       }
 
+      if (route === "picker") {
+        // `offer` rides along ONLY when the ceiling filtered it, so the
+        // pass-through verdict stays exactly { applied:false, needsPicker:true }.
+        return ceiling.offer === offer
+          ? { applied: false, needsPicker: true }
+          : { applied: false, needsPicker: true, offer: ceiling.offer };
+      }
+
+      const directOffer = ceiling.offer;
       clearFreebieRows();
-      dispatch(swapCartOffer({ next: offer, source: "offer" }));
-      captureKioskEvent(KioskEventName.OfferSwapped, {
-        to: offer?._id,
-        saving: saving.amount,
-        certainty: saving.certainty,
-      });
+      await applyDirectlyApplicableGetItemsOffer(directOffer);
+      dispatch(applyOffer({ offer: directOffer }));
+      // Fork parity: the direct-apply commit emits no analytics event
+      // (only the atomic swap path carries OfferSwapped).
+      celebrate(directOffer);
       return { applied: true };
     } catch {
       // A failed commit must never take the bag down (Rule 2). Sweep any
@@ -165,12 +216,15 @@ function useOfferApply() {
   /**
    * Explicit removal (bag "Remove" tap) — contract "Remove" recipe. Direct
    * removal shows NO notice (the notice is for cart-driven removal only).
+   * A customer action: latches auto-apply off (decision 4) BEFORE the slot
+   * empties, so nothing can re-apply into the gap.
    */
   const removeAppliedOffer = (): void => {
+    dispatch(optOutOfAutoApply());
     clearFreebieRows();
     dispatch(removeCartOffer({ source: "offer" }));
-    // TODO(P7b-deferred): resetAppliedBarCelebration — the applied-bar
-    // celebration module is not ported in P7b (contract: leave the TODO).
+    // A remove-then-reapply of the same offer must pop the row again.
+    resetAppliedBarCelebration();
     captureKioskEvent(KioskEventName.OfferOptedOut, {});
   };
 
@@ -178,7 +232,8 @@ function useOfferApply() {
    * Cart-driven (auto) removal — fork handleRemoveOffer(silent) parity: the
    * revalidation effect calls this when the applied offer no longer holds.
    * `silent` skips the "reward removed" notice — used when another modal
-   * (e.g. the out-of-stock error) is already being shown.
+   * (e.g. the out-of-stock error) is already being shown. A MACHINE path:
+   * never latches auto-apply (an auto offer may re-apply once eligible).
    */
   const handleCartDrivenRemoval = (silent: boolean): void => {
     const cartOffer = liveCart()?.cartOffer;
@@ -190,7 +245,7 @@ function useOfferApply() {
     // Unconditional clear (no source), fork parity — auto-removal must win
     // regardless of which system owns the slot.
     dispatch(removeCartOffer());
-    // TODO(P7b-deferred): resetAppliedBarCelebration (see removeAppliedOffer).
+    resetAppliedBarCelebration();
     // Fork parity: no analytics event on the auto-removal path.
   };
 
@@ -200,16 +255,19 @@ function useOfferApply() {
    * applyOfferByItem loops redeemGetItem(...) → addGetItemToCart(...), so
    * the picks land as REAL cart rows (isGetItem:true, discounted /
    * undiscounted prices stamped) before the offer takes the slot.
+   * Resolves true once applyOffer was dispatched, false otherwise.
    */
   const commitPickedFreebies = async ({
     offer,
     picks,
-  }: CommitPickedFreebiesArgs): Promise<void> => {
+  }: CommitPickedFreebiesArgs): Promise<boolean> => {
     try {
+      // Decision 4: a picker commit is a customer offer action.
+      dispatch(optOutOfAutoApply());
       if (liveCart()?.cartOfferSource === "loyalty") {
         // Same guard as selectOfferAndCommit: applyOffer would refuse after
         // the rows landed.
-        return;
+        return false;
       }
       // Trap-3 sweep: a previously applied offer's committed freebie rows
       // must not survive the new offer's commit.
@@ -225,6 +283,8 @@ function useOfferApply() {
       );
       dispatch(applyOffer({ offer }));
       // Fork parity: the picker commit emits no analytics event.
+      celebrate(offer);
+      return true;
     } catch {
       // Partial commit (some rows landed, offer did not) would charge or
       // discount wrongly — roll the freebie rows back and stay silent
@@ -234,6 +294,34 @@ function useOfferApply() {
       } catch {
         /* the rollback itself must never throw further */
       }
+      return false;
+    }
+  };
+
+  /**
+   * Item 34 — the MACHINE's apply, called only by useOfferAutoApply with a
+   * cart-neutral offer pickSessionAutoApplyOffer chose. Same money path as a
+   * manual SAVE of that offer (sweep → swapCartOffer), but no celebration
+   * card and no latch: it gets the row pop + "Applied for you" caption.
+   * Never replaces an occupied slot. Returns whether the slot now holds it.
+   */
+  const autoApplyOffer = (offer: SavingsOffer): boolean => {
+    try {
+      if (!hasOffer(offer)) return false;
+      const current = liveCart()?.cartOffer;
+      if (hasOffer(current)) return current?._id === offer._id;
+      const saving = savingFor(offer);
+      clearFreebieRows();
+      dispatch(swapCartOffer({ next: offer, source: "offer" }));
+      dispatch(markOfferAutoApplied(String(offer._id ?? "")));
+      captureKioskEvent(KioskEventName.OfferAutoApplied, {
+        offer_id: offer._id,
+        saving: saving.amount,
+        certainty: saving.certainty,
+      });
+      return liveCart()?.cartOffer?._id === offer._id;
+    } catch {
+      return false;
     }
   };
 
@@ -242,6 +330,7 @@ function useOfferApply() {
     removeAppliedOffer,
     handleCartDrivenRemoval,
     commitPickedFreebies,
+    autoApplyOffer,
   };
 }
 

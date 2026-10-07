@@ -56,8 +56,17 @@ import backspaceIcon from "../../assets/icons/key-backspace.svg";
  * language) sits under the ADD TO BAG bar, as on the menu — 1:2614 / 1:2920
  * / 1:5413 draw it in BOTH modes, and without it an ADA guest on the PDP
  * could neither leave the view nor cancel.
+ *
+ * `embedded` (offers lane): the same PDP hosted IN PLACE inside the bag by
+ * OfferTierHost for an offer freebie (isGetItem) or buy-stage (isBuyStageItem)
+ * tier session. It never navigates (the no-session guard is off;
+ * closeModalStates is exempt for both markers) and renders no footer strip,
+ * language sheet or CANCEL ORDER — the bag owns those (hazard H1). A freebie
+ * hides the qty stepper (one per pick) and its CTA carries no price claim.
  */
-export default function Customization() {
+export default function Customization({
+  embedded = false,
+}: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -198,7 +207,9 @@ export default function Customization() {
   // flush before the router transition closeModalStates queued), so it must
   // bounce to the SAME return path — hardcoding "/menu" here stomped the
   // direction:"cart" edit-from-bag loop back onto the menu (P7a).
+  // Embedded: the host unmounts this PDP when the session closes; never route.
   useEffect(() => {
+    if (embedded) return;
     if (!sessionOpen || !SelectedEntity?.id) {
       navigate(resolveCustomizationReturnPath(location.state), { replace: true });
     }
@@ -225,8 +236,13 @@ export default function Customization() {
 
   if (!sessionOpen || !SelectedEntity?.id) return null;
 
+  const isFreebie = Boolean(SelectedEntity?.isGetItem);
+  // isGetVariantDisabled = the offer's sameOrLess ceiling (only freebie
+  // entities ever carry it, so menu items filter exactly as before).
   const variants: any[] = Array.isArray(SelectedEntity?.variants)
-    ? SelectedEntity.variants.filter((v: any) => v?.isActive !== false)
+    ? SelectedEntity.variants.filter(
+        (v: any) => v?.isActive !== false && !v?.isGetVariantDisabled
+      )
     : [];
   const needsVariantPick = isVariantFlow && !confirmedVariant;
 
@@ -446,7 +462,11 @@ export default function Customization() {
   return (
     // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
     // 1:5413 — the whole PDP scrolls above the pinned CTA bar + footer).
-    <div data-testid="customization-screen" className="relative flex h-full w-[1080px] flex-col bg-tb-surface">
+    <div
+      data-testid="customization-screen"
+      data-embedded={embedded ? "true" : undefined}
+      className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
+    >
       <div ref={pdpScrollRef} id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[96px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {heroImage && (
           <img alt="" src={heroImage} className="mx-auto mt-[24px] h-[420px] object-contain" />
@@ -455,29 +475,32 @@ export default function Customization() {
           <h1 className="tb-compressed max-w-[700px] text-[56px] leading-[52px] text-black">
             {name(SelectedEntity)}
           </h1>
-          <div className="flex items-center gap-[16px] pt-2">
-            <button
-              type="button"
-              data-testid="pdp-qty-decrease"
-              aria-label={t("pdp.decrease")}
-              onClick={() => (quantity <= 1 ? closeModalStates() : decreaseQuantity1())}
-              className="h-[52px] w-[52px] rounded-full border-2 border-tb-purple text-[26px] font-bold text-tb-purple"
-            >
-              –
-            </button>
-            <span data-testid="pdp-qty" className="w-[40px] text-center text-[28px] font-bold">
-              {quantity}
-            </span>
-            <button
-              type="button"
-              data-testid="pdp-qty-increase"
-              aria-label={t("pdp.increase")}
-              onClick={() => increaseQuantity1()}
-              className="h-[52px] w-[52px] rounded-full bg-tb-purple text-[26px] font-bold text-tb-surface"
-            >
-              +
-            </button>
-          </div>
+          {/* One freebie per pick: no stepper (the offer sets the quantity). */}
+          {!isFreebie && (
+            <div className="flex items-center gap-[16px] pt-2">
+              <button
+                type="button"
+                data-testid="pdp-qty-decrease"
+                aria-label={t("pdp.decrease")}
+                onClick={() => (quantity <= 1 ? closeModalStates() : decreaseQuantity1())}
+                className="h-[52px] w-[52px] rounded-full border-2 border-tb-purple text-[26px] font-bold text-tb-purple"
+              >
+                –
+              </button>
+              <span data-testid="pdp-qty" className="w-[40px] text-center text-[28px] font-bold">
+                {quantity}
+              </span>
+              <button
+                type="button"
+                data-testid="pdp-qty-increase"
+                aria-label={t("pdp.increase")}
+                onClick={() => increaseQuantity1()}
+                className="h-[52px] w-[52px] rounded-full bg-tb-purple text-[26px] font-bold text-tb-surface"
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
         <p className="mt-[8px] text-[20px] text-tb-ink-purple">
           {currency}
@@ -611,16 +634,27 @@ export default function Customization() {
           onClick={() => addCustomizationToCart(undefined)}
           className={`tb-display flex min-h-[44px] items-center gap-4 text-[24px] ${needsVariantPick ? "text-tb-surface/50" : "text-tb-surface"}`}
         >
-          {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
-          {total.toFixed(2)}
+          {/* A freebie's price is the offer's call (redeemGetItem at CONFIRM),
+              so its CTA makes no price claim — not even "free": a 50% grant
+              or a paid add-on still charges (fork "Add to offer" parity). */}
+          {isFreebie ? (
+            t("offers.picker.addFreebie")
+          ) : (
+            <>
+              {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
+              {total.toFixed(2)}
+            </>
+          )}
         </button>
       </div>
-      <div className="relative h-[56px] w-full shrink-0">
-        <FooterBar
-          onCancelOrder={() => setCancelOrderOpen(true)}
-          onOpenLanguage={() => setLanguageOpen(true)}
-        />
-      </div>
+      {!embedded && (
+        <div className="relative h-[56px] w-full shrink-0">
+          <FooterBar
+            onCancelOrder={() => setCancelOrderOpen(true)}
+            onOpenLanguage={() => setLanguageOpen(true)}
+          />
+        </div>
+      )}
 
       <SlotSelectionSheet
         open={!!openSlotGroup}
@@ -642,19 +676,23 @@ export default function Customization() {
 
       <Tier2CustomizationSheet />
 
-      <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
-      <CancelOrderModal
-        open={cancelOrderOpen}
-        // ONLY navigate (hazard H1): /start's mount owns the revoke +
-        // resetSession("full"). Resetting here first would close the tier-1
-        // session while this route is still rendered, and the no-session
-        // guard above would bounce to the return path instead of the splash.
-        onConfirm={() => {
-          setCancelOrderOpen(false);
-          navigate("/start");
-        }}
-        onCancel={() => setCancelOrderOpen(false)}
-      />
+      {!embedded && (
+        <>
+          <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
+          <CancelOrderModal
+            open={cancelOrderOpen}
+            // ONLY navigate (hazard H1): /start's mount owns the revoke +
+            // resetSession("full"). Resetting here first would close the tier-1
+            // session while this route is still rendered, and the no-session
+            // guard above would bounce to the return path instead of the splash.
+            onConfirm={() => {
+              setCancelOrderOpen(false);
+              navigate("/start");
+            }}
+            onCancel={() => setCancelOrderOpen(false)}
+          />
+        </>
+      )}
     </div>
   );
 }

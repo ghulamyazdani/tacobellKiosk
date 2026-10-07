@@ -41,6 +41,8 @@ import {
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { emptyPayment } from "@cx-sdk/payments/state/payment.slice";
 import { stopTimer } from "@cx-sdk/core/session/timer.slice";
+import { resetOfferSession } from "../../redux/features/offerSession/offerSession.slice";
+import { resetAppliedBarCelebration } from "../../utils/offerCelebration";
 
 /**
  * THE canonical session reset — TB port of the fork's
@@ -95,14 +97,17 @@ const useSessionReset = () => {
     deleteAllOrdersFromIndexedDb();
     dispatch(clearFilters());
     dispatch(removeCartOffer());
+    // The auto-apply latch and the "Applied for you" id are customer-scoped
+    // (persisted only for crash recovery), so every reset clears them.
+    dispatch(resetOfferSession());
     // An offers-fetch failure must not outlive the customer who hit it —
     // otherwise the next customer is greeted by "Couldn't load offers" for a
     // request that was never made in their session.
     dispatch(resetOffersFetchStatus());
-    // Skipped fork step: resetConfetti() (fork src/utils/confettiCelebration)
-    // — the offer-celebration util is not ported to TB.
-    // Skipped fork step: resetAppliedBarCelebration() (fork
-    // src/components/offer/appliedBarCelebration) — offer vertical not in TB.
+    // Fork resetConfetti() has no TB counterpart: the confetti is CSS on the
+    // celebration card, which unmounts with cart.offerModal (emptyCart above
+    // resets it).
+    resetAppliedBarCelebration();
     dispatch(removeCustomerDetails());
     dispatch(resetLoyaltySession());
     dispatch(emptySelectedLanguage());

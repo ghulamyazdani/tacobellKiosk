@@ -195,3 +195,119 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     expect(screen.queryByTestId("offer-row-nudge-offer-gone")).not.toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Lane "offers" (item 31): the ADD ITEMS buy-stage entry. Only a LOCKED
+ * bogoBuySide row renders it, and only when the sheet hands it onAddItems.
+ * ------------------------------------------------------------------ */
+describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
+  const BOGO_OFFER = {
+    ...offerBase,
+    _id: "offer-bogo",
+    name: "Buy 2 sauces get a Caesar free",
+    type: { name: "item", value: 0 },
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: [{ item: { baseItemId: "tortilla-sauce" }, quantity: 2, relation: "and" }],
+    },
+  };
+
+  const lockedEntry = (offer: any, kind: string, gap: any) => ({
+    offer,
+    saving: { amount: 2, certainty: "exact", kind, requiresChoice: false, lockReason: gap.reason },
+    eligible: false,
+    gap,
+  });
+
+  const BOGO_LOCKED = lockedEntry(BOGO_OFFER, "bogo", { reason: "bogoBuySide" });
+
+  it("renders ADD ITEMS (a ≥44 px button inside the div row) and a tap calls onAddItems once — never onPick", async () => {
+    const onAddItems = vi.fn();
+    const { onPick } = renderRow({ entry: BOGO_LOCKED, onAddItems });
+
+    const row = screen.getByTestId("offer-row-offer-bogo");
+    expect(row.tagName).toBe("DIV");
+    expect(row).toHaveTextContent("Add the qualifying items to unlock this reward");
+    const addItems = screen.getByTestId("offer-row-add-items-offer-bogo");
+    expect(addItems.tagName).toBe("BUTTON");
+    expect(row).toContainElement(addItems);
+    expect(addItems).toHaveTextContent("ADD ITEMS");
+    expect(addItems.className).toMatch(/min-h-\[44px\]/);
+    expect(addItems.className).toMatch(/min-w-\[44px\]/);
+
+    await userEvent.click(addItems);
+    expect(onAddItems).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("without onAddItems the bogoBuySide row stays inert (no button)", () => {
+    renderRow({ entry: BOGO_LOCKED });
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent(
+      "Add the qualifying items to unlock this reward"
+    );
+    expect(screen.queryByTestId("offer-row-add-items-offer-bogo")).not.toBeInTheDocument();
+  });
+
+  it("the disabled latch (a commit in flight) disables ADD ITEMS", async () => {
+    const onAddItems = vi.fn();
+    renderRow({ entry: BOGO_LOCKED, onAddItems, disabled: true });
+    const addItems = screen.getByTestId("offer-row-add-items-offer-bogo");
+    expect(addItems).toBeDisabled();
+    await userEvent.click(addItems);
+    expect(onAddItems).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "minBill",
+      lockedEntry(PERCENT_OFFER, "percentComplete", { reason: "minBill", amountShort: 16.4 }),
+      "Add £16.40+ to your order to be eligible to redeem this reward",
+    ],
+    [
+      "minItems",
+      lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
+        reason: "minItems",
+        countShort: 2,
+      }),
+      null,
+    ],
+    [
+      "itemCriteria",
+      lockedEntry({ ...FLAT_OFFER, _id: "offer-scoped" }, "amountItems", { reason: "itemCriteria" }),
+      "Needs specific items in your order",
+    ],
+    [
+      "gone",
+      lockedEntry({ ...FLAT_OFFER, _id: "offer-gone", isAvailable: false }, "amountComplete", {
+        reason: "unavailable",
+      }),
+      "Not available right now",
+    ],
+  ])("%s rows are unchanged even when handed onAddItems: no ADD ITEMS", (_label, entry, copy) => {
+    const onAddItems = vi.fn();
+    renderRow({ entry, onAddItems });
+    const id = String(entry.offer._id);
+    const row = screen.getByTestId(`offer-row-${id}`);
+    expect(row.tagName).toBe("DIV");
+    expect(screen.queryByTestId(`offer-row-add-items-${id}`)).not.toBeInTheDocument();
+    expect(row.querySelector("button")).toBeNull();
+    if (copy) expect(row).toHaveTextContent(copy);
+  });
+
+  it("the minItems nudge still names the item shortfall", () => {
+    renderRow({
+      entry: lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
+        reason: "minItems",
+        countShort: 2,
+      }),
+      onAddItems: vi.fn(),
+    });
+    expect(screen.getByTestId("offer-row-nudge-offer-min-items")).toBeInTheDocument();
+  });
+
+  it("an eligible row never shows ADD ITEMS (it is the radio)", () => {
+    renderRow({ onAddItems: vi.fn() });
+    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveAttribute("role", "radio");
+    expect(screen.queryByTestId("offer-row-add-items-offer-flat-2")).not.toBeInTheDocument();
+  });
+});

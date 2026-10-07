@@ -125,6 +125,53 @@
   animation: tb-fade-in 0.5s ease-out both;
 }
 
+/* Offer-applied celebration (lane offers, item 33; fork OffersSheet.css
+ * :787-830 ideas, no confetti library). Every animation is ONE run that ends
+ * on its own — no loop (WCAG 2.2.2), no flashing (2.3.1), no JS timers.
+ * Transform-only, so never put a Tailwind translate-* class on these.
+ *
+ * Confetti: each piece sits at its container's centre and flies to its own
+ * --tx/--ty (lengths), spinning --r, after --d; it ends invisible. */
+@keyframes tb-confetti-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--tx), var(--ty), 0) rotate(var(--r)); }
+}
+.tb-confetti-piece {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 18px;
+  margin: -9px 0 0 -6px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: tb-confetti-fall 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) var(--d, 0s) forwards;
+}
+/* Arrival pop with a ~3% overshoot (the celebration card, the applied row's
+ * "Save £X" line). Scale + opacity only: position-neutral. */
+@keyframes tb-chip-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+.tb-chip-pop {
+  animation: tb-chip-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+/* One-shot ring around the applied row's plate; ends at opacity 0. */
+@keyframes tb-success-pulse {
+  0% { opacity: 0; transform: scale(0.92); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.12); }
+}
+.tb-success-pulse {
+  animation: tb-success-pulse 0.6s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-confetti-piece { display: none; }
+  .tb-chip-pop,
+  .tb-success-pulse { animation-duration: 0.001s; }
+}
+
 html,
 body {
   height: 100%;

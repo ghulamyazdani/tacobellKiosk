@@ -22,6 +22,14 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { startTimer, tick } from "@cx-sdk/core/session/timer.slice";
 import { store } from "../../../redux/app/store";
+import {
+  markOfferAutoApplied,
+  optOutOfAutoApply,
+} from "../../../redux/features/offerSession/offerSession.slice";
+import {
+  getCelebratedBarKey,
+  setCelebratedBarKey,
+} from "../../../utils/offerCelebration";
 import useSessionReset, { type SessionResetScope } from "../useSessionReset";
 import "../../../i18n";
 
@@ -150,6 +158,25 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
 
     expect(state().appSettings.accessibilityMode).toBe(stillOn);
   });
+
+  /*
+    Lane "offers": the auto-apply latch + "Applied for you" id are customer-
+    scoped (persisted only for crash recovery) and the applied-row spent key
+    is module state — neither may greet the next customer.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") clears the offer session and the celebration spent key',
+    async (scope) => {
+      store.dispatch(optOutOfAutoApply());
+      store.dispatch(markOfferAutoApplied("auto-flat-2"));
+      setCelebratedBarKey("auto-flat-2:2.00");
+
+      await fireReset(scope);
+
+      expect(state().offerSession).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: null });
+      expect(getCelebratedBarKey()).toBeNull();
+    }
+  );
 
   it("is idempotent: resetting an already-clean session neither throws nor dirties state", async () => {
     await fireReset("full");

@@ -21,3 +21,4 @@ export { default as messageModalsSlice } from "./messageModals/messageModals.sli
 export { default as recommendationSlice } from "@cx-sdk/catalog/state/recommendation.slice";
 export { default as kioskOpenStatusSlice } from "@cx-sdk/catalog/state/kioskOpenStatus.slice";
 export { default as filterSlice } from "@cx-sdk/catalog/state/filter.slice";
+export { default as offerSessionSlice } from "./offerSession/offerSession.slice";

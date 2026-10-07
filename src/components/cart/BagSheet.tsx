@@ -3,7 +3,7 @@
  * and converters; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -19,6 +19,7 @@ import {
   reconcileFreebieAllocation,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
+import { isSameOrLessViolated } from "@cx-sdk/ordering/offer/offerCommitRules";
 import {
   addLoyaltyPoints,
   selectCoupons,
@@ -49,6 +50,7 @@ import { selectEntpShowCategory } from "@cx-sdk/catalog/state/Menu.slice";
 import { useLazyGetServerTimeQuery } from "@cx-sdk/catalog/services/settingsApi";
 import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
 import { setSelectedEntity } from "../../redux/features/menuSelections/menuSelections.slice";
+import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useOrderHook from "../../hooks/menuHooks/useOrderHook";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
@@ -57,24 +59,51 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
 import useOfferHook from "../../hooks/offerHooks/useOfferHook";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
+import useBuyStage from "../../hooks/offerHooks/useBuyStage";
+import useOfferAutoApply from "../../hooks/offerHooks/useOfferAutoApply";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import { useCartRehydrated } from "../../hooks/utils/useCartRehydrated";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import {
+  getCelebratedBarKey,
+  setCelebratedBarKey,
+} from "../../utils/offerCelebration";
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
 import BagItemRow from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import RewardsSheet from "../offer/RewardsSheet";
 import FreebiePickerSheet from "../offer/FreebiePickerSheet";
+import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
 import closeIcon from "../../assets/icons/close.svg";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
-// Built in the same P7a wave (rail agent) — lazy so the sheet neither blocks
-// on nor bundles the rail chunk; the locked prop contract is { onDetour? }.
-const CompleteYourMealRail = lazy(() => import("./CompleteYourMealRail"));
+// Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
+// entry would grow the boot path). `await import()`, never `.then`: a failed
+// chunk must reach chunkRecovery's reload. The rail's locked prop contract
+// is { onDetour? }; the offer-only buy stage and celebration keep the boot
+// path inside its P9f budget.
+const CompleteYourMealRail = lazy(async () => ({
+  default: (await import("./bagLazyParts")).CompleteYourMealRail,
+}));
+const BuyStageSheet = lazy(async () => ({
+  default: (await import("./bagLazyParts")).BuyStageSheet,
+}));
+const OfferAppliedCelebration = lazy(async () => ({
+  default: (await import("./bagLazyParts")).OfferAppliedCelebration,
+}));
 
 /** Figma 1:3171: the sheet's top sits at stage y 244. ADA: ADA_SHEET_HEIGHT. */
 const BAG_SHEET_HEIGHT = 1676;
+
+/**
+ * How long the CTA bar swallows taps after a rewards / picker / buy-stage
+ * sheet closes (ReachZone's exit-guard pattern). SAVE, CONFIRM and CONTINUE
+ * sit over PAY / LOG-IN and close instantly, so the second tap of a double
+ * tap would start checkout.
+ */
+const CTA_TAP_GUARD_MS = 500;
 
 interface BagSheetProps {
   open: boolean;
@@ -122,6 +151,30 @@ const bellMaskStyle: CSSProperties = {
 };
 
 /**
+ * Applied-row celebration (lane offers, item 33; fork OffersSheet applied-bar
+ * parity). Remounted per `key={barKey}` (`${offerId}:${amount}`), it plays
+ * the "Save £X" chip pop + plate pulse once per applied VALUE: the spent key
+ * lives outside React (utils/offerCelebration), so a bag reopen with the same
+ * offer and amount renders quiet, while a new offer, a changed amount, or a
+ * remove-then-reapply (the removal paths reset the key) plays again. `play`
+ * is fixed at first render, so the first painted frame already carries the
+ * classes (no blink). Pure CSS that ends on its own — no timers, no text.
+ */
+function AppliedRowPop({
+  barKey,
+  children,
+}: {
+  barKey: string;
+  children: (play: boolean) => ReactNode;
+}) {
+  const [play] = useState(() => barKey !== getCelebratedBarKey());
+  useEffect(() => {
+    setCelebratedBarKey(barKey);
+  }, [barKey]);
+  return children(play);
+}
+
+/**
  * MY BAG — Figma "My Bag / Populated" (1:3171 / 1:3236): white rounded-top
  * sheet over the purple-tinted menu. Header MY BAG (n) + X, read-only
  * EAT IN / TAKE OUT toggle (locked decision 2), consolidated cart rows,
@@ -145,6 +198,12 @@ const bellMaskStyle: CSSProperties = {
  * and the LOG-IN & GET REWARDS entry point (decision 5b). Rewards are
  * ORDINARY cart rows and never touch `cartOffer` — a XENO reward and an
  * applied offer coexist (contract trap 8).
+ *
+ * Lane offers adds: the BOGO buy stage (useBuyStage journey host — it lives
+ * here because its snapshot must survive the RewardsSheet → picker hand-off),
+ * revalidation check 7 (sameOrLess), auto-apply (useOfferAutoApply, after the
+ * revalidation effect), the in-bag tier host for customizable freebies / buy
+ * items, and the non-blocking offer-applied celebration + applied-row pop.
  */
 export default function BagSheet({
   open,
@@ -169,7 +228,9 @@ export default function BagSheet({
   // table, the customer phone is the XENO identity (set by /phone).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
   const customerPhone = useSelector(selectPhoneNumber) as any;
+  const autoAppliedOfferId = useSelector(selectAutoAppliedOfferId);
   const adaActive = useAdaActive();
+  const cartRehydrated = useCartRehydrated();
 
   const {
     decreaseItemQuantityById,
@@ -193,7 +254,25 @@ export default function BagSheet({
   const [rewardsOpen, setRewardsOpen] = useState(false);
   /** Offer whose freebie choice is pending — owns FreebiePickerSheet's open state. */
   const [pickerOffer, setPickerOffer] = useState<any>(null);
+  /** Inline "can't be applied" for a blocked/failed buy-stage CONTINUE (TB mounts no global error modal). */
+  const [stageBlocked, setStageBlocked] = useState<string | null>(null);
   const comingSoonTimer = useRef<number | null>(null);
+  const stage = useBuyStage(open);
+
+  // Arm the CTA guard on a sheet's open → closed edge (adjust state while
+  // rendering); Rule 5: its timer never outlives it (or the bag).
+  const sheetOpen = rewardsOpen || !!pickerOffer || !!stage.buyStage;
+  const [prevSheetOpen, setPrevSheetOpen] = useState(sheetOpen);
+  const [ctaTapGuard, setCtaTapGuard] = useState(false);
+  if (prevSheetOpen !== sheetOpen) {
+    setPrevSheetOpen(sheetOpen);
+    setCtaTapGuard(!sheetOpen);
+  }
+  useEffect(() => {
+    if (!ctaTapGuard) return;
+    const id = window.setTimeout(() => setCtaTapGuard(false), CTA_TAP_GUARD_MS);
+    return () => window.clearTimeout(id);
+  }, [ctaTapGuard]);
 
   const currency = currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const displayRows: any[] = consolidateGetItemsForDisplay(cartRdx?.cartItems);
@@ -239,9 +318,21 @@ export default function BagSheet({
   // Empty-cart auto-exit (contract A3 / fork Cart.tsx:536-545). P7b: the
   // applied offer goes first, WITH the removal notice (fork parity —
   // handleRemoveOffer() leads the empty-exit branch).
+  // Latched like cartHadPaidRowsRef below: it fires only once the cart HELD
+  // rows while the bag was open, or once AppRoutes' Dexie rehydrate has
+  // settled (CartRehydratedContext). A crash-reload on /cart renders the
+  // persisted cartOffer before the rehydrate lands the rows, and exiting on
+  // that transient zero dropped the customer's reward; a rehydrate that
+  // restores NOTHING still exits, the stale reward going with its notice.
+  const bagHeldRowsRef = useRef(false);
   useEffect(() => {
     if (!open) return;
-    if (totalQuantity === 0) {
+    if (totalQuantity > 0) {
+      bagHeldRowsRef.current = true;
+      return;
+    }
+    if (bagHeldRowsRef.current || cartRehydrated) {
+      bagHeldRowsRef.current = false;
       handleCartDrivenRemoval(false);
       dispatch(setCartInstructions(""));
       // The SDK's emptyCart also resets offerRemovalModal (session-reset
@@ -255,7 +346,7 @@ export default function BagSheet({
       onClose();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, totalQuantity]);
+  }, [open, totalQuantity, cartRehydrated]);
 
   /**
    * AUTO-REVERSAL (contract step 8 / fork Cart.tsx:1167-1202) — a loyalty
@@ -312,6 +403,11 @@ export default function BagSheet({
     if (!open) return;
     if (!hasAppliedOffer) return;
     const items: any[] = cartRdx?.cartItems ?? [];
+    // An EMPTY cart is the empty-cart exit's to settle (it removes the offer
+    // once the bag has held rows or the rehydrate settled); judging it here
+    // would drop a persisted reward on the first render after a
+    // crash-reload, before the Dexie rehydrate lands the rows.
+    if (items.length === 0) return;
     const qtyExclLoyalty = items.reduce(
       (acc: number, it: any) =>
         !it?.isLoyaltyItem ? acc + Number(it?.quantity ?? 0) : acc,
@@ -345,12 +441,25 @@ export default function BagSheet({
       // 6: bogo mechanics (called unconditionally like the fork — the
       // engine returns true for every non-bogo mechanic).
       (items.length > 0 &&
-        !isBOGOOfferApplicable(cartOffer, cartOffer?.applicable, items));
+        !isBOGOOfferApplicable(cartOffer, cartOffer?.applicable, items)) ||
+      // 7: sameOrLess ceiling (fork Cart.tsx:1327-1346) — false for every
+      // offer that is not a sameOrLess plain BOGO.
+      isSameOrLessViolated(cartOffer, items);
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cartOffer, cartRdx?.cartItems]);
+
+  // Auto-apply (lane offers, item 34) — declared AFTER the revalidation
+  // effect on purpose: effects run in declaration order, so it only ever
+  // sees a slot that revalidation has already settled. Never while a sheet,
+  // picker or buy stage is open (the removal notice is checked inside).
+  useOfferAutoApply({
+    open,
+    ranked: rankedOffers,
+    blocked: rewardsOpen || !!pickerOffer || !!stage.buyStage,
+  });
 
   // Least-value freebie allocation follows the cart (contract / fork
   // Cart.tsx:393): reconcile whenever the items change under such an offer.
@@ -448,6 +557,29 @@ export default function BagSheet({
     // At qty 1 the decrease reducer deletes the row (contract A2); Dexie
     // mirror + cart_modified analytics live inside the hook.
     decreaseItemQuantityById(row?.itemId, "ITEM", "itemId");
+  };
+
+  /**
+   * Buy-stage CONTINUE: commit through the one apply path (useBuyStage →
+   * selectOfferAndCommit). Applied → the stage closes itself and the
+   * celebration fires; needs a freebie choice → the picker (the snapshot stays
+   * armed, so dismissing the picker rolls the stage's rows back); blocked or
+   * failed → the stage stays open with an inline message.
+   */
+  const handleStageContinue = async () => {
+    const stagedOffer = stage.buyStage?.offer;
+    setStageBlocked(null);
+    try {
+      const result = await stage.continueStage();
+      if (!mountedRef.current) return;
+      if (result.needsPicker) {
+        setPickerOffer(result.offer ?? stagedOffer);
+        return;
+      }
+      if (!result.applied) setStageBlocked(t("offers.notApplicable"));
+    } catch {
+      if (mountedRef.current) setStageBlocked(t("offers.notApplicable"));
+    }
   };
 
   /**
@@ -633,6 +765,9 @@ export default function BagSheet({
       ? Number(bill.getTotalDiscount?.() ?? 0)
       : 0;
   const bestRankedName: string = rankedOffers[0]?.offer?.name ?? "";
+  const sheetHeight = adaActive ? ADA_SHEET_HEIGHT : BAG_SHEET_HEIGHT;
+  // One celebration per applied VALUE (see AppliedRowPop).
+  const barKey = `${cartOffer?._id}:${appliedDiscount.toFixed(2)}`;
   const loyaltyOn = getIsLoyaltyOn();
 
   const orderTypeSegment = (
@@ -688,7 +823,7 @@ export default function BagSheet({
       <div
         style={{
           animation: "tbBagSheetEnter 0.2s ease-out both",
-          height: adaActive ? ADA_SHEET_HEIGHT : BAG_SHEET_HEIGHT,
+          height: sheetHeight,
         }}
         className="absolute bottom-0 left-0 flex w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
@@ -747,51 +882,76 @@ export default function BagSheet({
                   // sheet. The overlay is LAST in the DOM so it paints over
                   // the bell's opacity/mask layer (first, the bell would
                   // swallow taps); Remove sits above it (relative z-10).
-                  <div
-                    data-testid="bag-rewards-applied"
-                    className="relative flex w-full items-start gap-[24px] py-[24px]"
-                  >
-                    <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-[8px] bg-tb-grey-6">
-                      <span
-                        aria-hidden="true"
-                        className="h-[64px] w-[72px] bg-tb-purple opacity-25"
-                        style={bellMaskStyle}
-                      />
-                    </span>
-                    <div className="flex min-w-0 flex-1 flex-col items-start gap-[10px]">
-                      <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
-                        {cartOffer?.name}
-                      </p>
-                      {appliedDiscount > 0 && (
-                        <p className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
-                          {t("offers.save", {
-                            amount: `${currency}${appliedDiscount.toFixed(2)}`,
-                          })}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        data-testid="bag-rewards-remove"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeAppliedOffer();
-                        }}
-                        className="relative z-10 -ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold tracking-[-0.08px] text-tb-purple underline"
+                  <AppliedRowPop key={barKey} barKey={barKey}>
+                    {(play) => (
+                      <div
+                        data-testid="bag-rewards-applied"
+                        className="relative flex w-full items-start gap-[24px] py-[24px]"
                       >
-                        {t("offers.remove")}
-                      </button>
-                    </div>
-                    <p className="shrink-0 text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
-                      −{currency}
-                      {appliedDiscount.toFixed(2)}
-                    </p>
-                    <button
-                      type="button"
-                      aria-label={t("offers.entryTitle")}
-                      onClick={() => setRewardsOpen(true)}
-                      className="absolute inset-0"
-                    />
-                  </div>
+                        <span className="relative flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-[8px] bg-tb-grey-6">
+                          <span
+                            aria-hidden="true"
+                            className="h-[64px] w-[72px] bg-tb-purple opacity-25"
+                            style={bellMaskStyle}
+                          />
+                          {play && (
+                            <span
+                              aria-hidden="true"
+                              className="tb-success-pulse pointer-events-none absolute inset-0 rounded-[8px] border-[3px] border-tb-purple"
+                            />
+                          )}
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col items-start gap-[10px]">
+                          <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
+                            {cartOffer?.name}
+                          </p>
+                          {/* Design language (no frame): the RewardsSheet
+                              "Applied" chip, for an offer the machine
+                              applied — flagged for client sign-off. */}
+                          {autoAppliedOfferId === cartOffer?._id && (
+                            <span
+                              data-testid="bag-rewards-applied-for-you"
+                              className="rounded-full bg-tb-purple px-[16px] py-[6px] text-[18px] font-bold uppercase leading-[20px] text-tb-surface"
+                            >
+                              {t("offers.auto.appliedForYou")}
+                            </span>
+                          )}
+                          {appliedDiscount > 0 && (
+                            <p
+                              className={`text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple ${
+                                play ? "tb-chip-pop" : ""
+                              }`}
+                            >
+                              {t("offers.save", {
+                                amount: `${currency}${appliedDiscount.toFixed(2)}`,
+                              })}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            data-testid="bag-rewards-remove"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeAppliedOffer();
+                            }}
+                            className="relative z-10 -ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold tracking-[-0.08px] text-tb-purple underline"
+                          >
+                            {t("offers.remove")}
+                          </button>
+                        </div>
+                        <p className="shrink-0 text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
+                          −{currency}
+                          {appliedDiscount.toFixed(2)}
+                        </p>
+                        <button
+                          type="button"
+                          aria-label={t("offers.entryTitle")}
+                          onClick={() => setRewardsOpen(true)}
+                          className="absolute inset-0"
+                        />
+                      </div>
+                    )}
+                  </AppliedRowPop>
                 ) : (
                   <button
                     type="button"
@@ -872,7 +1032,7 @@ export default function BagSheet({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-[24px] p-[24px] drop-shadow-[0px_0px_64px_rgba(0,0,0,0.08)]">
+        <div className="relative flex shrink-0 items-center gap-[24px] p-[24px] drop-shadow-[0px_0px_64px_rgba(0,0,0,0.08)]">
           {/* Loyalty-off deployments hide LOG-IN & GET REWARDS and PAY takes
               the full row (user decision 2026-10-05; no Figma frame). */}
           {loyaltyOn && (
@@ -903,6 +1063,13 @@ export default function BagSheet({
             {appliedDiscount > 0 ? t("bag.orderAndPay") : t("bag.pay")} {currency}
             {payTotal.toFixed(2)}
           </button>
+          {ctaTapGuard && (
+            <div
+              aria-hidden="true"
+              data-testid="bag-cta-tap-guard"
+              className="absolute inset-0"
+            />
+          )}
         </div>
       </div>
 
@@ -912,20 +1079,71 @@ export default function BagSheet({
         onConfirm={handleConfirmRemove}
       />
 
-      {/* P7b offer overlays — z-stack above the bag (z-40): RewardsSheet
-          z-50, FreebiePickerSheet z-[80], OfferRemovalNotice z-[90] (fixed).
-          onNeedsPicker fires BEFORE the sheet's onClose, handing this page
-          the offer whose freebie choice is pending. */}
+      {/* Offer overlays — z-stack inside the bag's z-40 context:
+          RewardsSheet / BuyStageSheet z-50 · FreebiePickerSheet z-[80] ·
+          OfferTierHost z-[85] (in-bag PDP for customizable freebies and buy
+          items) · OfferAppliedCelebration z-[86] (pointer-events-none) ·
+          OfferRemovalNotice z-[90] (fixed). onNeedsPicker / onAddItems fire
+          BEFORE the sheet's onClose, handing this page the offer. */}
       <RewardsSheet
         open={rewardsOpen}
         onClose={() => setRewardsOpen(false)}
         onNeedsPicker={(offer) => setPickerOffer(offer)}
+        onAddItems={(offer, view) => {
+          setStageBlocked(null);
+          stage.start(offer, view);
+        }}
       />
+      {stage.buyStage && (
+        // Fallback = the sheet's own scrim, closing like it: the bag beneath
+        // stays covered while the chunk loads, and a stalled download never
+        // traps the customer (nothing was added yet — abandon is a no-op
+        // rollback).
+        <Suspense
+          fallback={
+            <button
+              type="button"
+              aria-label={t("offers.close")}
+              data-testid="buy-stage-loading"
+              onClick={() => stage.abandon()}
+              className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
+            />
+          }
+        >
+          <BuyStageSheet
+            stage={stage.buyStage}
+            continuing={stage.continuing}
+            blockedMessage={stageBlocked}
+            onBack={() => {
+              stage.abandon();
+              setRewardsOpen(true);
+            }}
+            onClose={() => stage.abandon()}
+            onContinue={handleStageContinue}
+          />
+        </Suspense>
+      )}
       <FreebiePickerSheet
         open={!!pickerOffer}
         offer={pickerOffer}
-        onClose={() => setPickerOffer(null)}
+        onClose={() => {
+          // A buy-stage journey that ends here without the offer landing
+          // rolls its paid rows back (no-op when no stage is armed).
+          stage.rollbackIfAbandoned();
+          setPickerOffer(null);
+        }}
       />
+      <OfferTierHost />
+      {/* null fallback = its idle look (it is invisible until a customer
+          apply, seconds after the bag opens); it reads cart.offerModal on
+          mount, so an apply that lands while the chunk loads still plays. */}
+      <Suspense fallback={null}>
+        <OfferAppliedCelebration
+          discount={appliedDiscount}
+          currency={currency}
+          sheetHeight={sheetHeight}
+        />
+      </Suspense>
       <OfferRemovalNotice bill={bill ?? undefined} />
     </div>
   );
