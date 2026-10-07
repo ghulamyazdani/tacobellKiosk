@@ -168,7 +168,7 @@ export default function ReceiptPreferenceScreen() {
           onClick={() => choose("print")}
           className="flex h-[412px] w-[412px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
         >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
+          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.print")}
           </span>
         </button>
@@ -180,7 +180,7 @@ export default function ReceiptPreferenceScreen() {
           aria-disabled="true"
           className="flex h-[412px] w-[412px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
         >
-          <span className="tb-display text-center text-[36px] leading-[40px] tracking-[-1px] text-tb-purple">
+          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.email")}
           </span>
           <span className="text-center text-[22px] leading-[26px] font-bold uppercase tracking-[1px] text-tb-purple/70">

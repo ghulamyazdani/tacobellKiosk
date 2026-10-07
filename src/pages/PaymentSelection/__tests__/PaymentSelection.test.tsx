@@ -386,10 +386,10 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     });
 
     it.each([
-      ["one tile: the Figma 412", [], [412], "text-[36px]", "px-[32px]"],
-      ["two tiles: 2 × 412", ["EDC"], [412, 412], "text-[36px]", "px-[32px]"],
-      ["three tiles: 3 × 266.67, the narrow label", ["EDC", "DQR"], [266.67, 266.67, 266.67], "text-[24px]", "px-[16px]"],
-    ] as const)("%s", (_label, configured, widths, labelSize, padding) => {
+      ["one tile: the Figma 412", [], [412], "px-[32px]"],
+      ["two tiles: 2 × 412", ["EDC"], [412, 412], "px-[32px]"],
+      ["three tiles: 3 × 266.67, the narrow padding", ["EDC", "DQR"], [266.67, 266.67, 266.67], "px-[16px]"],
+    ] as const)("%s, labels in the frame's Cm Bd 48/44", (_label, configured, widths, padding) => {
       store.dispatch(setPaymentSettings(configured.map((kind) => (kind === "EDC" ? EDC : DQR))));
       mount();
 
@@ -398,7 +398,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       );
       for (const tile of tiles()) {
         expect(tile).toHaveClass(padding);
-        expect(tile.querySelector("span")).toHaveClass(labelSize);
+        expect(tile.querySelector("span")).toHaveClass("tb-compressed", "text-[48px]", "leading-[44px]");
       }
     });
 

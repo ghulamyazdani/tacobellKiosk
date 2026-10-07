@@ -261,7 +261,8 @@ export default function OrderSuccess() {
         >
           {orderNumber ? `#${orderNumber}` : ""}
         </p>
-        <p className="tb-display mt-[24px] text-[28px] leading-[1.2] tracking-[0.5px] text-tb-surface">
+        {/* Title/H4 of 1:5932: Cm Bd 34/38. */}
+        <p className="tb-compressed mt-[24px] text-[34px] leading-[38px] text-tb-surface">
           {t("success.proceedToCounter")}
         </p>
       </div>
