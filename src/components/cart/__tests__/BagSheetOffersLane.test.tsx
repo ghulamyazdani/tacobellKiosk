@@ -326,7 +326,8 @@ describe("BagSheet — applied-row pop (AppliedRowPop + the spent key)", () => {
 
     await userEvent.click(screen.getByTestId("bag-rewards-remove"));
     await userEvent.click(await screen.findByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-plain-flat-1"));
+    // Lazy (bagLazyParts): the rewards sheet mounts once its chunk resolves.
+    await userEvent.click(await screen.findByTestId("offer-row-plain-flat-1"));
     await userEvent.click(screen.getByTestId("rewards-save"));
 
     await waitFor(() => expect(slotId()).toBe("plain-flat-1"));
@@ -386,7 +387,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     act(() => void store.dispatch(setFilteredOffers([PLAIN_FLAT, AUTO_FLAT])));
     expect(slotId()).toBeUndefined();
 
-    await userEvent.click(screen.getByTestId("rewards-close"));
+    await userEvent.click(await screen.findByTestId("rewards-close"));
     await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
   });
 
@@ -405,7 +406,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     store.dispatch(setFilteredOffers([BUY_TWO_SAUCES]));
     render(<BagUi />);
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-buy-two"));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
     // Lazy (bagLazyParts): the stage mounts once its chunk resolves.
     expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
 
@@ -420,7 +421,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     store.dispatch(setFilteredOffers([SAUCE_CHOICE]));
     render(<BagUi />);
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("offer-row-offer-sauce-choice"));
+    await userEvent.click(await screen.findByTestId("offer-row-offer-sauce-choice"));
     await userEvent.click(screen.getByTestId("rewards-save"));
     await screen.findByTestId("freebie-picker");
 
@@ -460,7 +461,7 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
 
     // P9f overlay-button pattern: the applied row's named overlay opens the sheet.
     await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
-    await userEvent.click(screen.getByTestId("offer-row-min-three-1"));
+    await userEvent.click(await screen.findByTestId("offer-row-min-three-1"));
     await userEvent.click(screen.getByTestId("rewards-save"));
     await waitFor(() => expect(slotId()).toBe("min-three-1"));
     expect(caption()).toBeNull();
@@ -533,7 +534,7 @@ describe("BagSheet — buy-stage hand-offs", () => {
 
   const openStage = async (offerId: string) => {
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId(`offer-row-add-items-${offerId}`));
+    await userEvent.click(await screen.findByTestId(`offer-row-add-items-${offerId}`));
     await userEvent.click(await screen.findByTestId(`buy-stage-add-${SAUCE.id}`));
     expect(state().cart.cartItems.map((row) => row.id)).toEqual([BURGER_ROW.id, SAUCE.id]);
   };

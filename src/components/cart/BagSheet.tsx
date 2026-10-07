@@ -72,8 +72,6 @@ import {
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
 import BagItemRow from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
-import RewardsSheet from "../offer/RewardsSheet";
-import FreebiePickerSheet from "../offer/FreebiePickerSheet";
 import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
 import closeIcon from "../../assets/icons/close.svg";
@@ -82,10 +80,16 @@ import tbBell from "../../assets/brand/tb-bell.svg";
 // Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
 // entry would grow the boot path). `await import()`, never `.then`: a failed
 // chunk must reach chunkRecovery's reload. The rail's locked prop contract
-// is { onDetour? }; the offer-only buy stage and celebration keep the boot
-// path inside its P9f budget.
+// is { onDetour? }; the offer-only sheets (rewards, freebie picker, buy
+// stage) and the celebration keep the boot path inside its P9f budget.
 const CompleteYourMealRail = lazy(async () => ({
   default: (await import("./bagLazyParts")).CompleteYourMealRail,
+}));
+const RewardsSheet = lazy(async () => ({
+  default: (await import("./bagLazyParts")).RewardsSheet,
+}));
+const FreebiePickerSheet = lazy(async () => ({
+  default: (await import("./bagLazyParts")).FreebiePickerSheet,
 }));
 const BuyStageSheet = lazy(async () => ({
   default: (await import("./bagLazyParts")).BuyStageSheet,
@@ -1085,15 +1089,34 @@ export default function BagSheet({
           items) · OfferAppliedCelebration z-[86] (pointer-events-none) ·
           OfferRemovalNotice z-[90] (fixed). onNeedsPicker / onAddItems fire
           BEFORE the sheet's onClose, handing this page the offer. */}
-      <RewardsSheet
-        open={rewardsOpen}
-        onClose={() => setRewardsOpen(false)}
-        onNeedsPicker={(offer) => setPickerOffer(offer)}
-        onAddItems={(offer, view) => {
-          setStageBlocked(null);
-          stage.start(offer, view);
-        }}
-      />
+      {/* The rewards sheet and the picker stay mounted while the bag is
+          open (each renders null closed), so their chunk loads with the bag.
+          Rewards OPEN while its code still loads = its own scrim, closing
+          like it: the bag stays covered and a stalled download never traps
+          the customer (nothing was chosen yet). */}
+      <Suspense
+        fallback={
+          rewardsOpen ? (
+            <button
+              type="button"
+              aria-label={t("offers.close")}
+              data-testid="rewards-loading"
+              onClick={() => setRewardsOpen(false)}
+              className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
+            />
+          ) : null
+        }
+      >
+        <RewardsSheet
+          open={rewardsOpen}
+          onClose={() => setRewardsOpen(false)}
+          onNeedsPicker={(offer) => setPickerOffer(offer)}
+          onAddItems={(offer, view) => {
+            setStageBlocked(null);
+            stage.start(offer, view);
+          }}
+        />
+      </Suspense>
       {stage.buyStage && (
         // Fallback = the sheet's own scrim, closing like it: the bag beneath
         // stays covered while the chunk loads, and a stalled download never
@@ -1123,16 +1146,20 @@ export default function BagSheet({
           />
         </Suspense>
       )}
-      <FreebiePickerSheet
-        open={!!pickerOffer}
-        offer={pickerOffer}
-        onClose={() => {
-          // A buy-stage journey that ends here without the offer landing
-          // rolls its paid rows back (no-op when no stage is armed).
-          stage.rollbackIfAbandoned();
-          setPickerOffer(null);
-        }}
-      />
+      {/* null fallback: only the rewards sheet or the buy stage (this same
+          chunk) can open the picker, so its code is always in by then. */}
+      <Suspense fallback={null}>
+        <FreebiePickerSheet
+          open={!!pickerOffer}
+          offer={pickerOffer}
+          onClose={() => {
+            // A buy-stage journey that ends here without the offer landing
+            // rolls its paid rows back (no-op when no stage is armed).
+            stage.rollbackIfAbandoned();
+            setPickerOffer(null);
+          }}
+        />
+      </Suspense>
       <OfferTierHost />
       {/* null fallback = its idle look (it is invisible until a customer
           apply, seconds after the bag opens); it reads cart.offerModal on

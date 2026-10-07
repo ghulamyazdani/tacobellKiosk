@@ -28,7 +28,7 @@ import usePaytmSessionRelease from "../../hooks/paymentsHooks/usePaytmSessionRel
 import useCartIndexedDb from "../../hooks/cartHooks/useCartIndexedDb";
 import useAutoUpdate from "../../hooks/autoUpdates/useAutoUpdate";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
-import ActivityModal from "../../components/activity/ActivityModal";
+import ActivityCenter from "../../components/activity/ActivityCenter";
 import UpdateCountdownModal from "../../components/autoUpdate/UpdateCountdownModal";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import type {
@@ -240,7 +240,7 @@ export default function StartScreen() {
       onClick={(e) => e.stopPropagation()}
       className="absolute left-0 top-0 z-20 h-[180px] w-[180px]"
     />
-    <ActivityModal
+    <ActivityCenter
       isOpen={activityOpen}
       onClose={() => setActivityOpen(false)}
       onReloadResources={() => startRefresh("operator")}

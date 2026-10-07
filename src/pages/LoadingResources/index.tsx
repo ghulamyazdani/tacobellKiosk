@@ -8,7 +8,7 @@ import useLongPress from "../../hooks/utils/useLongPress";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import ErrorModal from "../../components/common/ErrorModal";
-import ActivityModal from "../../components/activity/ActivityModal";
+import ActivityCenter from "../../components/activity/ActivityCenter";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import { readBootRefreshState } from "./bootRefresh";
 
@@ -185,7 +185,7 @@ export default function LoadingResources() {
           className="absolute left-0 top-0 z-[90] h-[180px] w-[180px]"
         />
       )}
-      <ActivityModal
+      <ActivityCenter
         isOpen={activityOpen}
         onClose={() => setActivityOpen(false)}
       />

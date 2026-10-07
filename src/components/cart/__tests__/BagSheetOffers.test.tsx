@@ -221,7 +221,8 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
 
     await userEvent.click(entry);
-    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    // Lazy (bagLazyParts): the sheet mounts once its chunk resolves.
+    expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
   });
 
   it("ghost-tap guard: closing a sheet that sits over PAY covers the CTA bar briefly, then clears", async () => {
@@ -231,7 +232,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.queryByTestId("bag-cta-tap-guard")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("bag-rewards-entry"));
-    await userEvent.click(screen.getByTestId("rewards-close"));
+    await userEvent.click(await screen.findByTestId("rewards-close"));
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
     expect(screen.getByTestId("bag-cta-tap-guard")).toBeInTheDocument();
     await waitFor(
@@ -273,7 +274,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
 
     await userEvent.click(overlay);
-    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
   });
 
   it("Remove (direct removal): clears the slot with NO notice; discounts line and CTA flip back", async () => {

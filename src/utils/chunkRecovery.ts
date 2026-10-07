@@ -1,11 +1,11 @@
 /**
  * Recovery for a failed dynamic import.
  *
- * The app code-splits one `React.lazy` chunk (BagSheet's bagLazyParts: the
- * CompleteYourMealRail, the offers buy stage and celebration) plus three
- * runtime chunks (fcmRuntime, posthogRuntime, paytmRuntime — exempt below),
- * so code can be fetched from the network at the moment a customer taps. On
- * a kiosk the dangerous case is a deploy: the
+ * The app code-splits one lazy UI chunk (bagLazyParts: BagSheet's
+ * `React.lazy` rail, offers sheets and celebration, and the operator Activity
+ * Center) plus three runtime chunks (fcmRuntime, posthogRuntime,
+ * paytmRuntime — exempt below), so code can be fetched from the network at
+ * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
  * device has been running for hours against an old index.html, the origin now
  * serves re-hashed chunk files, and the next tap requests a filename that no
  * longer exists. `React.lazy` rejects, React 19
@@ -19,7 +19,8 @@
  * exactly once per page load by the ref-guarded `useCartHook().syncCartOnReLoad()`
  * mount effect in `src/routes/AppRoutes.tsx` (P7a, contract E), so the customer
  * keeps their items; the never-persisted menu is refetched by /menu's own
- * mount (P9b).
+ * mount (P9b). The Activity Center opens only on the splash and the boot
+ * screen, where no order is in progress.
  */
 
 /**
