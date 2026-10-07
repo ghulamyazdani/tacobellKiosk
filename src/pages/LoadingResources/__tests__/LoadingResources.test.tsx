@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { store } from "../../../redux/app/store";
 import type { BootFailure } from "../../../hooks/utils/useLoaders";
 import LoadingResources from "../index";
+import { loadActivityModal } from "../../../components/activity/loadActivityModal";
 import i18n from "../../../i18n";
 
 /*
@@ -288,6 +289,7 @@ describe("LoadingResources — boot recovery (P9b R7)", () => {
       vi.advanceTimersByTime(200);
     });
     fireEvent.mouseUp(hotspot);
+    await act(() => loadActivityModal()); // its lazy code (ActivityCenter)
 
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
     // The dialog (z-80) would cover it; the hotspot would eat its backdrop taps.
@@ -468,6 +470,7 @@ describe("LoadingResources — refresh mode (P9e)", () => {
     act(() => {
       vi.advanceTimersByTime(3_100);
     });
+    await act(() => loadActivityModal());
 
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
     expect(screen.queryByTestId("activity-reload-resources")).not.toBeInTheDocument();

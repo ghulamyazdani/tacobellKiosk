@@ -4,6 +4,7 @@ import { Provider } from "react-redux";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { store } from "../../../redux/app/store";
 import StartScreen from "../index";
+import { loadActivityModal } from "../../../components/activity/loadActivityModal";
 import "../../../i18n";
 
 const logoutKiosk = vi.fn();
@@ -33,7 +34,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
     logoutKiosk.mockReset();
   });
 
-  it("holding the top-left hotspot for 3s opens the Activity Center", () => {
+  it("holding the top-left hotspot for 3s opens the Activity Center", async () => {
     renderStart();
     const hotspot = screen.getByTestId("activity-hotspot");
     fireEvent.mouseDown(hotspot);
@@ -45,6 +46,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
       vi.advanceTimersByTime(200);
     });
     fireEvent.mouseUp(hotspot);
+    await act(() => loadActivityModal()); // its lazy code (ActivityCenter)
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
     // Info rows render (device unknown on a fresh store).
     expect(screen.getByTestId("activity-modal")).toHaveTextContent(/unknown device/i);
@@ -63,7 +65,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
     expect(screen.queryByText("second-screen")).not.toBeInTheDocument();
   });
 
-  it("disabling mandatory fullscreen is passcode-gated; wrong passcode is rejected", () => {
+  it("disabling mandatory fullscreen is passcode-gated; wrong passcode is rejected", async () => {
     renderStart();
     const hotspot = screen.getByTestId("activity-hotspot");
     fireEvent.mouseDown(hotspot);
@@ -71,6 +73,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
       vi.advanceTimersByTime(3100);
     });
     fireEvent.mouseUp(hotspot);
+    await act(() => loadActivityModal());
 
     const toggle = screen.getByTestId("activity-fullscreen-toggle");
     expect(screen.getByRole("switch", { name: "Mandatory fullscreen", checked: true })).toBe(toggle);
@@ -89,7 +92,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
     expect(screen.getByTestId("activity-passcode-error")).toHaveTextContent(/invalid/i);
   });
 
-  it("logout requires confirmation and calls logoutKiosk", () => {
+  it("logout requires confirmation and calls logoutKiosk", async () => {
     renderStart();
     const hotspot = screen.getByTestId("activity-hotspot");
     fireEvent.mouseDown(hotspot);
@@ -97,6 +100,7 @@ describe("Activity Center (hidden 3s top-left hold)", () => {
       vi.advanceTimersByTime(3100);
     });
     fireEvent.mouseUp(hotspot);
+    await act(() => loadActivityModal());
 
     fireEvent.click(screen.getByTestId("activity-logout"));
     expect(logoutKiosk).not.toHaveBeenCalled(); // confirmation first

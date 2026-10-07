@@ -19,7 +19,12 @@ import {
   BACKGROUND_TELEMETRY_ENDPOINTS,
   KIOSK_REQUEST_TIMEOUT_MS,
   MENU_DOWNLOAD_TIMEOUT_MS,
+  PAYMENT_GATEWAY_ENDPOINTS,
+  RECOVERY_EXEMPT_ENDPOINTS,
 } from "../redux/app/apiSlice";
+// Injects the payment endpoints (the five Paytm kiosk ones among them) into
+// the shared apiSlice — the D3 block below runs them for real.
+import "@cx-sdk/payments/services/paymentSettingsFetchApi";
 
 /*
   P9b R2/R3 — the host-configured Rule 2 transport budget, run through the
@@ -531,7 +536,8 @@ describe("D2 — recoveryExemptEndpoints (P9e)", () => {
   });
 
   it("TB wiring lists exactly the three live autoUpdateApi endpoints — not the dead getLastSyncDetails", async () => {
-    expect(wiring.tb?.recoveryExemptEndpoints).toBe(BACKGROUND_TELEMETRY_ENDPOINTS);
+    // P8b: TB passes the combined list (telemetry + the D3 Paytm block below).
+    expect(wiring.tb?.recoveryExemptEndpoints).toBe(RECOVERY_EXEMPT_ENDPOINTS);
     expect([...BACKGROUND_TELEMETRY_ENDPOINTS].sort()).toEqual([
       "updateCxFcmKey",
       "updateCxSoftwareDevice",
@@ -556,6 +562,111 @@ describe("D2 — recoveryExemptEndpoints (P9e)", () => {
       "/api/cx/update_cx_software",
       "/api/cx/update_device_status",
     ]);
+  });
+
+  /*
+    P8b D3 — the five cx kiosk Paytm endpoints join the exemption: a 401 /
+    504 / 505 mid-payment must never log the kiosk out under an armed
+    terminal or a live QR. paymentSettingsFetchApi is typed `any`, so the
+    `satisfies` guard D2 uses cannot catch a rename — these tests stand in
+    for it, against the REAL injected endpoints and TB's REAL wiring.
+  */
+  describe("D3 — the Paytm kiosk endpoints (P8b)", () => {
+    type Gateway = (typeof PAYMENT_GATEWAY_ENDPOINTS)[number];
+    /** The service's endpoints take the POST body as their argument. */
+    type GatewayEndpoint = {
+      initiate: (
+        body: Record<string, unknown>
+      ) => ReturnType<typeof probeApi.endpoints.probe.initiate>;
+    };
+    const gateway = (name: Gateway) =>
+      (apiSlice.endpoints as unknown as Record<Gateway, GatewayEndpoint>)[name];
+
+    it("TB passes telemetry + the five gateway names as ONE list", () => {
+      expect(wiring.tb?.recoveryExemptEndpoints).toBe(RECOVERY_EXEMPT_ENDPOINTS);
+      expect(RECOVERY_EXEMPT_ENDPOINTS).toEqual([
+        ...BACKGROUND_TELEMETRY_ENDPOINTS,
+        ...PAYMENT_GATEWAY_ENDPOINTS,
+      ]);
+      expect([...PAYMENT_GATEWAY_ENDPOINTS].sort()).toEqual([
+        "cancelPaytmEdcKiosk",
+        "checkPaytmDqrKioskStatus",
+        "checkPaytmEdcKioskStatus",
+        "initiatePaytmDqrKiosk",
+        "initiatePaytmEdcKiosk",
+      ]);
+    });
+
+    it("stands in for `satisfies`: every name is a live endpoint of the shared apiSlice", () => {
+      for (const name of PAYMENT_GATEWAY_ENDPOINTS) {
+        expect(apiSlice.endpoints).toHaveProperty(name);
+      }
+    });
+
+    it.each(
+      PAYMENT_GATEWAY_ENDPOINTS.flatMap((name) =>
+        [401, 504, 505].map((status) => [name, status] as const)
+      )
+    )(
+      "TB wiring: %s answering %i keeps the session — no recovery, and the caller still sees the status",
+      async (name, status) => {
+        configureAsTB();
+        answering(status);
+
+        const result = await store.dispatch(
+          gateway(name).initiate({ deployment_id: "dep1" })
+        );
+
+        expect(statusOf(result)).toBe(status);
+        expect(onAuthFailure).not.toHaveBeenCalled();
+        expect(onServerError).not.toHaveBeenCalled();
+      }
+    );
+
+    it("control — nothing configured (the fork's shape): a 504 on each still recovers", async () => {
+      configure();
+      answering(504);
+      for (const name of PAYMENT_GATEWAY_ENDPOINTS) {
+        await store.dispatch(gateway(name).initiate({ deployment_id: "dep1" }));
+      }
+      expect(onServerError).toHaveBeenCalledTimes(PAYMENT_GATEWAY_ENDPOINTS.length);
+    });
+
+    it.each([401, 504, 505])(
+      "TB wiring: the SAME service's other endpoints still recover on %i — the exemption is by name, not by service",
+      async (status) => {
+        configureAsTB();
+        answering(status);
+        // The legacy Paytm calls (near-identical names) and the boot's settings fetch.
+        const others = [
+          "initiatePaytmEdcPaymentApi",
+          "initiatePaytmPaymentApi",
+          "checkPaytmPaymentStatus",
+          "getPaymentSettingsApi",
+        ];
+        const endpoints = apiSlice.endpoints as unknown as Record<string, GatewayEndpoint>;
+        for (const name of others) {
+          await store.dispatch(endpoints[name].initiate({ deployment_id: "dep1" }));
+        }
+        expect(onAuthFailure).toHaveBeenCalledTimes(status === 401 ? others.length : 0);
+        expect(onServerError).toHaveBeenCalledTimes(status === 401 ? 0 : others.length);
+      }
+    );
+
+    it("they are the five cx kiosk Paytm URLs — not the legacy /api/payments/paytm* ones", async () => {
+      configureAsTB();
+      answering(200);
+      for (const name of PAYMENT_GATEWAY_ENDPOINTS) {
+        await store.dispatch(gateway(name).initiate({ deployment_id: "dep1" }));
+      }
+      expect(requests().map((request) => new URL(request.url).pathname)).toEqual([
+        "/api/cx/kiosk/paytmDynamicQR/createQR",
+        "/api/cx/kiosk/paytmDynamicQR/checkStatus",
+        "/api/cx/kiosk/paytmEDC/initiate",
+        "/api/cx/kiosk/paytmEDC/checkStatus",
+        "/api/cx/kiosk/paytmEDC/cancel",
+      ]);
+    });
   });
 });
 

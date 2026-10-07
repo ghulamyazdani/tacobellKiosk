@@ -39,7 +39,7 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
  */
 const FULLSCREEN_PASSCODE = "Pos@123";
 
-interface ActivityModalProps {
+export interface ActivityModalProps {
   isOpen: boolean;
   onClose: () => void;
   /**

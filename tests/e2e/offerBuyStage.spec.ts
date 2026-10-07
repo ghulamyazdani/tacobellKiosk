@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -846,31 +846,39 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(SOL_SAUCE_OR.name);
   });
 
-  test("E11 a stalled bag chunk never traps the customer: while the stage's code loads, its scrim is the stage's own Close — a tap abandons the journey and the bag works again", async ({
+  test("E11 a stalled bag chunk never traps the customer: while the rewards sheet's code loads, its scrim is the sheet's own Close — a tap closes it and the bag works; once the code arrives, rewards and the stage work", async ({
     page,
   }) => {
     test.slow();
     await mockKioskBackend(page);
     await routeOffers(page, [BOGO_SAUCE]);
-    // The bag's ONE lazy chunk (rail + buy stage + celebration) never arrives.
-    await page.route("**/src/components/cart/bagLazyParts.ts*", () => {});
+    // The bag's ONE lazy chunk (rail, rewards sheet, picker, buy stage,
+    // celebration) is held until released below. The buy stage opens only
+    // from the rewards sheet, so the rewards sheet is where a stall shows.
+    let held: Route | undefined;
+    await page.route("**/src/components/cart/bagLazyParts.ts*", (route) => {
+      held = route;
+    });
     await bootRegisteredToMenu(page);
     await addCheeseBurgerViaPdp(page);
     await openBag(page);
 
-    await openRewardsSheet(page);
-    await page.getByTestId(`offer-row-add-items-${BOGO_SAUCE._id}`).click();
-    await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
-    const loading = page.getByTestId("buy-stage-loading");
+    await page.getByTestId("bag-rewards-entry").click();
+    const loading = page.getByTestId("rewards-loading");
     await expect(loading).toBeVisible();
     await expect(loading).toHaveAccessibleName("Close rewards");
-    await expect(page.getByTestId("buy-stage-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
 
     await loading.click();
     await expect(loading).toHaveCount(0);
     await expect(bagRows(page)).toHaveCount(1);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+
+    await expect.poll(() => held !== undefined).toBe(true);
+    await held?.continue();
     await openRewardsSheet(page);
-    await expect(page.getByTestId(`offer-row-add-items-${BOGO_SAUCE._id}`)).toBeVisible();
+    await page.getByTestId(`offer-row-add-items-${BOGO_SAUCE._id}`).click();
+    await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
   });
 });

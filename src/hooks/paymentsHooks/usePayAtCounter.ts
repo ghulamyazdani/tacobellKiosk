@@ -5,16 +5,12 @@ import {
   markOrderStatusAsPending,
   setOrderId,
 } from "@cx-sdk/ordering/state/order.slice";
+import { netAmount as selectNetAmount } from "@cx-sdk/ordering/state/cart.slice";
 import {
-  selectClaimedCoupon,
-  setClaimedCoupon,
-} from "@cx-sdk/ordering/state/loyalty.slice";
-import {
-  netAmount as selectNetAmount,
-  selectCart,
-} from "@cx-sdk/ordering/state/cart.slice";
-import { isAnyLoyaltyItemPresentInCart } from "@cx-sdk/ordering/cart/cartEngine";
-import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
+  selectKioskPaymentType,
+  setKioskPaymentType,
+} from "@cx-sdk/payments/state/payment.slice";
+import { toPaytmKind } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { setShowErrorModal } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   ORDER_PUSH_MAX_ATTEMPTS,
@@ -25,6 +21,7 @@ import {
 } from "@cx-sdk/payments/settlement/settlementRules";
 import { isTimeoutError } from "@cx-sdk/core/transport/withTimeoutRetry";
 import useOrderHook from "../menuHooks/useOrderHook";
+import { markClaimOrderOutcomeUnknown } from "../loyalty/orderOutcomeClaim";
 import { useIdleHold } from "../utils/useIdleTimeout";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 
@@ -105,6 +102,12 @@ import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
  * as `payments.type: "ONLINE"` for an order nobody paid online. That is
  * preserved verbatim — changing it silently would change what the POS
  * settles. It needs a product decision, not a code fix.
+ * ONE exception (P8b): a Paytm type ("PaytmDynamicQr" / "PaytmEdc") left
+ * armed by an abandoned /payment visit is cleared back to "" first.
+ * pushOrder makes NO place call for a Paytm type (the backend places those
+ * orders), so the zero-bill push would show Order Complete for an order that
+ * was never placed. The 0 ms buffer lets the push run from a closure that
+ * has already observed the cleared type (see the closure note above).
  */
 
 /** Receipt choice captured on /receipt, carried to /orderSuccess. */
@@ -341,25 +344,18 @@ function usePayAtCounter(): UsePayAtCounter {
           const uncertain = isOrderPushOutcomeUnknown(error);
           // User decision 2026-10-01 (P9d S7): the order may exist, so a Xeno
           // reward claimed for it must never be auto-refunded — the mark makes
-          // checkAndRevokeLoyaltyReward skip the undo. It lives on the claim
-          // in redux because this screen unmounts before /start's teardown
-          // (resetLoyaltySession drops it with the claim); it is read fresh,
-          // even after unmount, so a claim a reset already wiped is never
-          // resurrected; and nothing unmarks it — a later clean failure does
-          // not prove this attempt never landed. Success still clears the
-          // claim (useOrderHook.pushOrder).
-          // Only when the reward row rode in THIS push: a row removed earlier
-          // (its undo timed out, claim kept) cannot be in the order, so that
-          // claim keeps its /start refund. One reward row at a time ("already
-          // availed"), so the row in the cart is this claim's reward.
-          const state = store.getState();
-          const claim = selectClaimedCoupon(state);
-          const coupon = claim?.couponData;
-          const mark = Boolean(
-            uncertain &&
-              claim?.isClaimed &&
-              isAnyLoyaltyItemPresentInCart(selectCart(state)?.cartItems ?? []),
-          );
+          // checkAndRevokeLoyaltyReward skip the undo (orderOutcomeClaim.ts,
+          // shared with Paytm since P8b). Only when the reward row rode in
+          // THIS push, read fresh even after unmount; nothing here unmarks it
+          // — a later clean failure does not prove this attempt never landed.
+          // Success still clears the claim (useOrderHook.pushOrder).
+          const claimIds = uncertain
+            ? markClaimOrderOutcomeUnknown(
+                store.getState,
+                dispatch,
+                orderIdRef.current,
+              )
+            : null;
           captureKioskEvent(KioskEventName.ErrorOccurred, {
             error_source: "order_push",
             attempts,
@@ -369,15 +365,8 @@ function usePayAtCounter(): UsePayAtCounter {
             // Reconciliation ids at mark time: the claim is not persisted, so
             // a crash or power loss before /start's teardown would otherwise
             // drop it with no record (never the phone or the apikey).
-            ...(mark && {
-              reward_id: coupon?.couponCode,
-              claim_datetime: coupon?.datetime,
-              points: coupon?.claimedPoints,
-            }),
+            ...claimIds,
           });
-          if (mark) {
-            dispatch(setClaimedCoupon({ ...coupon, orderOutcomeUnknown: true }));
-          }
           inFlightRef.current = false;
           if (!mountedRef.current) return;
           if (uncertain) setOutcomeUnknown(true);
@@ -443,16 +432,19 @@ function usePayAtCounter(): UsePayAtCounter {
       dispatch(setShowErrorModal({ showErrorModal: false, errorMessage: "" }));
 
       // Pay-at-counter ONLY. The loyalty direct path leaves paymentType
-      // untouched on purpose — see the preserved-quirk note in the header.
+      // untouched on purpose — except a stale Paytm type, which would place
+      // NOTHING (see the preserved-quirk note in the header).
       if (mode === "payAtCounter") {
         dispatch(setKioskPaymentType({ type: PAY_AT_COUNTER_PAYMENT_TYPE }));
+      } else if (toPaytmKind(selectKioskPaymentType(store.getState())) !== null) {
+        dispatch(setKioskPaymentType({ type: "" }));
       }
 
       setAttempt(0);
       setPending(request);
       setStatus("buffering");
     },
-    [cartNetAmount, dispatch, status],
+    [cartNetAmount, dispatch, status, store],
   );
 
   const cancel = useCallback(() => {
