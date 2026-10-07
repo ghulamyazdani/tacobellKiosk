@@ -129,6 +129,32 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     });
   });
 
+  it("multi-pick option steppers are named per item, so screen readers can tell the rows apart", () => {
+    const SAUCES = {
+      ...ICE_GROUP,
+      name: "Sauces",
+      min: 0,
+      max: 2,
+      multiplePunchMin: 0,
+      multiplePunchMax: 2,
+      multiplePunchMaxItem: 2,
+      constituentItems: [
+        { id: "salsa", name: "Salsa", price: 0, isActive: true },
+        { id: "ranch", name: "Ranch", price: 0, isActive: true },
+      ],
+    };
+    seedOpenTier2(ENTITY, SAUCES);
+    renderSheet();
+    for (const item of ["Salsa", "Ranch"]) {
+      expect(
+        screen.getByRole("button", { name: `${i18n.t("pdp.increase")} ${item}` })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: `${i18n.t("pdp.decrease")} ${item}` })
+      ).toBeInTheDocument();
+    }
+  });
+
   it("SAVE with an unsatisfied min: no commit, errored ring + global error, sheet stays open", async () => {
     seedOpenTier2();
     renderSheet();

@@ -180,22 +180,7 @@ function useOrderHook() {
         }).unwrap();
       }
 
-      addOrderInCurrentOrders({
-        cartInfo: cartRdx,
-        netAmount: useIncomingNetAmount ? netAmount : cartRdx.netAmount,
-        orderInfo: pushOrderData,
-        offer: cartRdx?.cartOffer,
-        orderId: orderId,
-        orderStatus: "PENDING",
-        isRejected: false,
-        rejectionReason: "",
-        orderTime: new Date().toISOString(),
-      });
-      dispatch(removeClaimedCoupon());
-      // FORK PARITY: posistKiosk mirrors the claimed coupon into localStorage;
-      // cleanup must hit the same key. Folds into the persistence manifest later.
-      // eslint-disable-next-line no-restricted-globals -- fork-parity raw storage site
-      localStorage.removeItem("claimedCoupon");
+      recordPlacedOrder(orderId, useIncomingNetAmount, netAmount, pushOrderData);
     } catch (err: any) {
       dispatch(
         setShowErrorModal({
@@ -207,6 +192,52 @@ function useOrderHook() {
     } finally {
       // dispatch(pushOrderInOngoingOrders(pushOrderData));
     }
+  };
+
+  /**
+   * The local bookkeeping of an order that EXISTS: the current-order record
+   * (/orderSuccess and the printed ticket read it) and the consumed loyalty
+   * claim. Shared by pushOrder (after its place call) and recordOrderLocally.
+   */
+  const recordPlacedOrder = (
+    orderId: string,
+    useIncomingNetAmount: boolean,
+    netAmount: number,
+    pushOrderData: unknown,
+  ) => {
+    addOrderInCurrentOrders({
+      cartInfo: cartRdx,
+      netAmount: useIncomingNetAmount ? netAmount : cartRdx.netAmount,
+      orderInfo: pushOrderData,
+      offer: cartRdx?.cartOffer,
+      orderId: orderId,
+      orderStatus: "PENDING",
+      isRejected: false,
+      rejectionReason: "",
+      orderTime: new Date().toISOString(),
+    });
+    dispatch(removeClaimedCoupon());
+    // FORK PARITY: posistKiosk mirrors the claimed coupon into localStorage;
+    // cleanup must hit the same key. Folds into the persistence manifest later.
+    // eslint-disable-next-line no-restricted-globals -- fork-parity raw storage site
+    localStorage.removeItem("claimedCoupon");
+  };
+
+  /**
+   * P8b-09 — the Paytm success tail. The BACKEND placed the order from the
+   * order_details frozen at initiate, so this only records it locally: NO
+   * RTK call and NO error modal, whatever payment.paymentType says (pushOrder
+   * routes on a render-time type — a stale or empty one would place a SECOND
+   * order). A throw reaches the caller, which must not report it as a
+   * payment failure: the money has moved.
+   */
+  const recordOrderLocally = async (
+    orderId: string,
+    useIncomingNetAmount: boolean,
+    netAmount: number,
+  ): Promise<void> => {
+    const { pushOrderData } = await getPushOrderData(orderId);
+    recordPlacedOrder(orderId, useIncomingNetAmount, netAmount, pushOrderData);
   };
 
   const getPushOrderData = async (orderId: any) => {
@@ -288,6 +319,7 @@ function useOrderHook() {
     getCalculatedBill,
     orderStatus,
     pushOrder,
+    recordOrderLocally,
     generateQROrderId,
     getOrderDetailsByOrderId,
     isGetOrderByIdApiLoading,

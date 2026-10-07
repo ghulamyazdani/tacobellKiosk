@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import useLocalized from "../../hooks/utils/useLocalized";
 import plusIcon from "../../assets/icons/plus.svg";
 
 /* eslint-disable @typescript-eslint/no-explicit-any --
@@ -36,6 +37,7 @@ export default function MenuItemCard({
   onQuickAdd,
 }: MenuItemCardProps) {
   const { t } = useTranslation();
+  const { name } = useLocalized();
   const unavailable = entity?.outOfStock === true;
   const cal = entity?.calorieCount ?? entity?.nutritionalInfo?.calorieCount;
   const value = typeof cal === "object" ? cal?.value : cal;
@@ -58,7 +60,7 @@ export default function MenuItemCard({
             </span>
           )}
           <p className="w-[352px] text-center text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
-            {entity?.name}
+            {name(entity)}
           </p>
           <p className="text-[18px] leading-[20px] text-tb-ink-purple">{priceLine}</p>
         </div>
@@ -72,7 +74,7 @@ export default function MenuItemCard({
         {!unavailable && (
           <button
             type="button"
-            aria-label={entity?.name}
+            aria-label={name(entity)}
             onClick={() => onOpen(entity)}
             className="absolute inset-0"
           />
@@ -107,7 +109,7 @@ export default function MenuItemCard({
     >
       <div className={`flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px] ${unavailable ? "opacity-40" : ""}`}>
         <p className="text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
-          {entity?.name}
+          {name(entity)}
         </p>
         <p className="text-[18px] leading-[20px] text-tb-ink-purple">{priceLine}</p>
       </div>
@@ -121,7 +123,7 @@ export default function MenuItemCard({
       {!unavailable && (
         <button
           type="button"
-          aria-label={entity?.name}
+          aria-label={name(entity)}
           onClick={() => onOpen(entity)}
           className="absolute inset-0"
         />

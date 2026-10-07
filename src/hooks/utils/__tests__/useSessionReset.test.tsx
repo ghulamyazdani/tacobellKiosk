@@ -21,7 +21,25 @@ import {
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { startTimer, tick } from "@cx-sdk/core/session/timer.slice";
-import { store } from "../../../redux/app/store";
+import {
+  setBillPaymentInfo,
+  setKioskPaymentType,
+  setPaymentInfo,
+  setPaymentSetting,
+  setPaytmInfo,
+  setPaytmQrCode,
+} from "@cx-sdk/payments/state/payment.slice";
+import { setOrderId } from "@cx-sdk/ordering/state/order.slice";
+import storage from "redux-persist/es/storage";
+import { persistor, store } from "../../../redux/app/store";
+import {
+  markOfferAutoApplied,
+  optOutOfAutoApply,
+} from "../../../redux/features/offerSession/offerSession.slice";
+import {
+  getCelebratedBarKey,
+  setCelebratedBarKey,
+} from "../../../utils/offerCelebration";
 import useSessionReset, { type SessionResetScope } from "../useSessionReset";
 import "../../../i18n";
 
@@ -135,6 +153,55 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
   );
 
   /*
+    P8b F3 (Rule 3): both scopes END a Paytm session — /start's full reset
+    (after the release) and Order Complete's NEW ORDER fast path. Every
+    Paytm field goes, in memory AND in the copy redux-persist keeps: the
+    ids, the type and the QR sit on disk only while a session is open
+    (in-session crash recovery), never into the next customer's.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") clears every Paytm session field — in memory and in the persisted copy',
+    async (scope) => {
+      const BILL = "17280000000077777";
+      const BILL_TIME = 1_728_000_000_777;
+      const QR = "upi://pay?pa=tb@paytm&am=9.00&tr=RULE3";
+      store.dispatch(setKioskPaymentType({ type: "PaytmDynamicQr" }));
+      store.dispatch(setBillPaymentInfo({ posBillNo: BILL, posBillTime: BILL_TIME }));
+      store.dispatch(setPaytmQrCode(QR));
+      store.dispatch(setOrderId(BILL)); // usePaytmCheckout mirrors posBillNo here
+      // The Paytm path never writes these (credentials stay in request
+      // bodies) — seeded anyway, so no legacy writer outlives the session.
+      store.dispatch(setPaytmInfo({ mid: "MID-RULE3", secretKey: "KEY-RULE3" }));
+      store.dispatch(setPaymentInfo({ tenant_id: "t1", deployment_id: "d1", paymentType: "PaytmDynamicQr" }));
+      store.dispatch(setPaymentSetting({ paytm_device_id: "EDC-RULE3" }));
+      // Read back through the store's own engine (redux-persist's storage).
+      const disk = async () => {
+        await persistor.flush();
+        return ((await storage.getItem("persist:root")) as string | null) ?? "";
+      };
+      expect(await disk()).toContain(QR); // open: on disk for crash recovery
+
+      await fireReset(scope);
+
+      expect(state().payment).toMatchObject({
+        paymentType: "",
+        posBillNo: "",
+        posBillTime: "",
+        paytmQrCode: "",
+        paytmMid: "",
+        paytmSecretKey: "",
+        paymentInfo: {},
+        paymentSetting: {},
+      });
+      expect(state().order.orderId).toBe("");
+      const after = await disk();
+      for (const value of [BILL, String(BILL_TIME), QR, "PaytmDynamicQr", "MID-RULE3", "KEY-RULE3", "EDC-RULE3"]) {
+        expect(after, value).not.toContain(value);
+      }
+    }
+  );
+
+  /*
     P9c: the ADA view is the guest's, so the splash's full reset ends it.
     The nextCustomer fast path ("Place new order") keeps it ON — fork parity,
     flagged for sign-off; changing it is a session-reset decision, so this
@@ -150,6 +217,25 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
 
     expect(state().appSettings.accessibilityMode).toBe(stillOn);
   });
+
+  /*
+    Lane "offers": the auto-apply latch + "Applied for you" id are customer-
+    scoped (persisted only for crash recovery) and the applied-row spent key
+    is module state — neither may greet the next customer.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") clears the offer session and the celebration spent key',
+    async (scope) => {
+      store.dispatch(optOutOfAutoApply());
+      store.dispatch(markOfferAutoApplied("auto-flat-2"));
+      setCelebratedBarKey("auto-flat-2:2.00");
+
+      await fireReset(scope);
+
+      expect(state().offerSession).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: null });
+      expect(getCelebratedBarKey()).toBeNull();
+    }
+  );
 
   it("is idempotent: resetting an already-clean session neither throws nor dirties state", async () => {
     await fireReset("full");

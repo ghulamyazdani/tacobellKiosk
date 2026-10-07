@@ -8,7 +8,8 @@
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "src/setupTests.ts",
-    "src/vite-env.d.ts"
+    "src/vite-env.d.ts",
+    "src/types/**/*"
   ],
   "exclude": []
 }

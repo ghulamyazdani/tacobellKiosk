@@ -1,8 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, Route, Routes, useLocation } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import ProtectedRouteIfAuthenticated from "./ProtectedRouteIfAuthenticated";
 import IdleGuard from "./IdleGuard";
+import PaytmResumeGuard from "./PaytmResumeGuard";
+import PaytmPaymentRoute from "./PaytmPaymentRoute";
 import Registration from "../pages/Registration";
 import StartScreen from "../pages/StartScreen";
 import SecondLayout from "../pages/SecondLayout";
@@ -21,6 +23,7 @@ import MakeItAMealPrompt from "../components/makeItAMeal/MakeItAMealPrompt";
 import RepeatItemSheet from "../components/cart/RepeatItemSheet";
 import { captureKioskEvent, KioskEventName } from "../utils/analytics";
 import useCartHook from "../hooks/menuHooks/useCartHook";
+import { CartRehydratedContext } from "../hooks/utils/useCartRehydrated";
 
 /**
  * In-session overlay chrome — mounted ONCE for the whole authenticated
@@ -109,8 +112,12 @@ function InSessionOverlays() {
  *   /customerName checkout-time name capture (P7c; the PAY preflight returns
  *                "customerName" whenever loyalty is on)
  *   /tent        table-tent number capture (P8a; preflight route "tent")
- *   /payment     payment-method choice (P8a; PAY AT COUNTER only)
+ *   /payment     payment-method choice (P8a PAY AT COUNTER; P8b the Paytm
+ *                card-machine / UPI QR tiles when configured)
  *   /receipt     receipt preference, after the method tap, before the push
+ *                (pay-at-counter) or the Paytm initiate
+ *   /paymentPolling Paytm settlement (P8b): EDC instructions or the UPI QR,
+ *                settled by status reads — the BACKEND places the order
  *   /orderSuccess order complete — the terminal screen of the vertical
  *
  * IDLE SUBTREE (P9a) — every route from /second on (and "*") sits inside the
@@ -132,11 +139,29 @@ function InSessionOverlays() {
  *   /phone        Continue → /customerName   (ONLY in checkout mode)
  *   /customerName Continue → directOrder ? push → /orderSuccess : /payment
  *   /payment      PAY AT COUNTER → /receipt → push → /orderSuccess
+ *                 Paytm tile     → /receipt → initiate → /paymentPolling
+ *   /paymentPolling paid            → /orderSuccess
+ *                   customer cancel → /payment
+ *                   not paid        → TRY AGAIN /payment · BACK TO BAG /cart
+ *                   outcome unknown → FINISH /start (CHECK AGAIN = one status read)
+ *                   no open session → /payment (bag has items) or /menu
+ *   /payment, /receipt  Paytm session open at mount → /paymentPolling
+ *                (PaytmResumeGuard: a reload mid-initiate resumes the SAME ids)
  *
- * SAFETY (P8a): there is deliberately NO /payment polling route and no
- * gateway screen. `/payment` offers pay-at-counter only; the card tile is
- * rendered disabled. Nothing in this table can reach a payment gateway or a
- * terminal socket, and that is a property of the route table itself.
+ * SAFETY (P8b): exactly TWO money paths — pay-at-counter (usePayAtCounter
+ * pushes the order) and Paytm Dynamic QR / Paytm EDC (usePaytmCheckout
+ * initiates on /receipt; /paymentPolling settles by status and never places
+ * an order — the backend does, from the order_details parked at initiate).
+ * Every other gateway stays unported and no terminal socket is opened: the
+ * card machine is driven by the backend over HTTP. /paymentPolling sits
+ * INSIDE IdleGuard: it holds idle while a payment is in flight
+ * (PAYMENT_IDLE_HOLD_MAX_MS) and releases on its end panels, so Rule 1's
+ * timeout still covers them; /start's mount releases any open session.
+ *
+ * Rule 1 (P8b): transitions ADDED — /receipt → /paymentPolling (initiate,
+ * and the resume guard); /payment → /paymentPolling (resume guard only);
+ * /paymentPolling → /orderSuccess, /payment, /cart, /start, /menu. Nothing
+ * removed or renamed.
  */
 export function AppRoutes() {
   const location = useLocation();
@@ -149,6 +174,9 @@ export function AppRoutes() {
   // Ref-guarded so the effect stays one-shot without a stale-closure lint
   // suppression (useCartHook returns a fresh function each render).
   const didRehydrateCart = useRef(false);
+  // Settled (restored or failed) — CartRehydratedContext: until then an
+  // empty cart is not real, so BagSheet's empty-cart exit waits for it.
+  const [cartRehydrated, setCartRehydrated] = useState(false);
   useEffect(() => {
     if (didRehydrateCart.current) return;
     didRehydrateCart.current = true;
@@ -161,6 +189,7 @@ export function AppRoutes() {
         // keeps working independently.
         console.error("[AppRoutes] cart rehydrate from Dexie failed:", error);
       }
+      setCartRehydrated(true);
     };
     void rehydrate();
   }, [syncCartOnReLoad]);
@@ -173,16 +202,47 @@ export function AppRoutes() {
   }, [location.pathname]);
 
   // Back-navigation neutralisation: an unattended kiosk must never respond
-  // to browser back (hardware keyboards, gesture navigation). One listener,
-  // bound once; a pushState per navigation keeps the trap armed.
-  useEffect(() => {
-    const arm = () => window.history.pushState(null, "", window.location.href);
-    arm();
-    window.addEventListener("popstate", arm);
-    return () => window.removeEventListener("popstate", arm);
+  // to browser back/forward (hardware keyboards, gesture navigation).
+  // A trusted popstate (the browser's own traversal) must never reach
+  // BrowserRouter: React 19 renders a popstate transition synchronously, so
+  // the popped route MOUNTS — effects included — before any later listener
+  // could undo it (the old re-push trap blocked nothing: Back on
+  // /paymentPolling reopened /receipt and a second Paytm initiate, Back on
+  // Order Complete re-ran the paid tail / the COD push). So the trap is the
+  // FIRST popstate listener on window and stops the event; window listeners
+  // run in registration order (`capture` does not reorder them there), and
+  // this LAYOUT effect of a BrowserRouter descendant runs before the
+  // router's own (it registers in a layout effect; children go first, the
+  // StrictMode re-run too). The entry we were on is then pushed back with
+  // its router state, so the router never learns of the pop and the history
+  // depth never shrinks; the mount-time entry gives the first screen a Back
+  // to swallow. Script-dispatched pops (isTrusted false) are the app's own
+  // and pass. No app code may use navigate(-1) / history.back().
+  // ponytail: a Back landing between a navigate() and its commit restores the
+  // previous entry's URL under the new screen (nothing remounts; only a reload
+  // before the next navigation would see the stale URL).
+  const entryRef = useRef({
+    state: window.history.state as unknown,
+    href: window.location.href,
+  });
+  useLayoutEffect(() => {
+    entryRef.current = {
+      state: window.history.state as unknown,
+      href: window.location.href,
+    };
+  }, [location]);
+  useLayoutEffect(() => {
+    window.history.pushState(window.history.state, "", window.location.href);
+    const trap = (event: PopStateEvent) => {
+      if (!event.isTrusted) return;
+      event.stopImmediatePropagation();
+      window.history.pushState(entryRef.current.state, "", entryRef.current.href);
+    };
+    window.addEventListener("popstate", trap);
+    return () => window.removeEventListener("popstate", trap);
   }, []);
 
-  return (
+  const routes = (
     <Routes>
       <Route element={<ProtectedRouteIfAuthenticated />}>
         <Route path="/" element={<Registration />} />
@@ -224,8 +284,18 @@ export function AppRoutes() {
                 must survive the hop to /tent or /payment, and none of these
                 screens may be reachable on an unregistered device. */}
             <Route path="/tent" element={<Tent />} />
-            <Route path="/payment" element={<PaymentSelection />} />
-            <Route path="/receipt" element={<ReceiptPreference />} />
+            {/* P8b F1: a Paytm session still open when these mount (a reload
+                mid-initiate keeps the URL) resumes on /paymentPolling with the
+                SAME ids instead of letting a re-tap orphan the terminal. */}
+            <Route element={<PaytmResumeGuard />}>
+              <Route path="/payment" element={<PaymentSelection />} />
+              <Route path="/receipt" element={<ReceiptPreference />} />
+            </Route>
+            {/* P8b Paytm settlement. Inside IdleGuard on purpose (the fork
+                keeps it outside): the screen holds idle only while a payment
+                is in flight, so its end panels still time out. A lazy chunk
+                (paytmRuntime): see PaytmPaymentRoute. */}
+            <Route path="/paymentPolling" element={<PaytmPaymentRoute />} />
             <Route path="/orderSuccess" element={<OrderSuccess />} />
             {/* Inside the guard on purpose: a stray URL self-heals to Splash. */}
             <Route path="*" element={<NotFound />} />
@@ -233,5 +303,10 @@ export function AppRoutes() {
         </Route>
       </Route>
     </Routes>
+  );
+  return (
+    <CartRehydratedContext.Provider value={cartRehydrated}>
+      {routes}
+    </CartRehydratedContext.Provider>
   );
 }

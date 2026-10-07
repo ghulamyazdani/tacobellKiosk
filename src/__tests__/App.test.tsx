@@ -13,7 +13,10 @@ import App from "../App";
   Only the shell's identify effect is under test.
 */
 
-const { identifyKiosk } = vi.hoisted(() => ({ identifyKiosk: vi.fn() }));
+const { identifyKiosk, loadCached } = vi.hoisted(() => ({
+  identifyKiosk: vi.fn(),
+  loadCached: vi.fn(() => Promise.resolve()),
+}));
 
 vi.mock("../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/analytics")>()),
@@ -23,6 +26,12 @@ vi.mock("../routes", () => ({ AppRoutes: () => null }));
 vi.mock("../components/autoUpdate/PWAUpdateHandler", () => ({
   PWAUpdateHandler: () => null,
 }));
+// Post-P9 29a: the shell's once-per-launch Dexie load. Stable callbacks, as
+// the real hook's useCallback gives.
+vi.mock("../hooks/recommendation/useTenantRecommendations", () => {
+  const api = { refresh: () => Promise.resolve(), loadCached };
+  return { default: () => api };
+});
 
 const LICENSE = {
   tenant_id: "tenant-42",
@@ -33,11 +42,12 @@ const LICENSE = {
   expiry_date: "2027-01-01",
 };
 
-const renderApp = () =>
+const renderApp = (options: { reactStrictMode?: boolean } = {}) =>
   render(
     <Provider store={store}>
       <App />
-    </Provider>
+    </Provider>,
+    options
   );
 
 describe("App — analytics identity (P9f)", () => {
@@ -76,5 +86,36 @@ describe("App — analytics identity (P9f)", () => {
     });
     expect(identifyKiosk).toHaveBeenCalledTimes(1);
     expect(identifyKiosk).toHaveBeenCalledWith("tenant-42", LICENSE);
+  });
+});
+
+/*
+  Post-P9 29a: a relaunch never boots (P9e), so the tenant recommendations'
+  Dexie copy loads once per launch from the shell — exactly once, even under
+  StrictMode's effect replay and across re-renders.
+*/
+describe("App — tenant recommendations cache (post-P9 29a)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    loadCached.mockClear();
+  });
+
+  it("loadCached runs once on mount (StrictMode replays the effect; the ref latch holds)", () => {
+    renderApp({ reactStrictMode: true });
+
+    expect(loadCached).toHaveBeenCalledTimes(1);
+    expect(loadCached).toHaveBeenCalledWith();
+  });
+
+  it("re-renders never run it again", () => {
+    renderApp();
+
+    act(() => {
+      store.dispatch(
+        setAutenticationDetails({ deploymentDetails: {}, licenseDetails: LICENSE })
+      );
+    });
+
+    expect(loadCached).toHaveBeenCalledTimes(1);
   });
 });

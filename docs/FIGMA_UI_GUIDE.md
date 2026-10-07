@@ -104,9 +104,9 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 ### Menu
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (Rewards entry 🔲 P7; banners/search 🔲) |
+| `1:2595`, `1:6327` Menu-basic agency · `1:5236` Menu · `1:3956` Menu-Rewards | menu browse | `pages/Menu`, `components/menu/{CategoryRail,MenuItemCard,MenuCtaBar}` | ✅ core (search descoped D2; banners declined D1; names follow the menu's `ar` aliases) |
 | `1:4571`, `1:5502`, `1:5521` | Product added | `components/menu/ProductAddedModal` | ✅ |
-| `1:5263` | Scroll bar | — | 🔲 (native scroll for now) |
+| `1:5263` | Scroll bar | `components/chrome/ScrollIndicator` (mounted by `pages/Menu` + `pages/Customization`) | ✅ post-P9 — menu 1:2613 top 505 / h 790 (ADA 1:5412 170 / 578), PDP 1:2920 703 / 790 (ADA PDP 1:5442 488 / 394); `right-[12px]`, 11 px, track tb-lilac r2, thumb tb-purple r2; indicator only (D3, aria-hidden, pointer-events-none — sign-off); native bar hidden |
 
 ### PDP / customization (P6)
 | Node(s) | Frame | Impl | Status |
@@ -126,20 +126,20 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 |---|---|---|---|
 | `1:3171` single · `1:3236`,`1:3270` multi · `1:3137`,`1:3973` has-rewards · `1:3205` · `1:4460` order-summary edit | My Bag | `components/cart/{BagSheet,BagItemRow,RemoveItemModal,CompleteYourMealRail,RepeatItemSheet}` + `/cart` route | ✅ P7a from `1:3171`/`1:3236`/`1:3270` (has-rewards states 🔲 P7c; `1:4460` numpad 🔲 polish) |
 | `1:5881`,`1:5904` scan · `1:4406`/`1:4174` code default · `1:4425`/`1:4193` partial · `1:4368`/`1:4136` full · `1:4311`/`1:4079` success · `1:4330`,`1:4098` scan-error · `1:4387`,`1:4155` code-error · `1:4349`,`1:4117` scan-failure · `1:3786`,`1:3805`,`1:4278` rewards-scan states · `1:5927` Modal Rewards | Rewards (scan/code) | `components/loyalty/{LoyaltyLoginModal,LoyaltyRewardsSheet,LoyaltySuccessModal,LoyaltyErrorModal}`, `components/keyboard/KioskNumpad`, `pages/CustomerPhone` | 🔄 P7c — built as the **Xeno** flow (user directive): `1:4174` numpad → phone lookup, `1:4079` success, `1:3786` error, `1:3956` MY REWARDS entry. SCAN APP tab inert (no scanner); `1:5927` LOGIN + scan-state frames 🔲 |
-| `1:3824` default · `1:3858` ineligible · `1:3892` all-available · `1:3924` active | Reward states | `components/offer/{RewardsSheet,OfferRow,FreebiePickerSheet,OfferRemovalNotice}` | ✅ P7b — adapted to CX offer mechanics (mapping decision); loyalty-reward variants 🔲 P7c |
-| `1:4009`,`1:4044` | T&C option 1 | — | 🔲 P7/P8 |
+| `1:3824` default · `1:3858` ineligible · `1:3892` all-available · `1:3924` active | Reward states | `components/offer/{RewardsSheet,OfferRow,FreebiePickerSheet,OfferRemovalNotice}` | ✅ P7b — adapted to CX offer mechanics (mapping decision); loyalty-reward variants 🔲 P7c · post-P9 offers lane: BuyStageSheet, the in-bag freebie PDP, group-mode picker controls and the celebration are design-language (no frames, sign-off); row thumbs need offer photos ⛔ (no image in payload) |
+| `1:4009`,`1:4044` | T&C option 1 | — | ⛔ BLOCKED (data): the CX offer payload has no terms or expiry — screenshots pulled 2026-10-06; proposal §8 in docs/BACKEND_CONTRACT_PROPOSALS.md |
 
 ### Checkout / payment / success (P8)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a (card tile disabled until P8b) |
+| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a + P8b — one row of live tiles: `payment-card` = Paytm EDC (the frame's PAY WITH CARD BELOW tile), `payment-qr` = Paytm DQR "PAY WITH UPI QR" (design language, no frame), `payment-counter` = COD; one tile keeps the Figma 412×412 (P8a's inert card tile is gone), n ≥ 2 are (848 − 24(n−1))/n wide with 24 px labels at n = 3 (D9, sign-off) |
 | `1:3377`,`1:4225` | Payment Preference ("Do you need the receipt?") | `pages/ReceiptPreference` | ✅ P8a (EMAIL inert — no payload contract) |
-| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | — | 🔲 P8 |
-| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b) | 🔄 the modal shell ✅ P9b; the card-payment failure screen itself is P8b |
+| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | `pages/PaytmPayment` (`/paymentPolling`; the lazy `paytmRuntime` chunk, mounted by `routes/PaytmPaymentRoute`) + `components/payment/PaytmQr` | ✅ P8b — EDC from `1:3404` (tb-pink + rotated sheen, purple bell at 128, 884 column at 435 / gap 100, 616 slot with the 431.2×277.2 card, TOTAL bar, DOWN HERE! −27.12° + yellow arrow); DQR = the same skeleton with a 446 px QR in a 616 card and no DOWN HERE (design language — no QR frame). Flagged additions: hint line, "Time left m:ss", CANCEL PAYMENT (bottom-left 480×92), the YES-only terminal-prompt line, the ADA variant (bell dropped, column at 40, slot 360). `1:3392` = terminal photo (video fill, unusable); `1:4240` = a spacing variant (unused); `1:6288` = the layout of the /receipt initiate-failure `ErrorModal` |
+| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b; the Paytm cancel-confirm, not-paid, unknown and chunk-failure panels, P8b) | ✅ P9b shell + P8b panels — actions and copy are design language (the frame has none); the frame's backdrop photo is a video fill (unusable) |
 | `1:3383`,`1:4231` | Email Receipt | keyboard+input pulled → `components/keyboard/KioskKeyboard`, Registration input | 🔄 (keyboard/input ✅ 2026-09-29; email screen itself 🔲 P8) |
 | `1:5932` no-loyalty · `1:3437` has-loyalty | Order Complete | `pages/OrderSuccess` | ✅ P8a (QR omitted — no data source) |
 | `1:4447` | **Tent screen** ("Do you want to be served at your table?" — NOT a wait state; the map misread this) | `pages/Tent` | ✅ P8a |
-| `1:4456`,`1:6301` | Please wait | — | 🔲 P8b |
+| `1:4456`,`1:6301` | Please wait | `components/payment/PleaseWait` (the /receipt initiate, the /paymentPolling settle and chunk load) | ✅ P8b (identical frames) — card content centred as measured from the frame; static hourglass (D8); flagged: the soft-light sheen (lighter than Figma — alpha-flattened JPEG) and the ADA layout (bell dropped, card at 161) |
 
 ### Modals / system (P7–P9)
 | Node(s) | Frame | Impl | Status |
@@ -160,6 +160,8 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 - Language `1:4488`: `icons/close.svg`; menu frames: `icons/plus.svg`, `icons/bag.svg`
 - Email Receipt `1:3383`: `icons/key-shift.svg`, `icons/key-backspace.svg`, `icons/input-clear.svg`
 - Payment Failure `1:3427` → Icon L `1:990`: `icons/warning.svg` (P9b ErrorModal)
+- Payment Instructions `1:3404` (P8b): `payment/credit-card.svg` (1:3413), `brand/tb-bell-purple.svg` (1:3425), `icons/down-here-arrow.svg` (1:3426) — md5-identical to the Figma exports
+- Please wait `1:4456` (P8b): `payment/hourglass.png` — the first frame of 1:1171 at 352 px (36,281 B; the source is an 800×800, 99-frame, 2 MB GIF, D8); reuses `splash/bg-texture.png` (= the frame's 240 px tile), `brand/tb-bell.svg` (= 1:4458) and `splash/plastic-overlay.jpg`
 - ADA brand zone `1:5394` (logo lockup assembled from 4 exported parts): `brand/tb-logo-lockup.svg` (P9c)
 - `flags/gb.svg` (canonical Union Jack — see §2.3)
 - Fonts: three Archivo cuts (see §3)

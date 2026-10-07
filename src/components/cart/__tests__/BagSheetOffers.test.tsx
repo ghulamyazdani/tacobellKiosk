@@ -3,7 +3,7 @@
  * converter output; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -18,6 +18,7 @@ import {
   setDeploymentInfo,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { CartRehydratedContext } from "../../../hooks/utils/useCartRehydrated";
 import BagSheet from "../BagSheet";
 import "../../../i18n";
 
@@ -220,7 +221,24 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
 
     await userEvent.click(entry);
-    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    // Lazy (bagLazyParts): the sheet mounts once its chunk resolves.
+    expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
+  });
+
+  it("ghost-tap guard: closing a sheet that sits over PAY covers the CTA bar briefly, then clears", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setFilteredOffers([FLAT_OFFER]));
+    renderSheet();
+    expect(screen.queryByTestId("bag-cta-tap-guard")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("bag-rewards-entry"));
+    await userEvent.click(await screen.findByTestId("rewards-close"));
+    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bag-cta-tap-guard")).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.queryByTestId("bag-cta-tap-guard")).not.toBeInTheDocument(),
+      { timeout: 1500 }
+    );
   });
 
   it("applied offer: applied row with Save line and −£X, Discounts bill line, and the ORDER & PAY CTA (real bill figures)", () => {
@@ -256,7 +274,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
 
     await userEvent.click(overlay);
-    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
   });
 
   it("Remove (direct removal): clears the slot with NO notice; discounts line and CTA flip back", async () => {
@@ -278,7 +296,9 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     // Direct removal is notice-free (fork parity — scenario 4).
     expect(cartState().offerRemovalModal.isOpen).toBe(false);
     expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument(); // Remove never opens the sheet
+    // Remove never opens the sheet — nor its loading scrim (a cold chunk).
+    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rewards-loading")).not.toBeInTheDocument();
   });
 
   it("committed freebie row (scenario 5): Free chip, struck £17.00 over £0.00, no stepper; bill reflects the row-stamp discount", () => {
@@ -354,6 +374,111 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     // …but the removal notice was snapshotted across emptyCart's modal reset.
     expect(cartState().offerRemovalModal.isOpen).toBe(true);
     expect(cartState().offerRemovalModal.data._id).toBe("offer-free-salad");
+  });
+
+  it("crash-reload on /cart: the persisted reward survives the first render before the Dexie rows land — no notice, no exit, and the rows then show it applied", () => {
+    // The store as redux-persist hands it back: the reward is there, the
+    // cart rows are not (AppRoutes' Dexie rehydrate lands them later).
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    const { onClose } = renderSheet();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-flat-2");
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-flat-2");
+    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("£2 off your order");
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("£2.00");
+    expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
+  });
+
+  it("crash-reload on /cart whose rehydrate restores NOTHING (Dexie lost under the persisted reward): once it settles the bag exits and the stale reward goes WITH its notice", () => {
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    const onClose = vi.fn();
+    const sheet = (rehydrated: boolean) => (
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <CartRehydratedContext.Provider value={rehydrated}>
+            <BagSheet open onClose={onClose} />
+          </CartRehydratedContext.Provider>
+        </MemoryRouter>
+      </Provider>
+    );
+    const { rerender } = render(sheet(false));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-flat-2");
+
+    rerender(sheet(true));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-flat-2");
+  });
+
+  it("crash-reload on /cart under a group-wise 'pick 2' reward: the bag waits for the rows, keeps the reward at its picks' discount once the rehydrate settles, and a REAL empty (the guest removes the paid burger) still exits — the reward going with its notice", async () => {
+    // G3 commit as it persists: the burger buys, the two picks are free rows.
+    const GW_PICK_2_OFFER = {
+      ...offerBase,
+      _id: "offer-gw-pick-2",
+      name: "Buy a burger, pick 2 free sides",
+      type: { name: "item", value: 0 },
+      isAndOffer: false,
+      buygetGroupWiseOffer: true,
+      buygetGroupWiseOfferValues: { discountType: "percent", value: 100, getQuantity: 2, buyQuantity: 1 },
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [{ item: { baseItemId: "cheese-burger", name: "Cheese Burger" } }],
+      },
+      getItems: { items: [{ ...SALAD_ENTRY, relation: "or", quantity: null }] },
+    };
+    const SAUCE_FREEBIE_ROW = {
+      ...SALAD_FREEBIE_ROW,
+      id: "tortilla-sauce",
+      itemId: "ts-1",
+      uniqueItemId: "ts-1",
+      name: "Tortilla Sauce",
+      price: 2,
+      total_price: 2,
+      undiscounted_total_price: 2,
+    };
+    store.dispatch(applyOffer({ offer: GW_PICK_2_OFFER }));
+    const onClose = vi.fn();
+    const sheet = (rehydrated: boolean) => (
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <CartRehydratedContext.Provider value={rehydrated}>
+            <BagSheet open onClose={onClose} />
+          </CartRehydratedContext.Provider>
+        </MemoryRouter>
+      </Provider>
+    );
+    const { rerender } = render(sheet(false));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+
+    // syncCartOnReLoad lands the rows, then AppRoutes flags it settled.
+    act(() => {
+      store.dispatch(
+        setCartItems([{ ...BURGER_ROW }, { ...SALAD_FREEBIE_ROW }, { ...SAUCE_FREEBIE_ROW }])
+      );
+    });
+    rerender(sheet(true));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-gw-pick-2");
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£19.00");
+    expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
+    await userEvent.click(screen.getByTestId("remove-item-confirm"));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(cartState().cartItems).toEqual([]);
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-gw-pick-2");
   });
 
   it("while closed the bag still renders the redux-driven removal notice (menu persistence, scenario 7 tail)", async () => {

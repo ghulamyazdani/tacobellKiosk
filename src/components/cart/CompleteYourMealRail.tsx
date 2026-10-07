@@ -5,6 +5,8 @@ import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
+import { useTenantRailItems } from "../../hooks/recommendation/useTenantRecommendations";
+import useLocalized from "../../hooks/utils/useLocalized";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import ForYouCard from "./ForYouCard";
@@ -25,10 +27,16 @@ interface CompleteYourMealRailProps {
 /**
  * Complete-Your-Meal rail — Figma mybag 1:3171 "You Might Like" section:
  * label + horizontal row of Menu-Item cards (240×277, name + £price | cal
- * above a 172px image, ⊕ top-right). Source 2 only (isCartRecommended engine
- * via useCartUpsell — no S3 fetch, locked decision 6), minus anything already
- * in the cart (fork Cart.tsx:227-231). Renders null when the gate fails or
- * nothing survives the filter — a rail that can render empty is a broken rail.
+ * above a 172px image, ⊕ top-right).
+ *
+ * Two sources, a fallback chain (fork Cart.tsx:213-231): the tenant (S3)
+ * co-purchase list for THIS cart first (useTenantRailItems — ranked, in-cart
+ * items already excluded), else the isCartRecommended engine via
+ * useCartUpsell minus anything already in the cart (fork Cart.tsx:227-231).
+ * Divergence (D7): `enable_cart_upsell_screen: false` hides BOTH — the fork
+ * shows the tenant list regardless. Renders null when nothing survives — a
+ * rail that can render empty is a broken rail. Names are resolved at render
+ * (useLocalized), never written anywhere.
  *
  * Card tap routes through useAddEntityToCart.addEntity: plain adds land in
  * the cart with the added-modal suppressed (the bag row appearing IS the
@@ -50,6 +58,8 @@ export default function CompleteYourMealRail({
 }: CompleteYourMealRailProps) {
   const { t } = useTranslation();
   const { items, shouldShowUpsell } = useCartUpsell();
+  const tenantItems = useTenantRailItems();
+  const { name } = useLocalized();
   const { addEntity } = useAddEntityToCart();
   const { doesItemExistInCart } = useCartHook();
   const cart = useSelector(selectCart) as
@@ -63,11 +73,13 @@ export default function CompleteYourMealRail({
 
   const cartItems = cart?.cartItems;
   const railItems = useMemo(() => {
+    if (tenantItems.length > 0) return tenantItems;
+    if (!shouldShowUpsell) return [];
     const inCart = new Set((cartItems ?? []).map((row) => row?.id));
     return items.filter((entity) => !inCart.has(entity?.id));
-  }, [items, cartItems]);
+  }, [tenantItems, shouldShowUpsell, items, cartItems]);
 
-  if (!shouldShowUpsell || railItems.length === 0) return null;
+  if (railItems.length === 0) return null;
 
   const currency =
     currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
@@ -101,7 +113,7 @@ export default function CompleteYourMealRail({
             key={entity?.id}
             entity={entity}
             testId={`bag-rail-item-${entity?.id}`}
-            title={entity?.name ?? ""}
+            title={name(entity)}
             // The RAW menu price, exactly as before — never the bill's taxed
             // total, which is a cart concept.
             price={entity?.price}

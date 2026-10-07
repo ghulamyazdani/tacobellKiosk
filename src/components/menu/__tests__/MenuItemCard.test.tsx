@@ -1,5 +1,8 @@
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Provider } from "react-redux";
+import { store } from "../../../redux/app/store";
 import MenuItemCard from "../MenuItemCard";
 import i18n from "../../../i18n";
 
@@ -12,6 +15,11 @@ import i18n from "../../../i18n";
 
 const ENTITY = { id: "cw", name: "Crunchwrap Supreme", price: "5.99", calorieCount: 740 };
 
+// useLocalized (post-P9 item 28) reads the display language from the store.
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <Provider store={store}>{children}</Provider>
+);
+
 describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   afterEach(async () => {
     await act(async () => {
@@ -22,7 +30,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   it("the overlay named by the item opens it; quick-add only quick-adds", () => {
     const onOpen = vi.fn();
     const onQuickAdd = vi.fn();
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={onOpen} onQuickAdd={onQuickAdd} />);
+    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={onOpen} onQuickAdd={onQuickAdd} />, { wrapper });
 
     const card = screen.getByTestId("item-cw");
     const overlay = screen.getByRole("button", { name: "Crunchwrap Supreme" });
@@ -43,7 +51,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   });
 
   it("no button nests inside another button (invalid HTML, axe nested-interactive)", () => {
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />);
+    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
 
     const buttons = screen.getAllByRole("button");
     expect(buttons).toHaveLength(2); // the overlay and the quick-add
@@ -53,7 +61,8 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   it("unavailable: aria-disabled, and neither the overlay nor the quick-add renders", () => {
     const onOpen = vi.fn();
     render(
-      <MenuItemCard entity={{ ...ENTITY, outOfStock: true }} currency="£" large={large} onOpen={onOpen} onQuickAdd={vi.fn()} />
+      <MenuItemCard entity={{ ...ENTITY, outOfStock: true }} currency="£" large={large} onOpen={onOpen} onQuickAdd={vi.fn()} />,
+      { wrapper }
     );
 
     const card = screen.getByTestId("item-cw");
@@ -66,7 +75,8 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
 
   it("calories go through t('pack.cal'): EN '740 Cal' unchanged, AR never 'Cal'", async () => {
     const { unmount } = render(
-      <MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />
+      <MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      { wrapper }
     );
     expect(screen.getByTestId("item-cw")).toHaveTextContent("£5.99 | 740 Cal");
     unmount();
@@ -74,7 +84,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />);
+    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
 
     const card = screen.getByTestId("item-cw");
     expect(card).toHaveTextContent(i18n.t("pack.cal", { value: 740 }));

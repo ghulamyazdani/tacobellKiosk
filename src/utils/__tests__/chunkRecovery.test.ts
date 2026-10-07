@@ -1,5 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { installChunkErrorRecovery, planCrashRecovery } from "../chunkRecovery";
+import {
+  holdReloadsUntil,
+  installChunkErrorRecovery,
+  planCrashRecovery,
+  reloadTo,
+} from "../chunkRecovery";
 
 /*
   P9b R9 — where (and how soon) the app ErrorBoundary reloads to. Time-boxed
@@ -44,8 +49,9 @@ describe("planCrashRecovery (P9b R9)", () => {
   useFcmRegistration reports "import" and leaves FCM off, startAnalytics leaves
   analytics off. Every other chunk keeps the P9b recovery.
 */
-describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P9e/P9f)", () => {
+describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks are exempt (P9e/P9f/P8b)", () => {
   const reload = vi.fn();
+  const replace = vi.fn();
 
   /** What Vite's preload helper dispatches for a chunk that failed to load. */
   const preloadError = (payload?: Error) => {
@@ -62,8 +68,9 @@ describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P
 
   beforeEach(() => {
     reload.mockReset();
+    replace.mockReset();
     // jsdom's location.reload is unforgeable; swap the whole location.
-    vi.stubGlobal("location", { reload });
+    vi.stubGlobal("location", { reload, replace });
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -88,6 +95,16 @@ describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P
     [
       "the PostHog dev-server module",
       "Failed to fetch dynamically imported module: http://localhost:5373/src/utils/analytics/posthogRuntime.ts",
+    ],
+    // P8b: /paymentPolling loads right after an initiate — a payment may be
+    // live, so PaytmPaymentRoute shows its staff panel instead of a reload.
+    [
+      "the Paytm screen production chunk",
+      "Failed to fetch dynamically imported module: https://kiosk.example/assets/paytmRuntime-DOoFgvtw.js",
+    ],
+    [
+      "the Paytm screen dev-server module",
+      "Failed to fetch dynamically imported module: http://localhost:5373/src/pages/PaytmPayment/paytmRuntime.ts",
     ],
   ])("%s failing: handled (no crash screen) but NEVER reloads", (_label, message) => {
     const event = preloadError(new Error(message));
@@ -122,5 +139,48 @@ describe("installChunkErrorRecovery — the FCM and PostHog chunks are exempt (P
     preloadError(new Error("Failed to fetch dynamically imported module: /assets/Menu-x.js"));
 
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  /*
+    P8b-12 — the splash's Paytm session release (one status read, maybe one
+    EDC void, never retried; the session is already wiped from disk) holds
+    every reload: chunk recovery's, and reloadTo's (the whole-app update,
+    crash recovery). Capped, so a hung release never holds the kiosk.
+  */
+  describe("held work (holdReloadsUntil) defers every reload until it settles", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("a failed chunk and reloadTo both wait for the held work, then each runs once; free again after", async () => {
+      let settle!: () => void;
+      holdReloadsUntil(new Promise<void>((resolve) => (settle = resolve)));
+
+      preloadError(new Error("Failed to fetch dynamically imported module: /assets/bagLazyParts-x.js"));
+      reloadTo("/start");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(reload).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+
+      settle();
+      await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(replace).toHaveBeenCalledWith("/start");
+
+      reloadTo("/LoadingResources"); // nothing held: at once
+      expect(replace).toHaveBeenLastCalledWith("/LoadingResources");
+    });
+
+    it("work that never settles holds reloads for 20 s at most (Rule 2)", async () => {
+      vi.useFakeTimers();
+      holdReloadsUntil(new Promise(() => undefined));
+      reloadTo("/start");
+
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(replace).toHaveBeenCalledWith("/start");
+    });
   });
 });

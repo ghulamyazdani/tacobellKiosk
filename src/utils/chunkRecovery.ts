@@ -1,9 +1,10 @@
 /**
  * Recovery for a failed dynamic import.
  *
- * The app code-splits one `React.lazy` component (BagSheet's
- * CompleteYourMealRail) plus two optional runtime chunks (fcmRuntime,
- * posthogRuntime — exempt below), so code can be fetched from the network at
+ * The app code-splits one lazy UI chunk (bagLazyParts: BagSheet's
+ * `React.lazy` rail, offers sheets and celebration, and the operator Activity
+ * Center) plus three runtime chunks (fcmRuntime, posthogRuntime,
+ * paytmRuntime — exempt below), so code can be fetched from the network at
  * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
  * device has been running for hours against an old index.html, the origin now
  * serves re-hashed chunk files, and the next tap requests a filename that no
@@ -18,7 +19,8 @@
  * exactly once per page load by the ref-guarded `useCartHook().syncCartOnReLoad()`
  * mount effect in `src/routes/AppRoutes.tsx` (P7a, contract E), so the customer
  * keeps their items; the never-persisted menu is refetched by /menu's own
- * mount (P9b).
+ * mount (P9b). The Activity Center opens only on the splash and the boot
+ * screen, where no order is in progress.
  */
 
 /**
@@ -60,8 +62,37 @@ export const planCrashRecovery = (
     ? { path: "/LoadingResources", delayMs: RELOAD_LOOP_WINDOW_MS }
     : { path: "/start", delayMs: CRASH_RECOVERY_DELAY_MS };
 
+/**
+ * Work no reload may cut (P8b-12): the splash's Paytm session release — its
+ * one EDC void is never retried, and the reset right after it has already
+ * wiped the session from disk. Every reload here (chunk recovery, reloadTo:
+ * the splash's whole-app update, crash recovery) waits for it, at most
+ * RELOAD_HOLD_CAP_MS: its requests are bounded (5 s + 10 s), and a hung one
+ * must never hold the kiosk (Rule 2).
+ */
+const RELOAD_HOLD_CAP_MS = 20_000;
+let reloadHold: Promise<unknown> | null = null;
+
+export const holdReloadsUntil = (work: Promise<unknown>): void => {
+  const cap = new Promise((resolve) => setTimeout(resolve, RELOAD_HOLD_CAP_MS));
+  const hold: Promise<unknown> = Promise.allSettled([
+    reloadHold,
+    Promise.race([work, cap]),
+  ]).then(() => {
+    if (reloadHold === hold) reloadHold = null;
+  });
+  reloadHold = hold;
+};
+
+/** `reload` now, or once the held work has settled. */
+const reloadWhenFree = (reload: () => void): void => {
+  if (reloadHold) void reloadHold.then(reload);
+  else reload();
+};
+
 /** Full page load to `path` — the Router is gone once the boundary trips. */
-export const reloadTo = (path: string): void => window.location.replace(path);
+export const reloadTo = (path: string): void =>
+  reloadWhenFree(() => window.location.replace(path));
 
 export const installChunkErrorRecovery = (): void => {
   window.addEventListener("vite:preloadError", (event) => {
@@ -75,8 +106,12 @@ export const installChunkErrorRecovery = (): void => {
     // the browser's message names the URL) must never reload the kiosk, least
     // of all mid-order. Prevented, import() resolves undefined:
     // useFcmRegistration reports fcm_init "import" and FCM stays off, and
-    // startAnalytics leaves analytics off, until the next page load.
-    if (/fcmRuntime|posthogRuntime/.test(String(event.payload?.message))) return;
+    // startAnalytics leaves analytics off, until the next page load. The
+    // Paytm screen (P8b, src/pages/PaytmPayment/paytmRuntime.ts) never
+    // reloads either — a resumed payment may be live: loadPaytmScreen flags
+    // the reload for the next splash, usePaytmCheckout refuses the initiate
+    // and PaytmPaymentRoute shows its staff panel.
+    if (/fcmRuntime|posthogRuntime|paytmRuntime/.test(String(event.payload?.message))) return;
 
     if (isRetryOfAReload()) {
       // Reloading again would cycle. Let the rejection surface instead: the
@@ -93,6 +128,6 @@ export const installChunkErrorRecovery = (): void => {
       "[chunkRecovery] chunk preload failed; reloading to pick up the current build",
       event.payload,
     );
-    window.location.reload();
+    reloadWhenFree(() => window.location.reload());
   });
 };

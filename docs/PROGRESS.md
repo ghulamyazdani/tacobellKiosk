@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-06 (P9f app half merged)** · Gates at last update (Node 22.14):
-> **`yarn validate` green (tsc -b now type-checks unit tests + e2e specs) · unit 1,318/1,318 · e2e 121/121 · guardrails 0 critical / 197 warnings · build+PWA green · boot path 343.2 KiB gzip-9 / 355 (production build 344.4 incl. lazy PostHog) · page JS 1,224.7 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-07 (P8b merged)** · Gates at last update (Node 22.14):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 2,183/2,183 · e2e 203/203 · guardrails 0 critical / 216 warnings · build+PWA green · boot path 351.6 KiB gzip-9 / 355 (CI build 352.7) · page JS 1,316.9 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -22,7 +22,7 @@
 | — | Activity Center: hidden 3s top-left hold on splash → operator diagnostics (info rows, passcode-gated fullscreen toggle, logout) | ✅ done |
 | P6 | PDP/customization — **P6a ✅** quick-add spine · **P6b ✅** PDP bound to useCustomization Tier1-style (all groups one Figma scroll, defaults seeded, min/max via commit, VARIANT+CUSTOMIZABLE commits, return-path navigation) · **P6c ✅** Order-a-Pack slot cards + SELECT sheets, tier-2 nested customize, BYO via generic group path, MIAM upsell prompt · repeat-sheet → P7 | ✅ done |
 | P7 | Cart + Offers + Loyalty + ForYou — **P7a ✅** My Bag sheet over /menu (route-driven /cart): rows w/ addon lines + steppers, remove-confirm + cancel-order modals (session reset), edit-from-bag (PDP edit mode), repeat sheet, Complete-Your-Meal rail (cart-upsell engine), checkout preflight → /checkout stub, Dexie crash-recovery rehydrate · **P7b ✅** Rewards/offers sheet (Figma reward-states adapted to CX mechanics), apply/swap/remove cores, freebie flows (atomic + picker), bill Discounts line + ORDER & PAY, six-check revalidation + removal notice · **P7c ✅** Xeno loyalty replicated from the fork (boot partner fetch, /phone lookup, rewards sheet + 4-digit OTP redemption chain, loyalty cart rows, revoke-before-reset, auto-reversal, /customerName) · **P7d ✅** MIAM prompt re-skinned to its real frame (1:3070) + `/forYou` pre-cart upsell (capacity-bounded grid, session-seen gate, detour-safe baseline) + overlays hoisted to the routes level | ✅ done |
-| P8 | Checkout + Payment + Success — **P8a ✅** real route fan-out (/tent, /payment, /receipt, /orderSuccess) replacing the stub, PAY AT COUNTER end-to-end with a hardened retry ladder, order push, Order Complete + gated print · **P8b 🔄** Paytm Dynamic QR + Paytm EDC (user decision 2026-10-05; India deployment) — building in the `p8b-paytm` worktree lane | 🔄 P8a done |
+| P8 | Checkout + Payment + Success — **P8a ✅** real route fan-out (/tent, /payment, /receipt, /orderSuccess) replacing the stub, PAY AT COUNTER end-to-end with a hardened retry ladder, order push, Order Complete + gated print · **P8b ✅** Paytm Dynamic QR + Paytm EDC (user decision 2026-10-05; India / IST / ₹): backend-placed orders, `/paymentPolling` settlement on a pure SDK reducer, reload resume with the SAME ids, `/start` release, Figma 1:3404 / 1:4456 / 1:3427, the DQR QR via `react-qr-code@2.0.15` in a lazy chunk — merged 2026-10-07 from the `p8b-paytm` lane; a live terminal + real UPI run is still owed (P8b-17) | ✅ done |
 | P9 | Close-out, mapped 2026-10-01 by an 8-reader workflow (contracts in the session scratchpad, summarised below) — **P9a ✅** idle timeout (Figma 1:4514: IdleGuard + IdleTimeoutModal, holds, ≤120 s) + `/start` owns the session teardown + late-async guards · **P9b ✅** Rule 2 hardening: redeem-failure money fix, host-configured SDK timeout (TB 10 s / menu 30 s), timed-out pushes never auto-retried, menu-load error + Retry, boot auto-retry, ErrorBoundary recovery, loyalty boot degrade, Xeno revoke bounded · **P9c ✅** ADA reach-zone view (1:5392/1:5413/1:5445; stable-tree ReachZone, overlay caps, PDP footer strip, WCAG 2.2.1 timer off in ADA) + design-language re-flows of 7 frameless screens · **P9d ✅** splash media pipeline (getMedia `home_screen` → WELCOME 1:5617 when none / full-bleed 1:5604 / carousel 1:2203, slides that fail or stall are skipped) + the uncertain-order refund skip (S7) · **P9e ✅** updates apply only at the splash (whole-app reload / FCM brand refresh / a SCHEDULED boot refresh when the data is >6 h old, 15 s untouched + a 5 s countdown) + Activity Center Reload resources + an atomic boot commit + the telemetry recovery exemption (D2) + the hardened update hook + FCM (lazy, config- and permission-gated, never prompts) · **P9f 🔄** app half ✅ (Arabic RTL text via FSI/PDI isolates, a11y fixes, lazy PostHog + framer-motion removed, fail-closed boot-path budget, type-checked tests, per-PR CI e2e job — merged 2026-10-06 from the `p9f-app` lane); the shared e2e harness + page objects + the missing rulebook flows + the axe sweep 🔲 (runs last, on main) · proximity welcome ⏸ deferred (see open decisions) | 🔄 |
 
 ## What exists right now (flow you can walk)
@@ -48,6 +48,11 @@ eligible) ⇒ `/cart`. MY REWARDS (n) on the menu ⇒ rewards sheet ⇒ redeem
 (validate → OTP → claim) ⇒ free/discounted reward row in the bag. Cancel Order ⇒ confirm ⇒ Xeno revoke
 ⇒ full session reset ⇒ `/start`. Cart survives a crash/reload via Dexie
 rehydrate.
+**Paytm (P8b):** `/payment` adds PAY WITH CARD BELOW (EDC) and PAY WITH UPI QR
+(DQR) when configured; a tile only arms ⇒ `/receipt` initiates (ids stored and
+flushed first) ⇒ `/paymentPolling` settles by status (EDC instructions or the
+QR, countdown, CANCEL, not-paid / unknown staff panels) ⇒ paid ⇒ Order Complete.
+A reload resumes the SAME ids; `/start` releases an open session; idle is held (≤240 s).
 **Splash (P9d):** the boot stores the operator's getMedia `home_screen` list
 (this deployment's entries only); the splash shows WELCOME (Figma 1:5617)
 with no media, the media full-bleed (1:5604) for one slide, and the 1:2203
@@ -90,35 +95,42 @@ full-stage, and every return to the splash ends ADA for the next guest.
   switch needs setSelectedPipeline+setSelectedTabId+charges refetch+setTabType+
   fetchMenu+cart revalidation (fork has NO such path) → P7 later, decide UX
 - Edit-quantity numpad modal for multi-qty rows (Figma 1:4460) → P7 polish
-- Cart recommendations S3 source (tenant map, useRecommendationHook) → later;
-  P7a rail ships the isCartRecommended engine source only
+- ~~Cart recommendations S3 source~~ ✅ post-P9 29a (menu-data lane) — the tenant
+  S3 map behind `VITE_TENANT_RECOMMENDATIONS_URL` (empty = off), Dexie +
+  memory only; the bag rail prefers it, falling back to isCartRecommended
 - Loyalty deferred set (P7 later / P8): Reelo partner path entirely
   (CartRewardsCard, points-redemption modals, `redeem_points`), SCAN APP tab
   (renders inert — no scanner integration), resend-OTP (no fork endpoint),
   and the fork's dead `/verify` + `/loyalty` pages (the zero-bill
   `shouldPlaceLoyaltyOrderDirectly` push landed in P8a). Reelo is not ported
   (user decision 2026-10-05: Xeno only)
-- Offers deferred set (P7 later / P8 polish): BOGO buy-stage UI (locked
-  bogoBuySide rows fall back to /menu — documented fork fallback),
-  customizable freebies (tier session inside the picker; rows render disabled
-  "coming soon"), apply-celebration modal + confetti + applied-bar animation
-  (useSessionReset TODO sites :102/:104 await those modules), auto-apply
-  (pickAutoApplyOffer), offer marketing photos, fork's SavingsLine hysteresis
-  strip (TB uses the bag Rewards entry row instead)
+- Offers set ✅ post-P9 (offers lane, merged 2026-10-07): the BOGO buy stage,
+  customizable freebies (OfferTierHost), exact group-wise picks, the
+  celebration, auto-apply (operator-flagged). ⛔ BLOCKED on backend data:
+  offer marketing photos + offer T&C / expiry (Figma 1:4009 / 1:4044 — the
+  payload has no image, terms or validity; proposal §8 in
+  `docs/BACKEND_CONTRACT_PROPOSALS.md`). Not needed: the fork's SavingsLine
+  strip (TB uses the bag Rewards entry row). Still open: G4 — group-wise
+  CATEGORY candidates are not offered (a get side with only categories opens
+  an empty picker that X closes)
 - `confirmTier1CustomizationRemoval` (tier-2 qty→0 in edit) is dispatched but has
   no consumer yet (fork's ConfirmFirstTierDeleteCustomization equivalent) → P7
 - Variant-shaped upsell items in the MIAM decline path (fork's isVariantUpsell
   branch) → wire when variant upsells enter the TB catalog
-- Menu banner media: user decision 2026-10-06 — SDK guard only, no banner
-  UI (not in the Figma). Menu search: DESCOPED 2026-10-06 (the fork's search
-  is dead code, no Figma). MIAM texts + recommendations prefetch in the boot
-  loader → the `menu-data` lane (P4 leftovers noted in
-  `hooks/utils/useLoaders.ts` (splash media landed in P9d; the loyalty
-  partner in P7c; cluster settings are dead in the fork — `useLoaders.ts:649-657`
-  commented out — so they are not ported))
+- Menu banner media: DECLINED (user D1 2026-10-06 — not in the Figma); the SDK
+  banner walk is guarded (post-P9 25a). Menu search: DESCOPED (user D2
+  2026-10-06 — the fork's search is dead code, no Figma). MIAM texts at boot ✅
+  29c (staged with the kiosk settings; '' when unset → the translated
+  headline) and the recommendations prefetch ✅ 29b (post-commit background
+  refresh). Cluster settings are dead in the fork, so not ported.
 - Payment-terminal socket connects at boot (Geidea/NeoLeap) are deliberately NOT ported
-  (the payment-settings fetch landed in P8a; P8b ports only Paytm DQR + EDC)
-- Per-language pipeline/menu names (`secondary_name`) → P6/P7 polish
+  (the payment-settings fetch landed in P8a). P8b ✅ ported only Paytm DQR + EDC
+  (EDC is backend HTTP: no socket, no localhost); the fork's other 7 gateways stay
+  unported. Owed before production: a live Paytm EDC terminal + real UPI run
+  (P8b-17 — tests never drive a real gateway; it must also answer backend Q1–Q5)
+  and source media for the 1:3392 terminal photo / 1:3427 backdrop (video fills;
+  EDC ships from the vector 1:3404)
+- ~~Per-language pipeline/menu names~~ ✅ post-P9 28 — resolved at render (useLocalized); offer/coupon names and the MIAM buttonText1/2 stay English (no data)
 
 ## Open decisions / user-gated items
 
@@ -132,18 +144,21 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | Rewards scan/code Figma UX ↔ loyalty mechanics: **user decision 2026-09-30 — replicate the ORIG kiosk's XENO integration/flow exactly** (same endpoints, session lifecycle, redeem/revoke), skinned with the Figma rewards surfaces (numpad login 1:4174 as phone→OTP steps, REWARDS INCOMING 1:4079, error 1:3786, MY REWARDS (n) CTA entry 1:3956); SCAN APP tab deferred (no scanner) | user | 📌 decided |
 | Bill math in the bag: billCalculation rounds the TOTAL to whole units unless deployment carries `{name:"disable_roundoff",selected:true}`, and fixture items carry exclusive VAT@15% — so bag/checkout total = round(subtotal×1.15) while the menu CTA shows the plain subtotal (fork-faithful). Maintainer: confirm round-off / GST settings for the India deployment (fixtures carry 15% exclusive tax as test data) + whether the CTA should show the taxed total | maintainer | ⚠️ open |
 | P6c surfaces partly design-language: Figma MCP rate limit (Starter plan) blocked the pack customize-family frames (`1:4895`…), BYO frames (`1:5264`…), completed/warning pack states, and MIAM has no frame — built from the 4 pulled frames' language; needs a visual pass once frames are pullable | client review | ⚠️ open |
-| **Payment gateways — user decision 2026-10-05: PAYTM DYNAMIC QR + PAYTM EDC.** Of the fork's 9 (Dojo; Geidea, NeoLeap; Network International, Mashreq; Paytm QR, Paytm EDC, Pine Labs Plutus, Razorpay), P8b ports exactly `PaytmDynamicQr` and `PaytmEdc` (+ their polling settlement and the Figma payment-instructions / please-wait / card-failure screens). Every other gateway stays unported; pay-at-counter remains | user | 📌 decided → P8b |
+| **Payment gateways — user decision 2026-10-05: PAYTM DYNAMIC QR + PAYTM EDC.** Of the fork's 9 (Dojo; Geidea, NeoLeap; Network International, Mashreq; Paytm QR, Paytm EDC, Pine Labs Plutus, Razorpay), P8b ports exactly `PaytmDynamicQr` and `PaytmEdc` (+ their polling settlement and the Figma payment-instructions / please-wait / card-failure screens). Every other gateway stays unported; pay-at-counter remains | user | ✅ P8b (merged 2026-10-07) — exactly these two; EDC is backend HTTP (no socket, no localhost); live-terminal sign-off owed (P8b-17) |
 | **Deployment country — user decision 2026-10-06: INDIA (IST, ₹).** "TB UK" and "£" in older notes, comments and e2e fixtures were placeholders. Prices already render with the deployment's currency symbol from settings (`selectCurrency`; no hardcoded £ in rendering); the SDK's Paytm QR expiry is computed in kiosk-local time, which is correct in IST | user | 📌 decided |
-| **Paytm DQR rendering — user decision 2026-10-06: ADD `react-qr-code@2.0.15`.** The backend sends only Paytm's raw UPI `qrData` (it drops Paytm's base64 image), so the kiosk draws the QR itself with the fork's library — the one new dependency of P8b (~13 KB). P8b lane defaults (contract D2–D9, D11): payment idle-hold cap 240 s; the five Paytm kiosk endpoints exempt from 401/504/505 recovery (host-configured, like D2); an unknown outcome goes to a staff panel (CHECK AGAIN / FINISH, never a re-pay); a DQR still pending 30 s past expiry = not received + TRY AGAIN; DQR cancel has no backend endpoint (fork parity + warning copy — ask the backend for one); an EDC initiate FETCH_ERROR/5xx is outcome-unknown (settle by status, never re-initiate); a static hourglass frame; three payment tiles in one row (sign-off); `paytm_dqr_secret_key` stays persisted (fork parity — flag) | user / orchestrator | 📌 decided → P8b |
+| **Paytm DQR rendering — user decision 2026-10-06: ADD `react-qr-code@2.0.15`.** The backend sends only Paytm's raw UPI `qrData` (it drops Paytm's base64 image), so the kiosk draws the QR itself with the fork's library — the one new dependency of P8b (~13 KB). P8b lane defaults (contract D2–D9, D11): payment idle-hold cap 240 s; the five Paytm kiosk endpoints exempt from 401/504/505 recovery (host-configured, like D2); an unknown outcome goes to a staff panel (CHECK AGAIN / FINISH, never a re-pay); a DQR still pending 30 s past expiry = not received + TRY AGAIN; DQR cancel has no backend endpoint (fork parity + warning copy — ask the backend for one); an EDC initiate FETCH_ERROR/5xx is outcome-unknown (settle by status, never re-initiate); a static hourglass frame; three payment tiles in one row (sign-off); `paytm_dqr_secret_key` stays persisted (fork parity — flag) | user / orchestrator | ✅ P8b — as decided (`react-qr-code` pinned to exactly 2.0.15, the named import, inside the lazy `paytmRuntime` chunk); refined in the build: busy is retryable (TRY AGAIN + BACK TO BAG), n=3 tile labels are 24 px (30 px overflows), D5's "not received" needs a successful pending read (an error-only window ends on the staff panel), and a D6 re-check that errors keeps polling to the window's end |
+| **P8b sign-off list (design language — no frame, or beyond the frame):** (1) the `/payment` row (D9): COD-only = one centred 412×412 tile (P8a's inert card tile is gone), n=2 the Figma 412 tiles, n=3 266.67 px tiles with 24 px labels ("RESTAURANT" measures 270 px at 30 px, wider than the tile); the "PAY WITH UPI QR" tile; (2) the Paytm buffer "Getting your payment ready…" and the /receipt PleaseWait "Setting up your payment"; (3) the initiate-failure modal on the 1:6288 layout (TRY AGAIN or PAY ANOTHER WAY + BACK TO MY BAG), whose copy and actions disagree: busy says "…or pay another way" but offers TRY AGAIN, and `failed.start` says "try again" on the variant that offers PAY ANOTHER WAY; (4) the DQR screen: the 1:3404 skeleton with a 446 px QR in the 616 card (the contract asked ≥480), the one-line title lifting the column ~54 px; (5) /paymentPolling additions: the hint line, "Time left m:ss", CANCEL PAYMENT (bottom-left 480×92), the terminal-prompt line, now YES-only ("Press YES on the card machine to cancel the payment"; the fork also offered NO); (6) the actions and copy of the cancel-confirm, not-paid, unknown and chunk-failure panels (1:3427 has none), incl. the staff panel's CHECK AGAIN / FINISH and the order's last 5 digits; (7) ADA variants: /paymentPolling (bell dropped, column at 40, gaps 40, slot 360, CANCEL 1012–1104) and PleaseWait (bell dropped, card at 161); (8) the decorative purple bell (`alt=""`); (9) the sheen, rotated −90° at 50 % soft-light, is lighter than Figma because `plastic-overlay.jpg` is alpha-flattened (a transparent plastic_2 WebP would match); (10) the static hourglass (D8); (11) Order Complete still says "Proceed to front counter" after a card / UPI payment; (12) browser Back/Forward is now swallowed app-wide, on every screen including the first (the documented "never respond to browser back" intent, never enforced before): confirm this is the intended kiosk policy | client | ⚠️ sign-off |
+| **P8b backend questions (contract §7 — they sharpen, never block; the cx kiosk Paytm handlers are on no local posistApp branch, so the P8b-17 live run must answer them):** (Q1) cx createQR returning Paytm's `image` — moot since D1 (it would only let TB drop `react-qr-code`); (Q2) the checkStatus vocabulary (expired / declined / not-found?) and whether placement is idempotent when the webhook AND a status read both see "paid" — every read is a placement trigger, and `/start`'s release reads any session still open (FINISH, idle on a panel, crash, relaunch); (Q3) what `paytmEDC/cancel` does to an already-paid or already-voided transaction (the kiosk voids only after a fresh "pending", but a reload mid-settle can void again, once per mount); (Q4) whether an EDC initiate with the SAME posBillNo / posBillTime is idempotent (TB never re-sends one); (Q5) whether a DQR paid AFTER the kiosk left (cancel / expiry) is placed or refunded; (D6 ask) a DQR close / reject-and-refund endpoint — today a guest who cancels a DQR, pays at the counter, then approves the QR in their UPI app creates two orders (fork parity; the cancel-confirm copy warns) | backend | ⚠️ open |
+| **P8b residuals (2026-10-07):** (R1) an EDC void from `/start`'s release or a settle leaves a YES/NO prompt on an unattended terminal, and what the terminal does then is unknown (extends Q3): could the next guest get "busy" or see the previous amount? (R2) the prompt is YES-only now, but a guest who presses NO anyway and pays later lands on the unknown panel, because polling stops `PAYTM_SETTLE_WINDOW_MS` (30 s, no countdown) after the void; CHECK AGAIN or `/start`'s read picks the payment up; (R3) a reload mid-EDC-initiate on /receipt now resumes the SAME ids (`PaytmResumeGuard` + the persist flush). Accepted trade-off: an initiate that never left shows the EDC screen to `posBillTime` + 180 s, then the 30 s settle (worst case ≈ deadline + 60 s after a void), then the staff panel, and the receipt choice resumes as "none"; a power cut can still lose the newest localStorage writes; (R4) Rule 3: `paytmQrCode` IS persisted (contract §5, for DQR resume; the money-review lens said never) and is cleared at every session end, on disk too; `paytm_dqr_secret_key` stays persisted in `appSettings.paymentSettings` (D11, fork parity); the QR card is `ph-no-capture`, so confirm whether PostHog session replay is on for TB; (R5) Paytm analytics carry `order_id` (= posBillNo) and `payment_type` — the lane contract's default, flagged for confirmation; they never carry posBillTime, the QR, the mid, the secret, the device id, `order_details` or the phone; (R6) the 34 Arabic `paytm.*` strings are drafts awaiting native review (the YES word vs the terminal's likely-English buttons); (R7) the DQR countdown is 135 s (fork parity) while Paytm expires the QR at 120 s: a scan in that gap fails inside the UPI app and no money moves; (R8) if "paid" arrives before the Dexie cart rehydrates after a reload, the local order record is empty (Order Complete and the ticket may list no items; the backend order is correct); (R9) a failed `paytmRuntime` chunk refuses every Paytm checkout until the next splash dwell reloads the page (the tiles stay visible; analytics show `paytm_chunk`, then `UpdateTriggered whole_app`), and the no-reload exemption relies on Chromium naming the chunk URL; (R10) calibration knobs `PAYTM_SETTLE_WINDOW_MS` 30 s and `PAYMENT_IDLE_HOLD_MAX_MS` 240 s (worst-case EDC time in flight ≈ 225–241 s; grow the cap with the windows); ops: the kiosk OS timezone must be Asia/Kolkata, because the DQR expiry is kiosk-local | maintainer / ops | ⚠️ open |
 | Order Complete QR codes (frames 1:5932 guest "scan to earn points" / 1:3437 promo) have NO CX data source — the panel ships without a QR rather than a placeholder that scans to nothing | client/backend | ⚠️ open |
 | Email receipt: the Figma receipt screen offers EMAIL but **the original kiosk has no email-receipt anything** — `customerInfo.email` exists in the slice, is never written and never reaches the order payload. Tile ships inert; needs a payload contract before it can collect an address | client/backend | ⚠️ open |
 | MIAM "SAVE £X" badge (Figma 1:3070) has NO data source: a full key census of the reference menu (100 distinct keys) found only `price`/`applyAddonsPrice`/`differentialPrice`/`priceChange` — the last two are modifier deltas, not a was-price — and `makeItMeal` carries only subText/buttonText1/buttonText2. Badge is implemented + gated on a real figure and stays hidden; needs a backend data contract to ever appear | client/backend | ⚠️ open |
-| ONE flag gates TWO surfaces: `enable_cart_upsell_screen: false` disables BOTH the `/forYou` interstitial AND the in-bag Complete-Your-Meal rail (both read `shouldShowUpsell`). Fork-faithful, but a tenant wanting the rail without the interstitial needs a second flag | client | ⚠️ open |
+| ONE flag gates TWO surfaces: `enable_cart_upsell_screen: false` disables BOTH the `/forYou` interstitial AND the in-bag Complete-Your-Meal rail (both read `shouldShowUpsell`). Fork-faithful, but a tenant wanting the rail without the interstitial needs a second flag — post-P9: it now gates THREE (the in-bag tenant recommendations too, D7) | client | ⚠️ open |
 | `/forYou` is a design-language screen — the TB Figma has no frame for it (node 1:3070, previously mapped as "pre-cart upsell", is actually the MIAM prompt). The design instead puts Complete-Your-Meal inside the bag. Screen is settings-gated, so dropping it is a config decision | client review | ⚠️ open |
 | Loyalty boot hardness: the `getLoyaltyPartner` call now sits inside the boot try/catch, so on `enable_loyalty` deployments a dead/slow loyalty proxy blocks boot with the retry screen (fork booted loyalty-off silently). Rule 2 says never freeze; the alternative is degrade-over-block via an inner try/catch — one line either way. **User decision 2026-10-01: DEGRADE** — inner try/catch, boot and sell loyalty-off, analytics event + "loyalty unavailable" in the Activity Center; the splash retries the partner once per visit (applied only while the splash is still showing, so loyalty never switches on mid-order) | user | ✅ P9b |
 | Loyalty screens `/phone` + `/customerName` have no idle-timeout coverage — TB still has no mounted idle timer at all (P9 item); a guest abandoning mid-phone-entry does not reset to /start | maintainer | ✅ P9a (IdleGuard covers every route from /second on) |
 | **Node pin vs dependency-cruiser** — `.nvmrc` + CI pin Node **20.19** (EOL 2026-04-30), but dependency-cruiser 18.4 refuses to run below Node 22 (`^22‖^24‖>=26`), so `yarn validate` and CI fail at the depcruise step on the pinned runtime (pre-existing, not P9a; gates were run with depcruise on Node 22.14). **User decision 2026-10-01: bump to Node 22 LTS** — done: `.nvmrc` 22, ci.yml `node-version: 22` ×2, `engines` `>=22.12`, README. Any deploy-image Node pin outside the repo needs the same bump | user | ✅ done |
-| Idle START AGAIN fill `tb-lilac` (#F3D9FF) is 1.3:1 against white — decorative per the design (the label carries 8.7:1), but below WCAG 1.4.11's 3:1 for a meaningful graphic | client | ⚠️ sign-off |
+| Idle START AGAIN fill `tb-lilac` (#F3D9FF) is 1.3:1 against white — decorative per the design (the label carries 8.7:1), but below WCAG 1.4.11's 3:1 for a meaningful graphic; the menu/PDP scroll-indicator track (Figma 1:5263) uses the same fill — decorative and non-interactive, the purple thumb is ~8:1 on it | client | ⚠️ sign-off |
 | **SDK transport timeout (Rule 2)** — the shared base query (`packages/core/src/transport/kioskApi.ts`) has no timeout, so a hung getMenu/placeOrder freezes the UI forever. **User decision 2026-10-01:** 10 s default request timeout, multi-MB menu download 30 s, retries stay per call — **refined the same day to HOST-CONFIGURED**: `configureKioskTransport()` gains the timeout setting (+ per-endpoint overrides), TB turns it on, the fork app stays byte-for-byte as today until its payments owner opts in. Reason: the P9b mapping found a blanket SDK default would abort the fork's card-gateway initiate/park/cancel calls mid-arming and let its post-payment ladder auto-retry timed-out pushes for customers who already paid by card | user | ✅ P9b |
 | `MENU_DOWNLOAD_TIMEOUT_MS` (30 s) is a calibration knob: it needs ~2 Mbps effective for the 7.5 MB reference menu if `getMenu` is not gzip-encoded. Confirm gzip + store bandwidth | backend / ops | ⚠️ open |
 | **Uncertain order + claimed loyalty reward (P9b review M4):** after a timed-out (outcome-unknown) push, the claim is kept and the `/start` teardown refunds it. If the order DID land, the guest got the free item AND the points back; clearing the claim instead strands the points if it did NOT land. Today = refund (fork parity). **User decision 2026-10-01: SKIP the automatic refund when the claim's order push is outcome-unknown** — keep the claim un-refunded, emit the reconciliation event (reward id, claim time, points), staff reconcile | user | ✅ P9d (also requires the reward row in the pushed cart; the `order_push` event carries the reward ids at mark time) |
@@ -151,7 +166,7 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **ADA sign-off list (P9c, design-language):** (1) tapping the brand zone exits ADA — fork parity, but Figma draws no affordance (it is a labelled button for screen readers); (2) the PDP now shows the Figma Footer-bottom strip (CANCEL ORDER / ADA / language) in NORMAL mode too — it is in 1:2614/1:2920/1:5413, TB lacked it — and the PDP scroll area is 56 px shorter; (3) ADA variants of the 7 frameless screens (`/second` >2 pipelines become a swipe row, bells dropped, Tent's error banner pinned from the top); (4) backdrop seams where the brand-zone texture meets `/tent`, `/payment`, `/receipt` (540 px tile), `/orderSuccess` (gradient), `/phone`, `/customerName` (plain purple) — `/second` aligned; (5) "Place New Order" keeps ADA on for the next guest (fork parity; every path via the splash clears it); (6) Arabic `ada.exit` copy | client | ⚠️ sign-off |
 | ADA reach calibration: the 798/1122 split is Figma's; whether it keeps every control under the ADA 2010 §308 high-reach limit (48 in / 1220 mm) depends on the cabinet's panel size and mounting height. `ADA_BRAND_ZONE_HEIGHT` is the single knob (lowering it is always safe; unit tests guard ≤ 816) | hardware | ⚠️ open |
 | Back-to-bag after a timed-out push then re-PAY mints a NEW order id — if the timed-out push actually landed, that is a duplicate order even if the backend dedupes on order id (Retry on the error panel keeps the id). Needs the backend idempotency answer | backend | ⚠️ open |
-| Any 504/505 (incl. on `placeOrder`) still de-registers the kiosk via `recoverFromServerError` when the gateway answers inside the 10 s budget. Intended "session invalid" signal or gateway timeouts? P9e: the scheduled refresh re-runs ~10 boot calls about 4×/day per kiosk, multiplying this exposure; D2 exempts only the three telemetry endpoints | maintainer / backend | ⚠️ open |
+| Any 504/505 (incl. on `placeOrder`) still de-registers the kiosk via `recoverFromServerError` when the gateway answers inside the 10 s budget. Intended "session invalid" signal or gateway timeouts? P9e: the scheduled refresh re-runs ~10 boot calls about 4×/day per kiosk, multiplying this exposure; D2 exempts the three telemetry endpoints and P8b's D3 the five cx kiosk Paytm calls (createQR, both checkStatus, EDC initiate / cancel — a 401 / 504 / 505 mid-payment no longer logs the kiosk out); `placeOrder` and the boot calls stay exposed | maintainer / backend | ⚠️ open |
 | `/LoadingResources` auto-retry keeps counting while the operator has the Activity Center open; a successful background boot navigates to `/start` and closes the diagnostics mid-use | client | ⚠️ sign-off |
 | Fork follow-ups surfaced by the P9b mapping (NOT TB work): the fork's Polling ladder would duplicate paid orders if it ever opts into timeouts; its gateway initiators need an explicit ambiguous-timeout UX; RTK 2.7 in the fork bounds only time-to-headers (TB's deduped 2.12 bounds the whole request — a mid-body timeout surfaces as `PARSING_ERROR` "TimeoutError", so classify timeouts with a shared predicate, never `status === "TIMEOUT_ERROR"` alone) | fork payments owner | ⚠️ open |
 | **Order push after a TIMEOUT** — placeOrder idempotency on the client orderId is unknown. **User decision 2026-10-01:** no auto-retry after a timeout (show the Retry / Back-to-bag panel); clean errors (network down, 5xx) keep the existing 4-attempt ladder. Backend still to confirm idempotency | user / backend | ✅ P9b (also covers a 2xx whose body was lost) |
@@ -176,9 +191,17 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Arabic / a11y sign-off list (P9f mapping):** (S1) an Arabic typeface — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback; (S2) wrapped Arabic paragraphs right-align via `dir="auto"`, single lines keep the layout's alignment; (S3) the kiosk blocks pinch-zoom / text resize (`user-scalable=no`, WCAG 1.4.4) — the axe sweep documents a `meta-viewport` exclusion; (S4) placeholder grey darkened 35 % → 55 % black for contrast; (S6) the 🇬🇧 flag next to "العربية" in the footer; (S7) the pink phone-field border is 2.46:1 non-text contrast | client / compliance | ⚠️ sign-off |
 | **P9f app sign-off list (design-language details):** PAY spans the full bag row on loyalty-off deployments; the PDP "Show more / Show less" is a 44 px toggle below the 2-line-clamped description (it was inline and got clipped); placeholder grey 35 % → 55 % black (Registration, /phone, /customerName); the pack-slot imageless placeholder ink-purple /40 → /60; `dir="auto"` + `text-start` on the offer row's second line only; the language sheet has a CSS entrance and no exit slide; Registration's error banner slide, shake and press are CSS approximations of framer-motion | client | ⚠️ sign-off |
 | **lodash in the boot chunk (95.7 KiB) is SDK-owned** — `billCalculation.js` imports the whole of lodash for four `_.chain` sites, plus redux-persist-transform-filter; rewriting them behind the golden-master gate saves ~23 KiB gzip | SDK maintainer | ⚠️ open |
+| **Offers lane defaults + sign-off list (2026-10-06/07):** auto-apply scope = `operatorFlagged` (only payload `autoApplied:true` offers; one knob `OFFER_AUTO_APPLY_SCOPE`; any customer offer action latches it off for the session; no celebration for auto-applies — an "Applied for you" caption); the celebration is a NON-blocking 2.2 s status card + CSS confetti + row pop (customer applies only, reduced motion honoured); copy "ADD TO REWARD", "Customize" / "Customized — tap to change", the size line on fixed-size freebie rows, the staged-row price pair; group-mode picker controls ("−", "2 ×", the hint) and BuyStageSheet / ADD ITEMS / the in-bag PDP are design-language (no frames); 500 ms ghost-tap guards after a sheet closes (also on the P7b SAVE→PAY and CONFIRM→PAY paths); Arabic drafts need native review | client | ⚠️ sign-off |
+| **Offers money residuals (2026-10-07):** (F4) a crash / reload mid buy-stage keeps the stage's paid rows (fork parity); (R3) the group-wise "Save up to" headline ignores repeat picks (display only, fork parity — the fix touches the ranking shared with the fork); a reward a crash left with none of its free rows reads −£0.00 until removed (auto-removing it is new behaviour → sign-off); item offers with nothing to grant (auto-applied ITEM offers arrive with `getItems: {}`) rank as eligible £0 rows and answer "can't be applied" on SAVE (hiding them needs a non-additive SDK ranking change); variant-id freebies are fixed grants with no add-ons (fork parity); a reload on /tent, /payment or /forYou still bounces to /menu (cart + reward survive) — the new CartRehydrated signal can fix it later | maintainer | ⚠️ open |
+| **Zero-value group offers (orchestrator hardening 2026-10-07, diverges from the fork):** a group-wise offer whose shared value is null / ≤ 0 is refused ("can't be applied") instead of adding the picks at FULL price under "REWARD APPLIED −£0.00" | client | ⚠️ sign-off |
+| **Orphaned free rows after a crash (orchestrator decision 2026-10-07):** on the Dexie restore, offer-stamped free rows that the applied reward does not own (matched like the converter: `baseItemId \|\| _id`, plus the entry's discount) are DROPPED silently (they never render; the saved reward is untouched) — re-pricing them would charge for items nobody ordered | client | ⚠️ confirm |
+| **Menu/data lane defaults (orchestrator 2026-10-06, sign-off):** (D3) the Figma 1:5263 scroll bar ships as a non-interactive INDICATOR (aria-hidden, pointer-events-none; a draggable bar = port the fork's ScrollRail, M); (D4) the order type stays v1 (1:2581; v2 1:2588 not built — nothing selects it); (D5) the ticker shows `pipeline_text_<slot>` when set (secondary slot in a secondary-language session, no cross-language fallback) at the designed speed, else "It's lunch time!" — a real daypart field needs a backend proposal; (D6) `VITE_TENANT_RECOMMENDATIONS_URL` per deployment, never committed — ops to confirm TB's tenant id `5c122fc146aefe2828401642` and that the S3 bucket denies anonymous PUT (its CORS advertises GET, PUT); (D7) `enable_cart_upsell_screen: false` also hides the tenant recommendations (the fork shows them regardless); (D8) the operator's `make_it_meal_*` texts override the Figma MIAM headline (fork parity) | client / ops | ⚠️ sign-off |
+| **Emptied tenant recommendations feed:** an empty or junk 200 body keeps the last good map and reports ErrorOccurred `empty_body` on each boot (the fork clears on `data:[]`), so an emptied S3 file cannot withdraw suggestions — ops must repoint or unset `VITE_TENANT_RECOMMENDATIONS_URL` | client / ops | ⚠️ confirm |
+| **Order payload echoes the pipeline row (pre-existing, fork parity):** `extras.pipeline` carries the selected pipeline row verbatim, so an Arabic session pushes `secondary_name` (Arabic) and `primaryCode: "ar"` (the guest's language in a field named primaryCode); item names, add-ons and source.name stay English. Trim `extras.pipeline` / fix `primaryCode`? | backend | ⚠️ open |
+| Native scrollbar hidden on /menu and the PDP (post-P9 26): on a classic-scrollbar OS this returns ~15 px to the content (the Figma widths); headless e2e cannot see native bars — a physical-kiosk check is owed | hardware | ⚠️ open |
 | **FONT ASSETS ARE MISLABELLED (pre-existing since P1, found 2026-10-06):** `Archivo-Variable.woff2` (the "Archivo" body family, declared weight 100–900) is actually a STATIC "Archivo ExtraCondensed Thin" — every body string renders extra-condensed and thin with faux bold; `Archivo-Condensed-Bold.woff2` ("Archivo Condensed", `.tb-compressed`) is a variable font with only a width axis (62–125, default 100), so the compressed CTAs render at NORMAL width; `Archivo-Expanded-Black.woff2` is correct. Fix = one correct Archivo variable font (wght + wdth axes, latin subset, OFL) used at three widths, plus a visual pass and geometry-assertion updates — its own small lane | orchestrator | 🔲 queued |
 | **Splash sign-off list (P9d, design-language details):** (1) carousel cards crop 1080×1920 art with `object-cover` — ≈6.9 % lost top and bottom on the 680×1043 cards (author carousel art at 680×1043, or accept); (2) the card colour behind a loading slide or a peeking video, and the 0.5 s centre fade, have no Figma spec; (3) the carousel sheen uses the app-wide recipe (40 % soft-light, unrotated), not Figma's 50 % normal rotated −90°; (4) the full-bleed CTA has no scrim over operator media, so its contrast depends on the asset (keep the bottom band dark in the asset spec); (5) WELCOME says "touch anywhere to start" but a short tap in the hidden 180×180 operator corner does nothing; (6) the Arabic splash copy is a draft needing native review; (7) the bell is now decorative (`alt=""`) — the start button's accessible name is the visible copy | client | ⚠️ sign-off |
-| **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open |
+| **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open — UPDATE post-P9 44: non-codec failures (load_error / stalled) are retried 10 min after the LAST failure (`SPLASH_RETRY_MS`, ops knob, D9; fixed interval, no backoff); no_video is never retried within the visit; with Workbox SWR a cached error can take two retry periods to clear |
 | **S7 residue (P9d):** after an outcome-unknown push, "Back to bag" then removing the reward row shows the marked claim's points as returned (BagSheet adds them on screen before the skipped revoke) — display-only, session-scoped; the reconciliation record (`order_push` reward ids + `xeno_revoke_skipped`) is analytics-only, so the `VITE_POST_HOG_TYPE` kill switch drops it outside production | maintainer | ⚠️ open |
 
 ## Engineering notes (learned the hard way — don't relearn)
@@ -208,12 +231,14 @@ full-stage, and every return to the splash ends ADA for the next guest.
   P8a joined `getDeploymentInfoApi()` to the boot sequence, storing a degraded
   body (`{}` from an error envelope) made the bag throw on every cart change.
   Normalise at the dispatch, not at the consumers.
-- **Pay-at-counter is the ONLY money path in the app today.** `payment.paymentType`
-  must be exactly `"PAY_AT_RESTAURANT"` (or `""` on the zero-bill loyalty path):
-  `pushOrder`'s three-way switch makes NI/Paytm values place NO order at all
-  (the backend already did) and routes Geidea/NeoLeap/Dojo to a different
-  endpoint — a wrong string means a success screen for an order that does not
-  exist. The gateway seam is `resolveKioskGatewayKind`; nothing in TB imports it.
+- **Two money paths since P8b.** Pay-at-counter = `pushOrder` with
+  `payment.paymentType` exactly `"PAY_AT_RESTAURANT"` (or `""` on the zero-bill
+  loyalty path): its three-way switch places NO order for NI/Paytm values, so a
+  stale type is a success screen for an order that does not exist (directOrder
+  clears a leftover Paytm type). Paytm = the BACKEND places the order from the
+  `order_details` frozen at initiate, on its webhook or on ANY status read; the
+  paid tail is `recordOrderLocally` (bookkeeping, no RTK call), never
+  `pushOrder`. The gateway seam `resolveKioskGatewayKind` is still unused in TB.
 - **The boot loader deliberately does NOT port `connectTOGeideaSocket` /
   `connectWithNeoLeapSocket`.** Their absence is what keeps the kiosk
   peripheral-free by construction rather than by fixture discipline; the
@@ -362,8 +387,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   a unit agent's temporary breakages made an e2e run hang 90 s).
 
 - **Splash media (P9d): only `{ media: { home_screen } }` is ever stored.** The
-  live menu converter walks `media.banner_image_*` unguarded, so a stored banner
-  key can blank `/menu`. The e2e `**/api/**` catch-all answers getMedia with
+  SDK banner walk, the media merge and `clearMediaDataConvertedItems` are
+  guarded (post-P9 25a); banners are still not stored (D1, user 2026-10-06). The e2e `**/api/**` catch-all answers getMedia with
   `{}` — not a getMedia body — so nothing is stored and every spec lands on the
   WELCOME frame unless it routes getMedia AFTER the catch-all. A made-up
   cross-origin host (`https://splash-media.e2e.test`) fulfilled by `page.route`
@@ -442,8 +467,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   `setAnalyticsPort()`; the kill switch is compile-time (off = not shipped,
   never fetched); pre-load calls queue (cap 100) and replay in order; any
   failure = analytics off for the page load. `posthogRuntime.ts` is the only
-  importer and chunkRecovery exempts `/fcmRuntime|posthogRuntime/` (renaming
-  either file restores the reload). Load optional lazy chunks with
+  importer and chunkRecovery exempts `/fcmRuntime|posthogRuntime|paytmRuntime/` (renaming
+  any of them restores the reload). Load optional lazy chunks with
   `await import()`, NEVER `import().then(handler)`: Vite moves a chained
   `.then` into `__vitePreload`, so a failed chunk skips the handler and a
   handler throw becomes `vite:preloadError` → reload.
@@ -466,7 +491,149 @@ full-stage, and every return to the splash ends ADA for the next guest.
   overlay by role; e2e clicks the container centre or `getByRole("button",
   {name})`. Playwright refuses to click under `aria-disabled="true"`.
 
+- **Names are resolved at RENDER** (`src/hooks/utils/useLocalized.ts`: name /
+  description / pipelineName / text) — never write a result into cart/order
+  state, dispatch payloads, addEntity args, analytics, React keys or Dexie;
+  the push stays primary-language. In RTL they are FSI…PDI-isolated like i18n
+  values; descriptions are a shrink-to-fit (`w-fit`) `dir="auto"` leaf.
+- **The tenant recommendation map lives in Dexie + memory, never
+  redux-persist** (the store is ONE `persist:root` re-serialised on every
+  change), and its S3 fetch never uses the RTK transport (it would send the
+  device auth headers): bounded, bound to its source URL, last good map kept.
+
+- **ONE lazy bag chunk (offers lane):** the bag's lazy surfaces (the Complete-
+  Your-Meal rail, BuyStageSheet, the celebration) share
+  `src/components/cart/bagLazyParts.ts`. A separate `React.lazy` import makes
+  Rolldown hoist their shared code into an extra chunk that loads at startup
+  (measured +3.7 KiB on the boot path) — new lazy bag parts go into
+  bagLazyParts (since P8b it holds all lazy UI — see "ONE lazy UI chunk").
+- **Offer get entries: the item id is `baseItemId || _id`.** Non-cluster
+  offers arrive with `baseItemId: null` and the item id in `_id` (only
+  cluster-synced offers fill baseItemId); match rows exactly like the
+  converter (`matchesGetItemEntry` in the SDK's offerCommitRules). Live
+  group-wise get entries are "or"-only with `quantity: null` and no per-item
+  value — the commit must carry the picked units or it grants £0.
+- **BagSheet's empty-cart exit** fires only after the bag has held rows while
+  open, or once AppRoutes' Dexie sync has settled (`CartRehydratedContext`);
+  revalidation skips an empty cart — so a reload on /cart keeps the bag,
+  rows and the applied reward.
+
+- **Paytm ids are stored and `await persistor.flush()`ed BEFORE the initiate**
+  (redux-persist writes on a timer — the request left ~11 ms before its ids hit
+  disk) and re-flushed when a refusal clears them. A reload (`PaytmResumeGuard`:
+  decided once, navigate-only — loop-free only while every /paymentPolling →
+  /payment exit empties the slice) and an outcome-unknown initiate (timeout,
+  lost body, FETCH_ERROR, ≥500) both settle by status with the SAME ids.
+- **A Paytm status read answers for the phase it was SENT in:** entering
+  cancelling / settling clears the reducer's `lastPoll` and bumps the hook's read
+  epoch (the deadline inside the 1 Hz tick task, not a passive effect); stale
+  answers drop unless "paid" (paid always wins; a paid read stops all reads).
+  The one EDC void needs a FRESH "pending" — `classifyPaytmKioskPoll` makes
+  `{ error }` and non-envelopes "error", never "pending".
+- **`/start` order:** Xeno revoke → `releasePaytmSession()` (bodies built first;
+  one status read; EDC void only on a fresh "pending"; fire-and-forget) →
+  `resetSession("full")`, which clears every Paytm field, on disk too.
+- **D3:** `RECOVERY_EXEMPT_ENDPOINTS` = telemetry + `PAYMENT_GATEWAY_ENDPOINTS`
+  (service typed `any` → transportTimeout.test guards the names); status-less EDC
+  errors stay unreachable only while those endpoints have no `transformResponse`.
+- **The Paytm screen is the lazy `paytmRuntime` chunk** (stable name; chunkRecovery
+  exempts it). A failed `import()` stays failed for the page's life, so the
+  checkout awaits `loadPaytmScreen()` BEFORE any id and refuses without it (the
+  next splash reloads the page). No React.lazy + Suspense: its 300 ms reveal timer
+  never fires under a frozen Playwright clock. Lazy code imports SDK subpaths,
+  never the `@cx-sdk/core` barrel (Rolldown hoists a vendor chunk onto the boot
+  path). `react-qr-code` is CJS: the NAMED `{ QRCode }` + its d.ts, static.
+- **Browser Back trap (AppRoutes):** React 19 renders a popstate transition
+  synchronously and `window` runs popstate listeners in registration order, so
+  the trap is a `useLayoutEffect` below BrowserRouter (ahead of its listener): a
+  TRUSTED pop is `stopImmediatePropagation()`ed and the entry re-pushed; script
+  pops pass. The old trap never worked (Back reopened /receipt: a second initiate
+  or placeOrder). Never `navigate(-1)`; checkout.spec BROWSER BACK guards it.
+- **`overflow-clip`, never `overflow-hidden`, on a root that can be 1122 px
+  (ADA) with larger transformed children:** a hidden root is a scroll container
+  that focus / `locator.click` scrolls (399 px) and never scrolls back.
+- **Test seams:** `window.__kioskStore` is DEV-only (production-build e2e asserts
+  network counts + DOM); dev StrictMode aborts the print fetch before
+  `page.route` sees it — observe it with `page.on('request')`; step vitest fake
+  timers in ≤1 s acts (React runs no effects inside one act).
+- **ONE lazy UI chunk, operator UI included (P8b merge 2):** `bagLazyParts.ts`
+  also carries RewardsSheet, FreebiePickerSheet and the Activity Center's
+  ActivityModal (merging offers + P8b put the CI boot path at 359.5 KiB; these
+  cuts made it 352.7). ANY extra lazy chunk, even a tiny one, makes Rolldown
+  split the boot path into preloaded chunks (+~5 KiB measured) — new lazy UI
+  joins bagLazyParts. Until its code arrives a lazy surface shows its own named
+  scrim that closes on tap (plain state + `await import()`, no Suspense).
+- **A failed lazy load sticks for the page's life, so it schedules the healing
+  reload:** `loadPaytmScreen` / `loadActivityModal` dispatch
+  `initiateWholeAppUpdate()` on a null load and the splash reloads at its next
+  dwell. Residual: a guest who reaches the bag before that dwell, on a page
+  under 60 s old, meets the failed chunk (crash screen at /cart).
+- **No reload cuts the splash's Paytm release:** `holdReloadsUntil`
+  (chunkRecovery) makes chunk recovery and `reloadTo` (whole-app update, crash
+  recovery) wait for it, capped at 20 s (Rule 2). The hold is module state — a
+  test that hangs a release gets its own file. Logout and lost-login redirects
+  are not held.
+- **Testing Library `findBy*` hangs under vitest fake timers:** await the loader
+  inside `act()` instead.
+
 ## Session log
+
+- **2026-10-07 (P8b merged)** · Lane `p8b-paytm` (14-agent lane workflow + a
+  5-agent money follow-up + two merge integrations with main): Paytm Dynamic
+  QR + Paytm EDC — two additive SDK modules (`gateways/paytmKiosk`, the pure
+  `settlement/paytmKioskSettlement` reducer; fork byte-identical), the
+  `/payment` tiles, the `/receipt` initiate, `/paymentPolling` (Figma 1:3404,
+  PleaseWait 1:4456, ErrorModal panels), the UPI QR via `react-qr-code`, the
+  `/start` release, D3, a 240 s payment idle hold, S7 parity, reload resume
+  with the SAME ids, and the screen as a lazy chunk (merge 1 had put the boot
+  path at 362.8 KiB vs 355). Reviewers caught: browser Back never blocked
+  (HIGH — a reopened /receipt allowed a second initiate, and the same hole let
+  P8a COD place a second order from Order Complete), an EDC void licensed by a
+  read sent before the deadline, a read after "paid", ADA roots scrolling
+  399 px, a reload mid-initiate orphaning an armed terminal, ids reaching disk
+  after the request, the QR visible to PostHog replay, one failed chunk load
+  breaking every later checkout, no idle hold while it loaded — all fixed.
+  Merge 2 with offers: three union-resolved conflicts; the boot path cut
+  from 359.5 to 352.7 KiB (CI) by moving RewardsSheet, FreebiePickerSheet and
+  the Activity Center into the one lazy chunk; its review caught a failed
+  Activity load poisoning the next guest's bag chunk and a /start reload
+  able to cut the Paytm release — fixed (healing reload at the next splash
+  dwell; reloads wait for the release, capped at 20 s), 8/8 mutants killed.
+  Unit 1,789 → 2,183, e2e 169 → 203 (+394 / +34); mutation
+  checks 36/36 SDK, 63/63 + 63/64 unit, 13/13 + 30/31 e2e (lane), 49 unit +
+  12 e2e runs all killed after strengthening (follow-up), every merge-1 fix
+  mutation-checked.
+
+- **2026-10-07 (offers merged)** · Lane `offers` (14-agent lane workflow + a money
+  follow-up + a merge integration with main): the BOGO buy stage with the
+  sameOrLess ceiling TB never enforced, customizable freebies via an in-bag
+  PDP (OfferTierHost), EXACT group-wise picks (it fixed a pre-existing
+  over-grant — "pick 2 of 4" gave all 4 — and a £0 under-grant on live "or"
+  offers), the non-blocking celebration, operator-flagged auto-apply, a
+  reload on /cart that keeps the reward, orphaned free rows dropped after a
+  crash, zero-value group offers refused. Reviewers caught: a size-specific
+  freebie charging the difference (HIGH), a £0 item offer showing "Reward
+  applied!", a picker over-grant widening, the 4a fix dropping legitimately
+  applied free rows when the backend sends `baseItemId: null` (the normal
+  case) — all fixed. Offer photos + T&C stay blocked on backend data
+  (proposal §8 added). Unit 1,539 → 1,789, e2e 134 → 169; mutation checks
+  43/48 + 55/56 (lane), 28/28 (follow-up), 10/10 + 2/2 + 6/6 (merge).
+
+- **2026-10-07 (menu-data merged)** · Lane `menu-data` (13 agents; its fix stage
+  resumed after the laptop slept on battery): Arabic menu + pipeline names at
+  render, tenant cart recommendations (env URL, Dexie + memory, outside the
+  transport) + boot prefetch, MIAM texts at boot, the Figma 1:5263 scroll
+  indicator, the splash in-visit retry (10 min knob), operator ticker copy at
+  the designed speed, and the SDK banner-walk / merge / reducer guards (a
+  stored banner key can no longer blank /menu). Reviewers found 5 issues
+  (short Arabic PDP descriptions floating right, a silent empty feed, a stale
+  Dexie copy from another URL, ticker speed) — all fixed. The orchestrator
+  added: per-item names on the tier-2 sheet's steppers (a11y) and isolates not
+  counted in the ticker speed — and caught + fixed literal bidi characters
+  the edit tool had written into source (escape sequences only). Unit 1,318 →
+  1,539, e2e 121 → 134; lane mutation checks 67/67 unit, 25/26 e2e (the
+  survivor is unit-covered). P8b, offers (money follow-ups) and the font lane
+  are in flight.
 
 - **2026-10-06 (P9f app half + lanes)** · Development moved to **parallel git
   worktree lanes** (user choice 2026-10-05: commit + worktrees, one workflow

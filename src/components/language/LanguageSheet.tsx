@@ -44,8 +44,17 @@ export default function LanguageSheet({ open, onClose }: LanguageSheetProps) {
   // string), which must fall back to the primary language.
   const selectedCode = selected?.code || primary?.code;
 
+  // L0: store the fork's slot `type` (by identity with the option object) —
+  // every per-language read (pipeline names, MIAM and ticker copy) keys on it.
   const choose = (lang: LanguageOption) => {
-    dispatch(setSelectedLanguage(withDirection(lang)));
+    dispatch(
+      setSelectedLanguage(
+        withDirection({
+          ...lang,
+          type: lang === secondary ? "secondary_language" : "primary_language",
+        })
+      )
+    );
     onClose();
   };
 

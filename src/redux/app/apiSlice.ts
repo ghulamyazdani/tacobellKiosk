@@ -3,7 +3,8 @@
  * @cx-sdk/core (packages/core/src/transport/kioskApi.ts); this module
  * configures it with the web shell's specifics — env-driven baseUrl, cookie
  * token fallback, the P3d session-recovery callbacks, the Rule 2 request
- * budgets (P9b) and the D2 telemetry recovery exemption (P9e) — at MODULE
+ * budgets (P9b) and the D2 telemetry / D3 Paytm recovery exemptions (P9e,
+ * P8b) — at MODULE
  * SCOPE, so every consumer that imports { apiSlice } through this path gets a
  * configured transport by construction.
  */
@@ -53,6 +54,30 @@ export const BACKGROUND_TELEMETRY_ENDPOINTS = [
   "updateDeviceStatus", //     POST /api/cx/update_device_status
 ] as const satisfies readonly (keyof typeof autoUpdateApi.endpoints)[];
 
+/**
+ * D3 (P8b): the five cx kiosk Paytm calls never tear the session down either.
+ * A 401 / 504 / 505 there arrives mid-payment, while a terminal may be armed
+ * or a QR live: recovery would log the kiosk out under a paying customer. The
+ * caller still gets the error and settles by status. Same name-keyed
+ * mechanism as D2, but @cx-sdk/payments/services/paymentSettingsFetchApi is
+ * typed `any`, so `satisfies` cannot guard a rename — transportTimeout.test
+ * checks each name against the live endpoints instead. Their own FetchArgs
+ * timeouts (initiate / void 10 s, status 5 s) already bound them.
+ */
+export const PAYMENT_GATEWAY_ENDPOINTS = [
+  "initiatePaytmDqrKiosk", //    POST /api/cx/kiosk/paytmDynamicQR/createQR
+  "checkPaytmDqrKioskStatus", // POST /api/cx/kiosk/paytmDynamicQR/checkStatus
+  "initiatePaytmEdcKiosk", //    POST /api/cx/kiosk/paytmEDC/initiate
+  "checkPaytmEdcKioskStatus", // POST /api/cx/kiosk/paytmEDC/checkStatus
+  "cancelPaytmEdcKiosk", //      POST /api/cx/kiosk/paytmEDC/cancel
+] as const;
+
+/** Every endpoint whose 401 / 504 / 505 skips the session recovery. */
+export const RECOVERY_EXEMPT_ENDPOINTS = [
+  ...BACKGROUND_TELEMETRY_ENDPOINTS,
+  ...PAYMENT_GATEWAY_ENDPOINTS,
+] as const;
+
 configureKioskTransport({
   baseUrl,
   tokenFallback: () => cookies.get("token"),
@@ -61,7 +86,7 @@ configureKioskTransport({
   requestTimeoutMs: KIOSK_REQUEST_TIMEOUT_MS,
   // Keyed by RTK endpoint name (@cx-sdk/catalog/services/menuApi `getMenu`).
   endpointTimeoutsMs: { getMenu: MENU_DOWNLOAD_TIMEOUT_MS },
-  recoveryExemptEndpoints: BACKGROUND_TELEMETRY_ENDPOINTS,
+  recoveryExemptEndpoints: RECOVERY_EXEMPT_ENDPOINTS,
 });
 
 export { apiSlice };

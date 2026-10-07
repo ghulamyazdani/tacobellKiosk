@@ -10,6 +10,7 @@ import { emptyMenuData, setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
 import { setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import StartScreen from "../index";
+import { loadActivityModal } from "../../../components/activity/loadActivityModal";
 import "../../../i18n";
 
 /** Flip `crash.media` to make the media layer throw during render. */
@@ -108,7 +109,7 @@ describe("StartScreen — the splash (P9d)", () => {
     expect(screen.getByText("second-screen")).toBeInTheDocument();
   });
 
-  it("the operator hotspot's 3 s hold still opens the Activity Center over media — without starting an order", () => {
+  it("the operator hotspot's 3 s hold still opens the Activity Center over media — without starting an order", async () => {
     vi.useFakeTimers();
     seedMedia(TWO);
     renderStart();
@@ -120,6 +121,7 @@ describe("StartScreen — the splash (P9d)", () => {
     });
     fireEvent.mouseUp(hotspot);
     fireEvent.click(hotspot);
+    await act(() => loadActivityModal()); // its lazy code (ActivityCenter)
 
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
     expect(screen.queryByText("second-screen")).not.toBeInTheDocument();
