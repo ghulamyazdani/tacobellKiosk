@@ -62,8 +62,37 @@ export const planCrashRecovery = (
     ? { path: "/LoadingResources", delayMs: RELOAD_LOOP_WINDOW_MS }
     : { path: "/start", delayMs: CRASH_RECOVERY_DELAY_MS };
 
+/**
+ * Work no reload may cut (P8b-12): the splash's Paytm session release — its
+ * one EDC void is never retried, and the reset right after it has already
+ * wiped the session from disk. Every reload here (chunk recovery, reloadTo:
+ * the splash's whole-app update, crash recovery) waits for it, at most
+ * RELOAD_HOLD_CAP_MS: its requests are bounded (5 s + 10 s), and a hung one
+ * must never hold the kiosk (Rule 2).
+ */
+const RELOAD_HOLD_CAP_MS = 20_000;
+let reloadHold: Promise<unknown> | null = null;
+
+export const holdReloadsUntil = (work: Promise<unknown>): void => {
+  const cap = new Promise((resolve) => setTimeout(resolve, RELOAD_HOLD_CAP_MS));
+  const hold: Promise<unknown> = Promise.allSettled([
+    reloadHold,
+    Promise.race([work, cap]),
+  ]).then(() => {
+    if (reloadHold === hold) reloadHold = null;
+  });
+  reloadHold = hold;
+};
+
+/** `reload` now, or once the held work has settled. */
+const reloadWhenFree = (reload: () => void): void => {
+  if (reloadHold) void reloadHold.then(reload);
+  else reload();
+};
+
 /** Full page load to `path` — the Router is gone once the boundary trips. */
-export const reloadTo = (path: string): void => window.location.replace(path);
+export const reloadTo = (path: string): void =>
+  reloadWhenFree(() => window.location.replace(path));
 
 export const installChunkErrorRecovery = (): void => {
   window.addEventListener("vite:preloadError", (event) => {
@@ -99,6 +128,6 @@ export const installChunkErrorRecovery = (): void => {
       "[chunkRecovery] chunk preload failed; reloading to pick up the current build",
       event.payload,
     );
-    window.location.reload();
+    reloadWhenFree(() => window.location.reload());
   });
 };

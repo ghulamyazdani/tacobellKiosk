@@ -17,6 +17,7 @@ import {
   readOpenPaytmSession,
 } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { holdReloadsUntil } from "../../utils/chunkRecovery";
 
 /**
  * An RTK mutation trigger of the SDK service (typed `any` there): resolves
@@ -41,7 +42,8 @@ type PaytmTrigger = (body: Record<string, unknown>) => PromiseLike<unknown>;
  *      sent). An open session whose selection is gone (settings changed)
  *      cannot be read without credentials: last_status "no_selection".
  *
- * Fire-and-forget: the splash never waits on it (Rule 2). It never throws,
+ * Fire-and-forget: the splash never waits on it (Rule 2), but no reload cuts
+ * it — reloads wait for it (holdReloadsUntil, capped). It never throws,
  * never dispatches app state, never retries — and never logs the mid,
  * secret, device id or QR string (only the order id leaves).
  */
@@ -89,7 +91,7 @@ export default function usePaytmSessionRelease(): () => void {
       const checkStatus =
         session.kind === "paytmDqr" ? checkDqrStatus : checkEdcStatus;
 
-      void (async () => {
+      holdReloadsUntil((async () => {
         let lastStatus = "error";
         let voidOutcome = "none";
         try {
@@ -103,7 +105,7 @@ export default function usePaytmSessionRelease(): () => void {
           // is unexpected — report what is known, never retry.
         }
         report(lastStatus, voidOutcome);
-      })();
+      })());
     } catch {
       // Junk persisted state must never break the splash teardown.
     }
