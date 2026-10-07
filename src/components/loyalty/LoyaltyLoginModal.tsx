@@ -234,8 +234,8 @@ function LoginBody({ onClose }: LoginBodyProps) {
             aria-hidden="true"
             className="h-[36px] w-[40px] bg-tb-purple"
             style={{
-              WebkitMaskImage: `url(${tbBell})`,
-              maskImage: `url(${tbBell})`,
+              WebkitMaskImage: `url("${tbBell}")`,
+              maskImage: `url("${tbBell}")`,
               WebkitMaskRepeat: "no-repeat",
               maskRepeat: "no-repeat",
               WebkitMaskSize: "contain",

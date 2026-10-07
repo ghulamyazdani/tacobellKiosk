@@ -48,10 +48,15 @@ const AUTO_DISMISS_SECONDS = 25;
 /** The partner sends a 4-digit OTP (authenticate_redemption → redeem_coupon). */
 const OTP_LENGTH = 4;
 
-/** Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). */
+/**
+ * Header bell, tinted tb-purple via CSS mask (the SVG's fills are white). The
+ * url() is quoted (here and in the login / success modals): Vite inlines the
+ * SVG as a data URI carrying ' ( ), so unquoted it is invalid and the bell
+ * paints as a solid square.
+ */
 const bellMaskStyle: CSSProperties = {
-  WebkitMaskImage: `url(${tbBell})`,
-  maskImage: `url(${tbBell})`,
+  WebkitMaskImage: `url("${tbBell}")`,
+  maskImage: `url("${tbBell}")`,
   WebkitMaskRepeat: "no-repeat",
   maskRepeat: "no-repeat",
   WebkitMaskSize: "contain",

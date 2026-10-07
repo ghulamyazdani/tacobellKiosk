@@ -95,9 +95,10 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  * transition is added or removed on this screen.
  *
  * Layout (D9, design language, flagged): one tile keeps the Figma 412×412;
- * n ≥ 2 tiles are (848 − 24(n−1))/n wide. Labels are 36 px; at n = 3 they
- * drop to 24 px with 16 px side padding — measured: "RESTAURANT" in Archivo
- * Expanded Black is 270 px at 30 px, wider than the 267 px tile.
+ * n ≥ 2 tiles are (848 − 24(n−1))/n wide. Labels and the TOTAL bar are the
+ * frame's CTA/Compressed Large (Cm Bd 48/44 → .tb-compressed) at every n; at
+ * n = 3 only the side padding narrows to 16 px — measured in Archivo
+ * 62 %/700: "RESTAURANT" is 222.4 px, inside the 234.67 px label box.
  *
  * COD gating uses `checkIfCODAvailable` from
  * `@cx-sdk/payments/gateways/paymentOptions`.
@@ -125,9 +126,9 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * ADA (P9c, design-language, flagged — 1:3364 has no ADA variant): both
  * roots render into the 1122px reach zone with the bell dropped. Selection:
- * title 120–232 · total 302–414 · tiles 482–894 · BACK TO MENU keeps its
+ * title 120–232 · total 302–426 · tiles 482–894 · BACK TO MENU keeps its
  * 18px bottom distance (1012–1104). Unavailable: title 120–232 · body
- * 344–384 · the same BACK. The buffer dialog is centred on the page, so it
+ * 344–424 · the same BACK. The buffer dialog is centred on the page, so it
  * follows the page height.
  */
 export default function PaymentSelection() {
@@ -341,12 +342,12 @@ export default function PaymentSelection() {
           (cart.netAmount, written by BagSheet's setAmount(getCheckoutNetAmount)). */}
       <div
         data-testid="payment-total"
-        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[750px]"} flex h-[112px] w-[848px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant px-[36px]`}
+        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[750px]"} flex w-[848px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
       >
-        <span className="tb-display text-[34px] leading-[34px] tracking-[-0.5px] text-tb-surface">
+        <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {t("payment.total")}
         </span>
-        <span className="tb-display text-[34px] leading-[34px] tracking-[-0.5px] text-tb-surface">
+        <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {currency}
           {netAmountRdx.toFixed(2)}
         </span>
@@ -364,9 +365,7 @@ export default function PaymentSelection() {
             style={{ width: tileWidth }}
             className={`flex h-[412px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
           >
-            <span
-              className={`tb-display text-center ${narrow ? "text-[24px] leading-[28px]" : "text-[36px] leading-[40px]"} tracking-[-1px] text-tb-purple`}
-            >
+            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
               {tile.label}
             </span>
           </button>

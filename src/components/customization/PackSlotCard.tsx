@@ -57,16 +57,19 @@ export default function PackSlotCard({
   return (
     <div
       data-testid={`pack-slot-${group?._id}`}
-      className={`relative rounded-[8px] bg-tb-surface ${
+      className={`relative h-full rounded-[8px] bg-tb-surface ${
         errored ? "ring-4 ring-red-500" : "border border-tb-grey-4"
       }`}
     >
+      {/* h-full (card + button): fill the stretched grid cell so mt-auto
+          pins every CTA to the row's bottom when a 2-line name + info line
+          makes one card taller. */}
       <button
         type="button"
         data-testid={`pack-slot-open-${group?._id}`}
         aria-label={ctaLabel}
         onClick={onOpen}
-        className="flex min-h-[44px] w-full flex-col items-stretch p-[16px] text-left"
+        className="flex h-full min-h-[44px] w-full flex-col items-stretch p-[16px] text-left"
       >
         {/* top-right selection ring — ✓ filled when the slot has a pick */}
         <span

@@ -63,13 +63,37 @@ const GREEK_SALAD = "5dd1093829754a432f2c32e2";
 const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1, group ..._1573980469_addons
 const ADD_CHEESE = "5dd1093f188e72ce1b3eb36f"; // +£1, group ..._1686482941_addons
+/** Kiddie Meal Beef Burger, re-shaped by sizedMenu() into a sized item. */
+const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
+const SIZE_LARGE = "e2e-size-large"; // £7: neither the parent's price nor the other size's
+
+/**
+ * The slim menu with SIZED_ITEM given two active sizes and no modifier
+ * groups, so its quick-add "+" opens Select a Size (the fast lane that
+ * builds its own VARIANT row — the PDP path is covered above).
+ */
+function sizedMenu() {
+  const menu = JSON.parse(JSON.stringify(slimMenu));
+  for (const category of menu.categories)
+    for (const sub of category.subCategories)
+      for (const entity of sub.entities)
+        if (entity.id === SIZED_ITEM) {
+          entity.hasVariant = true;
+          entity.modifiers = [];
+          entity.variants = [
+            ["e2e-size-regular", "Regular", 5],
+            [SIZE_LARGE, "Large", 7],
+          ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
+        }
+  return menu;
+}
 
 /**
  * Boot + menu mocks (copied from pack.spec.ts). Order matters: Playwright
  * matches routes newest-first, so the catch-all is registered FIRST and
  * every specific mock after it.
  */
-async function mockKioskBackend(page: Page, { comboUpsell = false } = {}) {
+async function mockKioskBackend(page: Page, { comboUpsell = false, sized = false } = {}) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
   await page.route("**/api/cx/kiosk/getLanguage", (r) =>
     r.fulfill({
@@ -109,7 +133,9 @@ async function mockKioskBackend(page: Page, { comboUpsell = false } = {}) {
       ],
     })
   );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
+  await page.route("**/api/cx/kiosk/getMenu", (r) =>
+    r.fulfill({ json: sized ? sizedMenu() : slimMenu })
+  );
   await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
   await page.route("**/api/tenants/getServerTime", (r) =>
     r.fulfill({ json: { serverTime: new Date().toISOString() } })
@@ -511,5 +537,33 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(bagRows(page)).toHaveCount(1);
     await expect(bagRows(page).first()).toContainText("Cheese Burger");
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
+  test("SIZE FAST LANE: quick-add → Select a Size → CONTINUE bills the chosen size — the added modal's total agrees with the bar and the bag pays it with VAT, never £NaN", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true });
+    await bootRegisteredToMenu(page);
+    const quickAdd = page.getByTestId(`quick-add-${SIZED_ITEM}`);
+    await quickAdd.scrollIntoViewIfNeeded();
+    await quickAdd.click();
+    await page.getByTestId(`size-${SIZE_LARGE}`).click();
+    await page.getByTestId("size-continue").click();
+
+    // A VARIANT add always confirms; its total is the bar's live subtotal
+    // (it read the bag-only netAmount mirror: £0.00 before the bag opened).
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await expect(page.getByTestId("cta-total")).toContainText("£7.00");
+    await expect(page.getByTestId("added-total")).toContainText("£7.00");
+    await page.getByTestId("added-continue").click();
+
+    // The bill prices a VARIANT row by its variantPrice (the row lacked it:
+    // PAY £NaN). Total = round(7 * 1.15) = £8 — exclusive VAT@15%, header.
+    await openBag(page);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£7.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£8.00");
+    await expect(page.getByTestId("bag-pay")).toContainText("£8.00");
   });
 });

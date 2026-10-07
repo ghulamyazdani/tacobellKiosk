@@ -141,11 +141,13 @@ const getLoyaltyPointsValue = (row: any) =>
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired) — the
  * rewards rows render the brand bell, purple-tinted via CSS mask, over the
- * grey plate (OfferRow precedent; the SVG's own fills are white).
+ * grey plate (OfferRow precedent; the SVG's own fills are white). The url()
+ * is quoted: the inlined SVG data URI carries ' ( ), so an unquoted url() is
+ * invalid and the bell paints as a solid square.
  */
 const bellMaskStyle: CSSProperties = {
-  WebkitMaskImage: `url(${tbBell})`,
-  maskImage: `url(${tbBell})`,
+  WebkitMaskImage: `url("${tbBell}")`,
+  maskImage: `url("${tbBell}")`,
   WebkitMaskRepeat: "no-repeat",
   maskRepeat: "no-repeat",
   WebkitMaskSize: "contain",
@@ -311,8 +313,8 @@ export default function BagSheet({
     [open, cartRdx],
   );
 
-  // Mirror the net amount into the slice on each recompute so
-  // ProductAddedModal's added-total / downstream CTAs read a real value.
+  // Mirror the net amount into the slice on each recompute so the
+  // downstream checkout screens read a real value.
   useEffect(() => {
     if (!open || !bill) return;
     dispatch(setAmount(getCheckoutNetAmount(bill)));

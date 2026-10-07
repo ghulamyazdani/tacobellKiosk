@@ -424,14 +424,16 @@ export default function Customization({
               const selected = isSelected(group, item);
               const imageUrl = resolveEntityImage(item);
               return (
+                // No photo: the name sits on the radio's row, so px-[44px]
+                // keeps it centred and 8 px clear of the 26 px radio (right-10).
                 <button
                   key={item.id}
                   type="button"
                   data-testid={`pdp-option-${item.id}`}
                   onClick={() => addCustomizations(group, item, null, nextGroup, false)}
                   className={`relative flex flex-col items-center rounded-[8px] border-2 bg-tb-grey-6 p-[16px] pb-[20px] min-h-[44px] ${
-                    selected ? "border-tb-purple" : "border-transparent"
-                  }`}
+                    imageUrl ? "" : "px-[44px]"
+                  } ${selected ? "border-tb-purple" : "border-transparent"}`}
                 >
                   {imageUrl && (
                     <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
@@ -472,7 +474,7 @@ export default function Customization({
           <img alt="" src={heroImage} className="mx-auto mt-[24px] h-[420px] object-contain" />
         )}
         <div className="mt-[16px] flex items-start justify-between gap-6">
-          <h1 className="tb-compressed max-w-[700px] text-[56px] leading-[52px] text-black">
+          <h1 className="tb-display max-w-[700px] text-[48px] leading-[44px] tracking-[-1px] text-tb-ink-purple">
             {name(SelectedEntity)}
           </h1>
           {/* One freebie per pick: no stepper (the offer sets the quantity). */}
