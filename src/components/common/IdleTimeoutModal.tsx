@@ -82,8 +82,8 @@ export default function IdleTimeoutModal({
           </p>
         </div>
         {/* No horizontal padding on the CTAs: "CONTINUE ORDERING" measures
-            ~261 px in the Archivo Expanded stand-in at 18 px — it only fits
-            the 280 px button flex-centred and unwrapped. */}
+            ~261 px in the .tb-display stand-in (Archivo at 125 % / 900) at
+            18 px — it only fits the 280 px button flex-centred and unwrapped. */}
         <div className="flex gap-[26px]">
           <button
             type="button"

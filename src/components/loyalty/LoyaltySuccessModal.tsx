@@ -80,16 +80,19 @@ export default function LoyaltySuccessModal() {
             <text
               fill="var(--color-tb-purple)"
               fontSize="26"
-              fontWeight="900"
+              fontWeight="500"
               letterSpacing="4"
-              style={{ textTransform: "uppercase" }}
+              style={{ textTransform: "uppercase", fontStretch: "125%" }}
             >
               {/* Two copies at opposite offsets fill the ring, matching the
-                  Figma lockup's repeated wordmark. */}
-              <textPath href="#tbLoyaltySealArc" startOffset="2%">
+                  Figma lockup's repeated wordmark (1:4079: Exp Md lettering
+                  = 125 % / 500). One EN copy is ~426 of the 440 px half
+                  ring, so the offsets stay 0 % / 50 %: a later start would
+                  push copy 2's last glyph off the path end. */}
+              <textPath href="#tbLoyaltySealArc" startOffset="0%">
                 {t("loyalty.sealText")}
               </textPath>
-              <textPath href="#tbLoyaltySealArc" startOffset="52%">
+              <textPath href="#tbLoyaltySealArc" startOffset="50%">
                 {t("loyalty.sealText")}
               </textPath>
             </text>

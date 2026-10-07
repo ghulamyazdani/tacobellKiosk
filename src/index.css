@@ -1,35 +1,43 @@
 @import "tailwindcss";
 
 /*
- * Display face: the Figma file uses GT America (Expanded Black / Bold) — a
- * commercial Grilli Type font (the design file itself uses the TRIAL cut).
- * Until the client provides a license, we self-host Archivo (variable wdth/
- * wght), whose Expanded Black cut is the closest open substitute.
- * FLAGGED for client sign-off.
+ * Type: the Figma file uses GT America (commercial, Grilli Type; the design
+ * file itself uses the TRIAL cut). GT America stays the licensed target —
+ * FLAGGED for client sign-off. Until then we self-host ONE OFL family:
+ * Archivo variable (wght 100–900 × wdth 62–125, Google Fonts v25, latin +
+ * latin-ext — latin-ext carries ₹ U+20B9), used at three widths:
+ *   body           100 %        (any weight, live wght axis)
+ *   .tb-compressed  62 % / 700  (GT America Compressed Bold stand-in)
+ *   .tb-display    125 % / 900  (GT America Expanded Black stand-in)
+ * Licence text: public/fonts/OFL.txt (copied verbatim into dist, so every
+ * deployed copy of the fonts carries it — OFL condition 2; .txt is outside
+ * the Workbox precache globs).
+ *
+ * Keep `font-stretch: 62% 125%` explicit: it lets font-stretch drive the
+ * wdth axis on every engine (Chromium 153 infers a missing range from the
+ * font; an engine without the `auto` descriptor default may hold the face at
+ * 100 %). unicode-range is verbatim from the Google CSS2 API; latin-ext comes
+ * first (Google's order) so the later latin face wins the shared
+ * U+0304/0308/0329.
  */
 @font-face {
   font-family: "Archivo";
-  src: url("./assets/fonts/Archivo-Variable.woff2") format("woff2");
+  font-style: normal;
   font-weight: 100 900;
+  font-stretch: 62% 125%;
   font-display: swap;
+  src: url("./assets/fonts/Archivo-wdth-wght-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Pinned static instance (wdth 62 / wght 700) — GT America "Compressed
- * Bold" stand-in for CTA/category type. */
 @font-face {
-  font-family: "Archivo Condensed";
-  src: url("./assets/fonts/Archivo-Condensed-Bold.woff2") format("woff2");
+  font-family: "Archivo";
+  font-style: normal;
   font-weight: 100 900;
+  font-stretch: 62% 125%;
   font-display: swap;
-}
-
-/* Pinned static instance (wdth 125 / wght 900) — the served "variable"
- * subsets came back as thin instances, so the display face is one exact cut. */
-@font-face {
-  font-family: "Archivo Expanded";
-  src: url("./assets/fonts/Archivo-Expanded-Black.woff2") format("woff2");
-  font-weight: 100 900; /* single cut serves every requested weight */
-  font-display: swap;
+  src: url("./assets/fonts/Archivo-wdth-wght-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /*
@@ -80,18 +88,25 @@
   --brand-secondary: #ffffff;
 }
 
-/* GT America Expanded Black stand-in: widest, heaviest Archivo cut. */
-.tb-display {
-  font-family: "Archivo Expanded", "Archivo", system-ui, sans-serif;
-  font-weight: 900;
-  text-transform: uppercase;
-}
+/* Layered so Tailwind utilities (@layer utilities) override them — e.g.
+ * `tb-display font-medium` = Figma "CTA/Expanded small" (Exp Md). Unlayered,
+ * these classes would beat every utility. */
+@layer components {
+  /* GT America Expanded Black stand-in (Figma "Exp Bl"). */
+  .tb-display {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-stretch: 125%;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
 
-/* GT America Compressed Bold stand-in (CTA cards, category rail). */
-.tb-compressed {
-  font-family: "Archivo Condensed", "Archivo", system-ui, sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
+  /* GT America Compressed Bold stand-in (Figma "Cm Bd": CTA cards, category rail). */
+  .tb-compressed {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-stretch: 62%;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
 }
 
 /* Daypart ticker marquee: track holds two copies of the sequence, shifts by

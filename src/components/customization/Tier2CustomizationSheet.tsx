@@ -545,6 +545,8 @@ export default function Tier2CustomizationSheet() {
               const meta = itemMeta(item);
               const imageUrl = resolveEntityImage(item);
               return (
+                // No photo: the name sits on the radio's row, so px-[44px]
+                // keeps it centred and 8 px clear of the 26 px radio (right-10).
                 <button
                   key={item.id}
                   type="button"
@@ -553,8 +555,8 @@ export default function Tier2CustomizationSheet() {
                     addCustomizations(group, item, null, nextGroup, false)
                   }
                   className={`relative flex min-h-[44px] flex-col items-center rounded-[8px] border-2 bg-tb-grey-6 p-[16px] pb-[20px] ${
-                    selected ? "border-tb-purple" : "border-transparent"
-                  }`}
+                    imageUrl ? "" : "px-[44px]"
+                  } ${selected ? "border-tb-purple" : "border-transparent"}`}
                 >
                   {imageUrl && (
                     <img

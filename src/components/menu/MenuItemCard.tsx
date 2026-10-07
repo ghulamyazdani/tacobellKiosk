@@ -66,7 +66,7 @@ export default function MenuItemCard({
           <img
             alt=""
             src={imageUrl}
-            className={`h-[326px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
+            className={`h-[326px] min-h-0 w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
           />
         )}
         {!unavailable && (
@@ -115,7 +115,7 @@ export default function MenuItemCard({
         <img
           alt=""
           src={imageUrl}
-          className={`h-[172px] w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
+          className={`h-[172px] min-h-0 w-full object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
         />
       )}
       {!unavailable && (

@@ -230,7 +230,7 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
       >
         <span className="flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px]">
           <span
-            className="block overflow-hidden text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
+            className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
             style={{
               lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
               maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
@@ -246,12 +246,12 @@ function SheetBody({ onClose, onNeedsPicker }: SheetBodyProps) {
           <img
             alt=""
             src={imageUrl}
-            className="w-full object-contain"
+            className="min-h-0 w-full object-contain"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
           />
         ) : (
           <span
-            className="block w-full"
+            className="block min-h-0 w-full"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
           />
         )}
