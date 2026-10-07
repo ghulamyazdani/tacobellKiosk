@@ -14,6 +14,7 @@ import {
   setDiscountOnAddon,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { findOrphanedFreebieRows } from "@cx-sdk/ordering/offer/offerCommitRules";
 import { store } from "../../../redux/app/store";
 import FreebiePickerSheet from "../FreebiePickerSheet";
 import OfferTierHost from "../OfferTierHost";
@@ -734,6 +735,32 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
     expect(getItemRows().map((row: any) => row.id).sort()).toEqual(["greek-salad", "kiddie-meal"]);
     expect(cartState().cartOffer._id).toBe("offer-and-mixed");
     expect(cartState().getItems).toEqual([]);
+  });
+
+  it("production get_cx_valid_offers entries (baseItemId null, the item id in `_id`): the held customization still unlocks CONFIRM, and what lands survives the crash-reload ownership check", async () => {
+    const offer = {
+      ...AND_MIXED_OFFER,
+      _id: "offer-and-mixed-null-base",
+      getItems: {
+        items: AND_MIXED_OFFER.getItems.items.map((entry: any) => ({
+          ...entry,
+          _id: entry.entities.id,
+          baseItemId: null,
+        })),
+      },
+    };
+    const { onClose } = renderPicker(offer);
+    const confirm = screen.getByTestId("freebie-confirm");
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+
+    stage(STAGED_KIDDIE);
+    expect(screen.getByTestId("freebie-option-kiddie-meal")).toHaveAttribute("aria-pressed", "true");
+    expect(confirm).toHaveAttribute("aria-disabled", "false");
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(getItemRows().map((row: any) => row.id).sort()).toEqual(["greek-salad", "kiddie-meal"]);
+    expect(findOrphanedFreebieRows(cartState().cartOffer, cartState().cartItems)).toEqual([]);
   });
 
   it.each([

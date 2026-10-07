@@ -919,6 +919,27 @@ describe("findOrphanedFreebieRows — what a crash-reload must not restore (4a)"
     ).toEqual([]);
   });
 
+  it("production get_cx_valid_offers entries (baseItemId null, the item id in `_id` — the converter resolves by it) keep their rows, a fixed size by its variant id; `_id` never stands in for a set baseItemId", () => {
+    const salad = { ...SALAD_AND, _id: "greek-salad", baseItemId: null };
+    expect(orphans({ ...FIXED_AND_ITEM, getItems: { items: [salad], categories: [] } }, [PAID, landed(salad)])).toEqual([]);
+
+    const largeFries = {
+      ...VARIANT_ENTITY,
+      isVariantSelected: true,
+      selectedVariant: { id: "fries-l", name: "Large", price: 5, isActive: true },
+    };
+    const fixedSize = { ...getEntry("fries-l", "and", largeFries), _id: "fries-l", baseItemId: null };
+    expect(orphans({ ...FIXED_AND_ITEM, getItems: { items: [fixedSize], categories: [] } }, [landed(fixedSize)])).toEqual([]);
+
+    // Cluster-synced: the entry is keyed by its baseItemId; `_id` (the cluster item) owns nothing.
+    const clusterSynced = { ...SALAD_AND, _id: "greek-salad", baseItemId: "caesar-dressing" };
+    expect(orphans({ ...FIXED_AND_ITEM, getItems: { items: [clusterSynced], categories: [] } }, [SALAD_ROW])).toEqual([SALAD_ROW]);
+    // Neither id: owns nothing, not even an id-less row.
+    const idless = { ...SALAD_ROW, id: undefined };
+    const noIds = { ...FIXED_AND_ITEM, getItems: { items: [{ ...SALAD_AND, _id: undefined, baseItemId: null }], categories: [] } };
+    expect(orphans(noIds, [idless])).toEqual([idless]);
+  });
+
   it("another offer's rows are orphans under the applied one: a different item, or the same item at a different stamp", () => {
     expect(orphans(FIXED_AND_ITEM, [PAID, SALAD_ROW, CAESAR_ROW])).toEqual([CAESAR_ROW]);
     const halfPriceSalad = { ...FIXED_AND_ITEM, _id: "half-salad", getItems: { items: [{ ...SALAD_AND, value: 50 }], categories: [] } };

@@ -14,6 +14,7 @@ import {
   canCompleteGroupWisePicks,
   getGroupWisePickState,
   isFixedGetEntry,
+  matchesGetItemEntry,
   type GroupWisePick,
 } from "@cx-sdk/ordering/offer/offerCommitRules";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
@@ -33,7 +34,7 @@ interface FreebiePickerSheetProps {
 /** The converter-resolved getItems entry fields the customise path reads. */
 type GetEntry = {
   _id?: string;
-  baseItemId?: string;
+  baseItemId?: string | null;
   quantity?: number | string;
   entities?: Record<string, unknown>;
 };
@@ -55,18 +56,6 @@ const entityIdOf = (entry: any): string =>
  * and grant — every size at once. The test id keeps the entity id.
  */
 const rowKeyOf = (entry: GetEntry): string => String(entry?._id ?? entityIdOf(entry));
-
-/**
- * Fork matchesGetItemEntry: a staged freebie belongs to a getItems entry when
- * the entry's baseItemId is the row's base id (VARIANT rows keep the base id
- * and carry the picked variant) or, as a fallback, the row's variant id.
- */
-const matchesGetItemEntry = (entry: GetEntry, staged: StagedRow): boolean =>
-  Boolean(
-    entry?.baseItemId &&
-      (entry.baseItemId === staged?.id ||
-        entry.baseItemId === staged?.selectedVariant?.id),
-  );
 
 /**
  * Radio (or-mode) / check (and-mode) indicator, 44px+ inside the row tap
