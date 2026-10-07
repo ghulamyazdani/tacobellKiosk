@@ -132,14 +132,14 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 ### Checkout / payment / success (P8)
 | Node(s) | Frame | Impl | Status |
 |---|---|---|---|
-| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a (card tile disabled until P8b) |
+| `1:3364`,`1:4212` | Payment Location ("How would you like to pay?") | `pages/PaymentSelection` | ✅ P8a + P8b — one row of live tiles: `payment-card` = Paytm EDC (the frame's PAY WITH CARD BELOW tile), `payment-qr` = Paytm DQR "PAY WITH UPI QR" (design language, no frame), `payment-counter` = COD; one tile keeps the Figma 412×412 (P8a's inert card tile is gone), n ≥ 2 are (848 − 24(n−1))/n wide with 24 px labels at n = 3 (D9, sign-off) |
 | `1:3377`,`1:4225` | Payment Preference ("Do you need the receipt?") | `pages/ReceiptPreference` | ✅ P8a (EMAIL inert — no payload contract) |
-| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | — | 🔲 P8 |
-| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b) | 🔄 the modal shell ✅ P9b; the card-payment failure screen itself is P8b |
+| `1:3392`,`1:3404`,`1:4240`,`1:6288` | Payment Instructions | `pages/PaytmPayment` (`/paymentPolling`; the lazy `paytmRuntime` chunk, mounted by `routes/PaytmPaymentRoute`) + `components/payment/PaytmQr` | ✅ P8b — EDC from `1:3404` (tb-pink + rotated sheen, purple bell at 128, 884 column at 435 / gap 100, 616 slot with the 431.2×277.2 card, TOTAL bar, DOWN HERE! −27.12° + yellow arrow); DQR = the same skeleton with a 446 px QR in a 616 card and no DOWN HERE (design language — no QR frame). Flagged additions: hint line, "Time left m:ss", CANCEL PAYMENT (bottom-left 480×92), the YES-only terminal-prompt line, the ADA variant (bell dropped, column at 40, slot 360). `1:3392` = terminal photo (video fill, unusable); `1:4240` = a spacing variant (unused); `1:6288` = the layout of the /receipt initiate-failure `ErrorModal` |
+| `1:3427` | Payment Failure | its Icon Modal `1:988` + Icon L `1:990` → `components/common/ErrorModal` (boot / menu-load / crash surfaces, P9b; the Paytm cancel-confirm, not-paid, unknown and chunk-failure panels, P8b) | ✅ P9b shell + P8b panels — actions and copy are design language (the frame has none); the frame's backdrop photo is a video fill (unusable) |
 | `1:3383`,`1:4231` | Email Receipt | keyboard+input pulled → `components/keyboard/KioskKeyboard`, Registration input | 🔄 (keyboard/input ✅ 2026-09-29; email screen itself 🔲 P8) |
 | `1:5932` no-loyalty · `1:3437` has-loyalty | Order Complete | `pages/OrderSuccess` | ✅ P8a (QR omitted — no data source) |
 | `1:4447` | **Tent screen** ("Do you want to be served at your table?" — NOT a wait state; the map misread this) | `pages/Tent` | ✅ P8a |
-| `1:4456`,`1:6301` | Please wait | — | 🔲 P8b |
+| `1:4456`,`1:6301` | Please wait | `components/payment/PleaseWait` (the /receipt initiate, the /paymentPolling settle and chunk load) | ✅ P8b (identical frames) — card content centred as measured from the frame; static hourglass (D8); flagged: the soft-light sheen (lighter than Figma — alpha-flattened JPEG) and the ADA layout (bell dropped, card at 161) |
 
 ### Modals / system (P7–P9)
 | Node(s) | Frame | Impl | Status |
@@ -160,6 +160,8 @@ Legend: ✅ built · 🔄 partial · 🔲 pending. "Impl" = file in this repo.
 - Language `1:4488`: `icons/close.svg`; menu frames: `icons/plus.svg`, `icons/bag.svg`
 - Email Receipt `1:3383`: `icons/key-shift.svg`, `icons/key-backspace.svg`, `icons/input-clear.svg`
 - Payment Failure `1:3427` → Icon L `1:990`: `icons/warning.svg` (P9b ErrorModal)
+- Payment Instructions `1:3404` (P8b): `payment/credit-card.svg` (1:3413), `brand/tb-bell-purple.svg` (1:3425), `icons/down-here-arrow.svg` (1:3426) — md5-identical to the Figma exports
+- Please wait `1:4456` (P8b): `payment/hourglass.png` — the first frame of 1:1171 at 352 px (36,281 B; the source is an 800×800, 99-frame, 2 MB GIF, D8); reuses `splash/bg-texture.png` (= the frame's 240 px tile), `brand/tb-bell.svg` (= 1:4458) and `splash/plastic-overlay.jpg`
 - ADA brand zone `1:5394` (logo lockup assembled from 4 exported parts): `brand/tb-logo-lockup.svg` (P9c)
 - `flags/gb.svg` (canonical Union Jack — see §2.3)
 - Fonts: three Archivo cuts (see §3)
