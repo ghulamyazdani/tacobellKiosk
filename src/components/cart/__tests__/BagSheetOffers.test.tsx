@@ -296,7 +296,9 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     // Direct removal is notice-free (fork parity — scenario 4).
     expect(cartState().offerRemovalModal.isOpen).toBe(false);
     expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument(); // Remove never opens the sheet
+    // Remove never opens the sheet — nor its loading scrim (a cold chunk).
+    expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rewards-loading")).not.toBeInTheDocument();
   });
 
   it("committed freebie row (scenario 5): Free chip, struck £17.00 over £0.00, no stepper; bill reflects the row-stamp discount", () => {
