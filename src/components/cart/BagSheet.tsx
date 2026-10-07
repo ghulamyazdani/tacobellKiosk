@@ -1095,14 +1095,18 @@ export default function BagSheet({
         }}
       />
       {stage.buyStage && (
-        // Fallback = the sheet's own scrim: the bag beneath stays covered
-        // and untappable while the chunk loads.
+        // Fallback = the sheet's own scrim, closing like it: the bag beneath
+        // stays covered while the chunk loads, and a stalled download never
+        // traps the customer (nothing was added yet — abandon is a no-op
+        // rollback).
         <Suspense
           fallback={
-            <div
-              aria-hidden="true"
+            <button
+              type="button"
+              aria-label={t("offers.close")}
               data-testid="buy-stage-loading"
-              className="absolute inset-0 z-50 bg-tb-purple/80"
+              onClick={() => stage.abandon()}
+              className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
             />
           }
         >
