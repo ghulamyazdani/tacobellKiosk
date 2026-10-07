@@ -4,6 +4,9 @@ import { join } from "node:path";
 import i18n from "..";
 import en from "../locales/en/translation.json";
 import ar from "../locales/ar/translation.json";
+import enLazy from "../locales/en/lazy.json";
+import arLazy from "../locales/ar/lazy.json";
+import "../lazyCopy";
 
 /*
   P9f — Arabic is RTL TEXT inside the LTR layout: in AR every translated
@@ -38,7 +41,8 @@ describe("bidi isolates (RTL text, LTR layout)", () => {
   });
 
   it("EN: every key renders byte-identical to its copy — no isolate anywhere", () => {
-    const changed = flatten(en)
+    // lazy.json: the copy lazy chunks register (i18n/lazyCopy) — same rules.
+    const changed = [...flatten(en), ...flatten(enLazy)]
       .filter(([key, raw]) => {
         const out = i18n.t(key, optionsFor(raw));
         return out !== filled(raw) || ISOLATES.test(out);
@@ -55,7 +59,7 @@ describe("bidi isolates (RTL text, LTR layout)", () => {
   it("AR: every key is one isolate around its copy", async () => {
     await i18n.changeLanguage("ar");
 
-    const wrong = flatten(ar)
+    const wrong = [...flatten(ar), ...flatten(arLazy)]
       .filter(([key, raw]) => {
         const out = i18n.t(key, optionsFor(raw));
         return !out.startsWith(FSI) || !out.endsWith(PDI) || strip(out) !== filled(raw);

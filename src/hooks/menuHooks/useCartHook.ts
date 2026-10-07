@@ -450,6 +450,18 @@ function useCartHook() {
     return finalItems;
   };
 
+  /**
+   * Replace the whole cart in ONE dispatch + ONE IndexedDB transaction (the
+   * PDP's split edit, planned by planSplitEditCommit). A split must never be
+   * two dispatches: the second step's DP check would read a stale cart.
+   * replaceIndexedDbCart catches its own errors (the redux cart stays the
+   * source of truth for this session).
+   */
+  const replaceCartItems = (rows: unknown[]): void => {
+    dispatch(setCartItems(rows));
+    replaceIndexedDbCart(rows);
+  };
+
   return {
     addItemToCart,
     IncreaseItemQuantityById,
@@ -477,6 +489,7 @@ function useCartHook() {
     doesGetItemExist,
     emptyGetItems,
     restoreCartItemsSnapshot,
+    replaceCartItems,
   };
 }
 

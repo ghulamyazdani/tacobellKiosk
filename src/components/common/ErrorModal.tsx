@@ -14,6 +14,10 @@ interface ErrorModalProps {
   note?: string;
   primary: ErrorModalAction;
   secondary?: ErrorModalAction;
+  /** false = the plain Figma Modal 1:945 / 1:2855: no 179 px warning mark, a 396 px card with the CTA on its bottom band. */
+  icon?: boolean;
+  /** true = one full-width 632 × 60 primary (Modal 1:945 CTA); use without secondary. */
+  wide?: boolean;
 }
 
 /**
@@ -37,6 +41,8 @@ export default function ErrorModal({
   note,
   primary,
   secondary,
+  icon = true,
+  wide = false,
 }: ErrorModalProps) {
   return (
     <div
@@ -48,9 +54,13 @@ export default function ErrorModal({
       className="absolute inset-0 z-[80]"
     >
       <div aria-hidden className="absolute inset-0 bg-tb-purple/80" />
-      <div className="tb-modal-enter absolute left-1/2 top-1/2 flex w-[680px] flex-col items-center gap-[80px] rounded-[16px] bg-tb-surface px-[24px] pb-[24px] pt-[80px] text-center">
+      <div
+        className={`tb-modal-enter absolute left-1/2 top-1/2 flex w-[680px] flex-col items-center gap-[80px] rounded-[16px] bg-tb-surface px-[24px] pb-[24px] pt-[80px] text-center${
+          icon ? "" : " min-h-[396px] justify-between"
+        }`}
+      >
         <div className="flex w-[502px] flex-col items-center gap-[24px]">
-          <img src={warningIcon} alt="" className="size-[179px]" />
+          {icon && <img src={warningIcon} alt="" className="size-[179px]" />}
           <h2
             id={`${testId}-title`}
             className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
@@ -72,7 +82,7 @@ export default function ErrorModal({
             </p>
           )}
         </div>
-        <div className="flex gap-[26px]">
+        <div className={wide ? "flex w-full" : "flex gap-[26px]"}>
           {secondary && (
             <button
               type="button"
@@ -89,7 +99,7 @@ export default function ErrorModal({
             data-testid={primary.testId}
             autoFocus
             onClick={primary.onClick}
-            className="tb-display h-[60px] w-[280px] whitespace-nowrap rounded-[4px] bg-tb-purple text-[18px] leading-[16px] text-tb-surface"
+            className={`tb-display h-[60px] ${wide ? "w-full" : "w-[280px]"} whitespace-nowrap rounded-[4px] bg-tb-purple text-[18px] leading-[16px] text-tb-surface`}
           >
             {primary.label}
           </button>

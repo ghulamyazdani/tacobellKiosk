@@ -132,7 +132,24 @@ function useAppSettings() {
     return settingsEngine.calculationWrapper(value);
   };
 
-  const getChargesCountryDataApi = async (tabId: any) => {
+  /**
+   * Charges + country + currency for a tab. With `opts` (the in-bag
+   * order-type switch) every dispatch goes to `apply` and every localStorage
+   * write to `mirror`, so nothing lands until the caller commits; without
+   * it, today's writes byte-for-byte. Resolves `ok` (a body arrived) and the
+   * filtered deployment charges.
+   */
+  const getChargesCountryDataApi = async (
+    tabId: any,
+    opts?: {
+      apply?: (action: UnknownAction) => unknown;
+      mirror?: (key: string, value: string) => void;
+    },
+  ): Promise<{ ok: boolean; deploymentCharges: unknown[] }> => {
+    const apply = opts?.apply ?? dispatch;
+    const mirror =
+      opts?.mirror ??
+      ((key: string, value: string) => window.localStorage.setItem(key, value));
     const tab_id = getTabId();
     const deployment_id = deploymentDetailsRdx ? deploymentDetailsRdx?._id : "";
 
@@ -144,9 +161,10 @@ function useAppSettings() {
       deployment_id: deployment_id, // required if isCharged is true or if isCurrency is true
       tab_id: tabId || tab_id, // required if isCharged is true
     });
+    let deploymentCharges: unknown[] = [];
     if (res?.data) {
       const data = res?.data;
-      dispatch(
+      apply(
         setChargesCountryData({
           charges: settingsEngine.filterCharges(data?.charges),
           countries: CountryCodes,
@@ -158,10 +176,10 @@ function useAppSettings() {
         CountryCodes,
       );
       if (defaultCountry) {
-        dispatch(setCountryCode(defaultCountry));
+        apply(setCountryCode(defaultCountry));
       }
 
-      dispatch(setCurrency(data?.deployment?.currencySettings));
+      apply(setCurrency(data?.deployment?.currencySettings));
       //setting the charges and country Data
 
       if (data?.charges) {
@@ -172,16 +190,15 @@ function useAppSettings() {
             : [];
         const filteredCharges = settingsEngine.filterCharges(data?.charges);
         const allCharges = [...menuCharges, ...filteredCharges];
-        dispatch(setDeploymentCharges(filteredCharges));
-        window.localStorage.setItem(
-          "deploymentCharges",
-          JSON.stringify(filteredCharges),
-        );
-        window.localStorage.setItem("charges", JSON.stringify(allCharges));
-        dispatch(pushCharges(allCharges));
+        apply(setDeploymentCharges(filteredCharges));
+        mirror("deploymentCharges", JSON.stringify(filteredCharges));
+        mirror("charges", JSON.stringify(allCharges));
+        apply(pushCharges(allCharges));
+        deploymentCharges = filteredCharges;
       }
-      window.localStorage.setItem("countries", JSON.stringify(CountryCodes));
+      mirror("countries", JSON.stringify(CountryCodes));
     }
+    return { ok: !!res?.data, deploymentCharges };
   };
 
   const getTabType = () => {

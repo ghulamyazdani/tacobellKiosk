@@ -3,6 +3,7 @@
  * inherited; typed in the P6/P7 domain passes. Do not add NEW anys.
  */
 import { useDispatch, useSelector } from "react-redux";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   selectOffers,
   setFilteredOffers,
@@ -18,6 +19,8 @@ const useOfferConverters = () => {
     variantEntityMap: any,
     fetchModifierProperties: any,
     passedOffers: any,
+    // Defaults to dispatch; the order-type switch stages it (fetchMenu opts).
+    apply: (action: UnknownAction) => unknown = dispatch,
   ) => {
     const localOffers = passedOffers ? passedOffers : offers;
     const updatedOffers = localOffers?.map((offer: any) => {
@@ -132,12 +135,6 @@ const useOfferConverters = () => {
               //           : 0;
               //     }
 
-              //     console.log(
-              //       "leastValueVariant",
-              //       leastValueVariant,
-              //       item,
-              //       leastValueVariant_discounted_total_price,
-              //     );
               //     return {
               //       ...item,
               //       entities: {
@@ -171,8 +168,6 @@ const useOfferConverters = () => {
               //     };
               //   }
               // }
-
-              // console.log("firstInStockAndActiveVariantotem", item);
 
               const entityToReturn = {
                 ...entity,
@@ -219,8 +214,6 @@ const useOfferConverters = () => {
             if (!entity) {
               const variantEntity = variantEntityMap.get(itemId);
 
-              // console.log("variantEntity", variantEntity);
-
               if (variantEntity && variantEntity?.length > 0) {
                 // needed in case of variant exist in multiple base items
                 // const availableBaseEntities = variantEntity?.reduce(
@@ -246,8 +239,6 @@ const useOfferConverters = () => {
                 //             ? variant?.price - item?.value
                 //             : 0;
                 //       }
-
-                //       console.log("variantvariant", variant, itemId);
 
                 //       const selectedVariant = variant?.variants?.find(
                 //         (v: any) => v.id === itemId,
@@ -511,7 +502,6 @@ const useOfferConverters = () => {
                         //             ? variant?.price - category?.value
                         //             : 0;
                         //       }
-                        //       console.log("leastValueVariant", variant);
                         //       acc.push({
                         //         ...entity,
                         //         selectedVariant: {
@@ -577,7 +567,6 @@ const useOfferConverters = () => {
                           });
                         }
 
-                        // console.log("leastValueVariant", leastValueVariant);
                         // this case is valid when we already select leastvaluevariant by default for the category
                         if (
                           leastValueVariant &&
@@ -640,11 +629,6 @@ const useOfferConverters = () => {
                           });
                         }
                       } else {
-                        // console.log(
-                        //   "firstInStockAndActiveVariantotem",
-                        //   category,
-                        // );
-
                         const entityToReturn = {
                           ...entity,
                           discountType: category?.discountType,
@@ -689,12 +673,8 @@ const useOfferConverters = () => {
                       }
                     }
 
-                    // console.log("variantEntityvariantEntity", entity);
-
                     // if (!entity) {
                     //   const variantEntity = variantEntityMap.get(itemId);
-
-                    //   console.log("variantEntity", variantEntity);
 
                     //   if (variantEntity && variantEntity?.length > 0) {
                     //     const availableBaseEntities = variantEntity?.reduce(
@@ -719,8 +699,6 @@ const useOfferConverters = () => {
                     //                 ? variant?.price - category?.value
                     //                 : 0;
                     //           }
-
-                    //           console.log("variantvariant", variant, itemId);
 
                     //           const selectedVariant = variant?.variants?.find(
                     //             (v: any) => v.id === itemId,
@@ -766,8 +744,6 @@ const useOfferConverters = () => {
                   },
                   [],
                 );
-
-                // console.log("availableEntities", availableEntities, entities);
 
                 if (availableEntities.length > 0) {
                   return {
@@ -850,8 +826,7 @@ const useOfferConverters = () => {
       }
       return updatedOffer;
     });
-    // console.log("convertedOffers by menu", updatedOffers);
-    dispatch(setFilteredOffers(updatedOffers));
+    apply(setFilteredOffers(updatedOffers));
   };
 
   return {

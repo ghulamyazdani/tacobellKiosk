@@ -1,0 +1,26 @@
+{
+  "bag": {
+    "orderType": {
+      "confirmTitle": "التبديل إلى {{type}}؟",
+      "confirmBody": "قد تتغير الأسعار والتوفر.",
+      "confirmYes": "نعم، بدّل",
+      "confirmNo": "لا، أبقِ {{current}}",
+      "switching": "جارٍ تحديث طلبك…",
+      "failedTitle": "تعذّر التبديل إلى {{type}}",
+      "failedBody": "لم يتغير طلبك. يرجى المحاولة مرة أخرى.",
+      "removedTitle": "تم تحديث حقيبتك",
+      "removedBody": "غير متوفر لـ{{type}}، تمت إزالة: {{items}}"
+    },
+    "editHowMany": {
+      "title": "لديك {{qty}} {{name}}",
+      "body": "اختر عدد ما تريد تعديله:"
+    }
+  },
+  "pdp": {
+    "incomplete": {
+      "titleBox": "لنُكمل تجهيز صندوقك أولاً",
+      "titleItem": "لنُكمل اختياراتك أولاً",
+      "body": "يرجى اختيار {{groups}} قبل الإضافة إلى حقيبتك"
+    }
+  }
+}

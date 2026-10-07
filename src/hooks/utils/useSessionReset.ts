@@ -29,6 +29,7 @@ import {
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
+  clearOrderTypeSwitchNotice,
   closeBottomSheet,
   mutateAddToCartModal,
   setOutOfStockItems,
@@ -37,6 +38,7 @@ import {
 import {
   closeMakeItAMealModal,
   closeMakeItAMealSession,
+  confirmTier1CustomizationRemoval,
   resetBlackListedItems,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { emptyPayment } from "@cx-sdk/payments/state/payment.slice";
@@ -123,6 +125,8 @@ const useSessionReset = () => {
     // A detour flag left set by an abandoned customization would suppress
     // the next customer's first recommendation strip.
     dispatch(setRecommendationDetour(false));
+    // The order-type switch's removal notice names THIS customer's items.
+    dispatch(clearOrderTypeSwitchNotice());
 
     // Menu UI position is customer-scoped even when menu DATA is kept.
     dispatch(setMenuScrollPosition(0));
@@ -133,6 +137,8 @@ const useSessionReset = () => {
     dispatch(closeMakeItAMealModal());
     // An abandoned MIAM session must not greet the next customer on any path.
     dispatch(closeMakeItAMealSession());
+    // A pending tier-1 removal confirm (PDP) must not greet the next customer.
+    dispatch(confirmTier1CustomizationRemoval(false));
     // The global error is a redux flag, not page state: left set, the next
     // customer's /menu opens on the previous customer's error modal.
     dispatch(

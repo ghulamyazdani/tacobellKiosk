@@ -7,6 +7,9 @@ import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
+// ?no-inline: emitted as a precached file. Inlined (<4 KB → data URI) this
+// path-heavy icon cost +0.4 KiB gzip on the boot path (measured, D7).
+import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
 
 interface SlotSelectionSheetProps {
   open: boolean;
@@ -62,27 +65,25 @@ function SheetBody({
         ? `+${currency}${price.toFixed(2)}${calText ? ` | ${calText}` : ""}`
         : calText;
 
+    // Figma 1:2814 card: 1px #EBEBEB divider on top, the row 24 px below it
+    // (176 = 1 + 23 + 152), 152 px grey thumb, Md 32/36 name, Rg 24/24 meta.
     return (
       <div
         key={item?.id}
-        className="relative flex items-center gap-[20px] border-b border-tb-grey-4 px-[24px] py-[16px]"
+        className="relative flex items-center gap-[24px] border-t border-tb-grey-4 pt-[23px]"
       >
-        {imageUrl ? (
-          <img
-            alt=""
-            src={imageUrl}
-            className="h-[80px] w-[80px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
-          />
-        ) : (
-          <span className="h-[80px] w-[80px] shrink-0 rounded-[8px] bg-tb-grey-6" />
-        )}
+        <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
+          {imageUrl && (
+            <img alt="" src={imageUrl} className="h-[130px] w-[130px] object-contain" />
+          )}
+        </span>
 
-        <span className="flex-1">
-          <span className="block text-[20px] font-medium capitalize leading-[24px] text-black">
+        <span className="flex flex-1 flex-col gap-[8px]">
+          <span className="block text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
             {name(item)}
           </span>
           {line && (
-            <span className="mt-[2px] block text-[16px] leading-[22px] text-tb-ink-purple/70">
+            <span className="block text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
               {line}
             </span>
           )}
@@ -98,24 +99,15 @@ function SheetBody({
           )}
         </span>
 
+        {/* Figma Radio 1:401/1:402: 36 px; 1 px purple ring, or a purple
+            fill with the exported check at inset 16.67 % (24 px). */}
         <span
-          className={`flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full border-2 ${
-            isPicked
-              ? "border-tb-purple bg-tb-purple text-tb-surface"
-              : "border-tb-purple/40 bg-tb-surface"
+          className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full ${
+            isPicked ? "bg-tb-purple" : "border border-tb-purple bg-tb-surface"
           }`}
         >
           {isPicked && (
-            <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" aria-hidden="true">
-              <path
-                d="M5 12.5l4.5 4.5L19 7.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />
           )}
         </span>
 
@@ -131,6 +123,16 @@ function SheetBody({
     );
   };
 
+  // Figma section: Md 20/24 label, 16 px to its cards, cards 24 px apart.
+  const renderSection = (label: string, items: readonly unknown[]) => (
+    <div className="flex flex-col gap-[16px]">
+      <p className="text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
+        {label}
+      </p>
+      <div className="flex flex-col gap-[24px]">{items.map(renderRow)}</div>
+    </div>
+  );
+
   return (
     <div className="absolute inset-0 z-40" data-testid="slot-sheet">
       <style>{`@keyframes tbSlotSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -138,17 +140,18 @@ function SheetBody({
         type="button"
         aria-label={t("language.close")}
         onClick={onClose}
-        className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
+        className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
-      {/* Cap = containing block (the PDP's h-full root → the reach
-          container) minus a 96 px scrim band: 1500 on the 1920 stage, 1026
-          in the 1122 ADA reach zone. Title/X and SAVE keep their content
-          height; only the options shrink and scroll. */}
+      {/* Figma 1:2814: rounded-t 60, pt 54 / px 24 / pb 24, 75 px between
+          title, sections and SAVE. Cap = containing block (the PDP's h-full
+          root → the reach container) minus a 96 px scrim band: 1500 on the
+          1920 stage, 1026 in the 1122 ADA reach zone. Title/X and SAVE keep
+          their content height; only the options shrink and scroll. */}
       <div
-        className="absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
+        className="absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col gap-[75px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]"
         style={{ animation: "tbSlotSheetEnter 0.2s ease-out both" }}
       >
-        <h2 className="tb-display mb-[20px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple-vibrant">
+        <h2 className="tb-display px-[72px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
           {t("pack.selectGroup", { name: name(group) })}
         </h2>
         <button
@@ -156,51 +159,38 @@ function SheetBody({
           data-testid="slot-sheet-close"
           aria-label={t("language.close")}
           onClick={onClose}
-          className="absolute right-[32px] top-[36px] h-[48px] w-[48px] min-h-[44px] min-w-[44px]"
+          className="absolute right-[44px] top-[44px] h-[48px] w-[48px] min-h-[44px] min-w-[44px]"
         >
           <img alt="" src={closeIcon} className="h-full w-full" />
         </button>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-[8px]">
-          {included.length > 0 && (
-            <>
-              <p className="border-b border-tb-grey-4 px-[24px] pb-[10px] pt-[16px] text-[16px] font-medium text-black">
-                {t("pack.included")}
-              </p>
-              {included.map(renderRow)}
-            </>
-          )}
-          {upgrades.length > 0 && (
-            <>
-              <p className="border-b border-tb-grey-4 px-[24px] pb-[10px] pt-[24px] text-[16px] font-medium text-black">
-                {t("pack.upgrades")}
-              </p>
-              {upgrades.map(renderRow)}
-            </>
-          )}
+        <div className="flex min-h-0 flex-1 flex-col gap-[75px] overflow-y-auto">
+          {included.length > 0 && renderSection(t("pack.included"), included)}
+          {upgrades.length > 0 && renderSection(t("pack.upgrades"), upgrades)}
         </div>
 
-        <div className="px-[24px] pb-[32px] pt-[16px]">
-          <button
-            type="button"
-            data-testid="slot-sheet-save"
-            disabled={saveLocked}
-            onClick={() => (pickedItem ? onSave(pickedItem) : onClose())}
-            className={`tb-display w-full min-h-[44px] rounded-[8px] py-[24px] text-center text-[22px] ${
-              saveLocked ? "bg-tb-grey-4 text-tb-surface" : "bg-tb-purple text-tb-surface"
-            }`}
-          >
-            {t("pack.save")}
-          </button>
-        </div>
+        <button
+          type="button"
+          data-testid="slot-sheet-save"
+          disabled={saveLocked}
+          onClick={() => (pickedItem ? onSave(pickedItem) : onClose())}
+          className={`tb-display w-full min-h-[44px] shrink-0 rounded-[8px] py-[32px] text-center text-[24px] leading-[32px] ${
+            saveLocked
+              ? "bg-tb-grey-4 text-tb-surface"
+              : "bg-tb-purple text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
+          }`}
+        >
+          {t("pack.save")}
+        </button>
       </div>
     </div>
   );
 }
 
 /**
- * Slot selection sheet — Figma "SELECT BURRITO" (1:4761) / "SELECT SIDE"
- * (1:4692): full-width bottom sheet over a purple-tinted backdrop.
+ * Slot selection sheet — Figma "SELECT SIDE" 1:2814 (bag-pdp restyle; same
+ * component family as the pack sheets 1:4761 / 1:4692): full-width bottom
+ * sheet over the purple 80% skrim.
  * "Included" rows (falsy price) then "Upgrades" rows (+price | cal); purple
  * underlined Customize link only where canCustomize(item); radio at the
  * right; SAVE locks while group.min > 0 and nothing is picked. Pure

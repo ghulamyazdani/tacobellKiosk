@@ -240,7 +240,15 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     // Engine-native variant row: price/dp/id all read from selectedVariant.
     addItemToCart(
       // total_price: the slice's subTotal reducer multiplies it by quantity.
-      { ...parent, selectedVariant: variant, total_price: variant?.price, quantity: 1 },
+      // variantPrice: the bill engine rates a VARIANT row from it alone
+      // (orderBuilder calculatePriceNew) — without it the total is NaN.
+      {
+        ...parent,
+        selectedVariant: variant,
+        variantPrice: variant?.price,
+        total_price: variant?.price,
+        quantity: 1,
+      },
       "VARIANT"
     );
   };

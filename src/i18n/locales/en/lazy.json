@@ -1,0 +1,26 @@
+{
+  "bag": {
+    "orderType": {
+      "confirmTitle": "Switch to {{type}}?",
+      "confirmBody": "Prices and availability may change.",
+      "confirmYes": "Yes, switch",
+      "confirmNo": "No, keep {{current}}",
+      "switching": "Updating your order…",
+      "failedTitle": "We couldn't switch to {{type}}",
+      "failedBody": "Your order hasn't changed. Please try again.",
+      "removedTitle": "Your bag was updated",
+      "removedBody": "Not available for {{type}}, removed: {{items}}"
+    },
+    "editHowMany": {
+      "title": "You have {{qty}} {{name}}",
+      "body": "Choose how many you want to edit:"
+    }
+  },
+  "pdp": {
+    "incomplete": {
+      "titleBox": "Let's finish building your box first",
+      "titleItem": "Let's finish your choices first",
+      "body": "Please choose your {{groups}} before adding to your bag"
+    }
+  }
+}

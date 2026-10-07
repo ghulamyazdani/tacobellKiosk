@@ -3,7 +3,17 @@
  * inherited; they get typed in the P6/P7 domain passes when the SDK menu/cart
  * types are wired through this slice. Do not add NEW anys to this file.
  */
-import { createSlice } from "@reduxjs/toolkit";
+import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+
+/**
+ * The in-bag order-type switch removed these rows (paid + loyalty). Rows are
+ * stored as entities and named at render (useLocalized) — never strings.
+ * Lives here so it survives the bag's empty-cart exit; never persisted
+ * (menuSelections is neverPersist), cleared by useSessionReset.
+ */
+export interface OrderTypeSwitchNotice {
+  removed: unknown[];
+}
 
 const menuSelections = createSlice({
   name: "menuSelections",
@@ -46,8 +56,19 @@ const menuSelections = createSlice({
       Set at the moment of the detour, CONSUMED by the next modal open.
     */
     recommendationDetour: false,
+
+    orderTypeSwitchNotice: null as OrderTypeSwitchNotice | null,
   },
   reducers: {
+    setOrderTypeSwitchNotice: (
+      state,
+      action: PayloadAction<OrderTypeSwitchNotice>,
+    ) => {
+      state.orderTypeSwitchNotice = action.payload;
+    },
+    clearOrderTypeSwitchNotice: (state) => {
+      state.orderTypeSwitchNotice = null;
+    },
     // add variants to the state
     /** True while a strip tap is being handed off to the customization flow. */
     setRecommendationDetour: (state, action) => {
@@ -186,6 +207,15 @@ export const selectOutOfStockItems = (state: any) =>
 /** True while a strip tap is mid-handoff to the customization flow. */
 export const selectRecommendationDetour = (state: any) =>
   state.menuSelections.recommendationDetour;
+
+/** Null-safe on a store without the slice (tests mounting partial stores). */
+export const selectOrderTypeSwitchNotice = (state: {
+  menuSelections?: { orderTypeSwitchNotice?: OrderTypeSwitchNotice | null };
+}): OrderTypeSwitchNotice | null =>
+  state?.menuSelections?.orderTypeSwitchNotice ?? null;
+
+export const { setOrderTypeSwitchNotice, clearOrderTypeSwitchNotice } =
+  menuSelections.actions;
 
 export const {
   setSelectedCustomizations,

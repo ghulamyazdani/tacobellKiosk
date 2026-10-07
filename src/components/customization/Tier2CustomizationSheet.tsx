@@ -16,10 +16,12 @@ import {
   makeItAMealTier2BottomSheet,
   MIAMTier2Open,
   removeTier2SelectedCustomization,
+  selectConfirmTier1CustomizationRemoval,
   selectCurrentTier1Customizations,
   selectTier2CustomizationModalForConfirmation,
   setAutoSelectTier1AutoSelectGroup,
   setNestedCustomizationDirect,
+  setTier1SelectedCustomization,
   setTier2CustomizationModalForConfirmation,
   setTier2SelectedCustomization,
   tier2CustomizationSelectedEntity,
@@ -37,6 +39,7 @@ import {
   decideTier2QuantityDecrease,
   evaluateTier2QuantityIncrease,
   findTier2MinMaxViolation,
+  removeTier1Selection,
   replaceTier2SelectionInTier1,
   shouldAutoSelectTier1Group,
   shouldPromptTier2CloseConfirmation,
@@ -97,10 +100,15 @@ export default function Tier2CustomizationSheet() {
   const discardPromptOpen = useSelector(
     selectTier2CustomizationModalForConfirmation,
   );
+  const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
   const currencySettings = useSelector(selectCurrency) as any;
   const currency = currencySettings?.symbol ?? "";
 
   const isEditOpen = isOpenBottomSheet?.openType === "edit";
+  // Item 24: "−" at qty 1 of an EDIT (hide-plus on) asks before removing the
+  // tier-1 pick; never over the discard prompt.
+  const removalOpen =
+    Boolean(removalRequested) && tier2Open && isEditOpen && !discardPromptOpen;
 
   /*
     Tier-1 session snapshot frozen when the sheet OPENS (fork parity: the
@@ -350,6 +358,7 @@ export default function Tier2CustomizationSheet() {
 
   // ---- Close / discard-confirm (fork closeTier2 + ConfirmCustomization) ----
   const closeSheet = () => {
+    dispatch(confirmTier1CustomizationRemoval(false));
     if (
       shouldPromptTier2CloseConfirmation({
         selectedCustomizations: selectedCustomizations ?? {},
@@ -368,6 +377,38 @@ export default function Tier2CustomizationSheet() {
     dispatch(closeTier2ModalBottomSheet());
     dispatch(setTier2CustomizationModalForConfirmation(false));
     dispatch(removeTier2SelectedCustomization());
+    dispatch(confirmTier1CustomizationRemoval(false));
+  };
+
+  /*
+    Item 24 YES (fork ConfirmFirstTierDeleteCustomization): drop this pick from
+    the LIVE tier-1 map, clear the flag, close without the discard prompt.
+    DELIBERATE FORK DIVERGENCE: the group comes from this tier-2 session
+    (tier2MIAMGroupID) and the pick is matched by itemId — the fork's
+    `group.id` (groups carry `_id`) wrote an "undefined" key that made PDP
+    pricing throw.
+  */
+  const confirmRemoval = () => {
+    dispatch(
+      setTier1SelectedCustomization(
+        removeTier1Selection({
+          selectedCustomizations:
+            tier1SessionLive?.customizations?.selectedCustomizations,
+          groupId: groupIdTier2,
+          entity: SelectedEntity,
+        }),
+      ),
+    );
+    dispatch(confirmTier1CustomizationRemoval(false));
+    dispatch(closeTier2Modal());
+  };
+
+  const cancelRemoval = () => {
+    dispatch(confirmTier1CustomizationRemoval(false));
+  };
+
+  const keepEditing = () => {
+    dispatch(setTier2CustomizationModalForConfirmation(false));
   };
 
   // ---- Entity quantity stepper (engine verdicts + tier-2 actions) ----
@@ -587,6 +628,63 @@ export default function Tier2CustomizationSheet() {
     );
   };
 
+  // Inline confirm (design-language modal, z-[70]) — render helper, used for
+  // the discard prompt and the item-24 removal confirm (same copy: the fork's
+  // own removal dialog says the equivalent). An alertdialog that takes focus
+  // (ErrorModal precedent; IdleGuard ignores focus events).
+  const renderConfirm = (
+    testIdPrefix: string,
+    onKeep: () => void,
+    onConfirm: () => void,
+  ) => (
+    <div
+      data-testid={`${testIdPrefix}-overlay`}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby={`${testIdPrefix}-title`}
+      aria-describedby={`${testIdPrefix}-message`}
+      className="absolute inset-0 z-[70] flex items-center justify-center"
+    >
+      <div className="absolute inset-0 bg-tb-ink-purple/60" />
+      <div
+        className="relative w-[640px] rounded-[16px] bg-tb-surface p-[40px] text-center"
+        style={{ animation: "tbTier2DialogEnter 0.2s ease-out both" }}
+      >
+        <h3
+          id={`${testIdPrefix}-title`}
+          className="tb-display text-[30px] uppercase tracking-[-1px] text-tb-purple"
+        >
+          {t("pdp.discardTitle")}
+        </h3>
+        <p
+          id={`${testIdPrefix}-message`}
+          className="mt-[16px] text-[22px] text-tb-ink-purple/80"
+        >
+          {t("pdp.discardBody")}
+        </p>
+        <div className="mt-[32px] flex items-center justify-center gap-[24px]">
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-cancel`}
+            onClick={onKeep}
+            className="h-[64px] min-w-[220px] rounded-[8px] border-2 border-tb-purple px-[24px] text-[20px] font-bold text-tb-purple"
+          >
+            {t("pdp.discardKeep")}
+          </button>
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-confirm`}
+            autoFocus
+            onClick={onConfirm}
+            className="h-[64px] min-w-[220px] rounded-[8px] bg-tb-purple px-[24px] text-[20px] font-bold text-tb-surface"
+          >
+            {t("pdp.discardConfirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div data-testid="tier2-sheet" className="absolute inset-0 z-[60]">
       {/* Purple-tinted backdrop (SELECT-sheet design language). Not a close
@@ -679,46 +777,10 @@ export default function Tier2CustomizationSheet() {
         </div>
       </div>
 
-      {/* Inline discard-confirm overlay (design-language modal) */}
-      {discardPromptOpen && (
-        <div
-          data-testid="tier2-discard-overlay"
-          className="absolute inset-0 z-[70] flex items-center justify-center"
-        >
-          <div className="absolute inset-0 bg-tb-ink-purple/60" />
-          <div
-            className="relative w-[640px] rounded-[16px] bg-tb-surface p-[40px] text-center"
-            style={{ animation: "tbTier2DialogEnter 0.2s ease-out both" }}
-          >
-            <h3 className="tb-display text-[30px] uppercase tracking-[-1px] text-tb-purple">
-              {t("pdp.discardTitle")}
-            </h3>
-            <p className="mt-[16px] text-[22px] text-tb-ink-purple/80">
-              {t("pdp.discardBody")}
-            </p>
-            <div className="mt-[32px] flex items-center justify-center gap-[24px]">
-              <button
-                type="button"
-                data-testid="tier2-discard-cancel"
-                onClick={() =>
-                  dispatch(setTier2CustomizationModalForConfirmation(false))
-                }
-                className="h-[64px] min-w-[220px] rounded-[8px] border-2 border-tb-purple px-[24px] text-[20px] font-bold text-tb-purple"
-              >
-                {t("pdp.discardKeep")}
-              </button>
-              <button
-                type="button"
-                data-testid="tier2-discard-confirm"
-                onClick={discardAndClose}
-                className="h-[64px] min-w-[220px] rounded-[8px] bg-tb-purple px-[24px] text-[20px] font-bold text-tb-surface"
-              >
-                {t("pdp.discardConfirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {discardPromptOpen &&
+        renderConfirm("tier2-discard", keepEditing, discardAndClose)}
+      {removalOpen &&
+        renderConfirm("tier2-remove", cancelRemoval, confirmRemoval)}
     </div>
   );
 }
