@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setBillPaymentInfo, setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
@@ -74,7 +74,9 @@ describe("PaytmPaymentRoute — the /paymentPolling chunk fails", () => {
     expect(screen.queryByTestId("paytm-loading")).not.toBeInTheDocument();
     expect(screen.queryByTestId("paytm-screen")).not.toBeInTheDocument();
     // The panel is an end panel: idle covers it within the normal period.
-    expect(holds()).toBe(0);
+    // useIdleHold releases in a passive-effect cleanup, which can run after
+    // findBy sees the panel's DOM — wait for it (a hold never released fails).
+    await waitFor(() => expect(holds()).toBe(0));
     expect(m.capture).toHaveBeenCalledTimes(1);
     expect(m.capture).toHaveBeenCalledWith(KioskEventName.ErrorOccurred, { error_source: "paytm_chunk" });
     expect(selectShouldWholeAppUpdate(store.getState())).toBe(true);
