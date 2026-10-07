@@ -62,4 +62,16 @@ describe("locale parity — en ↔ ar", () => {
     }
     expect(placeholders(AR.get("update.countdown"))).toEqual(["seconds"]);
   });
+
+  it.each([
+    ["loyalty.pointsBalanceLine", ["points"]],
+    ["loyalty.pointsBalanceLineAlias", ["alias", "points"]],
+    ["loyalty.pointsCostAlias", ["alias", "points"]],
+    ["loyalty.offersLocked", []],
+  ])("lane loyalty-visual: %s exists in both with the same placeholders", (key, expected) => {
+    expect(EN.get(key), key).toEqual(expect.any(String));
+    expect(AR.get(key), key).toEqual(expect.any(String));
+    expect(placeholders(EN.get(key))).toEqual(expected);
+    expect(placeholders(AR.get(key))).toEqual(expected);
+  });
 });

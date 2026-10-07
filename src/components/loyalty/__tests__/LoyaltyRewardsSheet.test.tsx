@@ -4,7 +4,7 @@
  * later loyalty domain pass. Do not add NEW anys.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -18,12 +18,14 @@ import { setMenuData, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import {
   closeAccessibilityMode,
+  setKioskSettings,
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import LoyaltyRewardsSheet from "../LoyaltyRewardsSheet";
-import i18n from "../../../i18n";
+import i18n, { isolate } from "../../../i18n";
 
 /*
  * THE REDEMPTION CHAIN IS MOCKED AT THE RTK LAYER, not at the useLoyalty
@@ -827,12 +829,328 @@ describe("LoyaltyRewardsSheet (Xeno redemption surface — contract step 6)", ()
 
       const close = screen.getByTestId("loyalty-rewards-close");
       expect(close.closest(".rounded-t-\\[60px\\]")?.className).toContain(
-        "h-[min(1470px,calc(100%_-_96px))]"
+        "h-[min(1480px,calc(100%_-_96px))]"
       );
       expect(close.closest(".overflow-y-auto")).toBeNull();
       expect(
         screen.getByTestId("loyalty-redeem").closest(".overflow-y-auto")
       ).toBeNull();
+    });
+  });
+});
+
+/*
+  Lane loyalty-visual — the sheet on the Figma reward-state geometry
+  (1:3842 / 1:3948; 39a, visual only), the D6 balance line, the 1:3858
+  "ineligible" look for an out-of-stock reward, and D6b: the operator's
+  reward_title_* / reward_subtitle_* / loyalty_point_alias_* for the guest's
+  language slot ONLY (no cross-language fallback), resolved at render and
+  never written into state. The redemption chain above runs unchanged.
+*/
+describe("LoyaltyRewardsSheet — Figma reward states + operator texts (lane loyalty-visual)", () => {
+  const AR = (value: string) => [{ value, name: "Arabic", code: "ar", dir: "rtl" }];
+  const AR_SALAD = "سلطة يونانية";
+  const AR_TITLE = "نادي المقرمشات";
+  const AR_SUBTITLE = "اختر مكافأة واحدة";
+  const AR_ALIAS = "عملات";
+  const OPERATOR_EN = {
+    reward_title_primary: "  Crunch Club  ",
+    reward_subtitle_primary: "Pick one crunchy perk.",
+    loyalty_point_alias_primary: "crunchcoins",
+  };
+  const OPERATOR_AR = {
+    reward_title_secondary: AR_TITLE,
+    reward_subtitle_secondary: AR_SUBTITLE,
+    loyalty_point_alias_secondary: AR_ALIAS,
+  };
+  const OPERATOR_STRINGS = ["Crunch Club", "Pick one crunchy perk.", "crunchcoins", AR_TITLE, AR_SUBTITLE, AR_ALIAS];
+
+  const title = () => document.getElementById("loyalty-rewards-title");
+  const balance = () => screen.getByTestId("loyalty-points-balance");
+  const reward = (code: string) => screen.getByTestId(`loyalty-reward-${code}`);
+  /** The row's second line (the "{n} points" / Unavailable span). */
+  const secondLine = (row: HTMLElement) =>
+    row.querySelector(".text-\\[24px\\].leading-\\[24px\\]") as HTMLElement;
+
+  const withMenuEntity = (overrides: Record<string, unknown>) =>
+    store.dispatch(
+      setMenuData({
+        menu: {
+          categories: [
+            {
+              id: "cat-1",
+              subCategories: [
+                { id: "sub-1", entities: [{ ...GREEK_SALAD, ...overrides }, CHEESE_BURGER, PRICELESS_SIDE] },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+  const arabicSession = async () => {
+    store.dispatch(
+      setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" })
+    );
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    executeEvent.mockReset();
+    respondWith();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ json: () => Promise.resolve({ status: "success" }) })
+    );
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  describe("header + dialog", () => {
+    it("bell + REWARDS (H3 48/44), the Figma subtitle, and 'You have 6000 points' on the balance testid", () => {
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      expect(title()?.textContent).toBe("Rewards");
+      expect(title()).toHaveClass("tb-display", "text-[48px]", "leading-[44px]");
+      expect(screen.getByText("Select 1 reward to redeem with your order.")).toHaveClass(
+        "text-[24px]",
+        "leading-[24px]"
+      );
+      expect(balance().textContent).toBe("You have 6000 points");
+    });
+
+    it("a dialog named by its title — NOT aria-modal (its error alertdialog stacks over it)", () => {
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      const dialog = screen.getByRole("dialog", { name: "Rewards" });
+      expect(dialog).toHaveAttribute("aria-labelledby", "loyalty-rewards-title");
+      expect(dialog).not.toHaveAttribute("aria-modal");
+      expect(dialog.className).toContain("h-[min(1480px,calc(100%_-_96px))]");
+    });
+  });
+
+  describe("reward rows", () => {
+    it("152 plate with the item art, a 32/36 menu name + the Free / '50% off' chip, the '{n} points' line and a radio", async () => {
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      const salad = reward("static6562");
+      const burger = reward("static8056");
+      const plate = salad.querySelector(".h-\\[152px\\].w-\\[152px\\]");
+      expect(plate?.querySelector("img")).toHaveAttribute("src", GREEK_SALAD.image_url);
+      expect(within(salad).getByText("Greek Salad")).toHaveClass("text-[32px]", "leading-[36px]", "font-medium");
+      expect(within(salad).getByText("Free")).toBeInTheDocument();
+      expect(within(burger).getByText("50% off")).toBeInTheDocument();
+      expect(secondLine(salad).textContent).toBe("3000 points");
+      expect(secondLine(burger).textContent).toBe("1000 points");
+      expect(salad).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]");
+
+      expect(screen.getByRole("radiogroup", { name: "Rewards" })).toContainElement(salad);
+      expect(salad).toHaveAttribute("role", "radio");
+      expect(salad).toHaveAttribute("aria-checked", "false");
+      await userEvent.click(salad);
+      expect(salad).toHaveAttribute("aria-checked", "true");
+      expect(burger).toHaveAttribute("aria-checked", "false");
+    });
+
+    it("Arabic session: the title is the menu's ar alias, isolated; the chip and the points line are Arabic", async () => {
+      seedIdentifiedCustomer();
+      withMenuEntity({ aliases: AR(AR_SALAD) });
+      await arabicSession();
+      openSheet();
+      renderSheet();
+
+      const salad = reward("static6562");
+      expect(salad).toHaveTextContent(isolate(AR_SALAD), { normalizeWhitespace: false });
+      expect(salad).not.toHaveTextContent("Greek Salad");
+      expect(within(salad).getByText(i18n.t("loyalty.free"))).toBeInTheDocument();
+      expect(secondLine(salad).textContent).toBe(i18n.t("loyalty.pointsCost", { points: 3000 }));
+    });
+
+    it("out of stock (Figma 1:3858): an aria-disabled div, no radio; ONLY the art dims; 'Unavailable'; a tap selects nothing, so REDEEM still asks for a selection", async () => {
+      seedIdentifiedCustomer();
+      withMenuEntity({ outOfStock: true });
+      openSheet();
+      renderSheet();
+
+      const oos = reward("static6562");
+      expect(oos.tagName).toBe("DIV");
+      expect(oos).toHaveAttribute("aria-disabled", "true");
+      expect(oos).not.toHaveAttribute("role");
+      expect(oos).not.toHaveAttribute("aria-checked");
+      expect(oos.querySelector("button")).toBeNull();
+      // Only the art is dimmed; the name and the second line keep full contrast.
+      const dimmed = [oos, ...oos.querySelectorAll("*")].filter((node) => /\bopacity-/.test(node.getAttribute("class") ?? ""));
+      expect(dimmed).toEqual([oos.querySelector("img")]);
+      expect(dimmed[0]).toHaveClass("opacity-50");
+      expect(within(oos).getByText("Greek Salad")).toBeInTheDocument();
+      expect(secondLine(oos).textContent).toBe("Unavailable");
+      // The eligible reward is still a radio inside the group.
+      expect(screen.getByRole("radiogroup")).toContainElement(reward("static8056"));
+
+      await userEvent.click(oos);
+      await userEvent.click(screen.getByTestId("loyalty-redeem"));
+
+      expect(await screen.findByTestId("loyalty-error")).toHaveTextContent("Please select a reward to redeem");
+      expect(executeEvent).not.toHaveBeenCalled();
+    });
+
+    it("an all-out-of-stock list is a plain list — no radiogroup role, no radio", () => {
+      seedIdentifiedCustomer([FREE_SALAD]);
+      withMenuEntity({ outOfStock: true });
+      openSheet();
+      renderSheet();
+
+      expect(reward("static6562")).toHaveAttribute("aria-disabled", "true");
+      expect(screen.queryByRole("radiogroup")).toBeNull();
+      expect(screen.queryAllByRole("radio")).toEqual([]);
+    });
+  });
+
+  it("OTP step: the header drops the subtitle but keeps the balance; only there the title clamps to 2 lines", async () => {
+    // The heading block (bell + title row → block): Figma's 64 gap above the
+    // reward list; 24 on the OTP step, so the keypad fits the 1026 ADA zone.
+    const heading = () => title()?.parentElement?.parentElement;
+    seedIdentifiedCustomer();
+    openSheet();
+    renderSheet();
+    expect(title()).not.toHaveClass("line-clamp-2");
+    expect(heading()).toHaveClass("pt-[54px]", "pb-[64px]");
+
+    await reachOtpStep();
+
+    expect(screen.queryByText("Select 1 reward to redeem with your order.")).toBeNull();
+    expect(balance().textContent).toBe("You have 6000 points");
+    expect(title()).toHaveClass("line-clamp-2");
+    expect(heading()).toHaveClass("pt-[54px]", "pb-[24px]");
+    expect(heading()).not.toHaveClass("pb-[64px]");
+  });
+
+  describe("D6b — the operator's loyalty texts", () => {
+    it("English session: the PRIMARY texts (trimmed) replace the title, the subtitle and the word 'points' on the balance and every cost line", () => {
+      store.dispatch(setKioskSettings({ ...OPERATOR_EN, ...OPERATOR_AR }));
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      expect(title()?.textContent).toBe("Crunch Club");
+      expect(screen.getByRole("dialog", { name: "Crunch Club" })).toBeInTheDocument();
+      expect(screen.getByRole("radiogroup", { name: "Crunch Club" })).toBeInTheDocument();
+      expect(screen.getByText("Pick one crunchy perk.")).toBeInTheDocument();
+      expect(screen.queryByText("Select 1 reward to redeem with your order.")).toBeNull();
+      expect(balance().textContent).toBe("You have 6000 crunchcoins");
+      expect(secondLine(reward("static6562")).textContent).toBe("3000 crunchcoins");
+      expect(secondLine(reward("static8056")).textContent).toBe("1000 crunchcoins");
+      // The other slot's copy never leaks into this one.
+      expect(screen.getByTestId("loyalty-rewards-sheet")).not.toHaveTextContent(AR_TITLE);
+    });
+
+    it("Arabic session: the SECONDARY texts, isolated; the alias rides the balance and the cost lines (RLM-led)", async () => {
+      store.dispatch(setKioskSettings({ ...OPERATOR_EN, ...OPERATOR_AR }));
+      seedIdentifiedCustomer();
+      await arabicSession();
+      openSheet();
+      renderSheet();
+
+      expect(title()?.textContent).toBe(isolate(AR_TITLE));
+      expect(screen.getByTestId("loyalty-rewards-sheet")).toHaveTextContent(AR_SUBTITLE);
+      expect(balance().textContent).toBe(
+        i18n.t("loyalty.pointsBalanceLineAlias", { points: 6000, alias: AR_ALIAS })
+      );
+      const cost = secondLine(reward("static6562")).textContent ?? "";
+      expect(cost).toBe(i18n.t("loyalty.pointsCostAlias", { points: 3000, alias: AR_ALIAS }));
+      expect(cost).toContain(AR_ALIAS);
+      expect(cost).toContain("‏");
+      const sheet = screen.getByTestId("loyalty-rewards-sheet");
+      expect(sheet).not.toHaveTextContent("Crunch Club");
+      expect(sheet).not.toHaveTextContent("crunchcoins");
+    });
+
+    it.each([
+      ["blank", ""],
+      ["whitespace only", "   "],
+      ["a number", 42],
+      ["an object", { en: "Crunch Club" }],
+      ["null", null],
+      ["true", true],
+    ])("%s values fall back to today's copy, byte for byte", (_label, value) => {
+      store.dispatch(
+        setKioskSettings({
+          reward_title_primary: value,
+          reward_subtitle_primary: value,
+          loyalty_point_alias_primary: value,
+        })
+      );
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+
+      expect(title()?.textContent).toBe(i18n.t("loyalty.title"));
+      expect(screen.getByText(i18n.t("offers.subtitle"))).toBeInTheDocument();
+      expect(balance().textContent).toBe(i18n.t("loyalty.pointsBalanceLine", { points: 6000 }));
+      expect(secondLine(reward("static6562")).textContent).toBe(i18n.t("loyalty.pointsCost", { points: 3000 }));
+    });
+
+    it("no cross-language fallback: English ignores the secondary texts and Arabic ignores the primary ones", async () => {
+      store.dispatch(setKioskSettings(OPERATOR_AR));
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+      expect(title()?.textContent).toBe("Rewards");
+      expect(balance().textContent).toBe("You have 6000 points");
+      expect(secondLine(reward("static6562")).textContent).toBe("3000 points");
+      cleanup();
+
+      store.dispatch(setKioskSettings(OPERATOR_EN));
+      await arabicSession();
+      renderSheet();
+      expect(title()?.textContent).toBe(i18n.t("loyalty.title"));
+      expect(screen.getByText(i18n.t("offers.subtitle"))).toBeInTheDocument();
+      expect(balance().textContent).toBe(i18n.t("loyalty.pointsBalanceLine", { points: 6000 }));
+      expect(secondLine(reward("static6562")).textContent).toBe(i18n.t("loyalty.pointsCost", { points: 3000 }));
+      expect(screen.getByTestId("loyalty-rewards-sheet")).not.toHaveTextContent("crunchcoins");
+    });
+
+    it("the Arabic alias template leads with U+200F (RLM): a placeholder-only template would otherwise resolve LTR; English has none", () => {
+      expect(i18n.getResource("ar", "translation", "loyalty.pointsCostAlias")).toBe("‏{{points}} {{alias}}");
+      expect(i18n.getResource("en", "translation", "loyalty.pointsCostAlias")).toBe("{{points}} {{alias}}");
+    });
+
+    it("operator texts are resolved at render, never stored: no state outside kiosk_settings holds them — before, during and after a full redemption", async () => {
+      store.dispatch(setKioskSettings(OPERATOR_EN));
+      seedIdentifiedCustomer();
+      const stateOutsideSettings = () => {
+        const state = store.getState() as any;
+        return JSON.stringify({ ...state, appSettings: { ...state.appSettings, kiosk_settings: null } });
+      };
+      const leaked = () => OPERATOR_STRINGS.filter((text) => stateOutsideSettings().includes(text));
+      expect(leaked()).toEqual([]);
+
+      openSheet();
+      renderSheet();
+      expect(title()?.textContent).toBe("Crunch Club"); // the texts are on screen…
+      await reachOtpStep();
+      await typeOtp("1234");
+      await userEvent.click(screen.getByTestId("loyalty-otp-submit"));
+      await waitFor(() => expect(cartItems()).toHaveLength(1));
+
+      // …and nowhere in the cart, the ledger, the celebration or the wire.
+      expect(leaked()).toEqual([]);
+      const wire = JSON.stringify(executeEvent.mock.calls);
+      expect(OPERATOR_STRINGS.filter((text) => wire.includes(text))).toEqual([]);
     });
   });
 });

@@ -862,3 +862,189 @@ describe("useOfferApply — lane offers (routing, sameOrLess, celebration, auto-
     expect(cartState().offerRemovalModal.isOpen).toBe(true);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Lane loyalty-visual (D3, fork parity — CartRewardsCard
+ * blockedByLoyalty): a XENO reward row in the bag locks offers while none
+ * is applied. The apply core refuses on the LIVE cart before any write,
+ * event or celebration — only the auto-apply latch (a customer offer
+ * action) still fires. An offer applied BEFORE the reward is not locked:
+ * it stays and can still be swapped (the fork's asymmetry, kept).
+ * ------------------------------------------------------------------ */
+
+/** Redeemed XENO reward row (redeemItem + addLoyaltyItemToCart output). */
+const REWARD_ROW = {
+  id: "5dd1093829754a432f2c32e2",
+  itemId: "lr-1",
+  uniqueItemId: "lr-1-u",
+  name: "Greek Salad",
+  quantity: 1,
+  type: "ITEM",
+  isLoyaltyItem: true,
+  isRedeemed: true,
+  coupon_code: "static6562",
+  discount_type: "percentage",
+  discount_value: 100,
+  price: 0,
+  total_price: 0,
+  undiscounted_price: 17,
+  undiscounted_total_price: 17,
+  customizations: {},
+};
+
+const FLAT_3_OFFER = {
+  ...FLAT_OFFER,
+  _id: "offer-flat-3",
+  name: "£3 off your order",
+  type: { name: "amount", value: 3 },
+};
+
+const rewardRows = () => cartState().cartItems.filter((row: any) => row?.isLoyaltyItem);
+
+describe("useOfferApply — D3: a XENO reward in the bag locks offers (lane loyalty-visual)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    resetAppliedBarCelebration();
+    mockCapture.mockClear();
+  });
+
+  /** Bag = a paid burger + the reward + a staged picker row a sweep would clear. */
+  const seedRewardBag = (reward: object = REWARD_ROW) => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...reward }]));
+    store.dispatch(addGetItemsRdx({ id: "tortilla-sauce", itemId: "stage-1", quantity: 1 }));
+  };
+
+  it.each([
+    ["swap (bill-wise)", FLAT_OFFER],
+    ["direct (a fixed freebie)", FREE_SALAD_OFFER],
+    ["picker (an OR choice)", CHOICE_OFFER],
+  ])(
+    "selectOfferAndCommit, %s route → {applied:false, blocked:'loyaltyReward'} with ZERO cart writes; the latch still fires",
+    async (_label, offer) => {
+      seedRewardBag();
+      const before = structuredClone(cartState());
+
+      let verdict: unknown;
+      const types = await typesDispatchedDuring(async () => {
+        verdict = await runOnce((api) => api.selectOfferAndCommit(offer));
+      });
+
+      expect(verdict).toEqual({ applied: false, blocked: "loyaltyReward" });
+      // The latch is the ONLY dispatch: no get-item sweep (deleteItemFromCart /
+      // emptyGetItems), no swapCartOffer / applyOffer, no openOfferModal.
+      expect(types).toEqual(["offerSession/optOutOfAutoApply"]);
+      expect(cartState()).toEqual(before);
+      expect(mockCapture).not.toHaveBeenCalled(); // no OfferSwapped
+      expect(sessionState().autoApplyOptOut).toBe(true);
+    }
+  );
+
+  it("an OUT-OF-STOCK reward row (still in the bag) locks too", async () => {
+    seedRewardBag({ ...REWARD_ROW, outOfStock: true });
+
+    const verdict = await runOnce((api) => api.selectOfferAndCommit(FLAT_OFFER));
+
+    expect(verdict).toEqual({ applied: false, blocked: "loyaltyReward" });
+    expect(slotIsEmpty()).toBe(true);
+  });
+
+  it("commitPickedFreebies (picker CONFIRM) → false; no row lands, only the latch fires", async () => {
+    seedRewardBag();
+    const before = structuredClone(cartState());
+
+    let ok: unknown;
+    const types = await typesDispatchedDuring(async () => {
+      ok = await runOnce((api) =>
+        api.commitPickedFreebies({ offer: CHOICE_OFFER, picks: [TORTILLA_ENTRY] })
+      );
+    });
+
+    expect(ok).toBe(false);
+    expect(types).toEqual(["offerSession/optOutOfAutoApply"]);
+    expect(cartState()).toEqual(before);
+    expect(getItemRows()).toEqual([]);
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  it("autoApplyOffer → false: nothing dispatched, no OfferAutoApplied event, the session untouched", async () => {
+    seedRewardBag();
+
+    let landed: unknown;
+    const types = await typesDispatchedDuring(async () => {
+      landed = await runOnce((api) => api.autoApplyOffer(FLAT_OFFER as unknown as SavingsOffer));
+    });
+
+    expect(landed).toBe(false);
+    expect(types).toEqual([]);
+    expect(slotIsEmpty()).toBe(true);
+    expect(sessionState()).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: null });
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  describe("an offer applied BEFORE the reward is not locked (the fork's asymmetry)", () => {
+    beforeEach(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+      store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
+    });
+
+    it("swap: a SAVE of another offer replaces it, celebrates, and the reward stays", async () => {
+      const verdict = await runOnce((api) => api.selectOfferAndCommit(FLAT_3_OFFER));
+
+      expect(verdict).toEqual({ applied: true });
+      expect(cartState().cartOffer._id).toBe("offer-flat-3");
+      expect(cartState().offerModal.isOpen).toBe(true);
+      expect(mockCapture).toHaveBeenCalledWith("offer_swapped", expect.objectContaining({ to: "offer-flat-3" }));
+      expect(rewardRows()).toHaveLength(1);
+    });
+
+    it("direct: a fixed freebie lands as a row and takes the slot; the reward stays", async () => {
+      const verdict = await runOnce((api) => api.selectOfferAndCommit(FREE_SALAD_OFFER));
+
+      expect(verdict).toEqual({ applied: true });
+      expect(cartState().cartOffer._id).toBe("offer-free-salad");
+      expect(getItemRows().map((row: any) => row.id)).toEqual(["greek-salad"]);
+      expect(rewardRows()).toHaveLength(1);
+    });
+
+    it("picker: an OR choice still reaches the picker", async () => {
+      const verdict = await runOnce((api) => api.selectOfferAndCommit(CHOICE_OFFER));
+
+      expect(verdict).toEqual({ applied: false, needsPicker: true });
+    });
+
+    it("picker CONFIRM commits the pick", async () => {
+      const ok = await runOnce((api) =>
+        api.commitPickedFreebies({ offer: CHOICE_OFFER, picks: [TORTILLA_ENTRY] })
+      );
+
+      expect(ok).toBe(true);
+      expect(cartState().cartOffer._id).toBe("offer-free-sauce-choice");
+      expect(getItemRows().map((row: any) => row.id)).toEqual(["tortilla-sauce"]);
+      expect(rewardRows()).toHaveLength(1);
+    });
+
+    it("auto-apply still answers that the slot holds the applied offer", async () => {
+      const landed = await runOnce((api) => api.autoApplyOffer(FLAT_OFFER as unknown as SavingsOffer));
+
+      expect(landed).toBe(true);
+      expect(cartState().cartOffer._id).toBe("offer-flat-2");
+    });
+  });
+
+  it("once the reward row leaves the bag, SAVE and auto-apply work again", async () => {
+    seedRewardBag();
+    expect(await runOnce((api) => api.selectOfferAndCommit(FLAT_OFFER))).toEqual({
+      applied: false,
+      blocked: "loyaltyReward",
+    });
+
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    expect(await runOnce((api) => api.autoApplyOffer(FLAT_3_OFFER as unknown as SavingsOffer))).toBe(true);
+    expect(cartState().cartOffer._id).toBe("offer-flat-3");
+
+    expect(await runOnce((api) => api.selectOfferAndCommit(FLAT_OFFER))).toEqual({ applied: true });
+    expect(cartState().cartOffer._id).toBe("offer-flat-2");
+  });
+});

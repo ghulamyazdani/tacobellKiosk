@@ -18,6 +18,7 @@ import {
   selectTotalLoyaltyPoints,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
+import { kiosSettingsRdx } from "@cx-sdk/catalog/state/appSettings.slice";
 import { getAllLoyaltyItemsFromMenu } from "@cx-sdk/ordering/loyalty/loyaltyEngine";
 import { getLoyaltyRedemptionError } from "@cx-sdk/ordering/loyalty/loyaltyRedemption";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
@@ -95,13 +96,43 @@ interface SheetBodyProps {
  */
 function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
   const { t } = useTranslation();
-  const { name } = useLocalized();
+  const { name, isSecondary, text } = useLocalized();
   const dispatch = useDispatch();
 
   const coupons = useSelector(selectCoupons) as any[] | undefined;
   const menuData = useSelector(selectMenu) as any;
   const totalPoints = Number(useSelector(selectTotalLoyaltyPoints) ?? 0);
   const parkedItem = useSelector(selectParkedRedeemedItem) as any;
+
+  // D6b — the operator's loyalty texts (kiosk_settings reward_title_* /
+  // reward_subtitle_* / loyalty_point_alias_*, fork useMultiLanguage),
+  // resolved at RENDER for the guest's slot only: no cross-language fallback
+  // (the ticker's rule, SecondLayout 27b — the fork falls back to primary).
+  // Unset or blank = today's copy. Never written into cart/order state.
+  const kioskSettings = useSelector(kiosSettingsRdx) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const operatorCopy = (field: string): string => {
+    const value =
+      kioskSettings?.[`${field}_${isSecondary ? "secondary" : "primary"}`];
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const operatorTitle = operatorCopy("reward_title");
+  const operatorSubtitle = operatorCopy("reward_subtitle");
+  // RAW as an i18n value: the escape hook isolates it in RTL (never text()).
+  const alias = operatorCopy("loyalty_point_alias");
+  const title = operatorTitle ? text(operatorTitle) : t("loyalty.title");
+  const subtitle = operatorSubtitle
+    ? text(operatorSubtitle)
+    : t("offers.subtitle");
+  const balanceLine = alias
+    ? t("loyalty.pointsBalanceLineAlias", { points: totalPoints, alias })
+    : t("loyalty.pointsBalanceLine", { points: totalPoints });
+  const costLine = (points: number) =>
+    alias
+      ? t("loyalty.pointsCostAlias", { points, alias })
+      : t("loyalty.pointsCost", { points });
 
   const {
     validateCoupon,
@@ -348,9 +379,10 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
     }
   };
 
-  // Render helper, NOT a component (react-hooks/static-components) — the
-  // P7b RewardsSheet row geometry: 84px thumb, 24px gutter, 24px rhythm,
-  // hairline separator, radio on the right.
+  // Render helper, NOT a component (react-hooks/static-components) — Figma
+  // 1:3842 / 1:3948 card: top hairline, 152 plate, H6 title (wraps — never
+  // clamped, so long and Arabic names never clip) + the Free / % chip (D4),
+  // a "{n} points" second line (D5; Xeno sends no expiry), radio kept (D8).
   const renderRewardRow = (entity: any) => {
     const id = String(entity?.id ?? "");
     const code = String(entity?.coupon_code ?? id);
@@ -359,11 +391,68 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
     // Reward tiles are the coupon with the menu entity merged over it, so
     // `aggregator_image` survives the join.
     const imageUrl = resolveEntityImage(entity);
-    const cost = pointsValueOf(entity);
     const chip =
       Number(entity?.discount_value) === 100
         ? t("loyalty.free")
         : t("loyalty.percentOff", { value: entity?.discount_value });
+    // pt-23: the hairline sits inside Figma's 24 top gap → 200 pitch.
+    const rowClass =
+      "flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left";
+
+    const inner = (
+      <>
+        <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
+          {imageUrl ? (
+            <img
+              alt=""
+              src={imageUrl}
+              className={`h-full w-full object-contain ${
+                outOfStock ? "opacity-50" : ""
+              }`}
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="h-[64px] w-[72px] bg-tb-purple opacity-25"
+              style={bellMaskStyle}
+            />
+          )}
+        </span>
+
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-[10px] text-left">
+          <span className="flex flex-wrap items-center gap-[12px]">
+            <span className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
+              {name(entity) || entity?.coupon_name}
+            </span>
+            <span className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface">
+              {chip}
+            </span>
+          </span>
+          <span className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
+            {outOfStock
+              ? t("menu.unavailable")
+              : costLine(pointsValueOf(entity))}
+          </span>
+        </span>
+      </>
+    );
+
+    // Out of stock = Figma 1:3858's "ineligible" look, the one per-reward
+    // state Xeno has: informational, never a target — a div, not a disabled
+    // button (OfferRow pattern). Only the art dims; the text keeps full
+    // contrast. No radio, no nudge (Xeno sends no per-reward minimum).
+    if (outOfStock) {
+      return (
+        <div
+          key={id}
+          data-testid={`loyalty-reward-${code}`}
+          aria-disabled="true"
+          className={rowClass}
+        >
+          {inner}
+        </div>
+      );
+    }
 
     return (
       <button
@@ -371,46 +460,12 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         type="button"
         role="radio"
         aria-checked={selected}
-        aria-disabled={outOfStock}
-        disabled={locked || outOfStock}
+        disabled={locked}
         data-testid={`loyalty-reward-${code}`}
         onClick={() => handlePick(entity)}
-        className={`flex min-h-[44px] w-full items-center gap-[24px] border-b border-tb-grey-4 py-[24px] text-left ${
-          outOfStock ? "opacity-50" : ""
-        } ${locked ? "opacity-60" : ""}`}
+        className={`${rowClass} ${locked ? "opacity-60" : ""}`}
       >
-        <span className="flex h-[84px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
-          {imageUrl ? (
-            <img
-              alt=""
-              src={imageUrl}
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <span
-              aria-hidden="true"
-              className="h-[40px] w-[45px] bg-tb-purple opacity-25"
-              style={bellMaskStyle}
-            />
-          )}
-        </span>
-
-        <span className="flex min-w-0 flex-1 flex-col items-start gap-[8px] text-left">
-          <span className="flex flex-wrap items-center gap-[12px]">
-            <span className="text-[24px] font-bold leading-[28px] tracking-[-0.5px] text-black">
-              {name(entity) || entity?.coupon_name}
-            </span>
-            <span className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface">
-              {chip}
-            </span>
-          </span>
-          <span className="text-[20px] leading-[24px] text-tb-ink-purple/70">
-            {outOfStock
-              ? t("menu.unavailable")
-              : t("loyalty.pointsCost", { points: cost })}
-          </span>
-        </span>
-
+        {inner}
         <span
           aria-hidden="true"
           className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border-2 ${
@@ -424,6 +479,10 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
       </button>
     );
   };
+
+  // A radiogroup needs a radio (axe aria-required-children): an all-OOS
+  // list is a plain list.
+  const hasRadio = rewards.some((entity) => !entity?.outOfStock);
 
   const otpCells = Array.from({ length: OTP_LENGTH }, (_, index) => (
     <span
@@ -447,16 +506,21 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
-      {/* Capped by the containing block (Menu's h-full root → the reach
-          container) minus a 96 px scrim band, as RewardsSheet: 1470 on the
-          1920 stage, 1026 in the 1122 ADA reach zone — still room for the
-          whole OTP step (header 160 + prompt/cells/numpad 668 + bar 132 =
-          960) without scrolling the keypad. */}
+      {/* Figma 1:3842 sheet (1480). Capped by the containing block (Menu's
+          h-full root → the reach container) minus a 96 px scrim band, as
+          RewardsSheet: 1480 on the 1920 stage, 1026 in the 1122 ADA reach
+          zone — still room for the whole OTP step (header 154, ≤ 198 with
+          the title clamped to 2 lines + prompt/cells/numpad 668 + bar 132
+          ≤ 998) without scrolling the keypad. A named dialog, NOT
+          aria-modal: its LoyaltyErrorModal alertdialog stacks over it
+          (P9f). */}
       <div
+        role="dialog"
+        aria-labelledby="loyalty-rewards-title"
         style={{ animation: "tbLoyaltySheetEnter 0.2s ease-out both" }}
         onPointerDownCapture={cancelTimer}
         onScrollCapture={cancelTimer}
-        className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         {/* Auto-dismiss progress — purely decorative; disappears the moment
             the customer touches the sheet. */}
@@ -468,22 +532,43 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
           />
         )}
 
-        <div className="relative shrink-0 pb-[24px] pt-[54px]">
-          <div className="flex items-center justify-center gap-[16px]">
+        {/* Figma heading block: bell 44×39 + H3 48/44, the Rg 24/24
+            subtitle (reward list only), list 64 below. The balance line is
+            design language (no frame draws one — sign-off). px-104: a long
+            operator title wraps clear of the X. */}
+        <div
+          className={`relative shrink-0 pt-[54px] ${
+            isOtpNeeded ? "pb-[24px]" : "pb-[64px]"
+          }`}
+        >
+          <div className="flex items-center justify-center gap-[8px] px-[104px]">
             <span
               aria-hidden="true"
-              className="h-[36px] w-[40px] bg-tb-purple"
+              className="h-[39px] w-[44px] shrink-0 bg-tb-purple"
               style={bellMaskStyle}
             />
-            <p className="tb-display text-center text-[40px] leading-[40px] tracking-[-1px] text-tb-purple">
-              {t("loyalty.title")}
+            {/* OTP step: a long operator title clamps to 2 lines (it showed
+                in full on the list step) — 3+ would push the keypad under
+                the bar in the 1026 ADA zone. */}
+            <p
+              id="loyalty-rewards-title"
+              className={`tb-display min-w-0 text-center text-[48px] leading-[44px] tracking-[-1px] text-tb-purple ${
+                isOtpNeeded ? "line-clamp-2" : ""
+              }`}
+            >
+              {title}
             </p>
           </div>
+          {!isOtpNeeded && (
+            <p className="mt-[16px] px-[104px] text-center text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
+              {subtitle}
+            </p>
+          )}
           <p
             data-testid="loyalty-points-balance"
-            className="mt-[16px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80"
+            className="mt-[8px] text-center text-[24px] font-medium leading-[24px] tracking-[-0.12px] text-tb-purple"
           >
-            {t("loyalty.pointsBalance", { points: totalPoints })}
+            {balanceLine}
           </p>
           <button
             type="button"
@@ -558,9 +643,9 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
                 </div>
               ) : (
                 <div
-                  role="radiogroup"
-                  aria-label={t("loyalty.title")}
-                  className="border-t border-tb-grey-4 px-[24px]"
+                  role={hasRadio ? "radiogroup" : undefined}
+                  aria-label={hasRadio ? title : undefined}
+                  className="px-[24px]"
                 >
                   {rewards.map(renderRewardRow)}
                 </div>
@@ -597,14 +682,17 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
 
 /**
  * Loyalty REWARDS sheet — the Xeno redemption surface (fork
- * LoyaltyItemsModal.tsx:195-227 + :370-471), wearing the P7b RewardsSheet
- * skin (Figma rewards-default 1:3824 / rewards-active 1:3924): white
- * rounded-top sheet over the purple-tinted menu, bell + REWARDS header,
- * points balance, flat reward rows with a radio, full-width purple CTA.
+ * LoyaltyItemsModal.tsx:195-227 + :370-471), on the Figma reward-state
+ * geometry (1:3842 / 1:3948, shared with the offers RewardsSheet): white
+ * rounded-top sheet over the purple-tinted menu, bell + REWARDS header (the
+ * operator's reward_title / reward_subtitle when set), the points balance,
+ * flat reward rows with a radio, full-width purple REDEEM (D7 — it sends an
+ * OTP). Lazy: it ships in the ONE lazy UI chunk (bagLazyParts).
  *
  * NOT the offers sheet: it never touches `cartOffer`. A Xeno reward lands in
- * the cart as an ordinary (discounted) cart row, so offers and a reward
- * coexist.
+ * the cart as an ordinary (discounted) cart row; the offers sheet locks
+ * while one is there and no offer is applied (fork parity — an offer
+ * applied first still stacks).
  *
  * Open state comes from `selectLoyaltyItemsModal` — the phone lookup opens it
  * with `isTimerOn: true` (auto-dismiss), the menu/bag entry with `false`.

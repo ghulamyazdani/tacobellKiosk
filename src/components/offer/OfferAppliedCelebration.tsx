@@ -103,7 +103,12 @@ function CelebrationCard({ name, amount }: { name: string; amount: string | null
 }
 
 export interface OfferAppliedCelebrationProps {
-  /** The live bill's getTotalDiscount() — the same figure as the Discounts line. */
+  /**
+   * The applied offer's OWN saving off the live bill (SDK getBillOfferDiscount:
+   * getTotalDiscount() minus a XENO reward's share — lane loyalty-visual F1),
+   * the same figure as the bag's applied-offer row; the Discounts line keeps
+   * the bill total.
+   */
   discount: number;
   currency: string;
   /** The bag panel's height (normal 1676 / ADA 765): the card sits over its header band. */

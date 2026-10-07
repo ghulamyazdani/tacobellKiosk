@@ -34,6 +34,14 @@
  *    `offerSession.autoApplyOptOut` whatever its outcome; machine paths
  *    (handleCartDrivenRemoval, autoApplyOffer) never do;
  *  - celebration: customer applies open `cart.offerModal`; auto-apply never.
+ *
+ * Lane "loyalty-visual" (D3, fork parity — CartRewardsCard
+ * `blockedByLoyalty`): a XENO reward row in the bag locks offers while none
+ * is applied (SDK isOfferLockedByLoyaltyReward), checked on the live cart
+ * before any write, event or celebration: selectOfferAndCommit answers
+ * `blocked: "loyaltyReward"`, commitPickedFreebies and autoApplyOffer
+ * answer false. An offer applied BEFORE the reward is not locked: it stays,
+ * and swapping it still works (the fork's asymmetry, kept).
  */
 import { useDispatch, useStore } from "react-redux";
 import {
@@ -49,6 +57,7 @@ import {
 } from "@cx-sdk/ordering/offer/offerCommitRules";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import { hasOffer } from "@cx-sdk/ordering/offer/offersSheetLogic";
+import { isOfferLockedByLoyaltyReward } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import useCartHook from "../menuHooks/useCartHook";
 import useOfferHook from "./useOfferHook";
 import useOfferSavings from "./useOfferSavings";
@@ -74,10 +83,11 @@ export interface OfferCommitResult {
    */
   offer?: SavingsOffer;
   /**
-   * Refused; nothing was written: the sameOrLess ceiling, or an item offer
-   * whose get side resolved to nothing (it could only land at £0).
+   * Refused; nothing was written: the sameOrLess ceiling, an item offer
+   * whose get side resolved to nothing (it could only land at £0), or a
+   * XENO reward in the bag with no offer applied (D3 lock).
    */
-  blocked?: "sameOrLess" | "noGetItems";
+  blocked?: "sameOrLess" | "noGetItems" | "loyaltyReward";
 }
 
 export interface CommitPickedFreebiesArgs {
@@ -112,6 +122,12 @@ function useOfferApply() {
 
   const liveCart = (): NonNullable<OfferApplyRootState["cart"]> =>
     (store.getState() as OfferApplyRootState)?.cart ?? {};
+
+  /** D3: a XENO reward in the live bag locks offers while none is applied. */
+  const lockedByReward = (): boolean => {
+    const cart = liveCart();
+    return isOfferLockedByLoyaltyReward(cart?.cartItems, cart?.cartOffer);
+  };
 
   /**
    * Sweep the OUTGOING offer's freebies before any slot write (trap 3):
@@ -159,6 +175,9 @@ function useOfferApply() {
       // front instead (P7c wires the explicit loyalty↔offer swap).
       if (liveCart()?.cartOfferSource === "loyalty") {
         return { applied: false };
+      }
+      if (lockedByReward()) {
+        return { applied: false, blocked: "loyaltyReward" };
       }
 
       const saving = savingFor(offer);
@@ -269,6 +288,7 @@ function useOfferApply() {
         // the rows landed.
         return false;
       }
+      if (lockedByReward()) return false;
       // Trap-3 sweep: a previously applied offer's committed freebie rows
       // must not survive the new offer's commit.
       removeAllGetItems(liveCart()?.cartItems);
@@ -303,10 +323,12 @@ function useOfferApply() {
    * cart-neutral offer pickSessionAutoApplyOffer chose. Same money path as a
    * manual SAVE of that offer (sweep → swapCartOffer), but no celebration
    * card and no latch: it gets the row pop + "Applied for you" caption.
-   * Never replaces an occupied slot. Returns whether the slot now holds it.
+   * Never replaces an occupied slot, never applies under the D3 lock.
+   * Returns whether the slot now holds it.
    */
   const autoApplyOffer = (offer: SavingsOffer): boolean => {
     try {
+      if (lockedByReward()) return false;
       if (!hasOffer(offer)) return false;
       const current = liveCart()?.cartOffer;
       if (hasOffer(current)) return current?._id === offer._id;
