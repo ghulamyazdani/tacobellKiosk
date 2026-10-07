@@ -4,7 +4,8 @@
  *    the freebie picker and the buy stage (NOT aria-modal — the in-bag PDP
  *    host stacks over both);
  *  - menu names at RENDER (useLocalized): the rewards rail card, the freebie
- *    rows (+ a fixed size, + the group "−" label) and the buy-stage tiles show
+ *    rows (+ a fixed size, + the group "−" label) and the buy-stage tiles (+ a
+ *    variant-id entry's size) show
  *    the menu's `ar` alias, FSI…PDI isolated; offer names stay English (no
  *    per-language data) and the cart keeps the raw (primary) names.
  */
@@ -156,6 +157,23 @@ const BOGO = {
   },
   getItems: { items: [] },
 };
+/** The buy entry IS a variant id (Large fries), resolved via variantObject. */
+const FRIES_LARGE = { id: "fries-l", name: "Large", aliases: AR(AR_LARGE), price: 5 };
+const FRIES_BASE = {
+  id: "fries",
+  name: "Fries",
+  aliases: AR(AR_FRIES),
+  price: 3,
+  subCategoryId: "sides",
+  hasVariant: true,
+  modifiers: [],
+  variants: [{ id: "fries-m", name: "Medium", price: 3 }, FRIES_LARGE],
+};
+const LARGE_FRIES_BOGO = {
+  ...BOGO,
+  _id: "offer-large-fries",
+  applicable: { ...BOGO.applicable, rawItems: [{ item: { baseItemId: FRIES_LARGE.id }, quantity: 1, relation: "and" }] },
+};
 
 const wrap = (ui: ReactNode) =>
   render(
@@ -170,7 +188,9 @@ const renderPicker = (offer: object) => {
   return onClose;
 };
 const renderStage = (offer: object = BOGO) => {
-  const view = resolveBuyStageView(offer as BuyStageOffer, { [SAUCE.id]: SAUCE }, {}, {});
+  const view = resolveBuyStageView(offer as BuyStageOffer, { [SAUCE.id]: SAUCE }, {}, {
+    [FRIES_LARGE.id]: { baseItem: FRIES_BASE, variant: FRIES_LARGE },
+  });
   if (!view) throw new Error("fixture offer must resolve a buy stage");
   wrap(
     <BuyStageSheet
@@ -268,5 +288,13 @@ describe("menu names at render (Arabic session)", () => {
 
     await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
     expect(cartRows().find((row) => row.id === SAUCE.id)?.name).toBe("Tortilla Sauce");
+  });
+
+  it("a variant-id buy tile names its size by the alias too", async () => {
+    await arabicSession();
+    renderStage(LARGE_FRIES_BOGO);
+    const tile = screen.getByTestId(`buy-stage-tile-${FRIES_BASE.id}`);
+    expect(tile).toHaveTextContent(`${iso(AR_FRIES)} (${iso(AR_LARGE)})`, { normalizeWhitespace: false });
+    expect(tile).not.toHaveTextContent("Large");
   });
 });

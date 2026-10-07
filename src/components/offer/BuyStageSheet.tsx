@@ -226,11 +226,15 @@ export default function BuyStageSheet({
       cartItems,
       excludeLoyalty,
     );
-    const name = `${localName(entity)}${
-      group.requiredVariantId && group.requiredVariantName
-        ? ` (${group.requiredVariantName})`
-        : ""
-    }`;
+    // A variant-id entry names its size, in the guest's language too: the
+    // tile entity's variants are subset to that size (resolveBuyStageView).
+    const size = group.requiredVariantId
+      ? (entity?.variants?.find((variant) => variant?.id === group.requiredVariantId) ?? {
+          name: group.requiredVariantName,
+        })
+      : null;
+    const sizeName = size ? localName(size) : "";
+    const name = `${localName(entity)}${sizeName ? ` (${sizeName})` : ""}`;
     const imageUrl = resolveEntityImage(entity);
     const cal = calorieValue(entity);
     const priceLine = `${currency}${entity?.price ?? ""}${
