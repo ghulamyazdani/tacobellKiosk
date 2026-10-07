@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -63,16 +63,19 @@ import {
  * Exceptions, by design: E7b, E7d, E7e, E7f and E7g reload on the flowing
  * clock (redux-persist flushes on timers — a frozen clock persists nothing; E7e
  * also drops persist:root writes on demand to model that lag; E7f freezes it
- * only once the reload has resumed the session), E18 resumes it for the next
- * guest's walk to /payment, and E12 jumps the
- * idle period in fastForward steps exactly like idle.spec.ts. No case idles
- * on /start (the clock is frozen there and the boot stamped lastBootAt), so
+ * only once the reload has resumed the session; E19b reloads onto a failing
+ * chunk), E18 resumes it for the next guest's walk to /payment, and E12 jumps
+ * the idle period in fastForward steps exactly like idle.spec.ts. E19 does
+ * all three: it resumes for the walks, jumps the idle period home, then steps
+ * /start's update dwell into the splash reload. No case idles on /start
+ * except E19 (the clock is frozen there and the boot stamped lastBootAt), so
  * no case seeds autoUpdate/setLastBootAt.
  *
  * ── THE DEV-ONLY STORE SEAM ─────────────────────────────────────────────
  * `window.__kioskStore` (src/redux/app/store.ts, dev builds only) reads the
- * payment slice and the auth token; E8b uses it once to take the Paytm rows
- * away between arming and the initiate (the local-refusal branch).
+ * payment slice, the auth token and the splash-reload flag (E19); E8b uses
+ * it once to take the Paytm rows away between arming and the initiate (the
+ * local-refusal branch).
  *
  * ── E8 vs the contract ──────────────────────────────────────────────────
  * Contract §P8b-16 E8 says busy → PAY ANOTHER WAY. The frozen SDK rule makes
@@ -387,7 +390,11 @@ interface PaymentSlice {
 }
 
 interface KioskStore {
-  getState: () => { payment: PaymentSlice; auth: { token?: string } };
+  getState: () => {
+    payment: PaymentSlice;
+    auth: { token?: string };
+    autoUpdate: { shouldWholeAppUpdate: boolean };
+  };
   dispatch: (action: { type: string; payload?: unknown }) => unknown;
 }
 
@@ -572,6 +579,40 @@ function boxesOutsideZone(page: Page, testIds: string[]): Promise<string[]> {
 
 /** A translated template's text before its first {{placeholder}}. */
 const staticPart = (template: string) => template.split("{{")[0].trim();
+
+/**
+ * The lazy /paymentPolling screen as the DEV server serves it (its source
+ * module). A build serves assets/paytmRuntime-<hash>.js, which chunkRecovery
+ * never reloads for (chunkRecovery.test, PaytmPaymentRoute.test).
+ */
+const PAYTM_CHUNK = "**/src/pages/PaytmPayment/paytmRuntime.ts*";
+
+/** Counts the screen chunk's requests from now on. */
+function countChunkRequests(page: Page) {
+  let requests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/src/pages/PaytmPayment/paytmRuntime.ts")) requests += 1;
+  });
+  return () => requests;
+}
+
+/** Marks this document: a reload drops the marker. */
+const markDocument = (page: Page) =>
+  page.evaluate(() => {
+    (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
+  });
+const sameDocument = (page: Page) =>
+  page.evaluate(
+    () => (window as unknown as { __sameDocument?: boolean }).__sameDocument === true
+  );
+
+/** The whole-app reload the splash applies at its next dwell (P9e). */
+const reloadFlagged = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { __kioskStore: KioskStore }).__kioskStore.getState()
+        .autoUpdate.shouldWholeAppUpdate
+  );
 
 test.describe("P8b Paytm DQR + EDC — exactly once", () => {
   // Before ANY page script: the app's timers must be fake from the start.
@@ -1857,43 +1898,129 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
 
-  test("E19 CHUNK FAILURE: the lazy /paymentPolling screen never arrives — the staff panel (never blank, never a reload); FINISH → /start, whose release sends one status + one void; no second initiate", async ({
+  test("E19 CHUNK FAILURE before the initiate: the lazy /paymentPolling screen never arrives — a LOCAL refusal (PAY ANOTHER WAY, nothing sent, never a reload mid-session); with the network back the same document refuses again; the next splash reloads it and the next guest's checkout initiates once onto the screen", async ({
     page,
   }) => {
-    test.slow();
-    const mocks = await bootToPayment(page);
+    test.setTimeout(150_000);
+    const mocks = await bootToPayment(page, { idealTime: "60" });
     const { paytm } = mocks;
-    // The dev server serves the lazy screen as its source module; a build
-    // serves assets/paytmRuntime-<hash>.js, which chunkRecovery never reloads
-    // for (chunkRecovery.test, PaytmPaymentRoute.test).
-    await page.route("**/src/pages/PaytmPayment/paytmRuntime.ts*", (route) => route.abort());
+    const chunkRequests = countChunkRequests(page);
+    const abort = (route: Route) => route.abort();
+    await page.route(PAYTM_CHUNK, abort);
     await chooseMethod(page, "payment-card");
-    // A reload would drop this marker.
-    await page.evaluate(() => {
-      (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
-    });
+    await markDocument(page);
     await freezeClock(page);
     await page.getByTestId("receipt-none").click();
 
+    /** Refused BEFORE any id or request: the non-retryable modal, on /receipt. */
+    const expectRefusedWithNothingSent = async () => {
+      const modal = page.getByTestId("paytm-initiate-failed");
+      await expect(modal).toBeVisible({ timeout: 15_000 });
+      await expect(modal).toContainText(en.paytm.failed.start);
+      await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
+      await expect(page).toHaveURL(/\/receipt$/);
+      expect(paytm.total, "Paytm calls without the screen").toBe(0);
+      expect((await paymentSlice(page)).posBillNo).toBe("");
+      expect(await sameDocument(page), "reloaded mid-session").toBe(true);
+    };
+    await expectRefusedWithNothingSent();
+    expect(chunkRequests()).toBe(1);
+    // The reload is owed to the NEXT splash.
+    expect(await reloadFlagged(page)).toBe(true);
+
+    // The network is back, but this document remembers the failed fetch (the
+    // module map): PAY ANOTHER WAY → the same tile → refused again, nothing
+    // sent — an initiate here would arm a terminal no screen can settle.
+    await page.unroute(PAYTM_CHUNK, abort);
+    await page.getByTestId("paytm-initiate-other").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
+    await page.clock.resume();
+    await chooseMethod(page, "payment-card");
+    await freezeClock(page);
+    await page.getByTestId("receipt-none").click();
+    await expectRefusedWithNothingSent();
+    expect(chunkRequests(), "the browser answered from its failure cache").toBe(1);
+
+    // The guest walks away: a FULL idle period from the refusal (E12's
+    // jumps) brings the kiosk home, still on the poisoned document ...
+    await page.clock.fastForward(30_000);
+    await page.clock.runFor(500);
+    await expect(page.getByTestId("idle-modal")).toHaveCount(0);
+    await page.clock.fastForward(11_000);
+    await expect(page.getByTestId("idle-modal")).toBeVisible();
+    await page.clock.fastForward(21_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    expect(await sameDocument(page)).toBe(true);
+    // ... where the update dwell (10 s + a 5 s countdown) reloads the page.
+    // Ungated steps: nothing Paytm is open, and the page navigates mid-poll.
+    let loads = 0;
+    page.on("load", () => {
+      loads += 1;
+    });
+    await expect
+      .poll(
+        async () => {
+          await page.clock.runFor(1_000);
+          return loads;
+        },
+        { timeout: 30_000, intervals: [50] }
+      )
+      .toBe(1);
+    await page.clock.resume();
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    expect(await sameDocument(page), "the splash reload").toBe(false);
+    expect(await reloadFlagged(page)).toBe(false);
+    expect(paytm.total).toBe(0);
+
+    // The next guest, on the fresh document: the chunk loads, ONE initiate,
+    // the settlement screen.
+    await page.getByTestId("start-screen").click();
+    await expect(page.getByTestId("second-screen")).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId("pipeline-p1").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 20_000 });
+    await burgerToPayment(page);
+    await chooseMethod(page, "payment-card");
+    await initiateToPolling(page);
+    await expect(page.getByTestId("paytm-cancel")).toBeVisible();
+    expect(chunkRequests()).toBe(2);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  test("E19b CHUNK FAILURE on a RESUMED session: a reload mid-EDC whose screen chunk never arrives shows the staff panel (never blank, never a reload) — nothing polls or voids from it; FINISH → /start, whose release sends one status + one void; no second initiate", async ({
+    page,
+  }) => {
+    test.slow();
+    // The flowing clock on purpose: redux-persist flushes on timers (header).
+    const mocks = await bootToPayment(page);
+    const { paytm } = mocks;
+    await chooseMethod(page, "payment-card");
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => paytm.counts.edcStatus, { timeout: 15_000 }).toBeGreaterThan(0);
+
+    await page.route(PAYTM_CHUNK, (route) => route.abort());
+    await page.reload();
     const panel = page.getByRole("alertdialog", { name: en.paytm.unknown.title });
-    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(panel).toBeVisible({ timeout: 20_000 });
     await expect(page).toHaveURL(/\/paymentPolling$/);
     await expect(panel).toContainText(paytm.bodies.edcInit[0].posBillNo.slice(-5));
     await expect(page.getByTestId("paytm-screen")).toHaveCount(0);
-    expect(
-      await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)
-    ).toBe(true);
+    // A reload from here on would drop this marker.
+    await markDocument(page);
+    expect(await reloadFlagged(page)).toBe(true);
+    await freezeClock(page);
     // Nothing on the panel polls or voids.
-    expect(paytm.counts.edcStatus).toBe(0);
+    const reads = paytm.counts.edcStatus;
     expect(paytm.counts.edcCancel).toBe(0);
 
     await page.getByTestId("paytm-unavailable-finish").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     // /start's release: one status read, still pending → one void.
     await expect.poll(() => paytm.counts.edcCancel).toBe(1);
-    expect(paytm.counts.edcStatus).toBe(1);
+    expect(paytm.counts.edcStatus).toBe(reads + 1);
     expectEdcReadsCarry(paytm);
     expect((await paymentSlice(page)).posBillNo).toBe("");
+    expect(await sameDocument(page), "reloaded before the splash dwell").toBe(true);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
 });

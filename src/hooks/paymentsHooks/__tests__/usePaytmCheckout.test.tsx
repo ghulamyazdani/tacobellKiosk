@@ -22,7 +22,8 @@ import usePaytmCheckout from "../usePaytmCheckout";
   P8b-05 — the Paytm INITIATE behind /receipt, a MONEY PATH. Real store, real
   SDK classifiers (paytmKiosk), real orderOutcomeClaim. Mocked edges only:
   the two initiate triggers, the id generator (deterministic, so "NEW ids"
-  is provable), getPushOrderData, navigate and analytics. The triggers
+  is provable), getPushOrderData, navigate, analytics and the lazy
+  /paymentPolling screen loader (its own suite: PaytmPaymentRoute.test). The triggers
   snapshot the store at CALL time — that is how "the ids are stored BEFORE
   the request leaves" and "the claim is marked before it leaves" are proven.
 */
@@ -34,6 +35,7 @@ const m = vi.hoisted(() => ({
   edc: vi.fn(),
   getPushOrderData: vi.fn(),
   ids: vi.fn(),
+  loadScreen: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -58,6 +60,11 @@ vi.mock("@cx-sdk/payments/gateways/paymentSession", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   generatePaymentIds: () => m.ids(),
 }));
+vi.mock("../../../pages/PaytmPayment/loadPaytmScreen", () => ({
+  loadPaytmScreen: () => m.loadScreen(),
+}));
+/** The settlement screen's chunk, arrived. */
+const SCREEN = () => null;
 
 interface Slices {
   payment: Record<string, unknown> & {
@@ -207,6 +214,7 @@ beforeEach(() => {
   m.getPushOrderData.mockImplementation(() =>
     Promise.resolve({ toPush: orderDetails(st().payment.paymentType), pushOrderData: {} }),
   );
+  m.loadScreen.mockResolvedValue(SCREEN);
   store.dispatch({ type: "RESET_STATE" });
   store.dispatch(setCartItems([CRUNCHWRAP]));
   store.dispatch(setAmount(9));
@@ -290,6 +298,11 @@ describe("usePaytmCheckout — local refusals send nothing and are never a dead 
       "order_details_mismatch",
       () => m.getPushOrderData.mockResolvedValue({ toPush: orderDetails("PaytmDynamicQr") }),
     ],
+    [
+      "the /paymentPolling screen chunk did not arrive",
+      "screen_unavailable",
+      () => m.loadScreen.mockResolvedValue(null),
+    ],
   ])("%s → a non-retryable failure panel, nothing sent", async (_label, why, breakIt) => {
     arm("PaytmEdc");
     breakIt();
@@ -330,6 +343,34 @@ describe("usePaytmCheckout — local refusals send nothing and are never a dead 
     expect(m.getPushOrderData).toHaveBeenCalledWith(BILL(1));
     expect(claim().couponData).toEqual(CLAIMED);
     expect(st().payment.posBillNo).toBe("");
+  });
+
+  it("the screen chunk is awaited BEFORE any id: nothing is minted, marked or sent while it loads, and a missing one mints nothing at all", async () => {
+    arm("PaytmEdc");
+    store.dispatch(setCartItems([CRUNCHWRAP, REWARD]));
+    store.dispatch(setClaimedCoupon(CLAIMED));
+    respond(m.edc, OK_EDC);
+    const chunk = deferred<unknown>();
+    m.loadScreen.mockReturnValue(chunk.promise);
+    const { result } = mountHook();
+    await start(result);
+
+    expect(m.loadScreen).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("initiating");
+    expect(holds()).toBe(1);
+    expect(m.ids).not.toHaveBeenCalled();
+    expect(m.edc).not.toHaveBeenCalled();
+    expect(events("payment_initiated")).toEqual([]);
+
+    await act(async () => chunk.resolve(null));
+    await flush();
+    expect(result.current.failure).toEqual({ reason: "rejected", retryable: false });
+    expect(m.ids).not.toHaveBeenCalled();
+    expect(m.getPushOrderData).not.toHaveBeenCalled();
+    expect(m.edc).not.toHaveBeenCalled();
+    expect(claim().couponData).toEqual(CLAIMED);
+    expect(st().payment).toMatchObject({ posBillNo: "", posBillTime: "" });
+    expect(holds()).toBe(0);
   });
 
   it("a non-retryable failure is never re-run by retry() — not even once the cause is gone", async () => {
@@ -654,6 +695,27 @@ describe("usePaytmCheckout — a screen that dies mid-initiate", () => {
     expect(dispatched).not.toHaveBeenCalled();
     expect(m.navigate).not.toHaveBeenCalled();
     expect(events("payment_initiated")).toEqual([]);
+    unsubscribe();
+  });
+
+  it("gone while the screen chunk loads: no id is minted and nothing is sent", async () => {
+    arm("PaytmEdc");
+    const chunk = deferred<unknown>();
+    m.loadScreen.mockReturnValue(chunk.promise);
+    respond(m.edc, OK_EDC);
+    const view = mountHook();
+    await start(view.result);
+    view.unmount();
+    const dispatched = vi.fn();
+    const unsubscribe = store.subscribe(dispatched);
+
+    await act(async () => chunk.resolve(SCREEN));
+    await flush();
+
+    expect(m.ids).not.toHaveBeenCalled();
+    expect(m.edc).not.toHaveBeenCalled();
+    expect(dispatched).not.toHaveBeenCalled();
+    expect(m.navigate).not.toHaveBeenCalled();
     unsubscribe();
   });
 

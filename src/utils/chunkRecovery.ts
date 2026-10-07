@@ -76,9 +76,10 @@ export const installChunkErrorRecovery = (): void => {
     // of all mid-order. Prevented, import() resolves undefined:
     // useFcmRegistration reports fcm_init "import" and FCM stays off, and
     // startAnalytics leaves analytics off, until the next page load. The
-    // Paytm screen (P8b, src/pages/PaytmPayment/paytmRuntime.ts) loads right
-    // AFTER an initiate — a payment may be live, so it never reloads either:
-    // PaytmPaymentRoute shows its staff panel instead.
+    // Paytm screen (P8b, src/pages/PaytmPayment/paytmRuntime.ts) never
+    // reloads either — a resumed payment may be live: loadPaytmScreen flags
+    // the reload for the next splash, usePaytmCheckout refuses the initiate
+    // and PaytmPaymentRoute shows its staff panel.
     if (/fcmRuntime|posthogRuntime|paytmRuntime/.test(String(event.payload?.message))) return;
 
     if (isRetryOfAReload()) {

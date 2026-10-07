@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -6,45 +6,21 @@ import { readOpenPaytmSession } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { selectPayment } from "@cx-sdk/payments/state/payment.slice";
 import ErrorModal from "../components/common/ErrorModal";
 import PleaseWait from "../components/payment/PleaseWait";
-import { captureKioskEvent, KioskEventName } from "../utils/analytics";
-
-type Screen = ComponentType;
-
-/** The screen once its chunk has arrived: every later mount renders it at once. */
-let loadedScreen: Screen | null = null;
-let pendingLoad: Promise<Screen | null> | null = null;
-
-/**
- * Starts (or joins) the chunk load; never rejects — null = it failed, and a
- * failure is not kept: the next mount tries again. `await import()`, NEVER
- * `import().then()` (see trackEvent.ts): in a build a failed chunk fires
- * vite:preloadError, chunkRecovery prevents it WITHOUT a reload
- * (/paytmRuntime/) and the import RESOLVES undefined; the dev server rejects.
- */
-function loadScreen(): Promise<Screen | null> {
-  pendingLoad ??= (async () => {
-    try {
-      const chunk: { default?: Screen } | undefined = await import(
-        "../pages/PaytmPayment/paytmRuntime"
-      );
-      if (chunk?.default) return (loadedScreen = chunk.default);
-    } catch {
-      // The dev server's rejected import.
-    }
-    pendingLoad = null;
-    captureKioskEvent(KioskEventName.ErrorOccurred, { error_source: "paytm_chunk" });
-    return null;
-  })();
-  return pendingLoad;
-}
+import { PAYMENT_IDLE_HOLD_MAX_MS, useIdleHold } from "../hooks/utils/useIdleTimeout";
+import {
+  loadedPaytmScreen,
+  loadPaytmScreen,
+  type PaytmScreen,
+} from "../pages/PaytmPayment/loadPaytmScreen";
 
 /**
- * The chunk did not arrive (a deploy race with no service-worker copy, a dead
- * network). Nothing here can poll or void, so it is the panel the screen
- * itself ends on when an outcome is unknown — don't pay again, the order
- * number for staff — with FINISH only: /start's mount releases the session
- * status-first (one read; an EDC void only after a fresh "pending"). Never a
- * reload: a payment may be live on the terminal.
+ * The chunk did not arrive (a resumed session on a page with no network and
+ * no service-worker copy). Nothing here can poll or void, so it is the panel
+ * the screen itself ends on when an outcome is unknown — don't pay again, the
+ * order number for staff — with FINISH only: /start's mount releases the
+ * session status-first (one read; an EDC void only after a fresh "pending").
+ * Never a reload here: a payment may be live on the terminal (the loader has
+ * flagged one for the next splash).
  */
 function PaytmScreenUnavailable() {
   const { t } = useTranslation();
@@ -73,27 +49,32 @@ function PaytmScreenUnavailable() {
 /**
  * /paymentPolling off the boot path (P8b × the P9f 355 KiB budget): the
  * settlement screen, its hook, the SDK reducer and react-qr-code are the
- * lazy paytmRuntime chunk, fetched on the first Paytm payment. Until it
- * arrives: PleaseWait ("Setting up your payment", the frame the initiate on
- * /receipt just showed) — never a blank screen.
+ * lazy paytmRuntime chunk (loadPaytmScreen). usePaytmCheckout loads it
+ * BEFORE the initiate, so a checkout lands here with the screen in hand;
+ * only a session resumed after a reload (here, or via PaytmResumeGuard)
+ * loads it here.
+ * Until it arrives: PleaseWait ("Setting up your payment") — never a blank
+ * screen — with idle HELD: the terminal may be armed, and the screen's own
+ * hold takes over once it renders (the staff panel releases it).
  *
  * Plain state, not React.lazy + Suspense: Suspense throttles the reveal
  * after a fallback with a 300 ms TIMER — a stalled timer queue would hold a
  * live payment behind PleaseWait (the e2e freezes the clock before every
- * initiate) — and React.lazy keeps a failure for the page's lifetime.
+ * initiate).
  */
 export default function PaytmPaymentRoute() {
   const { t } = useTranslation();
   // undefined = loading · null = the chunk failed.
-  const [screen, setScreen] = useState<Screen | null | undefined>(
-    () => loadedScreen ?? undefined
+  const [screen, setScreen] = useState<PaytmScreen | null | undefined>(
+    () => loadedPaytmScreen() ?? undefined
   );
+  useIdleHold(screen === undefined, PAYMENT_IDLE_HOLD_MAX_MS);
 
   useEffect(() => {
     if (screen !== undefined) return;
     let live = true;
     const load = async () => {
-      const loaded = await loadScreen();
+      const loaded = await loadPaytmScreen();
       if (live) setScreen(() => loaded);
     };
     void load();

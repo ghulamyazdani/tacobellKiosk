@@ -27,6 +27,7 @@ import {
   useInitiatePaytmEdcKioskMutation,
 } from "@cx-sdk/payments/services/paymentSettingsFetchApi";
 import { persistor } from "../../redux/app/store";
+import { loadPaytmScreen } from "../../pages/PaytmPayment/loadPaytmScreen";
 import useOrderHook from "../menuHooks/useOrderHook";
 import { useIdleHold } from "../utils/useIdleTimeout";
 import {
@@ -48,6 +49,7 @@ import type {
  * ── THE SEQUENCE (one initiate per tap; contract §P8b-05) ─────────────────
  *   refuse (modal, never a silent return — fork usePaymentHook.ts:349-351 is
  *     NOT ported) when no usable selection or netAmount <= 0
+ *   loadPaytmScreen() -> refuse when the /paymentPolling chunk is missing
  *   generatePaymentIds() -> setOrderId + setBillPaymentInfo   BEFORE the call
  *     -> persistor.flush()                                     (on disk too)
  *   getPushOrderData(posBillNo) -> H-c guard (refuse on mismatch)
@@ -175,6 +177,15 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
     let posBillNo = "";
     let apiResponse: unknown;
     try {
+      // No money moves without the screen that settles it (the lazy
+      // paytmRuntime chunk): one that did not arrive is a local refusal,
+      // before any id or request — and the next splash reloads the page.
+      const screen = await loadPaytmScreen();
+      if (!mountedRef.current) return;
+      if (!screen) {
+        refuse(selection.paymentType, "screen_unavailable", "");
+        return;
+      }
       const ids = await generatePaymentIds();
       if (!mountedRef.current) return;
       posBillNo = ids.posBillNo;

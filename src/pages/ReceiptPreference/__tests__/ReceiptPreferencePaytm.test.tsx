@@ -17,7 +17,8 @@ import i18n from "../../../i18n";
   P8b — /receipt's Paytm branch at the SCREEN: the real usePaytmCheckout and
   usePayAtCounter, real PleaseWait / ErrorModal / i18n. Mocked edges: the two
   initiate triggers, the id generator, useOrderHook (getPushOrderData for
-  Paytm, pushOrder for COD), navigate and analytics. The money rules live in
+  Paytm, pushOrder for COD), navigate, analytics and the lazy /paymentPolling
+  screen loader (arrived, unless a case says not). The money rules live in
   usePaytmCheckout.test; this suite pins what the customer sees and can tap.
 */
 
@@ -28,6 +29,7 @@ const m = vi.hoisted(() => ({
   edc: vi.fn(),
   pushOrder: vi.fn(),
   ids: vi.fn(),
+  loadScreen: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -61,6 +63,9 @@ vi.mock("@cx-sdk/payments/services/paymentSettingsFetchApi", async (importOrigin
 vi.mock("@cx-sdk/payments/gateways/paymentSession", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   generatePaymentIds: () => m.ids(),
+}));
+vi.mock("../../PaytmPayment/loadPaytmScreen", () => ({
+  loadPaytmScreen: () => m.loadScreen(),
 }));
 
 const option = (label: string, fields: Record<string, string>) => ({
@@ -111,6 +116,7 @@ const receiptEvents = () =>
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
   let n = 0;
+  m.loadScreen.mockResolvedValue(() => null);
   m.ids.mockImplementation(() => {
     n += 1;
     return Promise.resolve({ posBillNo: `1700000000000${n}`, posBillTime: 1_700_000_000_000 + n });
@@ -200,6 +206,22 @@ describe("/receipt — the Paytm branch (P8b)", () => {
     expect(m.navigate).toHaveBeenCalledTimes(1);
     expect(m.navigate).toHaveBeenCalledWith("/payment");
     expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+    expect(m.edc).not.toHaveBeenCalled();
+    expect(m.dqr).not.toHaveBeenCalled();
+  });
+
+  it("the /paymentPolling screen chunk did not arrive: the same refusal — PAY ANOTHER WAY (no TRY AGAIN), nothing sent, no ids", async () => {
+    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
+    m.loadScreen.mockResolvedValue(null);
+    mount();
+    await tap("receipt-none");
+
+    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+    expect(screen.queryByTestId("paytm-initiate-retry")).not.toBeInTheDocument();
+    await tap("paytm-initiate-other");
+    expect(m.navigate).toHaveBeenCalledTimes(1);
+    expect(m.navigate).toHaveBeenCalledWith("/payment");
+    expect(m.ids).not.toHaveBeenCalled();
     expect(m.edc).not.toHaveBeenCalled();
     expect(m.dqr).not.toHaveBeenCalled();
   });
