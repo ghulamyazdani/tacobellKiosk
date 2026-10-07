@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-07 (fonts merged)** · Gates at last update (Node 22.14):
-> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 2,195/2,195 · e2e 257/257 · guardrails 0 critical / 216 warnings · build+PWA green · boot path 351.6 KiB gzip-9 / 355 (CI build 352.9) · page JS 1,316.9 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-07 (bag-pdp + loyalty-visual merged)** · Gates at last update (Node 22.14):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 2,506/2,506 · e2e 304/304 · guardrails 0 critical / 164 warnings · build+PWA green · boot path 350.6 KiB gzip-9 / 355 (CI build 351.8) · page JS 1,337.3 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -90,11 +90,34 @@ full-stage, and every return to the splash ends ADA for the next guest.
 
 ## Deferred-in-place (wired later, marked with TODOs in code)
 
-- "Apply to the following burrito" slot-copy toggle (Figma 1:4641) → P7 polish
-- EAT IN / TAKE OUT toggle in the bag is READ-ONLY: a mid-session pipeline
-  switch needs setSelectedPipeline+setSelectedTabId+charges refetch+setTabType+
-  fetchMenu+cart revalidation (fork has NO such path) → P7 later, decide UX
-- Edit-quantity numpad modal for multi-qty rows (Figma 1:4460) → P7 polish
+- "Apply to the following burrito" slot-copy toggle (Figma 1:4641, item 21):
+  ⛔ BLOCKED on backend data (bag-pdp, 2026-10-07) — no payload models repeated
+  bundles: within a pack no two `_combo` groups share an option set (0 of the
+  27 multi-slot reference items), because a product repeated across slots is a
+  separate entity ("Pepsi Small" vs "Pepsi Small."), so nothing is built (never
+  guessed from names); proposal §10 (`bundleKey` / `bundleIndex` + shared
+  constituent ids)
+- ~~EAT IN / TAKE OUT toggle in the bag is READ-ONLY~~ ✅ bag-pdp (item 19,
+  merged 2026-10-07): the in-bag switch — confirm → in-flight overlay (idle
+  held, every request bounded) → failure (TRY AGAIN / BACK, nothing changed) or
+  ONE commit. The target tab's charges, menu, out-of-stock, offers and DP are
+  fetched with every write staged; the commit applies /second's selection,
+  re-prices the bag (a size row's own size list too), removes rows the tab
+  can't serve and names them in a notice that survives the empty-cart exit,
+  reverses loyalty rewards it can't serve (refund + revoke; kept rewards are
+  not re-priced), clears the tent number and re-checks the offer (D1a / D1b /
+  D1c). Refused, with nothing written, past the target DP session's
+  `maxQtyItem`; disabled with one order type, a closed / deactivated target or
+  while PAY runs
+- ~~Edit-quantity numpad modal for multi-qty rows~~ ✅ bag-pdp (item 20): the
+  Figma 1:4460 SPLIT edit ("Choose how many you want to edit";
+  `EditHowManyModal` + KioskNumpad, opened inside the bag) — edit k of a row's
+  N units: k = N is the whole-row edit as before and qty-1 rows edit directly;
+  the same recipe at PDP qty q ≠ k merges back (`N − k + q`), q = k is a noop,
+  any other change splits off a new row after the source; one write (SDK
+  `planSplitEditCommit` on the live cart); a DP-cap rejection is silent and
+  keeps the PDP open. A size change now sticks, whole-row or split
+  (`buildVariantEditCommitPayload`)
 - ~~Cart recommendations S3 source~~ ✅ post-P9 29a (menu-data lane) — the tenant
   S3 map behind `VITE_TENANT_RECOMMENDATIONS_URL` (empty = off), Dexie +
   memory only; the bag rail prefers it, falling back to isCartRecommended
@@ -104,6 +127,16 @@ full-stage, and every return to the splash ends ADA for the next guest.
   and the fork's dead `/verify` + `/loyalty` pages (the zero-bill
   `shouldPlaceLoyaltyOrderDirectly` push landed in P8a). Reelo is not ported
   (user decision 2026-10-05: Xeno only)
+- Loyalty reward states ✅ loyalty-visual (item 39a, merged 2026-10-07): the
+  Xeno REWARDS sheet on the 1:3842 / 1:3948 geometry with an out-of-stock
+  reward in the 1:3858 "ineligible" look, the offer sheet aligned to it (D2),
+  the fork's offer lock while a reward is in the bag (D3), the offer row's own
+  saving (F1). ⛔ BLOCKED on backend data (Xeno sends none of it; proposal §12):
+  the "Expires …" line, per-reward eligibility (the "Add £X+" nudge + the
+  "Suggested £X+ Items" rail) and order-level rewards ("£4 Off Order"). Not
+  built by decision: a has-rewards card for Xeno (D1 = A — the reward stays an
+  item row). Log only (F4, fork parity): a non-percentage Xeno coupon keeps its
+  full price but shows "Free"
 - Offers set ✅ post-P9 (offers lane, merged 2026-10-07): the BOGO buy stage,
   customizable freebies (OfferTierHost), exact group-wise picks, the
   celebration, auto-apply (operator-flagged). ⛔ BLOCKED on backend data:
@@ -113,10 +146,28 @@ full-stage, and every return to the splash ends ADA for the next guest.
   strip (TB uses the bag Rewards entry row). Still open: G4 — group-wise
   CATEGORY candidates are not offered (a get side with only categories opens
   an empty picker that X closes)
-- `confirmTier1CustomizationRemoval` (tier-2 qty→0 in edit) is dispatched but has
-  no consumer yet (fork's ConfirmFirstTierDeleteCustomization equivalent) → P7
-- Variant-shaped upsell items in the MIAM decline path (fork's isVariantUpsell
-  branch) → wire when variant upsells enter the TB catalog
+- ~~`confirmTier1CustomizationRemoval` has no consumer~~ ✅ bag-pdp (item 24):
+  in a tier-2 EDIT, '−' at qty 1 asks first (an alertdialog reusing the
+  `pdp.discard*` copy) and YES removes the pick via SDK `removeTier1Selection`
+  — it was a dead tap. The fork's consumer would crash TB's pricing (it reads
+  `group.id`; groups carry `_id`): TB takes the group from `tier2MIAMGroupID`
+  and matches the pick by itemId
+- ~~Variant-shaped upsell items in the MIAM decline path~~ closed (bag-pdp item
+  30, nothing ported): the fork's `isVariantUpsell` branch never ran (its
+  `isTier2` early return fires first; the flag is read, never written), so TB's
+  decline already is the fork's reachable path — pinned by 3 synthetic-variant
+  tests in `MakeItAMealPrompt.test.tsx`
+- ⛔ PDP nutrition (Figma 1:5823, item 22): BLOCKED on backend data, never faked
+  — every `nutritionalInfo` value is 0 (122/122 reference entities; top-level
+  `calorieCount` too), the units are wrong (calories "grams", sodium "g",
+  `servingSize` "mg"), `allergens` is empty and dropped by the SDK whitelist,
+  and no open-state frame exists; proposal §9. The PDP keeps "£x | N Cal" when
+  calories are above 0
+- ⛔ NONE / REGULAR / EXTRA ingredient levels with "EXTRA +£1.50" (Figma 1:3007
+  / 1:3037 / 1:5477): BLOCKED on backend data — no level or per-level price
+  exists (no reference group sets `differentialPrice` or `priceChange`, and
+  both are dynamic-pricing flags anyway); proposal §11. The rest of the builder
+  / customize family is item 42 (figma-polish lane)
 - Menu banner media: DECLINED (user D1 2026-10-06 — not in the Figma); the SDK
   banner walk is guarded (post-P9 25a). Menu search: DESCOPED (user D2
   2026-10-06 — the fork's search is dead code, no Figma). MIAM texts at boot ✅
@@ -133,6 +184,24 @@ full-stage, and every return to the splash ends ADA for the next guest.
 - ~~Per-language pipeline/menu names~~ ✅ post-P9 28 — resolved at render (useLocalized); offer/coupon names and the MIAM buttonText1/2 stay English (no data)
 - Select-a-Size fast lane, a variant WITH modifier groups (pre-existing since 1bfd95e, found by the fonts-lane fixer 2026-10-07): CONTINUE navigates to `/customization` without opening a session (`Menu/index.tsx` `handleSizeContinue`), so the PDP's no-session guard bounces to `/menu` and nothing is added (VIEW MY BAG stays 0) → open the variant session the way a card tap does (`openDoubleTierModal`)
 - SelectSizeModal vs Figma 1:5683 (pre-existing, not font-caused): 560 px wide vs 680, small-tile radios bottom-right vs top-right, a wrapped name centred vs left-aligned → visual polish
+- Boot loading / error / card illustrations (Figma 1:5598 / 1:5600 / 1:5602,
+  item 43): re-checked 2026-10-07 (loyalty-visual, three `download_assets`
+  probes) — loading and error hold posters only (still PNG fills): BLOCKED on
+  the designer (MP4 / WebM with alpha or Lottie, plus placement frames). The
+  card board also holds an animated 3.12 s tilt GIF (2.34 MB), not built — a
+  placement / format call; the still card stays P8b's `credit-card.svg`
+- Loyalty REWARDS auto-dismiss bar (pre-existing since P7c, cosmetic; found by
+  the loyalty-visual e2e author): after the guest's first touch the 6 px
+  countdown bar stays painted at its frozen width, OTP step included
+  (`cancelTimer` only clears the interval) → figma-polish lane (G3)
+- A failed `bagLazyParts` chunk (residual, wider now that the chunk loads at
+  /menu entry): in production the page reloads (chunkRecovery — the cart
+  survives, a PDP customisation in progress is lost); within 60 s of a reload
+  (its loop guard) the bag lands on the crash screen (its always-mounted lazy
+  parts have no local boundary) while the menu's loyalty sheet degrades to a
+  closable scrim. Only `loadActivityModal` / `loadPaytmScreen` schedule the
+  healing reload — nothing heals the bag parts or the loyalty sheet between
+  guests → figma-polish lane (G2)
 
 ## Open decisions / user-gated items
 
@@ -205,7 +274,11 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Splash sign-off list (P9d, design-language details):** (1) carousel cards crop 1080×1920 art with `object-cover` — ≈6.9 % lost top and bottom on the 680×1043 cards (author carousel art at 680×1043, or accept); (2) the card colour behind a loading slide or a peeking video, and the 0.5 s centre fade, have no Figma spec; (3) the carousel sheen uses the app-wide recipe (40 % soft-light, unrotated), not Figma's 50 % normal rotated −90°; (4) the full-bleed CTA has no scrim over operator media, so its contrast depends on the asset (keep the bottom band dark in the asset spec); (5) WELCOME says "touch anywhere to start" but a short tap in the hidden 180×180 operator corner does nothing; (6) the Arabic splash copy is a draft needing native review; (7) the bell is now decorative (`alt=""`) — the start button's accessible name is the visible copy | client | ⚠️ sign-off |
 | **Splash media known limits (P9d):** a slide that errors or stalls stays skipped until the next splash visit (no in-visit retry — `ponytail:` in SplashMedia); video play count is uncapped (image dwell is capped at 1 h); `SPLASH_VIDEO_STALL_MS` (15 s) is a hardware calibration knob and a multi-day soak on the physical kiosk is owed; videos are not service-worker cached (range responses), so there is no offline video; the SW image route now covers ALL images (`request.destination === "image"`, StaleWhileRevalidate, 250 entries / 30 days, `purgeOnQuotaError`) and each opaque S3 entry counts several MB of quota | hardware / ops | ⚠️ open — UPDATE post-P9 44: non-codec failures (load_error / stalled) are retried 10 min after the LAST failure (`SPLASH_RETRY_MS`, ops knob, D9; fixed interval, no backoff); no_video is never retried within the visit; with Workbox SWR a cached error can take two retry periods to clear |
 | **S7 residue (P9d):** after an outcome-unknown push, "Back to bag" then removing the reward row shows the marked claim's points as returned (BagSheet adds them on screen before the skipped revoke) — display-only, session-scoped; the reconciliation record (`order_push` reward ids + `xeno_revoke_skipped`) is analytics-only, so the `VITE_POST_HOG_TYPE` kill switch drops it outside production | maintainer | ⚠️ open |
-| **Fonts lane sign-off list (2026-10-07, design language / Figma deltas):** (1) PDP title → the frame's Exp Bl 48/44, −1 px, ink purple (1:2614 / 1:4641 / 1:5823; was compressed 56/52, black); (2) the footer labels now render Exp Md as 1:2581 specifies (weight 900 → 500, visible); (3) the REWARDS INCOMING seal ring → Exp Md (125 %/500) per 1:4079, its two copies at 0 % / 50 % (one EN copy is 426 of the 440 px half ring — a longer `sealText` needs less letter-spacing or one copy); the Arabic seal text falls back to the OS font at regular weight; (4) menu-card names keep their full text (up to 4 lines) and the photo shrinks (to ~70 px) — Figma only shows 1–2-line names (alternative: clamp at 2 lines); (5) 2-line clamps with an ellipsis on the suggestion cards (/forYou, the bag rail, the rewards Suggested rail) and the buy-stage tiles; the product-added suggestions strip (no frame) stays unclamped, 3–4 lines; (6) the /forYou count pill sits at the photo strip's bottom-left (top-left, it covered the name; no frame draws it); (7) option tiles without a photo (PDP + tier-2) get `px-[44px]`, so names of ~25+ characters wrap to 2 lines instead of running under the radio (no frame has an imageless tile); pack slot cards fill their grid row so every CTA lines up; (8) the offer nudge wraps to 3 lines, right-aligned (1:3858: 4 lines, left-aligned); (9) the /payment and /receipt card labels and the /payment TOTAL bar → the frames' Cm Bd 48/44 at every tile count (bar 124 px as 1:3371; 16 px side padding at n = 3; Arabic labels wrap to 2–3 lines); Order Complete's PROCEED line → Title/H4 Cm Bd 34/38; (10) /second with 3–4 order types: two card rows anchored at the 2-card top (573 px) — the title 157 px below the bell, the last row 77 px above the footer; 5+ take the swipe row with the next card peeking (the fork wraps: 5–6 cards covered the bell, 7+ ran off screen); (11) the product-added "Total" is the menu bar's pre-tax subtotal while the bag's Total includes tax (1:4571 does not say which); (12) Activity Center pills px-10 → px-8 so the three labels share one line (frameless); (13) Arabic: the macOS fallback (Geeza Pro) is unaffected by `font-stretch`, but a width-variable Arabic face on the kiosk OS could condense `.tb-compressed` Arabic (on-hardware check owed, S1); the AR `pack.cal` copy wraps the price line on 189 / 152 px cards (native-review copy call); Arabic rail labels wrap to two cramped lines in the 30/24 compressed style; (14) CRAVINGS MENU wraps in the rail because of box width, not the font: a 167 px text box vs the frame's ~170 px label, so it would wrap with GT America too (a one-line fit needs a padding cut, e.g. `pl-[24px] pr-[12px]`); (15) Figma deltas NOT caused by the fonts, left as they are: the 1:3364 / 1:3377 headlines 58/56, −1.5 vs Exp Bl 64/0.85, −3; payment tiles / row 412 / 848 vs 416 / 856; the Order Complete heading 76 px vs Title/H3 48/44; the order number 112 vs Title/H1 116/98; the CancelOrderModal CTAs body bold 20 vs Exp Bl ~18 and its title 40 vs ~32 (1:4552); the LoyaltyLogin segment labels body bold vs Expanded (1:4174); (16) weight/style mismatches the real font made visible, each a one-class follow-up (`tb-display font-bold normal-case` works since the @layer move): the PDP group header (body bold 24 vs Md 20/24, −0.5, 1:5823), PDP "Show more" (body bold 18 ink/80 vs Exp Bd 16/24 #501098, −0.08, 1:1688), the bag "Edit" link (body bold 16, reportedly Exp Bd — verify on the next 1:3193 pull) | client | ⚠️ sign-off |
+| **Fonts lane sign-off list (2026-10-07, design language / Figma deltas):** (1) PDP title → the frame's Exp Bl 48/44, −1 px, ink purple (1:2614 / 1:4641 / 1:5823; was compressed 56/52, black); (2) the footer labels now render Exp Md as 1:2581 specifies (weight 900 → 500, visible); (3) the REWARDS INCOMING seal ring → Exp Md (125 %/500) per 1:4079, its two copies at 0 % / 50 % (one EN copy is 426 of the 440 px half ring — a longer `sealText` needs less letter-spacing or one copy); the Arabic seal text falls back to the OS font at regular weight; (4) menu-card names keep their full text (up to 4 lines) and the photo shrinks (to ~70 px) — Figma only shows 1–2-line names (alternative: clamp at 2 lines); (5) 2-line clamps with an ellipsis on the suggestion cards (/forYou, the bag rail, the rewards Suggested rail) and the buy-stage tiles; the product-added suggestions strip (no frame) stays unclamped, 3–4 lines; (6) the /forYou count pill sits at the photo strip's bottom-left (top-left, it covered the name; no frame draws it); (7) option tiles without a photo (PDP + tier-2) get `px-[44px]`, so names of ~25+ characters wrap to 2 lines instead of running under the radio (no frame has an imageless tile); pack slot cards fill their grid row so every CTA lines up; (8) the offer nudge — superseded by loyalty-visual D2 (2026-10-07): a 206 px start-aligned column, 4 lines as 1:3858; (9) the /payment and /receipt card labels and the /payment TOTAL bar → the frames' Cm Bd 48/44 at every tile count (bar 124 px as 1:3371; 16 px side padding at n = 3; Arabic labels wrap to 2–3 lines); Order Complete's PROCEED line → Title/H4 Cm Bd 34/38; (10) /second with 3–4 order types: two card rows anchored at the 2-card top (573 px) — the title 157 px below the bell, the last row 77 px above the footer; 5+ take the swipe row with the next card peeking (the fork wraps: 5–6 cards covered the bell, 7+ ran off screen); (11) the product-added "Total" is the menu bar's pre-tax subtotal while the bag's Total includes tax (1:4571 does not say which); (12) Activity Center pills px-10 → px-8 so the three labels share one line (frameless); (13) Arabic: the macOS fallback (Geeza Pro) is unaffected by `font-stretch`, but a width-variable Arabic face on the kiosk OS could condense `.tb-compressed` Arabic (on-hardware check owed, S1); the AR `pack.cal` copy wraps the price line on 189 / 152 px cards (native-review copy call); Arabic rail labels wrap to two cramped lines in the 30/24 compressed style; (14) CRAVINGS MENU wraps in the rail because of box width, not the font: a 167 px text box vs the frame's ~170 px label, so it would wrap with GT America too (a one-line fit needs a padding cut, e.g. `pl-[24px] pr-[12px]`); (15) Figma deltas NOT caused by the fonts, left as they are: the 1:3364 / 1:3377 headlines 58/56, −1.5 vs Exp Bl 64/0.85, −3; payment tiles / row 412 / 848 vs 416 / 856; the Order Complete heading 76 px vs Title/H3 48/44; the order number 112 vs Title/H1 116/98; the CancelOrderModal CTAs body bold 20 vs Exp Bl ~18 and its title 40 vs ~32 (1:4552); the LoyaltyLogin segment labels body bold vs Expanded (1:4174); (16) weight/style mismatches the real font made visible, each a one-class follow-up (`tb-display font-bold normal-case` works since the @layer move): the PDP group header (body bold 24 vs Md 20/24, −0.5, 1:5823), PDP "Show more" (body bold 18 ink/80 vs Exp Bd 16/24 #501098, −0.08, 1:1688), the bag "Edit" link (body bold 16, reportedly Exp Bd — verify on the next 1:3193 pull) | client | ⚠️ sign-off |
+| **bag-pdp sign-off list (2026-10-07, design language — no frame, or beyond 1:3205 / 1:4460 / 1:2855 / 1:2814):** (1) D1, the switch screens: the confirm, the in-flight overlay (no card; scrim at 90 %, /second's precedent — at 80 % the bag rows read through), the failure dialog (TRY AGAIN / BACK; the EN body leaves one word on its last line — `text-pretty` on ErrorModal's message would fix every caller) and the removal notice; (2) D1a: a switch drops an applied offer that has free rows in the bag or that the target tab doesn't offer (the standard removal notice), bill-level and least-value offers stay and are re-checked; D1b: an offers-fetch failure aborts the switch (stricter than /second, which keeps stale offers); D1c: a DP-fetch failure is tolerated at regular prices; (3) a switch past the target DP session's cap is refused with the generic failure copy and TRY AGAIN repeats the refusal (alternative: regular prices for the over-cap units; dedicated copy would cost 0 boot bytes in `lazy.json`); (4) with 3+ order types the switch takes the first open pipeline of the other kind in list order — maybe not the one the guest picked on /second (dine_in vs table); (5) after a switch the edit PDP hides a size the new tab doesn't sell, and every committed switch clears the tent number (a guest who switches back to a table types it again); (6) kept loyalty rewards are never re-priced on a switch (a partial-percentage reward keeps the old tab's undiscounted price and taxes) — re-price or re-redeem? (client / maintainer); (7) the split edit: Figma 1:4460 read as "edit k of N" (the brief read a quantity setter), opened inside the bag (Figma draws it over the menu), titled "You have N name", EDIT dimmed at 0, the card capped at the zone − 96 px; the reused KioskNumpad draws CLEAR at 28 px with 20 px gaps (Figma 24 / 16), ~11 px either side of the label; in ADA a 4-line name puts the CLEAR / 0 / ⌫ row under the scroll fold; (8) the completion warning's non-box title "Let's finish your choices first"; (9) item 24 reuses the PDP discard dialog — sentence-case "Keep editing / Discard", and focus lands on the destructive button (the ErrorModal precedent; the APG prefers the least destructive action); (10) the 14 Arabic drafts in `lazy.json` need native review | client | ⚠️ sign-off |
+| **bag-pdp residuals (2026-10-07):** (R1) the useOfferHook dead-member trim (21 members, −2,236 B gzip measured) is NOT applied — the orchestrator applies it only above 354.0 KiB CI and the merge measured 353.2; (R2) the lazy-only copy pattern (`lazy.json` + `i18n/lazyCopy`, −460 B boot) vs the 14 keys back in translation.json; item 24's logic stays on the boot path (208 B); (R3) a throw inside the switch's commit burst (plain reducer dispatches — very unlikely) shows "Your order hasn't changed" over a partly applied state (TRY AGAIN converges, BACK keeps it); a crash between the burst and the Dexie replace restores old-priced rows under the new pipeline (the window every cart mutation has); nested tier-2 pick taxes stay from the tab the item was added under; (R4) C6 is assumed — a tab menu that renames an entity, size or pick id makes the switch remove and name the row instead of re-pricing it — and a 504/505 on any switch fetch still de-registers a kiosk with a full bag (proposals C2 / C6); (R5) a DP-capped or source-missing split edit leaves the guest on the PDP with no message (like every DP rejection: TB renders no global error); PAY failures on /cart are still silent (`setShowErrorModalGlobal` has no renderer); /second neither hides device-deactivated pipelines nor passes the fresh tab type to menu charges → figma-polish (G1, S3); (R6) the fork has the same two money bugs, untouched: `Cart.tsx:1548` stores the bill's charge objects then calls `getNetAmount()` in render, and `CartItem.tsx:141-157` seeds an edit with the whole row (a size change is probably dropped); `billCalculation.js:5` logs to the console on every call (SDK, fork parity) | maintainer / user | ⚠️ open |
+| **loyalty-visual sign-off list (2026-10-07, design language beyond 1:3842 / 1:3948 / 1:3858):** (1) D1 = A: a Xeno reward stays an item row in the bag (P7c locked decision 6) — no has-rewards card; (2) D2: the offer sheet and rows on the same geometry (1480 panel, 48/44 header, 152 plates, 32/36 titles, 200 px row pitch, a 206 px start-aligned nudge in ONE weight — Figma's bold "Add £X+" would need markup inside `offers.addNudge`; locked rows without a nudge stay top-aligned); (3) D3, PORTED for fork parity: while a Xeno reward is in the bag and no offer is applied, every apply path refuses (sheet SAVE, buy-stage CONTINUE, picker CONFIRM, auto-apply); the offer sheet shows the pink line "Offers can't be combined with a redeemed reward" over inert rows (no radio, nudge, ADD ITEMS or rail; SAVE disabled; every row centred) — never a "remove the reward" instruction (Xeno rows are removable only when out of stock); the asymmetry: an offer applied BEFORE the reward stays, stacks and can be swapped, and removing it then locks re-apply; the bag's Rewards entry still names the best-ranked offer while locked; (4) D4: the row title = the localized menu name + the Free / % chip; (5) D5: the second line "{n} points" ("Expires …" is blocked, proposal §12); (6) D6: the balance line "You have {n} points", on the OTP step too; (7) D6b: the operator's `reward_title_*` / `reward_subtitle_*` replace the header and `loyalty_point_alias_*` the word "points", per language slot with NO cross-language fallback (the fork falls back secondary → primary; blank = today's copy); the H3 style uppercases an operator title, a wrapped one leaves the bell at the box's start edge (UI-4; the option is an inline bell that moves with line 1), and the OTP step clamps it to 2 lines (UI-1: a 3+-line title pushed the ADA keypad under the action bar); (8) D7: REDEEM kept (it sends an OTP; Figma says SAVE SELECTION); D8: the radio kept (Figma draws no selection state); (9) the out-of-stock look (only the art at 50 %, "Unavailable", no radio) and the loading scrim while the lazy sheet's code arrives; (10) UI-5: wrapped Arabic reward names keep the left alignment (names take no `dir="auto"`; the fix would be `dir="auto"` + `text-start` on the name leaf only); (11) the Arabic drafts `loyalty.pointsBalanceLine` / `pointsBalanceLineAlias` / `pointsCostAlias` / `offersLocked` need native review | client | ⚠️ sign-off |
+| **loyalty-visual residuals (2026-10-07):** (R1) the D3 guards in `selectOfferAndCommit` / `commitPickedFreebies` are unreachable from the UI (every row inert, SAVE disabled) — unit tests only; a picker CONFIRM refused in a race leaves staged rows in `cart.getItems` (never billed; the next CONFIRM, X or reset clears them); `useOfferAutoApply` still runs its bill probes under the lock before `autoApplyOffer` refuses (no write, no loop); (R2) F1 finds the reward's share ONLY by orderBuilder's "Loyalty Item" discount comment (pinned against the real engine); a fixed-type reward could drift the offer-only figure by 1p (Xeno coupons are percentage-only today); (R3) offer minimums count paid rows only — a reward's undiscounted price is in Sub Total but not in an offer's basis (a £25-minimum offer says "Add £17.00+" under a £25.00 Sub Total); (R4) the lane's four keys are boot keys in translation.json although only lazy components render them (a `lazy.json` candidate); `loyalty.pointsBalance` is now unused; `loyaltyOfferRules.ts` is the codebase's first `Object.hasOwn` (ES2022; the fork never imports it) | maintainer | ⚠️ open |
 
 ## Engineering notes (learned the hard way — don't relearn)
 
@@ -305,6 +378,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
 - Edit-from-bag preserves qty>1 (commit builders spread `...selectedEntity`
   AFTER `quantity`, so the redux entity's stepper value wins) — pinned by a
   dedicated unit test; the hook's local quantity state staying 1 is not a bug.
+  The same spread re-committed a VARIANT row's OLD size on edit: edits build
+  with the SDK's `buildVariantEditCommitPayload` (session fields back on top).
 - **`swapCartOffer` stamps NO cart row** — item-offer discounts exist only via
   `redeemGetItem` row stamps. A fixed single-"and" freebie has
   `requiresChoice:false`, so routing it down the atomic swap realises £0;
@@ -460,11 +535,15 @@ full-stage, and every return to the splash ends ADA for the next guest.
   stay LTR; English is byte-identical. Assert Arabic via `i18n.t()` (exact
   matchers compare the wrapped value) or substrings — never literal Arabic in
   an exact matcher, never a substring that spans a {{placeholder}}.
+  An all-placeholder Arabic template resolves LTR (no strong character) and an
+  Arabic value then reads backwards: open it with U+200F as the JSON escape
+  `\u200f`, never a literal bidi character (`loyalty.pointsCostAlias`).
 - **Never `dir` on a flex/grid container** (rows, grids, `justify-between`,
   `start-*` and scroll origins mirror). `dir="auto"` goes only on wrapping
-  leaf text (+ `text-start` under a physical `text-left`); today only the
-  offer row's second line. Caveat: HTML `dir="auto"` takes the first strong
-  character ANYWHERE in the leaf, including inside value isolates, so Arabic
+  leaf text (+ `text-start` under a physical `text-left`); today the offer
+  row's second line and nudge, and the PDP description. Caveat: HTML
+  `dir="auto"` takes the first strong character ANYWHERE in the leaf,
+  including inside value isolates, so Arabic
   copy that starts with a Latin {{value}} (offers.removedBody) resolves LTR.
 - **PostHog loads lazily (P9f):** `startAnalytics()` right after
   `setAnalyticsPort()`; the kill switch is compile-time (off = not shipped,
@@ -566,6 +645,10 @@ full-stage, and every return to the splash ends ADA for the next guest.
   split the boot path into preloaded chunks (+~5 KiB measured) — new lazy UI
   joins bagLazyParts. Until its code arrives a lazy surface shows its own named
   scrim that closes on tap (plain state + `await import()`, no Suspense).
+  Since bag-pdp + loyalty-visual: 12 exports, loaded by BagSheet, the Activity
+  Center, the PDP and the menu (its always-mounted Xeno rewards sheet, so the
+  chunk loads at /menu entry; the scrim fallback reads the open flag itself —
+  Menu must not); still ONE chunk.
 - **A failed lazy load sticks for the page's life, so it schedules the healing
   reload:** `loadPaytmScreen` / `loadActivityModal` dispatch
   `initiateWholeAppUpdate()` on a null load and the splash reloads at its next
@@ -601,7 +684,85 @@ full-stage, and every return to the splash ends ADA for the next guest.
 - **One Playwright run per dev-server port at a time:** the run that started
   the server stops it on exit and kills the rest (ERR_CONNECTION_REFUSED).
 
+- **Order-type switch = stage, then ONE burst (bag-pdp).** The charges and menu
+  fetchers route every dispatch / localStorage write through `{apply, mirror}`
+  (default dispatch; byte-identical without, pinned); `useOrderTypeSwitch`
+  commits after the last await in one synchronous burst (selection, staged
+  charges + menu, the final `pushCharges`, `setCartItems`, `setTent("")`) and a
+  failure writes nothing. Never call those fetchers un-staged mid-order; a size
+  row's own `variants` is money, re-priced too.
+- **A split edit is ONE write:** planned on `store.getState()` at commit time
+  (`planSplitEditCommit`), committed as one `setCartItems` + one Dexie replace.
+- **Lazy-only copy lives in `src/i18n/locales/{en,ar}/lazy.json`**, registered
+  by `src/i18n/lazyCopy.ts` from lazy modules only (never shadow a boot key).
+- **Never dispatch a live bill or engine object into redux:** Immer freezes
+  what the store holds and the memoised bill writes its own rows on the next
+  render (PAY threw on any deployment with a charge — now `structuredClone`).
+- **D3 + F1 live in the new SDK file `ordering/src/loyalty/loyaltyOfferRules.ts`**
+  (by subpath): `isOfferLockedByLoyaltyReward`, `getBillLoyaltyDiscount` — the
+  Xeno share of a bill is found ONLY by orderBuilder's "Loyalty Item" comment.
+
 ## Session log
+
+- **2026-10-07 (loyalty-visual merged)** · Lane `loyalty-visual` (11-agent lane
+  workflow on a read-only mapper's contract): the Xeno REWARDS sheet reskinned
+  to Figma 1:3842 / 1:3948 (item 39a: 1480 sheet, 152 plates, the subtitle and
+  a balance line, an out-of-stock reward in the 1:3858 look) and lazy-loaded
+  from bagLazyParts behind a named scrim (D9: CI boot path 352.9 → 351.5 KiB);
+  the offer sheet on the same geometry (D2); the fork's offer lock while a Xeno
+  reward is in the bag, with its offer-first asymmetry (D3); the applied-offer
+  row and the celebration show the offer's own saving, no longer the reward's
+  (F1 / D12 — the total never changed); the operator's reward title, subtitle
+  and point alias per language slot (D6b). One additive SDK file
+  (`loyalty/loyaltyOfferRules`); the fork's `src/` byte-identical. Item 43
+  re-checked (three `download_assets` probes: loading and error posters only,
+  an animated card GIF not built); expiry, per-reward minimum and order-level
+  rewards documented as BLOCKED (proposal §12). Reviewers found no money or
+  flow defect; they caught Menu re-rendering its whole card grid on every sheet
+  open / close, a 3+-line operator title pushing the ADA OTP keypad under the
+  action bar, D3-blocked rows top-aligned and a 201 px row pitch — all fixed;
+  the integrator moved one e2e waiter before /menu (the shared chunk now loads
+  there). The e2e author found that a failed lazy chunk reaches the boundary
+  only on React's retry (~300 ms after the fallback), so a one-shot "no crash
+  screen" check passed with the boundary deleted (E2b now samples 1.5 s), and
+  the pre-existing frozen auto-dismiss bar (→ figma-polish). Tests: +114 unit,
+  +14 e2e (`loyaltyOfferLock` 5, `loyaltyRewardsSheet` 6, `visual-loyalty` 3);
+  main after both merges: unit 2,506, e2e 304. Mutation checks: unit 60/61 (author, 1
+  equivalent) and 33 (verifier: 26 + 4 after strengthening + 2 reverse checks,
+  1 equivalent); e2e 6/6 (author) and 57 (verifier: 44 + 10 after
+  strengthening, 1 equivalent, 2 unreachable from the UI and killed by unit
+  tests).
+
+- **2026-10-07 (bag-pdp merged)** · Lane `bag-pdp` (13-agent lane workflow + a
+  5-agent integration with main: merge, visual, money fixes, review, fixer):
+  the in-bag EAT IN / TAKE OUT switch (item 19: staged fetchers, re-price,
+  removal notice, offer re-check, one commit), the 1:4460 split edit (item 20),
+  the PDP completion warning (1:2855) and SlotSelectionSheet on 1:2814 (item
+  23), the tier-2 removal confirm (item 24), item 30 closed by tests, items 21
+  / 22 and the portion levels BLOCKED on data (proposals §9–§11). SDK: five
+  additive files (`cart/orderTypeTarget`, `cart/orderTypeSwitch`,
+  `cart/splitEdit`, `customization/incompleteGroups`,
+  `customization/variantEditCommitPayload`) + `removeTier1Selection` appended
+  to `tier2Logic`; the fork's `src/` byte-identical. Reviewers caught a switch
+  that bypassed the DP session cap and one that kept a Xeno reward the new tab
+  can't serve (money — now refused / reversed and named), item-30 pins claimed
+  but missing, the tier-2 confirm and the numpad without dialog semantics or
+  focus, and the boot path over budget (355.3 KiB: the completion warning, the
+  split planner and the 14 strings moved into the lazy chunk) — all fixed. Two
+  money bugs already on main, found by the lane and fixed at integration: PAY
+  threw during render on any deployment with a charge (the store froze the
+  memoised bill's charge rows — `structuredClone`), and a bag edit of a size
+  row re-committed the old size (SDK `buildVariantEditCommitPayload`). The
+  integration review caught a size change after a switch charging the old tab's
+  price (the row's size list is now re-priced) and a table number typed before
+  a switch riding the take-out order (the commit clears it), and corrected the
+  lazy-chunk comments; the visual pass raised the in-flight scrim to 90 % (bag
+  rows read through it with the real font). CI boot path 352.9 → 353.2 KiB.
+  Tests: unit 2,195 → 2,392, e2e 257 → 290 (+197 / +33; `orderTypeSwitch` 17,
+  `visual-bagpdp` 6, bag 4, pack 5, ada 1). Mutation checks: unit 27/27
+  (author) and 113 (verifier: 96 + 16 after strengthening, 1 equivalent); e2e
+  11/11 (author) and 61 (verifier: 49 + 10 after strengthening, 2 equivalent);
+  every integration fix fails its unit and e2e check when reverted.
 
 - **2026-10-07 (fonts merged)** · Lane `fonts` (12-agent lane workflow + a
   5-agent integration with main: merge, two visual builders, review, fixer).

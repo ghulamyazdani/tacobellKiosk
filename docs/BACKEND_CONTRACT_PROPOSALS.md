@@ -20,7 +20,11 @@
 | 6 | Xeno SCAN APP login (1:5881) | No QR format and no lookup | `TBR1.` app token + `check_loyalty_balance_by_token` event | Tab inert, no scanner |
 | 7 | Resend OTP (reward redemption) | No endpoint | `resend_redemption_otp` event | No resend button |
 | 8 | Offer photos + terms & conditions + expiry (1:3924, 1:4009, 1:4044) | The offer payload has no image, terms or validity | `imageUrl`, `terms`, `validTill` on `get_cx_valid_offers` | Bell placeholder; no T&C rows |
-| C | Idempotency, 504/505, MENU_ID, update ack and version, FCM | Answers only | — | See §C |
+| 9 | Nutrition values + allergens (1:5823) | Every nutrient value is 0, the units are wrong, allergens are dropped | Real values with fixed units per item and size; `allergens` as codes | Calories only, when above 0 |
+| 10 | "Apply to the following burrito" (1:4641) | No payload models repeated bundles | `bundleKey` + `bundleIndex` on `_combo` groups; shared constituent ids | One flat slot grid, no copy toggle |
+| 11 | Ingredient portion levels NONE / REGULAR / EXTRA (1:3007, 1:3037, 1:5477) | No level or per-level price in the menu | A `levels` list (code + price) per default ingredient | Add / remove picks only |
+| 12 | Xeno reward expiry, minimum order, order-level rewards (1:3824, 1:3858, 1:3924, 1:3137) | `check_loyalty_balance` coupons carry no validity, no minimum and no bill-level path | `valid_till`, `min_bill_amount_for_redemption`, `discount_on: "bill"` + `amount` per coupon | "{n} points" line; out-of-stock state only |
+| C | Idempotency, 504/505 (now also the in-bag order-type switch), MENU_ID, update ack and version, FCM, ids across tab menus | Answers only | — | See §C |
 
 ## Ground rules (apply to every item)
 
@@ -530,6 +534,213 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
 
 **Kiosk-side status.** Not built (blocked on data); the contract and component designs are ready.
 
+---
+
+## 9. Nutrition values and allergens
+
+**Problem.** The PDP frame 1:5823 ends with two closed accordion rows, "Description" and "Nutrition". All five "Nutrition" nodes in the file are this closed header; no open state is drawn. The menu cannot fill a nutrition panel today:
+- Every entity ships `nutritionalInfo` with 14 `{ value, unit }` keys (`calorieCount`, `proteinCount`, `fatCount`, `saturatedFatsCount`, `transFatCount`, `carbohydrateCount`, `totalSugarsCount`, `addedSugarsCount`, `fiberCount`, `saltCount`, `sodiumCount`, `cholesterolCount`, `caffeineInGrams`, `stepCount`), but every value is 0 on all 122 reference entities, and the top-level `calorieCount` is 0 too.
+- The units cannot be used as labels: `calorieCount.unit` is "grams", sodium, cholesterol and caffeine are "g", and `servingSize` is `{ "value": 0, "unit": "mg" }` everywhere.
+- `allergens` is `[]` (115 entities) or `null` (7), and the SDK's entity whitelist drops it anyway.
+
+The kiosk never shows invented figures, so the panel is not built.
+
+**Plugs into**
+- `src/pages/Customization/index.tsx:242-246`: the PDP's "£x | N Cal" line reads the top-level `calorieCount` and hides at 0.
+- `sdk/catalog/src/menu/legacyMenuConverters.ts:1062`: the entity whitelist passes `calorieCount`, `nutritionalInfo`, `servingInfo` and `servingSize`, but not `allergens`. One added key passes it through.
+- The fork app shows `{calorieCount} kcal` plus every other nutrient above 0 (the fork's `src/components/menu/ItemInfo.tsx:217-247`). The kiosk would use the same filter.
+
+**Contract.** In getMenu, on each entity and on each variant (size) entry:
+
+| Field | Type | Notes |
+|---|---|---|
+| `calorieCount` (top level) | number | Energy per serving, in kcal. |
+| `nutritionalInfo.<key>.value` | number ≥ 0 | Real values for the existing keys. |
+| `nutritionalInfo.<key>.unit` | string, fixed per key | "kcal" for energy; "g" for fat, saturated fat, trans fat, carbohydrate, total sugars, added sugars, fibre, protein and salt; "mg" for sodium, cholesterol and caffeine. |
+| `servingSize` | `{ value, unit }` | A real unit: "g" or "ml". |
+| `allergens` | string[] | Codes from an agreed list (open question 2), e.g. `["gluten", "milk"]`. |
+
+```json
+{ "id": "665a0575b5871c3e7448cd5a", "calorieCount": 510,
+  "nutritionalInfo": { "proteinCount": { "value": 21, "unit": "g" },
+                       "sodiumCount": { "value": 1120, "unit": "mg" } },
+  "servingSize": { "value": 240, "unit": "g" },
+  "allergens": ["gluten", "milk"] }
+```
+
+**Kiosk behaviour**
+- A "Nutrition" row joins the description on the PDP. Opened, it lists energy in kcal, then every nutrient above 0 with its unit, then the allergens. The open state has no frame, so it is design language and goes to client sign-off.
+- Once a size is picked, the size's values replace the item's.
+- All values 0 or absent: no row, as today. There is no new request: the data arrives with getMenu after the next `MENU_ID` bump (C3).
+
+**Privacy / security.** None: menu data only. Labelling rules for the deployment are the brand's; the kiosk shows only what the menu sends.
+
+**Backward compatibility.** Absent, zero or malformed values mean no panel, exactly today's PDP.
+
+**Open questions**
+1. Do sizes carry their own figures, or only the item?
+2. Which allergen code list should be used, and is "may contain" needed?
+3. Can figures differ between a deployment's tab menus (dine-in and take-out portions)?
+
+**Kiosk-side status: not built (blocked on data).** Size S once the data exists: the row, the above-0 filter and one SDK whitelist line (bag-pdp item 22).
+
+---
+
+## 10. Repeated pack bundles ("Apply to the following burrito")
+
+**Problem.** Figma 1:4641 ("Order a Pack (Partial Selections)") splits a pack into four bundles, "Burrito 1/4 … 4/4", each with burrito, side / drink and dessert slots. Under bundles 1–3, an "Apply to the following burrito" toggle copies that bundle's picks onto the next one. Nothing in the menu says which `_combo` groups form one bundle, or that two slots are the same slot of different bundles:
+- Within a pack, no two `_combo` groups share an option set (0 of the 27 reference items with two or more slots).
+- A product repeated across slots is a separate entity in each group, usually the same name with a trailing ".". For example, "10 pcs Strips & Chips" has "Drinks 1" = {Pepsi Small, 7 Up Small, Mirinda Small, Diet Pepsi Small} and "Drinks 2" = {"Pepsi Small.", "7 Up Small.", "Mirinda Small.", "Diet Pepsi Small."}, all with different ids.
+- Groups carry no bundle or sequence field (774 of 774 have `isLeadingGrp: false` and `leadingItems: []`).
+
+So the kiosk shows one flat grid of slot cards. Guessing bundles from names is not safe.
+
+**Plugs into**
+- `src/pages/Customization/index.tsx:281-287`: `_combo` groups with min 1 and max 1 become pack slots; `:607`: the `PackSlotCard` grid, with no section headers.
+- `src/components/customization/SlotSelectionSheet.tsx` and `Tier2CustomizationSheet.tsx`: the picks a copy would carry (the constituent id plus its tier-2 `customizations`).
+- `sdk/ordering/src/customization/pricing.ts` (`getTotalValueWithApplyAddonPrice`): pack totals.
+
+**Contract.** On each `_combo` modifier group in getMenu:
+
+| Field | Type | Notes |
+|---|---|---|
+| `bundleKey` | string, optional | Shared by the groups of one repeated bundle type, e.g. every "Burrito" slot group of the pack. |
+| `bundleIndex` | integer 1…N, optional | The bundle the group belongs to ("Burrito 2/4" = 2). |
+| constituent ids | — | The SAME entity id for the same product in every repeated group. |
+
+```json
+{ "_id": "665b…_6_combo", "name": "Burrito", "min": 1, "max": 1,
+  "bundleKey": "burrito", "bundleIndex": 2,
+  "constituentItems": [ { "id": "665a0575b5871c3e7448cd5a", "price": 0 } ] }
+```
+
+**Kiosk behaviour**
+- Groups sharing a `bundleKey` render as sections "Name i/N", in `bundleIndex` order, as in 1:4641.
+- Under bundle i, when bundle i+1 offers the same item ids, the toggle shows. ON copies bundle i's pick for each slot, with its tier-2 customizations, onto bundle i+1, and keeps following later changes to bundle i. A direct edit of bundle i+1 turns its toggle off.
+- Copied picks are priced from the TARGET group's constituent, never by copying price numbers. Totals use the normal pack pricing.
+- Without the fields: today's flat grid.
+
+**Privacy / security.** None.
+
+**Backward compatibility.** Both fields are optional; absent means today's flat grid. Sharing constituent ids changes nothing for a kiosk that ignores the fields.
+
+**Open questions**
+1. Can the same product cost a different amount in different bundles of one pack?
+2. Should the operator be able to turn copying off per pack?
+3. Can bundles differ in slot count, for example a pack with 4 burritos but 3 sides?
+
+**Kiosk-side status: not built (blocked on data).** Size S–M once the fields exist: an SDK `copyBundleSelections` helper, the section headers and the toggle (bag-pdp item 21).
+
+---
+
+## 11. Ingredient portion levels (NONE / REGULAR / EXTRA)
+
+**Problem.** The customize frames (1:3007 and 1:3037, customize-edit; 1:5477, edits complete) give each default ingredient a NONE / REGULAR / EXTRA control, with a price on EXTRA ("EXTRA +£1.50"). The menu has no field for a level or a per-level price. Modifier groups only carry picks that are added or removed, and the two price flags on groups, `differentialPrice` and `priceChange`, are dynamic-pricing switches for combo groups that no reference group sets. So TB builds only today's add / remove picks.
+
+**Plugs into**
+- `src/pages/Customization/index.tsx` and `src/components/customization/Tier2CustomizationSheet.tsx`: the group grids the control would join.
+- `sdk/ordering/src/customization/pricing.ts` (`getTotalValueWithApplyAddonPrice`): add-on prices, which a level price would feed.
+- `sdk/catalog/src/menu/legacyMenuConverters.ts:556-557`: what `differentialPrice` / `priceChange` mean today (dynamic pricing on combo picks).
+
+**Contract.** On each default ingredient (a constituent item that is in the recipe by default):
+
+| Field | Type | Notes |
+|---|---|---|
+| `levels` | array, optional | `[{ "code": "none", "price": 0 }, { "code": "regular", "price": 0 }, { "code": "extra", "price": 1.5 }]`. Codes come from a fixed list; `price` is in the deployment currency, on the same tax basis as `price`. |
+| `defaultLevel` | string, optional | The level the recipe starts at; `"regular"` when absent. |
+
+Alternative: an `extraItemId` link from the ingredient to a priced "Extra …" item, which the kiosk adds as a normal add-on line.
+
+```json
+{ "id": "6650c4f2a1b2c3d4e5f60718", "name": "Lettuce", "isDefault": true,
+  "levels": [ { "code": "none", "price": 0 }, { "code": "regular", "price": 0 },
+              { "code": "extra", "price": 1.5 } ] }
+```
+
+**Kiosk behaviour**
+- An ingredient with `levels` shows the three-way control from the frames. The chosen level's price is added like an add-on and shown on the bag row's add-on line ("Extra Lettuce +₹X").
+- NONE and EXTRA travel to the POS as agreed in open question 1; REGULAR sends nothing extra.
+- Without `levels`: today's add / remove picks.
+
+**Privacy / security.** None.
+
+**Backward compatibility.** The field is optional; absent means today's picks.
+
+**Open questions**
+1. How do the POS and the KDS receive a level: an add-on line per level, a modifier comment, or the `extraItemId` item?
+2. Are levels set per ingredient, or once per group?
+3. Do levels apply inside packs (tier-2 picks) and under dynamic pricing?
+
+**Kiosk-side status: not built (blocked on data).** The rest of the customize family is item 42 (figma-polish lane).
+
+---
+
+## 12. Xeno reward expiry, per-reward minimum order, order-level coupons
+
+**Problem.** The Figma reward states show three things the kiosk cannot build today:
+- An "Expires Today / in 7 Days / 01/12/24" line on every reward: 1:3824 default, 1:3858 ineligible, 1:3892 / 1:3924 all available, and My Bag has-rewards 1:3137 / 1:3973.
+- A lock on any reward the order is too small for: "Add £4.29+ to your order to be eligible to redeem this reward", with the art at 50 % and a "Suggested £4.29+ Items" rail.
+- Order-level rewards ("£4 Off Order", "£4 Off £25+ Orders").
+
+The kiosk's Xeno rewards come only from `check_loyalty_balance`, and its body carries none of this:
+- **Per coupon**, the body has only `coupon_name, coupon_code, discount_on ("item"), discounted_category_id, discount_type ("percentage"), discount_value, comment, special_offer, offer_instruction ("points redeemed against this coupon: 3000 points"), item_options, products[{_id, quantity}], extra_fields[{Points Value}, {Reward Type}]`. Source: `sdk/ordering/src/loyalty/loyaltyEngine.ts:46-221`, `xenoExpectedSuccessResponse`, kept verbatim from the fork's hook.
+- **At body level**, there is only `loyalty_points`. `total_redeemable_points` and `min_bill_for_redemption` appear only in TB's own fixture (`tests/e2e/fixtures/loyalty.ts:178-186`, Reelo-era fields).
+- **Absent everywhere** (the SDK sample, the TB fixture coupons at `tests/e2e/fixtures/loyalty.ts:57-136`, the fork's types and fixtures):
+  - any validity field (`valid_till` / `valid_until` / `expiry_date` / `expires_at` / `end_date`);
+  - a per-coupon minimum order;
+  - a reward state (`status` / `is_active` / `eligible`);
+  - a coupon image.
+- **The minimum is enforced only at redeem time.** `authenticate_redemption` answers "Minimum purchase amount is not met for this reward." (`tests/e2e/fixtures/loyalty.ts:214-221`), after the guest has already picked the reward.
+- **Rewards join the menu by `coupons[].products[]._id`** (`loyaltyEngine.ts:541-589`). A bill-level coupon has no product, so it never renders, in the fork or in TB. `redeemItem` (`:598-631`) discounts only item rows with `discount_type: "percentage"`.
+
+**What the kiosk would read.** Additive fields on each `check_loyalty_balance` coupon:
+
+```json
+{ "coupon_code": "static6562", "coupon_name": "Free Taco", "discount_on": "item",
+  "discount_type": "percentage", "discount_value": 100,
+  "products": [{ "_id": "665a0575b5871c3e7448cd5a", "quantity": 1 }],
+  "extra_fields": [{ "name": "Points Value", "value": 3000 }],
+  "valid_till": "2026-12-31T23:59:59+05:30",
+  "min_bill_amount_for_redemption": 200 }
+```
+
+An order-level reward:
+
+```json
+{ "coupon_code": "static9001", "coupon_name": "₹100 off orders over ₹500", "discount_on": "bill",
+  "discount_type": "fixed", "amount": 100, "products": [],
+  "extra_fields": [{ "name": "Points Value", "value": 2000 }],
+  "valid_till": "2026-12-31T23:59:59+05:30", "min_bill_amount_for_redemption": 500 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `valid_till` | ISO 8601 with offset, or null | The last moment the coupon can be redeemed. The kiosk shows "Expires today", "Expires in N days" or the date (kiosk-local time, IST), and hides an expired coupon. |
+| `min_bill_amount_for_redemption` | number in the deployment currency, or null | The order amount the reward needs (the same name as the Reelo field). Below it, the row is locked with "Add ₹X+ to your order to be eligible" and the suggested-items rail. |
+| `discount_on` | `"item"` (today) or `"bill"` | `"bill"` means an order-level reward with no product. |
+| `amount` | number | For `discount_on: "bill"` with `discount_type: "fixed"`: the money off the order. `percentage` keeps `discount_value`. |
+
+**Kiosk behaviour once the fields exist.**
+- **Expiry.** The REWARDS sheet's second line becomes the expiry. It keeps "{n} points" when `valid_till` is absent. Expired coupons are hidden; the server must still refuse them, because the kiosk clock is not authoritative.
+- **Minimum order.** Locked rows reuse the offers sheet's existing locked state: art at 50 %, the pink "Add ₹X+" nudge and the 1:3824 suggested rail. The gap is `min_bill_amount_for_redemption` minus the agreed basis (open question 1). The reward unlocks live as the bag grows; `authenticate_redemption` stays the authority.
+- **Order-level rewards.** A `discount_on: "bill"` reward gets a row with the bell placeholder plate. Once redeemed, the bag shows its "Rewards" card (1:3164 / 1:3137) with "−₹X" instead of an item row. The order push carries the discount as an order-level loyalty discount (open question 4).
+- **Fields absent or null:** exactly today's sheet.
+
+**Privacy / security.** No personal data is added; the fields describe the coupon, not the guest. Phone numbers stay in POST bodies only (ground rule 6).
+
+**Backward compatibility.** All fields are optional, and today's item coupons are unchanged. A kiosk that does not know `discount_on: "bill"` keeps dropping such coupons, which is what happens today.
+
+**Open questions for the backend.**
+1. Is `min_bill_amount_for_redemption` compared with the subtotal before or after tax, CX offers and other discounts? The kiosk will compute the gap the same way.
+2. Does Xeno expose validity and minimums to the CX proxy at all, or enforce them only inside `authenticate_redemption`? If only there, can the proxy map them from the partner's coupon configuration?
+3. Can one order hold both an order-level reward and an item reward, and can an order-level reward combine with a CX offer? Today the kiosk locks offers while a Xeno reward is in the bag (fork parity, D3).
+4. For `discount_on: "bill"`, what shape does `placeOrder` expect for the discount, and what does the revoke ledger need?
+5. Is `valid_till` always an end date, or can a reward have a time-of-day window?
+
+**Kiosk-side status.** Not built (BLOCKED, data). The sheet shows "{n} points" and the out-of-stock state only. The offers sheet's locked-row and suggested-rail components already exist and can be reused.
+
+---
+
 ## C. Confirm — no new API needed
 
 **C1. Is placeOrder idempotent on `source.order_id`?**
@@ -549,6 +760,7 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
   - Any 504 or 505, on any endpoint except the three telemetry calls, logs the kiosk out and sends it back to registration (`sdk/core/src/transport/kioskApi.ts:136-141` → `src/redux/app/sessionRecovery.ts:50-71`).
   - A 401 wipes the device completely (`sessionRecovery.ts:33-48`).
   - Client-side timeouts never map to 504.
+  - Since 2026-10-07 the bag's EAT IN / TAKE OUT switch calls getMenu, `get_data` and the out-of-stock, offers and dynamic-pricing endpoints mid-order: a 504 or 505 on any of them de-registers a kiosk with a full bag.
 - **Please confirm:** does the CX API send 504 or 505 deliberately to mean "this device's session is invalid"? Or can they come from a gateway or load balancer, for example on a slow placeOrder?
 - **Why it matters:** today, a gateway 504 on placeOrder de-registers the kiosk mid-order, and the order may already exist. If 504 and 505 are not deliberate signals, the kiosk will stop treating them as session-invalid; 401 keeps that meaning.
 
@@ -592,3 +804,14 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
 { "message": { "token": "<fcm_token>",
                "data": { "device_update_id": "66f1c0de9a1b2c3d4e5f6789" } } }
 ```
+
+**C6. Are entity, size and pick ids the same in every tab menu of a deployment?**
+- **Today:**
+  - Since 2026-10-07 the bag's EAT IN / TAKE OUT switch fetches the other tab's menu (getMenu by `tab_id`), charges (`get_data`), offers (by `tab_type`), stock and dynamic prices, then re-prices every bag row against that menu by id: the entity id, the size (VARIANT) id (a Make-it-a-meal row is keyed by its meal size's id), and the modifier group and pick ids (`sdk/ordering/src/cart/orderTypeSwitch.ts`). Loyalty rewards are checked the same way.
+  - A row whose id is missing from the target tab, or unavailable there, is removed and named to the guest; a reward is reversed (points refunded, claim revoked).
+  - Taxes come from the target menu, except for a tier-2 pick nested in a pack, which keeps the taxes of the tab it was added under.
+- **Please confirm:**
+  - Is an item's entity id, each size id, and each modifier group and pick id identical in every tab menu of one deployment?
+  - Do tab menus differ only in price, availability and taxes?
+  - Are taxes ever tab-specific? If so, can they differ for nested picks?
+- **Why it matters:** if ids differ between tabs, the switch removes items the guest can still buy instead of re-pricing them.

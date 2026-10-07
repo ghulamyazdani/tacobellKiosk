@@ -87,10 +87,7 @@ type Stage = (action: UnknownAction) => void;
  * (network, timeout, 5xx, malformed body), which only waiting can fix.
  */
 export type BootFailure =
-  | "unavailable"
-  | "noLanguage"
-  | "noPipelines"
-  | "noStartText";
+  "unavailable" | "noLanguage" | "noPipelines" | "noStartText";
 
 /** A boot stop caused by the kiosk's configuration, not the network. */
 class BootConfigError extends Error {
@@ -105,9 +102,7 @@ class BootConfigError extends Error {
 /** Analytics detail for a failed call: RTK errors carry {status, error}, thrown Errors a message. */
 const errorDetail = (error: unknown) => {
   const cause = error as
-    | { status?: unknown; error?: unknown; message?: unknown }
-    | null
-    | undefined;
+    { status?: unknown; error?: unknown; message?: unknown } | null | undefined;
   return {
     error_status: String(cause?.status ?? "none"),
     error_detail: String(cause?.error ?? cause?.message ?? ""),
@@ -158,10 +153,7 @@ function useLoaders() {
   const dispatch = useDispatch();
   const deploymentDetails = useSelector(selectDeploymentDetails);
   const licenseDetailsRdx = useSelector(selectLicenseDetails) as
-    | LicenseDetails
-    | string
-    | null
-    | undefined;
+    LicenseDetails | string | null | undefined;
   const { FetchThemeData } = useFetchColors();
   const { getDeploymentInfoApi, getAllIds } = useAppSettings();
   const { refresh: refreshTenantRecommendations } = useTenantRecommendations();
@@ -280,14 +272,14 @@ function useLoaders() {
       const { validPaymentOptions, generalSettings } = filterPaymentOptions(
         deviceSettings.data as Entity[],
         partners,
-        getAllIds
+        getAllIds,
       );
 
       // SAFETY: drop the synthetic Mashreq row (see the note above).
       const mashreqPartner = findMashreqPartner(partners);
       const paymentOptions = mashreqPartner
         ? validPaymentOptions.filter(
-            (option) => option?._id !== mashreqPartner?._id
+            (option) => option?._id !== mashreqPartner?._id,
           )
         : validPaymentOptions;
 
@@ -314,7 +306,7 @@ function useLoaders() {
    */
   const LoadResourcesInitially = async (
     errorCallback: (failure: BootFailure) => void,
-    successCallback: () => void
+    successCallback: () => void,
   ) => {
     const staged: UnknownAction[] = [];
     const stage: Stage = (action) => {
@@ -350,7 +342,9 @@ function useLoaders() {
       const skinCx = await getCxSkinData({ app: "Kiosk", channel: "Kiosk" });
       if (skinCx && "data" in skinCx) {
         stage(
-          setTemplateType(skinCx.data?.skin_id === "skin_2" ? "albaik" : "default")
+          setTemplateType(
+            skinCx.data?.skin_id === "skin_2" ? "albaik" : "default",
+          ),
         );
       }
 
@@ -364,7 +358,7 @@ function useLoaders() {
             return true;
           }
           return !entity.deployments.includes(deploymentDetails?._id);
-        }
+        },
       );
       stage(setPipelines(availableData));
       if (availableData?.length === 0) {
@@ -384,7 +378,7 @@ function useLoaders() {
         captureKioskEvent(KioskEventName.ErrorOccurred, {
           source: "boot_theme_fetch",
           ...errorDetail(error),
-        })
+        }),
       );
 
       //// Splash media (fork position). Staged with the rest, so /start mounts
@@ -398,9 +392,19 @@ function useLoaders() {
         channel: "Kiosk",
       }).unwrap();
 
-      stage(setOneCategoryAtATime(Boolean(settingsData?.one_category_at_a_time)));
-      stage(setShowRepeatCustomization(!settingsData?.remove_repeat_customization_modal));
-      stage(setQuickCustomizationMode(Boolean(settingsData?.quick_customization_mode)));
+      stage(
+        setOneCategoryAtATime(Boolean(settingsData?.one_category_at_a_time)),
+      );
+      stage(
+        setShowRepeatCustomization(
+          !settingsData?.remove_repeat_customization_modal,
+        ),
+      );
+      stage(
+        setQuickCustomizationMode(
+          Boolean(settingsData?.quick_customization_mode),
+        ),
+      );
       // Booleans only: a null/garbage value keeps the persisted gate (fork
       // semantics for null) instead of hiding the ADA toggle.
       if (typeof settingsData?.accessibility_mode === "boolean") {
@@ -408,11 +412,18 @@ function useLoaders() {
       }
       stage(setEnableFullWidthBanner(Boolean(settingsData?.full_width_banner)));
       stage(setHideFilter(Boolean(settingsData?.hide_filter)));
-      stage(setHideComboConstituentAddons(Boolean(settingsData?.hide_combo_constituent_add_ons)));
-      const showSelectionText = settingsData?.show_selection_text_in_customization === true;
+      stage(
+        setHideComboConstituentAddons(
+          Boolean(settingsData?.hide_combo_constituent_add_ons),
+        ),
+      );
+      const showSelectionText =
+        settingsData?.show_selection_text_in_customization === true;
       stage(setShowSelectionText(showSelectionText));
       stage(setKioskSettings(settingsData));
-      stage(setEnableBannerCollapse(Boolean(settingsData?.enable_banner_collapes)));
+      stage(
+        setEnableBannerCollapse(Boolean(settingsData?.enable_banner_collapes)),
+      );
 
       if (!settingsData?.start_order_text_primary) {
         throw new BootConfigError("noStartText");
@@ -432,15 +443,26 @@ function useLoaders() {
       ) {
         stage(
           setStickyDuration(
-            parseInt(settingsData.proximity_sensor_camera_detection_delay) * 1000
-          )
+            parseInt(settingsData.proximity_sensor_camera_detection_delay) *
+              1000,
+          ),
         );
       } else {
         stage(setStickyDuration(10000));
       }
-      stage(setHidePlusIconFromItem(settingsData?.hide_plus_icon_from_item !== false));
-      stage(setAutoAdjustFontSize(Boolean(settingsData?.auto_adjust_font_size)));
-      stage(setShowUpsellingItemAsSeperateItem(Boolean(settingsData?.show_upselling_item_as_seperate_item)));
+      stage(
+        setHidePlusIconFromItem(
+          settingsData?.hide_plus_icon_from_item !== false,
+        ),
+      );
+      stage(
+        setAutoAdjustFontSize(Boolean(settingsData?.auto_adjust_font_size)),
+      );
+      stage(
+        setShowUpsellingItemAsSeperateItem(
+          Boolean(settingsData?.show_upselling_item_as_seperate_item),
+        ),
+      );
       // Post-P9 29c: the operator's MIAM headline per language slot. ALWAYS
       // staged ("" when unset) so the prompt falls back to the translated
       // miam.title — the slice's built-in default is an English string that
@@ -448,8 +470,16 @@ function useLoaders() {
       // `as never`: the SDK reducers take `action: any`, which RTK types as a
       // creator whose parameter is never; the payload is a plain string.
       const miamText = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-      stage(setPrimaryMakeItAMealText(miamText(settingsData?.make_it_meal_primary) as never));
-      stage(setSecondaryMakeItAMealText(miamText(settingsData?.make_it_meal_secondary) as never));
+      stage(
+        setPrimaryMakeItAMealText(
+          miamText(settingsData?.make_it_meal_primary) as never,
+        ),
+      );
+      stage(
+        setSecondaryMakeItAMealText(
+          miamText(settingsData?.make_it_meal_secondary) as never,
+        ),
+      );
 
       //// Deployment ordering settings (P8a) — populates
       // appSettings.deploymentInfoSettings, which is the ONLY input to
@@ -517,7 +547,7 @@ function useLoaders() {
       mirrorSetting("kiosk_settings", JSON.stringify(settingsData));
       mirrorSetting(
         "showUpsellItemsInMenu",
-        String(Boolean(settingsData?.show_upsell_items_in_menu))
+        String(Boolean(settingsData?.show_upsell_items_in_menu)),
       );
       // Post-P9 29b: the tenant recommendations, a post-commit BACKGROUND
       // task — never awaited (a dead S3 can never delay or fail a boot), never
