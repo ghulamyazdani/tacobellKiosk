@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-07 (menu-data merged)** · Gates at last update (Node 22.14):
-> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 1,539/1,539 · e2e 134/134 · guardrails 0 critical / 201 warnings · build+PWA green · boot path 345.6 KiB gzip-9 / 355 · page JS 1,230.6 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-07 (offers merged)** · Gates at last update (Node 22.14):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 1,789/1,789 · e2e 169/169 · guardrails 0 critical / 207 warnings · build+PWA green · boot path 352.9 KiB gzip-9 / 355 (CI build 354.0) · page JS 1,262.9 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -99,13 +99,15 @@ full-stage, and every return to the splash ends ADA for the next guest.
   and the fork's dead `/verify` + `/loyalty` pages (the zero-bill
   `shouldPlaceLoyaltyOrderDirectly` push landed in P8a). Reelo is not ported
   (user decision 2026-10-05: Xeno only)
-- Offers deferred set (P7 later / P8 polish): BOGO buy-stage UI (locked
-  bogoBuySide rows fall back to /menu — documented fork fallback),
-  customizable freebies (tier session inside the picker; rows render disabled
-  "coming soon"), apply-celebration modal + confetti + applied-bar animation
-  (useSessionReset TODO sites :102/:104 await those modules), auto-apply
-  (pickAutoApplyOffer), offer marketing photos, fork's SavingsLine hysteresis
-  strip (TB uses the bag Rewards entry row instead)
+- Offers set ✅ post-P9 (offers lane, merged 2026-10-07): the BOGO buy stage,
+  customizable freebies (OfferTierHost), exact group-wise picks, the
+  celebration, auto-apply (operator-flagged). ⛔ BLOCKED on backend data:
+  offer marketing photos + offer T&C / expiry (Figma 1:4009 / 1:4044 — the
+  payload has no image, terms or validity; proposal §8 in
+  `docs/BACKEND_CONTRACT_PROPOSALS.md`). Not needed: the fork's SavingsLine
+  strip (TB uses the bag Rewards entry row). Still open: G4 — group-wise
+  CATEGORY candidates are not offered (a get side with only categories opens
+  an empty picker that X closes)
 - `confirmTier1CustomizationRemoval` (tier-2 qty→0 in edit) is dispatched but has
   no consumer yet (fork's ConfirmFirstTierDeleteCustomization equivalent) → P7
 - Variant-shaped upsell items in the MIAM decline path (fork's isVariantUpsell
@@ -176,6 +178,10 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Arabic / a11y sign-off list (P9f mapping):** (S1) an Arabic typeface — Archivo has no Arabic glyphs, so Arabic renders in the OS fallback; (S2) wrapped Arabic paragraphs right-align via `dir="auto"`, single lines keep the layout's alignment; (S3) the kiosk blocks pinch-zoom / text resize (`user-scalable=no`, WCAG 1.4.4) — the axe sweep documents a `meta-viewport` exclusion; (S4) placeholder grey darkened 35 % → 55 % black for contrast; (S6) the 🇬🇧 flag next to "العربية" in the footer; (S7) the pink phone-field border is 2.46:1 non-text contrast | client / compliance | ⚠️ sign-off |
 | **P9f app sign-off list (design-language details):** PAY spans the full bag row on loyalty-off deployments; the PDP "Show more / Show less" is a 44 px toggle below the 2-line-clamped description (it was inline and got clipped); placeholder grey 35 % → 55 % black (Registration, /phone, /customerName); the pack-slot imageless placeholder ink-purple /40 → /60; `dir="auto"` + `text-start` on the offer row's second line only; the language sheet has a CSS entrance and no exit slide; Registration's error banner slide, shake and press are CSS approximations of framer-motion | client | ⚠️ sign-off |
 | **lodash in the boot chunk (95.7 KiB) is SDK-owned** — `billCalculation.js` imports the whole of lodash for four `_.chain` sites, plus redux-persist-transform-filter; rewriting them behind the golden-master gate saves ~23 KiB gzip | SDK maintainer | ⚠️ open |
+| **Offers lane defaults + sign-off list (2026-10-06/07):** auto-apply scope = `operatorFlagged` (only payload `autoApplied:true` offers; one knob `OFFER_AUTO_APPLY_SCOPE`; any customer offer action latches it off for the session; no celebration for auto-applies — an "Applied for you" caption); the celebration is a NON-blocking 2.2 s status card + CSS confetti + row pop (customer applies only, reduced motion honoured); copy "ADD TO REWARD", "Customize" / "Customized — tap to change", the size line on fixed-size freebie rows, the staged-row price pair; group-mode picker controls ("−", "2 ×", the hint) and BuyStageSheet / ADD ITEMS / the in-bag PDP are design-language (no frames); 500 ms ghost-tap guards after a sheet closes (also on the P7b SAVE→PAY and CONFIRM→PAY paths); Arabic drafts need native review | client | ⚠️ sign-off |
+| **Offers money residuals (2026-10-07):** (F4) a crash / reload mid buy-stage keeps the stage's paid rows (fork parity); (R3) the group-wise "Save up to" headline ignores repeat picks (display only, fork parity — the fix touches the ranking shared with the fork); a reward a crash left with none of its free rows reads −£0.00 until removed (auto-removing it is new behaviour → sign-off); item offers with nothing to grant (auto-applied ITEM offers arrive with `getItems: {}`) rank as eligible £0 rows and answer "can't be applied" on SAVE (hiding them needs a non-additive SDK ranking change); variant-id freebies are fixed grants with no add-ons (fork parity); a reload on /tent, /payment or /forYou still bounces to /menu (cart + reward survive) — the new CartRehydrated signal can fix it later | maintainer | ⚠️ open |
+| **Zero-value group offers (orchestrator hardening 2026-10-07, diverges from the fork):** a group-wise offer whose shared value is null / ≤ 0 is refused ("can't be applied") instead of adding the picks at FULL price under "REWARD APPLIED −£0.00" | client | ⚠️ sign-off |
+| **Orphaned free rows after a crash (orchestrator decision 2026-10-07):** on the Dexie restore, offer-stamped free rows that the applied reward does not own (matched like the converter: `baseItemId || _id`, plus the entry's discount) are DROPPED silently (they never render; the saved reward is untouched) — re-pricing them would charge for items nobody ordered | client | ⚠️ confirm |
 | **Menu/data lane defaults (orchestrator 2026-10-06, sign-off):** (D3) the Figma 1:5263 scroll bar ships as a non-interactive INDICATOR (aria-hidden, pointer-events-none; a draggable bar = port the fork's ScrollRail, M); (D4) the order type stays v1 (1:2581; v2 1:2588 not built — nothing selects it); (D5) the ticker shows `pipeline_text_<slot>` when set (secondary slot in a secondary-language session, no cross-language fallback) at the designed speed, else "It's lunch time!" — a real daypart field needs a backend proposal; (D6) `VITE_TENANT_RECOMMENDATIONS_URL` per deployment, never committed — ops to confirm TB's tenant id `5c122fc146aefe2828401642` and that the S3 bucket denies anonymous PUT (its CORS advertises GET, PUT); (D7) `enable_cart_upsell_screen: false` also hides the tenant recommendations (the fork shows them regardless); (D8) the operator's `make_it_meal_*` texts override the Figma MIAM headline (fork parity) | client / ops | ⚠️ sign-off |
 | **Emptied tenant recommendations feed:** an empty or junk 200 body keeps the last good map and reports ErrorOccurred `empty_body` on each boot (the fork clears on `data:[]`), so an emptied S3 file cannot withdraw suggestions — ops must repoint or unset `VITE_TENANT_RECOMMENDATIONS_URL` | client / ops | ⚠️ confirm |
 | **Order payload echoes the pipeline row (pre-existing, fork parity):** `extras.pipeline` carries the selected pipeline row verbatim, so an Arabic session pushes `secondary_name` (Arabic) and `primaryCode: "ar"` (the guest's language in a field named primaryCode); item names, add-ons and source.name stay English. Trim `extras.pipeline` / fix `primaryCode`? | backend | ⚠️ open |
@@ -480,7 +486,39 @@ full-stage, and every return to the splash ends ADA for the next guest.
   change), and its S3 fetch never uses the RTK transport (it would send the
   device auth headers): bounded, bound to its source URL, last good map kept.
 
+- **ONE lazy bag chunk (offers lane):** the bag's lazy surfaces (the Complete-
+  Your-Meal rail, BuyStageSheet, the celebration) share
+  `src/components/cart/bagLazyParts.ts`. A separate `React.lazy` import makes
+  Rolldown hoist their shared code into an extra chunk that loads at startup
+  (measured +3.7 KiB on the boot path) — new lazy bag parts go into
+  bagLazyParts.
+- **Offer get entries: the item id is `baseItemId || _id`.** Non-cluster
+  offers arrive with `baseItemId: null` and the item id in `_id` (only
+  cluster-synced offers fill baseItemId); match rows exactly like the
+  converter (`matchesGetItemEntry` in the SDK's offerCommitRules). Live
+  group-wise get entries are "or"-only with `quantity: null` and no per-item
+  value — the commit must carry the picked units or it grants £0.
+- **BagSheet's empty-cart exit** fires only after the bag has held rows while
+  open, or once AppRoutes' Dexie sync has settled (`CartRehydratedContext`);
+  revalidation skips an empty cart — so a reload on /cart keeps the bag,
+  rows and the applied reward.
+
 ## Session log
+
+- **2026-10-07 (offers merged)** · Lane `offers` (14-agent lane workflow + a money
+  follow-up + a merge integration with main): the BOGO buy stage with the
+  sameOrLess ceiling TB never enforced, customizable freebies via an in-bag
+  PDP (OfferTierHost), EXACT group-wise picks (it fixed a pre-existing
+  over-grant — "pick 2 of 4" gave all 4 — and a £0 under-grant on live "or"
+  offers), the non-blocking celebration, operator-flagged auto-apply, a
+  reload on /cart that keeps the reward, orphaned free rows dropped after a
+  crash, zero-value group offers refused. Reviewers caught: a size-specific
+  freebie charging the difference (HIGH), a £0 item offer showing "Reward
+  applied!", a picker over-grant widening, the 4a fix dropping legitimately
+  applied free rows when the backend sends `baseItemId: null` (the normal
+  case) — all fixed. Offer photos + T&C stay blocked on backend data
+  (proposal §8 added). Unit 1,539 → 1,789, e2e 134 → 169; mutation checks
+  43/48 + 55/56 (lane), 28/28 (follow-up), 10/10 + 2/2 + 6/6 (merge).
 
 - **2026-10-07 (menu-data merged)** · Lane `menu-data` (13 agents; its fix stage
   resumed after the laptop slept on battery): Arabic menu + pipeline names at
