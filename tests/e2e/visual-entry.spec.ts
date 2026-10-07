@@ -21,10 +21,11 @@ import {
  * plus one DOM-geometry probe per shot (`clippedText`, fixtures/clippedText.ts:
  * no text cropped by a box, spilling out of a nowrap box, out of its button or
  * under a radio, no contained photo cut — soft, so every shot is still taken)
- * and two targeted checks the fonts lane's fixes need (the Activity Center
+ * and the targeted checks the fonts lane's fixes need (the Activity Center
  * labels on one line; the loyalty seal's lettering and its two wordmark
- * copies fitting the ring). The menu / PDP / bag / ADA captures live in
- * visual-order.spec.ts.
+ * copies fitting the ring; the loyalty bells keeping their mask; /second with
+ * 3 or 5 order types keeping the title off the bell). The menu / PDP / bag /
+ * ADA captures live in visual-order.spec.ts.
  *
  * Mocks and helpers are copied from the specs each walk cribs from (splash,
  * idle, checkout, loyalty, autoUpdate — no spec exports them, house
@@ -123,7 +124,17 @@ interface BackendOptions {
   skipCRM?: boolean;
   /** false: getMenu falls to the catch-all `{}` → the menu-error dialog. */
   menu?: boolean;
+  /** Order types on /second (default 1): Dine In, then MORE_PIPELINES. */
+  pipelines?: number;
 }
+
+/** The extra order types of the 3- and 5-card /second walks (no frame). */
+const MORE_PIPELINES = [
+  ["take_away", "Take Away", "سفري"],
+  ["drive_thru", "Drive-Thru", "الاستلام من السيارة"],
+  ["delivery", "Delivery", "توصيل"],
+  ["kerbside", "Kerbside", "الاستلام من الرصيف"],
+];
 
 async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
@@ -186,6 +197,15 @@ async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
           // (menu-data lane, useLocalized) — the Arabic fallback at 62 %.
           ...(opts.arabic ? { secondary_name: "تناول في المطعم" } : {}),
         },
+        ...MORE_PIPELINES.slice(0, (opts.pipelines ?? 1) - 1).map(
+          ([tab_type, primary_name, secondary_name], i) => ({
+            _id: `p${i + 2}`,
+            tab_id: `t${i + 2}`,
+            tab_type,
+            primary_name,
+            ...(opts.arabic ? { secondary_name } : {}),
+          })
+        ),
       ],
     })
   );
@@ -334,6 +354,41 @@ async function menuError(page: Page) {
   await expect(page.getByTestId("menu-error")).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * /second: the bell's bottom, the title's top, the lowest card and the
+ * footer's top — a taller card block, centred, climbed over the bell.
+ */
+const orderTypeGeometry = (page: Page) =>
+  page.getByTestId("second-screen").evaluate((screen) => {
+    const box = (el: Element | null | undefined) => el?.getBoundingClientRect();
+    const cards = [...screen.querySelectorAll('[data-testid^="pipeline-"]')];
+    return {
+      bellBottom: Math.round(box(screen.querySelector('img[alt="Taco Bell"]'))?.bottom ?? 0),
+      titleTop: Math.round(box(screen.querySelector("h1"))?.top ?? 0),
+      cardsBottom: Math.round(Math.max(...cards.map((card) => card.getBoundingClientRect().bottom))),
+      footerTop: Math.round(
+        box(screen.querySelector('[data-testid="footer-cancel"]')?.parentElement)?.top ?? 0
+      ),
+    };
+  });
+
+/**
+ * The bell placeholders under `testId` (spans masked with the bell SVG): how
+ * many, and how many lost their mask — Vite inlines the SVG as a data URI
+ * carrying ' ( ), so an unquoted url() is invalid and the bell paints as a
+ * solid square (visual-offers' bellMasks).
+ */
+const bellMasks = (page: Page, testId: string) =>
+  page.getByTestId(testId).evaluate((root) => {
+    const bells = [...root.querySelectorAll<HTMLElement>("span")].filter(
+      (span) => span.style.getPropertyValue("mask-size") === "contain"
+    );
+    return {
+      bells: bells.length,
+      unmasked: bells.filter((span) => getComputedStyle(span).maskImage === "none").length,
+    };
+  });
+
 test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
   test("SPLASH WELCOME + SYSTEM: registration, the boot, WELCOME (1:5617), the Activity Center and the update countdown", async ({
     page,
@@ -470,6 +525,36 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await capture(page, "entry-14-menu-error-ar");
   });
 
+  for (const [count, layout] of [
+    [3, "two card rows under the bell"],
+    [5, "one swipe row"],
+  ] as const) {
+    test(`ORDER TYPE, ${count} PIPELINES: ${layout}, the title clear of the bell and the cards of the footer, in English and Arabic (no frame — design language)`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { arabic: true, menu: false, pipelines: count });
+      await registerToStart(page);
+      await page.getByTestId("start-screen").click();
+      for (const [lang, copy] of [
+        ["en", en],
+        ["ar", ar],
+      ] as const) {
+        if (lang === "ar") {
+          await page.getByTestId("footer-language").click();
+          await page.getByTestId("language-ar").click();
+          await expect(page.getByTestId("language-sheet")).toHaveCount(0);
+        }
+        await expect(page.getByTestId("second-screen")).toContainText(copy.second.title);
+        await expect(page.locator('[data-testid^="pipeline-"]')).toHaveCount(count);
+        await capture(page, `entry-29-second-${count}-${lang}`);
+        const at = await orderTypeGeometry(page);
+        expect.soft(at.titleTop, `${lang}: title top vs the bell's bottom`).toBeGreaterThanOrEqual(at.bellBottom);
+        expect.soft(at.cardsBottom, `${lang}: lowest card vs the footer`).toBeLessThanOrEqual(at.footerTop);
+      }
+    });
+  }
+
   test("CHECKOUT: /tent (1:4447) and its error banner, /payment (1:3364) and its PAY AT COUNTER window, /receipt (1:3377), Order Complete (1:5932)", async ({
     page,
   }) => {
@@ -577,12 +662,16 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(page.getByTestId("loyalty-login")).toBeVisible();
     await typeDigits(page, LOYALTY_PHONE);
     await capture(page, "entry-26-loyalty-login");
+    expect.soft(await bellMasks(page, "loyalty-login"), "login bell").toEqual({ bells: 1, unmasked: 0 });
 
     await page.getByTestId("loyalty-login-submit").click();
     await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible({
       timeout: 10_000,
     });
     await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
+    expect
+      .soft(await bellMasks(page, "loyalty-rewards-sheet"), "rewards sheet bell")
+      .toEqual({ bells: 1, unmasked: 0 });
     await page
       .getByTestId(`loyalty-reward-${LOYALTY_REWARDS.greekSalad.couponCode}`)
       .click();
@@ -600,6 +689,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       timeout: 10_000,
     });
     await capture(page, "entry-28-loyalty-success");
+    expect.soft(await bellMasks(page, "loyalty-success"), "seal bell").toEqual({ bells: 1, unmasked: 0 });
     // The seal lettering is Exp Md (1:4079), and each wordmark copy ends
     // before the next one starts / the ring path ends — SVG drops the glyphs
     // that overrun a textPath without a trace, so the text probe cannot see it.

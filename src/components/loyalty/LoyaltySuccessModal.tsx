@@ -100,8 +100,8 @@ export default function LoyaltySuccessModal() {
           <span
             className="absolute left-1/2 top-1/2 h-[170px] w-[190px] -translate-x-1/2 -translate-y-1/2 bg-tb-pink"
             style={{
-              WebkitMaskImage: `url(${tbBell})`,
-              maskImage: `url(${tbBell})`,
+              WebkitMaskImage: `url("${tbBell}")`,
+              maskImage: `url("${tbBell}")`,
               WebkitMaskRepeat: "no-repeat",
               maskRepeat: "no-repeat",
               WebkitMaskSize: "contain",
