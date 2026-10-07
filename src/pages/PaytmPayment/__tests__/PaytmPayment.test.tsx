@@ -220,7 +220,9 @@ describe("PaytmPayment — /paymentPolling", () => {
       expect(i18n.getResource(lng, "translation", key), `${lng} ${key}`).toEqual(expect.any(String));
       expect(i18n.getResource(lng, "translation", "paytm.edc.pressYes"), `${lng} pressYes`).toEqual(expect.any(String));
     }
-    expect(i18n.t(key, { lng: "ar" })).not.toBe(i18n.t(key, { lng: "en" }));
+    // Raw resources: t() wraps every AR result in FSI…PDI (P9f), so it never
+    // equals the EN string — not even when the AR copy IS the EN copy.
+    expect(i18n.getResource("ar", "translation", key)).not.toBe(i18n.getResource("en", "translation", key));
   });
 
   it("a void_in_progress answer asks the guest to approve on the machine", async () => {
