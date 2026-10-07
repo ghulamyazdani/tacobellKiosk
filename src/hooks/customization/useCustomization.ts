@@ -83,6 +83,7 @@ import {
   mergeCustomizations,
   stripBuyStageMarkers,
 } from "@cx-sdk/ordering/customization/commitPayload";
+import { buildVariantEditCommitPayload } from "@cx-sdk/ordering/customization/variantEditCommitPayload";
 import {
   buildEmptySelectionsForModifiers,
   convertModifiersAccordingly,
@@ -1039,8 +1040,14 @@ const useCustomization = ({
 
       const mergedCustomizations = getMergedCustomizations();
 
-      // build the returnable object once (shape lives in the engine)
-      const returnableFinalObject = buildVariantCommitPayload({
+      // build the returnable object once (shape lives in the engine). An edit's
+      // SelectedEntity is the bag row: the edit builder keeps the session's
+      // size, prices and customizations over the row's old ones.
+      const buildPayload =
+        isOpenBottomSheet?.openType === "edit"
+          ? buildVariantEditCommitPayload
+          : buildVariantCommitPayload;
+      const returnableFinalObject = buildPayload({
         selectedEntity: SelectedEntity,
         selectedVariant,
         mergedCustomizations,

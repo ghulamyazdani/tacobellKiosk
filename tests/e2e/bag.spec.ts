@@ -72,6 +72,7 @@ const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1, group ..._1573980469_
 const ADD_CHEESE = "5dd1093f188e72ce1b3eb36f"; // +£1, group ..._1686482941_addons
 /** Kiddie Meal Beef Burger, re-shaped by sizedMenu() into a sized item. */
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
+const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7: neither the parent's price nor the other size's
 
 /**
@@ -88,7 +89,7 @@ function sizedMenu() {
           entity.hasVariant = true;
           entity.modifiers = [];
           entity.variants = [
-            ["e2e-size-regular", "Regular", 5],
+            [SIZE_REGULAR, "Regular", 5],
             [SIZE_LARGE, "Large", 7],
           ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
         }
@@ -773,5 +774,57 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-subtotal")).toContainText("£7.00");
     await expect(page.getByTestId("bag-total")).toContainText("£8.00");
     await expect(page.getByTestId("bag-pay")).toContainText("£8.00");
+  });
+
+  test("SIZE EDIT: editing a PDP-built VARIANT row from the bag keeps the new size — the whole ×1 row becomes Large; 1 of ×2 splits off as a Regular row beside the kept Large", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true });
+    await bootRegisteredToMenu(page);
+    // A card tap (not the quick-add fast lane) runs the PDP size picker.
+    const card = page.getByTestId(`item-${SIZED_ITEM}`);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await page.getByTestId(`pdp-variant-${SIZE_REGULAR}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£5.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await openBag(page);
+    const itemId = await firstBagRowItemId(page);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£5.00");
+
+    // Whole-row edit (×1): the PDP opens on the row's size; switch to Large.
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-change-size").click();
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£7.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId(`bag-row-${itemId}`)).toContainText("Large");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£7.00");
+
+    // Split edit: ×2, edit 1 of them back to Regular → a new row after the
+    // kept Large. Sub = 7 + 5; Total = round(12 × 1.15 = 13.8) = £14.
+    await page.getByTestId(`bag-inc-${itemId}`).click();
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£14.00");
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    await page.getByTestId("numpad-key-1").click();
+    await page.getByTestId("edit-how-many-confirm").click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-change-size").click();
+    await page.getByTestId(`pdp-variant-${SIZE_REGULAR}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£5.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(bagRows(page).nth(0)).toHaveAttribute("data-testid", `bag-row-${itemId}`);
+    await expect(bagRows(page).nth(0)).toContainText("Large");
+    await expect(bagRows(page).nth(1)).toContainText("Regular");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£14.00");
   });
 });

@@ -107,13 +107,16 @@ export default function OrderTypeSwitchFlow({
     );
   }
 
-  // Switching (or committed, until onDone unmounts the flow).
+  // Switching (or committed, until onDone unmounts the flow). No card: the
+  // status sits on the scrim itself, so the scrim is /second's menu-fetching
+  // 90 % — at 80 % the bag's Medium-weight names read through and ran into
+  // the status line (fonts lane; pinned by visual-bagpdp.spec).
   return (
     <div
       data-testid="bag-ordertype-switching"
       role="status"
       aria-live="polite"
-      className="absolute inset-0 z-[85] flex flex-col items-center justify-center gap-[32px] bg-tb-purple/80"
+      className="absolute inset-0 z-[85] flex flex-col items-center justify-center gap-[32px] bg-tb-purple/90"
     >
       <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
         <div className="h-full w-1/3 animate-pulse rounded-full bg-tb-pink" />

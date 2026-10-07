@@ -15,13 +15,15 @@ import BagSheet from "../BagSheet";
 import "../../../i18n";
 
 /*
-  Lane bag-pdp — a lane part of the ONE lazy bag chunk that fails to load (a
-  deploy re-hashed the chunk; Chromium caches the failed fetch for the life of
-  the page) must leave the guest a working bag: the switch flow and the "how
+  Lane bag-pdp — a lane part of the ONE lazy bag chunk that throws while it
+  renders must leave the guest a working bag: the switch flow and the "how
   many" numpad degrade to their scrim, which closes them; the removal notice
   renders nothing and blocks nothing. Each fallback is a LOCAL boundary
-  (reported, never a reload). The PDP's half is
-  pages/Customization/__tests__/CustomizationChunkFail.test.tsx.
+  (reported, never a reload). A chunk that fails to LOAD never reaches them in
+  the app: the bag's rail and rewards sheets load the same chunk on open with
+  no local boundary, so chunkRecovery reloads (cart kept) or, on a page under
+  60 s old, the crash screen shows (main's design, loadActivityModal.ts). The
+  PDP's half is pages/Customization/__tests__/CustomizationChunkFail.test.tsx.
 */
 
 const mocks = vi.hoisted(() => ({ capture: vi.fn(), navigate: vi.fn() }));

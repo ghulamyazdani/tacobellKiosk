@@ -545,8 +545,9 @@ export default function BagSheet({
   }, []);
 
   // The order-type switch's removal notice: redux-driven like the offer one
-  // (it survives the empty-cart exit when the switch emptied the bag); the
-  // lazy chunk loads only once a notice exists. A failed chunk hides it.
+  // (it survives the empty-cart exit when the switch emptied the bag). Its
+  // chunk is in by then (the switch ran from it); a notice that fails to
+  // render hides itself.
   const orderTypeNotice = orderTypeSwitchNotice && (
     <ErrorBoundary fallback={null}>
       <Suspense fallback={null}>
@@ -762,7 +763,9 @@ export default function BagSheet({
         item_count: totalQuantity,
         cart_total: getCheckoutNetAmount(bill),
       });
-      dispatch(setAppliedCharges(bill?.charges?.detail));
+      // A COPY: Immer freezes what the store holds, and this memoised bill's
+      // next getNetAmount() re-assigns each charge's `amount`.
+      dispatch(setAppliedCharges(structuredClone(bill?.charges?.detail)));
       setCheckoutInProgress(false);
       navigate(`/${decision.route}`, { state: { checkoutRoute: decision.route } });
     } catch {
@@ -1288,9 +1291,11 @@ export default function BagSheet({
       <OfferRemovalNotice bill={bill ?? undefined} />
       {/* bag-pdp lane overlays (z-stack above): EditHowManyModal z-50 ·
           switch dialogs z-[80] · switch in-flight z-[85] · switch notice
-          z-[89] (fixed). Lazy, each behind a fallback that closes it — the
-          scrim while the chunk loads, and for a chunk that failed — so the
-          bag beneath always keeps working. */}
+          z-[89] (fixed). Lazy, each behind a scrim that closes it — while the
+          chunk loads, and (boundary) for a part that fails to render. A chunk
+          that fails to LOAD never gets this far: the rail and the rewards
+          sheets load it with the bag, unguarded, so chunkRecovery reloads
+          (cart kept) or, on a page under 60 s old, the crash screen shows. */}
       {switchTarget && (
         <ErrorBoundary fallback={switchDismiss}>
           <Suspense fallback={switchDismiss}>

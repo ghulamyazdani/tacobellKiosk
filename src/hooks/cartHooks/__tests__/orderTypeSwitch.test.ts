@@ -16,6 +16,7 @@ import {
   setEntityMap,
   setModifiersMap,
 } from "@cx-sdk/catalog/state/Menu.slice";
+import { setTent, tentRdx } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCurrentSession, setDpItemsMap } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import { setSelectedPipeline, setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setSelectedTabId } from "@cx-sdk/core/auth/authentication.slice";
@@ -368,6 +369,38 @@ describe("repriceCartForMenu — the switch's money (item 19)", () => {
     expect(loyalty).toBe(BAG.loyalty);
     expect(freebie).toBe(BAG.freebie);
     expect(billOf(plan.rows).subtotal - billOf(ROWS).subtotal).toBeCloseTo(2 + 0.5 + 1 + 1 + 0.5 + 0.25);
+  });
+
+  it("a VARIANT row's own size list is priced by the target tab too — the edit PDP lists it and commits the size picked there", () => {
+    // TAKE OUT: the Small the row did NOT pick costs 4; the Large it picked is unchanged.
+    const smallMoved = convert(
+      rawMenu((menu) => {
+        const soda = menu.categories[0].subCategories[0].entities.find((e) => e.id === SODA) as Obj;
+        (soda.variants as Obj[])[0].price = 4;
+      }),
+    );
+    const rowSizes = BAG.size.variants as Obj[];
+
+    const plan = repriceCartForMenu([BAG.size], smallMoved.index);
+    const [size] = plan.rows as Obj[];
+
+    expect(plan).toMatchObject({ changed: true, repriced: 1 });
+    expect(size).toMatchObject({ variantPrice: 3, total_price: 0.5 + 3 }); // the pick's money is unchanged
+    // Only the money moves; each size keeps the row's own shape.
+    expect(size.variants).toEqual([{ ...rowSizes[0], price: 4 }, rowSizes[1]]);
+
+    // A size TAKE OUT does not sell is switched off (the PDP lists isActive !== false only).
+    const smallGone = convert(
+      rawMenu((menu) => {
+        const soda = menu.categories[0].subCategories[0].entities.find((e) => e.id === SODA) as Obj;
+        soda.variants = (soda.variants as Obj[]).filter((variant) => variant.id !== SODA_S);
+      }),
+    );
+    const [sizeNoSmall] = repriceCartForMenu([BAG.size], smallGone.index).rows as Obj[];
+    expect(sizeNoSmall.variants).toEqual([{ ...rowSizes[0], isActive: false }, rowSizes[1]]);
+
+    // Against the menu the row was built from it is still the identity.
+    expect(repriceCartForMenu([BAG.size], SAME.index).rows[0]).toBe(BAG.size);
   });
 
   it("removes each unavailable row with its reason; loyalty rows are listed, freebies untouched", () => {
@@ -858,6 +891,7 @@ describe("useOrderTypeSwitch — the executor", () => {
       "offer/setFilteredOffers",
       "cart/pushCharges", // the final, deterministic composition
       "cart/setCartItems",
+      "appSettings/setTent", // the old tab's table number never rides along
     ]);
     expect(dispatch.mock.calls[0][0]).toEqual(
       setSelectedPipeline({ ...TARGET, primaryCode: "en", secondaryCode: "ar" }),
@@ -875,6 +909,21 @@ describe("useOrderTypeSwitch — the executor", () => {
       "order_type_selected",
       { source: "bag", tab_type: "take_away", pipeline_id: "p2", repriced: 1, removed: 0 },
     );
+  });
+
+  it("a committed switch clears the tent number typed on the old tab (the order builder sends it whatever the tab); a failed one keeps it", async () => {
+    store.dispatch(setTent("12"));
+    net.charges.mockImplementationOnce(async () => ({ ok: false, deploymentCharges: [] }));
+    const { hook } = mount();
+    await act(async () => {
+      await hook.result.current.switchTo(TARGET);
+    });
+    expect(tentRdx(store.getState())).toBe("12");
+
+    await act(async () => {
+      await hook.result.current.switchTo(TARGET);
+    });
+    expect(tentRdx(store.getState())).toBe("");
   });
 
   it("a failed leg writes NOTHING and reports its stage", async () => {

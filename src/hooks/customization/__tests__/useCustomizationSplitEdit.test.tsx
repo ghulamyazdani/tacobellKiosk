@@ -399,14 +399,14 @@ describe("useCustomization — the split-edit commit (item 20)", () => {
       total_price: 4,
       customizations: {},
     };
-    /** BagSheet.handleEditRow(PEPSI, 1) for a VARIANT row. */
-    const seedVariantSplit = () => {
+    /** BagSheet.handleEditRow(PEPSI, 1) for a VARIANT row; split false = handleEditRow(PEPSI). */
+    const seedVariantEdit = (split = true) => {
       store.dispatch(setModifiersMap({ modifiersMap: {} }));
       store.dispatch(setCartItems([PEPSI, FRIES]));
       store.dispatch(openMakeItAMealModal({ isOpen: false, selectedItem: {}, availableCombos: [] }));
       store.dispatch(openMakeItAMealSession());
       store.dispatch(openTier1Modal());
-      store.dispatch(setTeir1SelectedEntity({ ...PEPSI, quantity: 1 }));
+      store.dispatch(setTeir1SelectedEntity({ ...PEPSI, quantity: split ? 1 : PEPSI.quantity }));
       store.dispatch(
         setTier1BottomSheet({
           isOpen: true,
@@ -414,7 +414,7 @@ describe("useCustomization — the split-edit commit (item 20)", () => {
           status: "variant",
           openType: "edit",
           editCustomizationContent: PEPSI,
-          splitEdit: { sourceItemId: "pe-1", editQuantity: 1 },
+          ...(split ? { splitEdit: { sourceItemId: "pe-1", editQuantity: 1 } } : {}),
         }),
       );
       store.dispatch(setTier1SelectedCustomization({}));
@@ -423,7 +423,7 @@ describe("useCustomization — the split-edit commit (item 20)", () => {
     };
 
     it("control: an unchanged UPDATE is a noop — nothing written, the PDP leaves", async () => {
-      seedVariantSplit();
+      seedVariantEdit();
       const before = cartItems();
       const { cartActions } = await renderPdp();
       await tap("pdp-add-to-bag");
@@ -433,7 +433,7 @@ describe("useCustomization — the split-edit commit (item 20)", () => {
     });
 
     it("the split source left the bag meanwhile: nothing is written and the PDP stays (a rejected plan is not a save)", async () => {
-      seedVariantSplit();
+      seedVariantEdit();
       const { cartActions } = await renderPdp();
       act(() => {
         store.dispatch(setCartItems([FRIES]));
@@ -446,6 +446,62 @@ describe("useCustomization — the split-edit commit (item 20)", () => {
       expect(mocks.updateRowDexie).not.toHaveBeenCalled();
       expect(screen.getByTestId("customization-screen")).toBeInTheDocument();
       expect(mocks.navigate).not.toHaveBeenCalled();
+    });
+
+    /* The edit commit keeps the session's size over the row's own (the add
+       builder's trailing row spread put the old one back). */
+    const updateToLarge = async () => {
+      await tap("pdp-change-size");
+      await tap("pdp-variant-pepsi-l");
+      await tap("pdp-add-to-bag");
+    };
+
+    it("split with a size change: 1 × Medium stays, 1 × Large is a new row, in one write", async () => {
+      seedVariantEdit();
+      const { cartActions } = await renderPdp();
+      await updateToLarge();
+
+      expect(cartActions()).toEqual(["cart/setCartItems"]);
+      const rows = cartItems();
+      expect(mocks.replaceDexie).toHaveBeenCalledWith(rows);
+      expect(rows.map((row) => [row.itemId === "pe-1", row.quantity, (row.selectedVariant as Row)?.id])).toEqual([
+        [true, 1, "pepsi-m"],
+        [false, 1, "pepsi-l"],
+        [false, 1, undefined],
+      ]);
+      expect(rows[0]).toMatchObject({ variantPrice: 4, total_price: 4 });
+      expect(rows[1]).toMatchObject({
+        id: "pepsi",
+        type: "VARIANT",
+        variantPrice: 5,
+        total_price: 5,
+        baseItem: { id: "pepsi", selectedVariantId: "pepsi-l", selectedVariantName: "Large" },
+      });
+      expect((rows[1].baseItem as Row).baseItem).toBeUndefined();
+      expect(subTotalOf(rows)).toBeCloseTo(4 + 5 + 3, 2);
+      expect(splitEvents()).toEqual([
+        ["cart_modified", { modification_type: "split_edit", item_id: "pepsi", quantity: 1 }],
+      ]);
+    });
+
+    it("whole-row edit with a size change: the row itself becomes Large (one updateItemCartRdx)", async () => {
+      seedVariantEdit(false);
+      const { cartActions } = await renderPdp();
+      await updateToLarge();
+
+      expect(cartActions()).toEqual(["cart/updateItemCartRdx"]);
+      expect(mocks.updateRowDexie).toHaveBeenCalledTimes(1);
+      const rows = cartItems();
+      expect(rows.map((row) => [row.itemId, row.quantity, (row.selectedVariant as Row)?.id])).toEqual([
+        ["pe-1", 2, "pepsi-l"],
+        ["fr-1", 1, undefined],
+      ]);
+      expect(rows[0]).toMatchObject({
+        variantPrice: 5,
+        total_price: 5,
+        baseItem: { id: "pepsi", selectedVariantId: "pepsi-l", selectedVariantName: "Large" },
+      });
+      expect(subTotalOf(rows)).toBeCloseTo(2 * 5 + 3, 2);
     });
   });
 });

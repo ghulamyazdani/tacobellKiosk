@@ -28,6 +28,9 @@ import "../../../i18n";
   - item 20: a split edit has no planner, so UPDATE writes nothing and the PDP
     stays; BACK still leaves with the bag untouched.
   The whole chunk REALLY rejects here: one of its modules fails to evaluate.
+  In a build this is the path on a page under 60 s old only; on an older page
+  chunkRecovery reloads first (the customisation in progress is lost, the
+  cart is kept).
 */
 
 const mocks = vi.hoisted(() => ({ capture: vi.fn(), navigate: vi.fn() }));

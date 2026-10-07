@@ -34,8 +34,10 @@ import { ErrorBoundary } from "../../ErrorBoundary";
 import backspaceIcon from "../../assets/icons/key-backspace.svg";
 
 // Item 23's completion warning — lazy, through the bag's ONE dynamic entry
-// (D7). `await import()`, never `.then` (a failed chunk must reach the
-// boundary below, which leaves the ringed PDP as it is).
+// (D7). `await import()`, never `.then`: in a build a failed chunk reaches
+// chunkRecovery, which reloads (the customisation in progress is lost, the
+// cart is kept); only on a page under 60 s old, or on the dev server, does it
+// reach the boundary below, which leaves the ringed PDP as it is.
 const PdpIncompleteWarning = lazy(async () => ({
   default: (await import("../../components/cart/bagLazyParts")).PdpIncompleteWarning,
 }));

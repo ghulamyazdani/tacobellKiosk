@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDispatch, useStore } from "react-redux";
 import type { UnknownAction } from "@reduxjs/toolkit";
 import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setTent } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   selectCurrentSession,
   setCurrentSession,
@@ -195,6 +196,9 @@ export default function useOrderTypeSwitch(opts: {
       );
       dispatch(pushCharges(allCharges));
       if (plan.reprice.changed) dispatch(setCartItems(plan.reprice.rows));
+      // A tent number typed on the old tab (/tent BACK keeps it) belongs to
+      // that tab's table; the order builder sends it whatever the tab type.
+      dispatch(setTent(""));
 
       if (plan.reprice.changed) {
         settle(() => {

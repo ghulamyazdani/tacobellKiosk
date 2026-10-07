@@ -88,6 +88,10 @@ const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
 const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8 on t1, £9 on t2
 const GREEK_SALAD = "5dd1093829754a432f2c32e2"; // £17, one-tap
 const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2, one-tap
+/** Kiddie Meal Beef Burger, re-shaped by withSizes() into a sized item (`sized` option). */
+const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
+const SIZE_REGULAR = "e2e-size-regular"; // £5 on t1, £6 on t2
+const SIZE_LARGE = "e2e-size-large"; // £7 on t1, £9 on t2
 const OFFER_FLAT = "offer-flat-2";
 const OFFER_FLAT_NAME = "£2 off your order";
 
@@ -149,6 +153,23 @@ function takeAwayMenu(removed: readonly string[]): MenuShape {
   return menu;
 }
 
+/** bag.spec.ts sizedMenu() over `menu`: SIZED_ITEM sold in two sizes at this tab's prices. */
+function withSizes(menu: unknown, regular: number, large: number) {
+  const sized = JSON.parse(JSON.stringify(menu));
+  for (const category of sized.categories)
+    for (const sub of category.subCategories)
+      for (const entity of sub.entities)
+        if (entity.id === SIZED_ITEM) {
+          entity.hasVariant = true;
+          entity.modifiers = [];
+          entity.variants = [
+            [SIZE_REGULAR, "Regular", regular],
+            [SIZE_LARGE, "Large", large],
+          ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
+        }
+  return sized;
+}
+
 type Body = Record<string, unknown>;
 
 const bodyOf = (route: Route): Body => {
@@ -172,6 +193,8 @@ interface SwitchMockOptions {
   pipelineStatuses?: Record<string, { status: boolean; reason?: string }>;
   /** Loyalty on: LOYALTY_SETTINGS + the Xeno surface (loyalty.spec.ts), registered last. */
   loyalty?: boolean;
+  /** SIZED_ITEM sold in sizes on both tabs: Regular £5 / Large £7 on t1, £6 / £9 on t2. */
+  sized?: boolean;
 }
 
 interface SwitchNet {
@@ -197,13 +220,15 @@ async function mockKioskBackend(
     checkout: checkoutOptions,
     pipelineStatuses,
     loyalty = false,
+    sized = false,
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
   // Print agent aborted + every gateway 500-guarded (fixture header).
   const checkout = await mockCheckoutBackend(page, checkoutOptions);
   const net: SwitchNet = { t2Menu: "ok", t2Charges: "ok", held: [], calls: [], checkout };
-  const t2Menu = takeAwayMenu(removedOnT2);
+  const t1Menu = sized ? withSizes(slimMenu, 5, 7) : slimMenu;
+  const t2Menu = sized ? withSizes(takeAwayMenu(removedOnT2), 6, 9) : takeAwayMenu(removedOnT2);
   const log = (endpoint: string, route: Route) => {
     const body = bodyOf(route);
     net.calls.push({ endpoint, body });
@@ -254,7 +279,7 @@ async function mockKioskBackend(
   await page.route("**/api/cx/kiosk/getPipelines", (r) => r.fulfill({ json: pipelines }));
   await page.route("**/api/cx/kiosk/getMenu", (route) => {
     const body = log("getMenu", route);
-    if (body.tab_id !== TAKE_OUT.tab_id) return route.fulfill({ json: slimMenu });
+    if (body.tab_id !== TAKE_OUT.tab_id) return route.fulfill({ json: t1Menu });
     if (net.t2Menu === "500") {
       return route.fulfill({ status: 500, json: { message: "menu down" } });
     }
@@ -703,6 +728,11 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
         if (key in record) tabbed.push({ path: new URL(request.url()).pathname, tab: record[key] });
       }
     });
+    // PAY stores a COPY of the bill's charges. Storing the memoised bill's own
+    // objects (frozen by the store) threw in its next getNetAmount() during
+    // render, and React reported the recovery as a page error.
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(String(error)));
 
     await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
@@ -725,9 +755,88 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     expect(tabbed.filter((request) => request.tab !== "t2")).toEqual([]);
     expect(checkout.forbiddenUrls).toEqual([]);
     expect(checkout.printAgentUrls).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 
-  test("MENU 500: a failed take-away menu fetch shows the failure dialog and changes nothing; TRY AGAIN with the menu back commits the switch", async ({
+  test("SIZE EDIT AFTER A SWITCH: the edit PDP lists TAKE OUT's size prices, and a size picked there costs what TAKE OUT charges", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true });
+    await bootRegisteredToMenu(page);
+    const card = page.getByTestId(`item-${SIZED_ITEM}`);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await page.getByTestId(`pdp-variant-${SIZE_REGULAR}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£5.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await openBag(page);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£5.00");
+
+    await confirmTakeOut(page);
+    await expect(takeOutSegment(page)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£6.00");
+    const itemId = ((await bagRows(page).first().getAttribute("data-testid")) ?? "").replace(
+      "bag-row-",
+      ""
+    );
+
+    // The row's own size list (what the edit PDP lists) is TAKE OUT's.
+    await page.getByTestId(`bag-edit-${itemId}`).click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await page.getByTestId("pdp-change-size").click();
+    await expect(page.getByTestId(`pdp-variant-${SIZE_REGULAR}`)).toContainText("£6.00");
+    await expect(page.getByTestId(`pdp-variant-${SIZE_LARGE}`)).toContainText("£9.00");
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId(`bag-row-${itemId}`)).toContainText("Large");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£9.00");
+  });
+
+  test("TENT + SWITCH: a table number typed on the table tab (then BACK) never rides into the take-out order", async ({
+    page,
+  }) => {
+    test.slow();
+    const TABLE: Pipeline = { _id: "p1", tab_id: "t1", tab_type: "table", primary_name: "Table Service" };
+    const { checkout } = await mockKioskBackend(page, {
+      pipelines: [TABLE, TAKE_OUT],
+      removedOnT2: [],
+    });
+    await bootRegisteredToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+
+    // PAY on the table tab pitches the tent: type 12, then BACK keeps it.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("tent-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("numpad-key-1").click();
+    await page.getByTestId("numpad-key-2").click();
+    await expect(page.getByTestId("tent-display")).toHaveText("12");
+    await page.getByTestId("tent-back").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+
+    await confirmTakeOut(page);
+    await expect(takeOutSegment(page)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("payment-counter").click();
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+
+    expect(checkout.placeOrderCount).toBe(1);
+    expect(checkout.lastPlaceOrderBody).toMatchObject({
+      tabId: "t2",
+      tabType: "take_away",
+      tableNumber: "",
+    });
+  });
+
+  test("MENU 500:a failed take-away menu fetch shows the failure dialog and changes nothing; TRY AGAIN with the menu back commits the switch", async ({
     page,
   }) => {
     test.slow();

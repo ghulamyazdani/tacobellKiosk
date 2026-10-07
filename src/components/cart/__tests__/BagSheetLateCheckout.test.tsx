@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { pushCharges, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import BagSheet from "../BagSheet";
@@ -163,5 +163,42 @@ describe("BagSheet PAY — a late checkout result is dropped (P9a)", () => {
     await pay.fail();
 
     expect(globalError()).toBe(false);
+  });
+});
+
+/*
+  A non-empty charge at PAY: handlePay stores the bill's charges with
+  setAppliedCharges, and Immer freezes whatever lands in the store. The bill
+  is memoised and its getNetAmount() re-assigns every charge's `amount`, so
+  storing the bill's OWN detail objects made the re-render that releases the
+  PAY latch throw ("Cannot assign to read only property 'amount'").
+*/
+describe("BagSheet PAY — a non-empty charge", () => {
+  const appliedCharges = () =>
+    (store.getState() as unknown as { order: { appliedCharges: unknown } }).order
+      .appliedCharges;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(pushCharges([{ name: "Bag fee", type: "fixed", value: 2 }]));
+    mockNavigate.mockReset();
+    mockFetchMenu.mockReset();
+  });
+
+  it("stores a copy: the bag still renders its total after PAY, and the order carries the fee", async () => {
+    mount();
+    // £8.60 + the £2 fee = £10.60; no disable_roundoff → whole units.
+    expect(screen.getByTestId("bag-pay")).toHaveTextContent("£11.00");
+    const pay = payWithRevalidationInFlight();
+
+    await pay.answer();
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("bag-pay")).toHaveTextContent("£11.00");
+    expect(appliedCharges()).toEqual([
+      expect.objectContaining({ name: "Bag fee", type: "fixed", amount: 2 }),
+    ]);
   });
 });
