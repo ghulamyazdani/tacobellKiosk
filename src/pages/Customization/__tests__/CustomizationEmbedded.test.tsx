@@ -97,7 +97,7 @@ describe("Customization embedded (in-bag PDP for offer tier sessions)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
     store.dispatch(setCartItems([{ id: "taco", itemId: "taco-1", quantity: 1, type: "ITEM", total_price: 5 }]));
   });

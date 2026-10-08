@@ -166,7 +166,7 @@ async function mockKioskBackend(
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -323,8 +323,10 @@ function reachProblems(scope: Locator): Promise<string[]> {
           left = Math.max(left, ar.left);
           right = Math.min(right, ar.right);
         }
-        // Scrolled fully out of its container: a swipe brings it back.
-        if (bottom - top < 1 || right - left < 1) continue;
+        // Scrolled (all but a sliver) out of its container: a swipe brings
+        // it back. A 1 px sliver at a scroller's edge hit-tests its neighbour
+        // (elementFromPoint rounds the half pixel) — that is not a cover.
+        if (bottom - top < 2 || right - left < 2) continue;
         checked += 1;
         const y = (v: number) => Math.round((v - s.top) / k);
         if (

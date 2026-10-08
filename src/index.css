@@ -80,6 +80,11 @@
   /* Splash full-bleed bottom tint (P9d, 1:5604/1:5617 gradient fill: 16%
    * at the foot). Unbound in Figma (raw #6301D2), so the name is ours. */
   --color-tb-violet: #6301d2;
+  /* Veg / non-veg marks (audit-fixes U1, VegMark). Design-language tokens:
+   * the Figma has no diet mark, so these are the fork's VegNonVeg colours
+   * (non-text graphics on white: 4.95:1 / 5.6:1). FIGMA_UI_GUIDE §3 rows owed. */
+  --color-tb-veg: #008300;
+  --color-tb-non-veg: #be360d;
 
   --color-brand-primary: var(--brand-primary);
   --color-brand-secondary: var(--brand-secondary);

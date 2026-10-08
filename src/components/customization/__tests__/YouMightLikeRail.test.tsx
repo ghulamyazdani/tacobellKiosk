@@ -102,7 +102,7 @@ const railIds = () =>
 describe("YouMightLikeRail (R1 — PDP 'You Might Like')", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: ENTITY_MAP }));
     store.dispatch(setReccomendationCategoryMap(MAP));
     mocks.navigate.mockReset();

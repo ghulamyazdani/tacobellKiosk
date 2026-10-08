@@ -32,9 +32,19 @@
  * degrades behind its local boundary or scrim, and the HEALER the app
  * registers once its store exists (setChunkFailureHealer, main.tsx: the
  * whole-app update the splash applies at its next dwell, between guests)
- * heals the page. This module imports nothing — it installs first, before
- * the store exists.
+ * heals the page. It installs first, before the store exists: its one import
+ * (the analytics adapter — module state only, no side effect, nothing lazy)
+ * queues its reports until PostHog loads.
  */
+import { captureKioskEvent, KioskEventName } from "./analytics";
+
+/** ErrorOccurred for a failed chunk (Rule 4: no console in production code). */
+const reportChunkFailure = (stage: "no_retry" | "reload", payload: unknown) =>
+  captureKioskEvent(KioskEventName.ErrorOccurred, {
+    error_source: "chunk_recovery",
+    stage,
+    error_message: payload instanceof Error ? payload.message : String(payload),
+  });
 
 /**
  * If this page load is ITSELF a recent reload, a second reload would loop —
@@ -147,10 +157,7 @@ export const installChunkErrorRecovery = (): void => {
       // part's local boundary degrades it (an unguarded one falls to the app
       // ErrorBoundary, once a minute at most — planCrashRecovery), and the
       // healer flags the reload for the splash's next dwell, between guests.
-      console.error(
-        "[chunkRecovery] chunk preload failed again after a reload — not retrying",
-        event.payload,
-      );
+      reportChunkFailure("no_retry", event.payload);
       try {
         chunkFailureHealer?.();
       } catch {
@@ -159,10 +166,8 @@ export const installChunkErrorRecovery = (): void => {
       return;
     }
 
-    console.error(
-      "[chunkRecovery] chunk preload failed; reloading to pick up the current build",
-      event.payload,
-    );
+    // The reload may cut the report short (PostHog batches) — accepted.
+    reportChunkFailure("reload", event.payload);
     reloadWhenFree(() => window.location.reload());
   });
 };

@@ -2,7 +2,7 @@
  * Cart-row and offer fixtures mirror the untyped legacy cart slice /
  * converter output; typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -194,9 +194,15 @@ const renderSheet = (open = true, onClose = vi.fn()) => {
 const cartState = () => (store.getState() as any).cart;
 
 describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => {
+  beforeAll(async () => {
+    // The ONE lazy chunk, once: a cold transform under load outlasted
+    // findByTestId's 1 s (the rewards-sheet tests flaked in a full chunk run).
+    await import("../bagLazyParts");
+  }, 60_000);
+
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     // GBP-style deployment: keep pence out of the round-off so every asserted
     // figure is exact (P7a bill-line test precedent).
     store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));

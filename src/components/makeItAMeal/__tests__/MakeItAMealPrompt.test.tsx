@@ -16,11 +16,21 @@ import {
   setTier1BottomSheetAndSelectedEntity,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
+import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import MakeItAMealPrompt from "../MakeItAMealPrompt";
 import i18n from "../../../i18n";
+import { KioskEventName } from "../../../utils/analytics";
+
+// audit-fixes B3: analytics asserted per event (the real adapter is a no-op
+// outside production builds anyway).
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
 
 /** Plain upsell combo (no modifiers/variants → checkCustomizationType "item"). */
 const COMBO = {
@@ -89,6 +99,13 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(screen.getByTestId("miam-decline")).toHaveTextContent(/not today/i);
     expect(screen.getByTestId("miam-decline")).not.toHaveTextContent("3.50");
     expect(screen.getByTestId("miam-close")).toBeInTheDocument();
+  });
+
+  it("the combo's price carries the deployment's symbol (UB1 — never a bare amount)", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    openPrompt();
+    renderPrompt();
+    expect(screen.getByTestId("miam-combo-combo-1")).toHaveTextContent("£7.99");
   });
 
   it("decline adds the ORIGINAL item to the cart, blacklists it and closes the prompt", async () => {
@@ -409,5 +426,87 @@ describe("MakeItAMealPrompt — headline per language slot (post-P9 29c)", () =>
     });
     expect(combo).toHaveTextContent("Dream Box");
     expect(combo.textContent).not.toMatch(/[\u2066-\u2069]/);
+  });
+});
+
+/*
+  audit-fixes B3: accepting a combo that opens /customization (a sized combo,
+  or a combo meal with its own groups) reports CustomizationOpenedViaMIAM
+  ONCE, with the raw primary-language name (names are translated only at
+  render \u2014 never in analytics). A plain combo is a straight add: no event.
+*/
+describe("MakeItAMealPrompt \u2014 CustomizationOpenedViaMIAM (audit-fixes B3)", () => {
+  const SIZED = {
+    ...COMBO,
+    id: "combo-sized",
+    hasVariant: true,
+    isVariant: false,
+    variants: [
+      { id: "combo-r", name: "Regular", price: 7.99 },
+      { id: "combo-l", name: "Large", price: 9.99 },
+    ],
+  };
+  const MEAL = { ...COMBO, id: "combo-meal", modifiers: ["meal_drink"] };
+  const opened = () =>
+    mockCapture.mock.calls.filter(([event]) => event === KioskEventName.CustomizationOpenedViaMIAM);
+
+  const acceptOn = async (combo: Record<string, unknown>) => {
+    store.dispatch(
+      openMakeItAMealModal({ isOpen: true, selectedItem: { ...BURGER, upsellItems: [combo] }, availableCombos: [combo] })
+    );
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/menu"]}>
+          <Routes>
+            <Route path="/menu" element={<MakeItAMealPrompt />} />
+            <Route path="/customization" element={<p data-testid="pdp-route" />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+    await userEvent.click(screen.getByTestId(`miam-combo-${String(combo.id)}`));
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    mockCapture.mockReset();
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it.each([
+    ["a sized combo (the size picker)", SIZED],
+    ["a combo meal with its own groups (the tier-1 session)", MEAL],
+  ])("%s: ONE event with the combo's id and name, then the PDP", async (_label, combo) => {
+    await acceptOn(combo);
+
+    expect(opened()).toEqual([
+      [KioskEventName.CustomizationOpenedViaMIAM, { item_id: combo.id, item_name: "Dream Box" }],
+    ]);
+    expect(await screen.findByTestId("pdp-route")).toBeInTheDocument();
+  });
+
+  it("a plain combo is a straight add: no event", async () => {
+    await acceptOn(COMBO);
+
+    expect(opened()).toEqual([]);
+    expect(selectCart(store.getState()).cartItems).toHaveLength(1);
+  });
+
+  it("an Arabic session still reports the raw primary-language name, never the alias", async () => {
+    store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+
+    await acceptOn({ ...SIZED, aliases: [{ value: "\u0635\u0646\u062f\u0648\u0642 \u0627\u0644\u0623\u062d\u0644\u0627\u0645", name: "Arabic", code: "ar" }] });
+
+    expect(opened()).toEqual([
+      [KioskEventName.CustomizationOpenedViaMIAM, { item_id: "combo-sized", item_name: "Dream Box" }],
+    ]);
   });
 });

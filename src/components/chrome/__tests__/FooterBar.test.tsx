@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import {
@@ -8,6 +8,14 @@ import {
 import { store } from "../../../redux/app/store";
 import FooterBar from "../FooterBar";
 import i18n from "../../../i18n";
+import { KioskEventName } from "@cx-sdk/core";
+
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
 
 /*
   P9c (A5): the ADA DISPLAY toggle. Shown only while the tenant has the
@@ -80,5 +88,51 @@ describe("FooterBar — ADA DISPLAY (P9c)", () => {
     expect(adaButton()?.querySelector("img")).toBeInTheDocument();
     expect(adaButton()?.className).toContain("h-[56px]");
     expect(adaButton()?.className).toContain("min-w-[44px]");
+  });
+});
+
+/*
+  audit-fixes B3 — CANCEL ORDER sends StartOverClickedFromFooter with the
+  route it was tapped on (/second, /menu, /customization, /phone,
+  /customerName share this bar), THEN opens the caller's confirm.
+*/
+describe("FooterBar — CANCEL ORDER analytics (audit-fixes B3)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    mockCapture.mockReset();
+    window.history.replaceState(null, "", "/customization");
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("reports the tap with its route, then calls onCancelOrder", () => {
+    const order: string[] = [];
+    mockCapture.mockImplementation((event: string) => order.push(event));
+    const onCancelOrder = vi.fn(() => order.push("onCancelOrder"));
+    render(
+      <Provider store={store}>
+        <FooterBar onCancelOrder={onCancelOrder} onOpenLanguage={vi.fn()} />
+      </Provider>
+    );
+
+    fireEvent.click(screen.getByTestId("footer-cancel"));
+
+    expect(mockCapture).toHaveBeenCalledWith(KioskEventName.StartOverClickedFromFooter, {
+      route_path: "/customization",
+    });
+    expect(order).toEqual([KioskEventName.StartOverClickedFromFooter, "onCancelOrder"]);
+  });
+
+  it("the language and ADA buttons report no start-over", () => {
+    renderFooter();
+
+    fireEvent.click(screen.getByTestId("footer-language"));
+    tapAda();
+
+    expect(
+      mockCapture.mock.calls.filter(([event]) => event === KioskEventName.StartOverClickedFromFooter)
+    ).toEqual([]);
   });
 });

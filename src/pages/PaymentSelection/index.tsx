@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   paymentSettingsRdx,
-  selectCurrency,
   selectDeploymentInfo,
   setShowErrorModal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -14,6 +13,7 @@ import { pickPaytmSelections } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import usePayAtCounter, {
   PAY_AT_COUNTER_PAYMENT_TYPE,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
@@ -23,12 +23,6 @@ import tbBell from "../../assets/brand/tb-bell.svg";
 
 interface CartLike {
   cartItems?: unknown[];
-}
-
-/** `currencySettings` may also be the number 1 — see setInitialAppSetting. */
-interface CurrencySettings {
-  symbol?: string;
-  currency_symbol?: string;
 }
 
 /**
@@ -104,21 +98,9 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  * at 572; an Arabic title wraps to ≤ 3 lines (163 px), clear of the bar at 744.
  *
  * COD gating uses `checkIfCODAvailable` from
- * `@cx-sdk/payments/gateways/paymentOptions`.
- *
- * ⚠️ KNOWN DIVERGENCE between the two implementations of that check — the SDK
- * export is used here because it is the maintained surface, but it is NOT the
- * one that ships in the fork:
- *   • fork page-local (PaymentSelection.tsx:66-92): matches
- *     `entity.name === "disable_cod_kiosk"`, then the tab by
- *     `tabs[].tabType` (with a take_out/takeout alias) and requires
- *     `tabSetting.selected === true` to disable COD.
- *   • SDK (paymentOptions.ts:117-137, used here): matches
- *     `entity.label === "Disable COD for Kiosk"`, then the tab by
- *     `tabs[].tabLabel`, and disables COD on a tab match alone.
- * A deployment blob therefore has to carry BOTH key spellings for the two to
- * agree — the e2e fixture does. Reconciling them is a payments-package change
- * and is deliberately out of scope for a screen.
+ * `@cx-sdk/payments/gateways/paymentOptions`. SDK rule = fork live rule
+ * (audit-fixes A2): name or label, tabType + the take-out alias, tab
+ * `selected === true`.
  *
  * ⚠️ DELIBERATE DIVERGENCE (Rule 2): both implementations return `false` when
  * the deployment-settings blob is missing, so a boot where that fetch has not
@@ -145,10 +127,7 @@ export default function PaymentSelection() {
     | Record<string, unknown>
     | undefined;
   const paymentOptions: unknown = useSelector(paymentSettingsRdx);
-  const currencySettings = useSelector(selectCurrency) as
-    | CurrencySettings
-    | number
-    | undefined;
+  const currency = useCurrencySymbol();
   const cart = useSelector(selectCart) as CartLike | undefined;
 
   const { getTabType, getIsPayAtCounter, shouldSkipCRM } = useAppSettings();
@@ -164,11 +143,6 @@ export default function PaymentSelection() {
 
   const tabType = getTabType();
   const cartCount = cart?.cartItems?.length ?? 0;
-
-  const currency = useMemo(() => {
-    if (!currencySettings || typeof currencySettings === "number") return "";
-    return currencySettings.symbol ?? currencySettings.currency_symbol ?? "";
-  }, [currencySettings]);
 
   /** See the header note on the missing-blob divergence. */
   const codAvailable = useMemo(() => {

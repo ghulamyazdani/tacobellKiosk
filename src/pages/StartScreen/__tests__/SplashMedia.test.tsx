@@ -142,6 +142,30 @@ describe("layout by PLAYABLE slide count", () => {
     expect(text()).toMatch(/^order here\s*start order$/i);
     expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
   });
+
+  it("the carousel's sheen is Figma's recipe (UB3): the alpha WebP at 50 %, normal blend, unrotated, never catching a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderSplash();
+
+    const sheens = host().querySelectorAll('img[src*="plastic-overlay"]');
+    expect(sheens).toHaveLength(1);
+    const sheen = sheens[0];
+    expect(sheen.getAttribute("src")).toMatch(/plastic-overlay\.webp$/);
+    expect(sheen).toHaveClass("pointer-events-none", "absolute", "inset-0", "h-full", "w-full", "object-cover", "opacity-50");
+    expect(sheen.className).not.toMatch(/mix-blend-|rotate|opacity-40/);
+  });
+
+  it("WELCOME and the single slide carry no sheen", () => {
+    seed([]);
+    const welcome = renderSplash();
+    expect(host().querySelector('img[src*="plastic-overlay"]')).toBeNull();
+    welcome.unmount();
+
+    seed([{ url: u("a.jpg") }]);
+    renderSplash();
+    expect(layout()).toBe("full-bleed");
+    expect(host().querySelector('img[src*="plastic-overlay"]')).toBeNull();
+  });
 });
 
 describe("image rotation", () => {

@@ -10,7 +10,7 @@ import {
   setDiscountOnAddon,
   selectDiscountOnAddon,
 } from "@cx-sdk/catalog/state/appSettings.slice";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { useGetDeploymentInfoForOrderingMutation } from "@cx-sdk/catalog/services/settingsApi";
 import { setDeploymentInfo } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -19,8 +19,10 @@ import CountryCodes from "@cx-sdk/core/data/CountryCodes";
 
 import {
   pushCharges,
+  selectMenuCharges,
   setDeploymentCharges,
 } from "@cx-sdk/ordering/state/cart.slice";
+import { composeBillCharges } from "@cx-sdk/catalog/menu/billCharges";
 
 import { selectOngoingOrders } from "@cx-sdk/ordering/state/order.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -43,6 +45,11 @@ import {
 import RiyalLogo from "../../components/RiyalLogo";
 import * as settingsEngine from "@cx-sdk/catalog/settings/settingsEngine";
 
+/** The one auth field the default-country guard reads at response time (UB5). */
+interface CountryPickState {
+  auth?: { selectedCountryCode?: { picked?: unknown } | null };
+}
+
 /**
  * Thin wrapper over @cx-sdk/catalog/settings/settingsEngine.
  * The pure derivations live in the SDK; this hook only gathers inputs
@@ -51,6 +58,8 @@ import * as settingsEngine from "@cx-sdk/catalog/settings/settingsEngine";
  */
 function useAppSettings() {
   const dispatch = useDispatch();
+  // Live reads after an await (never a render-time closure).
+  const store = useStore();
   const kiosSettings = useSelector(kiosSettingsRdx);
   const selectSelectedPipelineRdx = useSelector(selectSelectedPipeline);
   const tabId = useSelector(selectTabId);
@@ -175,7 +184,15 @@ function useAppSettings() {
         data?.deployment?.countryCode,
         CountryCodes,
       );
-      if (defaultCountry) {
+      // UB5: the deployment default never overwrites a guest's country pick.
+      // The staged order-type switch (`opts`) never re-applies it (same
+      // deployment, same default), and the live /second call — not awaited,
+      // so it can land after a pick on the pre-menu /phone — checks for a
+      // pick when its response arrives. A pick (`picked: true`, written only
+      // by the country picker) lasts one guest: the session reset clears it.
+      const picked = (store.getState() as CountryPickState).auth
+        ?.selectedCountryCode?.picked;
+      if (defaultCountry && !opts && !picked) {
         apply(setCountryCode(defaultCountry));
       }
 
@@ -183,13 +200,16 @@ function useAppSettings() {
       //setting the charges and country Data
 
       if (data?.charges) {
-        const menuCharges: any =
-          window.localStorage.getItem("menuCharges") &&
-          window.localStorage.getItem("menuCharges") !== "undefined"
-            ? JSON.parse(window.localStorage.getItem("menuCharges") || "{}")
-            : [];
         const filteredCharges = settingsEngine.filterCharges(data?.charges);
-        const allCharges = [...menuCharges, ...filteredCharges];
+        // C1b: the menu charges are read back from redux (setMenuCharges is
+        // dispatched beside its localStorage mirror), never from raw
+        // localStorage — a logout purge clears redux but not the mirror.
+        // Menu FIRST here (this site's historical order).
+        const allCharges = composeBillCharges(
+          filteredCharges,
+          selectMenuCharges(store.getState()),
+          true,
+        );
         apply(setDeploymentCharges(filteredCharges));
         mirror("deploymentCharges", JSON.stringify(filteredCharges));
         mirror("charges", JSON.stringify(allCharges));

@@ -10,7 +10,11 @@ import {
 import { resolveDefaultCountry } from "@cx-sdk/catalog/settings/settingsEngine";
 import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import CountryCodes from "@cx-sdk/core/data/CountryCodes";
-import { pushCharges, setDeploymentCharges } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  pushCharges,
+  setDeploymentCharges,
+  setMenuCharges,
+} from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
 import useAppSettings from "../useAppSettings";
 
@@ -20,6 +24,11 @@ import useAppSettings from "../useAppSettings";
   SecondLayout, Menu, BagSheet — relies on), and its staged mode (opts) is
   the order-type switch's: nothing reaches the store or localStorage until
   the caller commits.
+
+  audit-fixes C1b: the menu charges are read back from REDUX
+  (cart.menuCharges), never localStorage. The seeds hold both (they are
+  written together in the app), so the pinned payloads are unchanged; a
+  stale mirror over an empty store (after a logout purge) loses to redux.
 */
 
 const net = vi.hoisted(() => ({
@@ -45,7 +54,7 @@ const BODY = {
   ],
   deployment: {
     countryCode: { code: "IN", dial_code: "+91" },
-    currencySettings: { symbol: "₹", code: "INR" },
+    currencySettings: { currency: "INR", text: "₹" },
   },
 };
 
@@ -81,6 +90,7 @@ describe("useAppSettings.getChargesCountryDataApi — lane bag-pdp pins", () => 
     store.dispatch({ type: "RESET_STATE" });
     window.localStorage.clear();
     window.localStorage.setItem("menuCharges", JSON.stringify([MENU_CHARGE]));
+    store.dispatch(setMenuCharges({ menuCharges: [MENU_CHARGE] }));
     net.charges = () => Promise.resolve({ data: BODY });
     net.requests = [];
   });
@@ -124,9 +134,11 @@ describe("useAppSettings.getChargesCountryDataApi — lane bag-pdp pins", () => 
     const service = BODY.charges[0];
     expect(actions).toEqual([]);
     expect(writes).toEqual([]);
+    // UB5: the staged order-type switch never re-applies the deployment's
+    // default country (same deployment, same default) — it would overwrite
+    // a guest's pick mid-session.
     expect(staged.map((action) => action.type)).toEqual([
       "appSettings/setChargesCountryData",
-      "auth/setCountryCode",
       "appSettings/setCurrency",
       "cart/setDeploymentCharges",
       "cart/pushCharges",
@@ -154,5 +166,39 @@ describe("useAppSettings.getChargesCountryDataApi — lane bag-pdp pins", () => 
     const { actions, writes } = await record((fetchCharges) => fetchCharges("t2"));
     expect(actions).toEqual([]);
     expect(writes).toEqual([]);
+  });
+
+  it("C1b: a stale localStorage mirror over an empty store (a logout purge) — redux wins, no menu charge", async () => {
+    store.dispatch(setMenuCharges({ menuCharges: [] }));
+    expect(window.localStorage.getItem("menuCharges")).toBe(JSON.stringify([MENU_CHARGE]));
+
+    const { actions, writes } = await record((fetchCharges) => fetchCharges("t2"));
+
+    const service = BODY.charges[0];
+    expect(actions.filter(pushCharges.match)).toEqual([pushCharges([service])]);
+    expect(writes).toContainEqual(["charges", JSON.stringify([service])]);
+  });
+
+  it("C1b: a non-array menuCharges in redux counts as none (no throw on the spread)", async () => {
+    store.dispatch(setMenuCharges({ menuCharges: { broken: true } }));
+
+    const { actions } = await record((fetchCharges) => fetchCharges("t2"));
+
+    expect(actions.filter(pushCharges.match)).toEqual([pushCharges([BODY.charges[0]])]);
+  });
+
+  it("UB5: a country the guest picked survives the live path (the /second response can land after a pick)", async () => {
+    const UAE = { code: "AE", dialCode: "+971", min: 9, max: 9, picked: true };
+    store.dispatch(setCountryCode(UAE));
+
+    const { actions } = await record((fetchCharges) => fetchCharges("t2"));
+
+    expect(actions.map((action) => action.type)).toEqual([
+      "appSettings/setChargesCountryData",
+      "appSettings/setCurrency",
+      "cart/setDeploymentCharges",
+      "cart/pushCharges",
+    ]);
+    expect(store.getState().auth.selectedCountryCode).toEqual(UAE);
   });
 });

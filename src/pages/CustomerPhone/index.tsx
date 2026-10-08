@@ -23,10 +23,13 @@ import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
+import CancelOrderModal from "../../components/common/CancelOrderModal";
+import CountryPicker from "../../components/phone/CountryPicker";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import chevronUp from "../../assets/icons/chevron-up.svg";
 
-/** `{code, dialCode, min, max}` — core/auth `selectedCountryCode`. */
+/** `{code, dialCode, min, max}` (+ `picked`) — core/auth `selectedCountryCode`. */
 interface CountryCode {
   code?: string;
   dialCode?: string;
@@ -85,12 +88,22 @@ const maskExceptLast = (input: string) =>
  * its `!isLoyaltyOnSetting` early-return and NO check_loyalty_balance lookup
  * is ever fired — the screen is a pure CRM phone capture.
  *
- * The mode changes exactly two edges and nothing else, so the pre-menu
+ * The mode changes exactly three things and nothing else, so the pre-menu
  * behaviour stays byte-identical:
  *   Continue / Skip → /customerName   (pre-menu: /menu)
  *   Back            → /cart           (pre-menu: /second)
+ *   CANCEL ORDER    → asks first (CancelOrderModal; audit-fixes A3) — the
+ *                     guest has a bag; pre-menu it goes to /start at once
+ *                     (the bag is empty there, like /second)
+ * The confirm ONLY navigates to /start, whose mount revokes and resets (H1).
  * Validation, masking, the CRM mandatory gates, the analytics vocabulary and
  * every rendered string are untouched by the mode.
+ *
+ * COUNTRY (audit-fixes UB5): the pill opens the country picker (design
+ * language, sign-off). A pick drives the digit limits, the keypad cap and the
+ * Xeno `country_code`; the typed digits stay (fork parity). It lasts one
+ * guest (the session reset restores IN/+91). The keypad ignores a leading
+ * "0" (a trunk prefix, fork parity).
  *
  * No Figma frame exists for this screen — TB design language (KioskStage
  * absolute px, tb-* tokens, FooterBar); flagged for client sign-off.
@@ -132,6 +145,8 @@ export default function CustomerPhone() {
   const [isPhoneVisible, setIsPhoneVisible] = useState(false);
   const [showLastDigit, setShowLastDigit] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
   // One lookup per tap: executeLoyalty resolves asynchronously and navigates,
   // so a second tap must not fire a second check_loyalty_balance (Rule 2).
   const isSubmitting = useRef(false);
@@ -375,9 +390,17 @@ export default function CustomerPhone() {
     navigate(isCheckoutMode ? "/cart" : "/second");
   }, [commitPhone, isCheckoutMode, navigate]);
 
+  const openCountryPicker = useCallback(() => {
+    captureKioskEvent(KioskEventName.CountryCodeSelectionClicked, {
+      current_country_code: selectedCountryCode?.dialCode,
+    });
+    setCountryOpen(true);
+  }, [selectedCountryCode]);
+
   const canSkip =
     !kioskSettings?.crm_phone_mandatory && !kioskSettings?.crm_name_mandatory;
   const maxDigits = selectedCountryCode?.max ?? PHONE_MAX_LENGTH;
+  const dialCode = selectedCountryCode?.dialCode ?? "";
 
   return (
     <div
@@ -412,18 +435,36 @@ export default function CustomerPhone() {
         {isLoyaltyOnSetting ? t("phone.loyaltySubtitle") : t("phone.subtitle")}
       </p>
 
-      {/* Country pill + masked entry field. The country PICKER is deferred
-          (no country-code sheet exists in TB yet) — the pill reflects the
-          store's selectedCountryCode and is intentionally not a control. */}
+      {/* Country pill (opens the picker, UB5) + masked entry field. */}
       <div
         className={`absolute left-1/2 ${ada ? "top-[316px]" : "top-[580px]"} flex w-[844px] -translate-x-1/2 items-center gap-[16px]`}
       >
-        <div
+        <button
+          type="button"
           data-testid="phone-country-code"
-          className="flex h-[100px] min-w-[140px] items-center justify-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[24px] text-[32px] font-medium text-black"
+          aria-haspopup="dialog"
+          aria-label={t("phone.changeCountry", { dialCode })}
+          onClick={openCountryPicker}
+          className="flex h-[100px] min-w-[140px] items-center justify-center gap-[8px] rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[20px] text-[32px] font-medium text-black"
         >
-          {selectedCountryCode?.dialCode ?? ""}
-        </div>
+          <span dir="ltr">{dialCode}</span>
+          {/* chevron-up.svg is white (the footer's) — painted purple through
+              a mask and turned 180° to point down. */}
+          <span
+            aria-hidden="true"
+            className="h-[24px] w-[24px] shrink-0 rotate-180 bg-tb-purple"
+            style={{
+              WebkitMaskImage: `url("${chevronUp}")`,
+              maskImage: `url("${chevronUp}")`,
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              // The span IS the icon box (and "contain" is the bell
+              // masks' signature in the visual checks).
+              WebkitMaskSize: "100% 100%",
+              maskSize: "100% 100%",
+            }}
+          />
+        </button>
         <div className="relative flex h-[100px] flex-1 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]">
           <span
             data-testid="phone-number-display"
@@ -457,6 +498,7 @@ export default function CustomerPhone() {
           value={inputValue}
           onChange={handleDigitsChange}
           maxLength={maxDigits}
+          noLeadingZero
         />
       </div>
 
@@ -482,10 +524,27 @@ export default function CustomerPhone() {
       )}
 
       <FooterBar
-        onCancelOrder={() => navigate("/start")}
+        onCancelOrder={() =>
+          isCheckoutMode ? setCancelOrderOpen(true) : navigate("/start")
+        }
         onOpenLanguage={() => setLanguageOpen(true)}
       />
       <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
+      <CountryPicker
+        open={countryOpen}
+        onClose={() => setCountryOpen(false)}
+        layerClass="z-40"
+      />
+      {/* A3: in checkout mode the guest has a bag — ask first. The confirm
+          ONLY navigates (H1): /start's mount revokes and resets. */}
+      <CancelOrderModal
+        open={cancelOrderOpen}
+        onConfirm={() => {
+          setCancelOrderOpen(false);
+          navigate("/start");
+        }}
+        onCancel={() => setCancelOrderOpen(false)}
+      />
     </div>
   );
 }

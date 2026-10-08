@@ -213,7 +213,7 @@ const arabicSession = async () => {
 
 beforeEach(() => {
   store.dispatch({ type: "RESET_STATE" });
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setEntityMap({ entityMap: { [SAUCE.id]: SAUCE } }));
   store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   store.dispatch(setFilteredOffers([MIN_BILL_OFFER]));

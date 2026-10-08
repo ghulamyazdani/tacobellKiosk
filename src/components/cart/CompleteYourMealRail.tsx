@@ -2,13 +2,13 @@ import { useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import { useTenantRailItems } from "../../hooks/recommendation/useTenantRecommendations";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import ForYouCard from "./ForYouCard";
 import {
   CART_UPSELL_GRID_GAP_PX,
@@ -66,10 +66,7 @@ export default function CompleteYourMealRail({
     | { cartItems?: { id?: string }[] }
     | null
     | undefined;
-  const currencySettings = useSelector(selectCurrency) as
-    | { symbol?: string; currency_symbol?: string }
-    | null
-    | undefined;
+  const currency = useCurrencySymbol();
 
   const cartItems = cart?.cartItems;
   const railItems = useMemo(() => {
@@ -80,9 +77,6 @@ export default function CompleteYourMealRail({
   }, [tenantItems, shouldShowUpsell, items, cartItems]);
 
   if (railItems.length === 0) return null;
-
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
 
   const handleTap = (entity: RecommendedEntity) => {
     addEntity(entity, {

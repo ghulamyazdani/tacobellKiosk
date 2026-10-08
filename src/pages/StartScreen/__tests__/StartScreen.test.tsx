@@ -8,6 +8,7 @@ import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
 import { emptyMenuData, setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
 import { setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
+import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import StartScreen from "../index";
 import { loadActivityModal } from "../../../components/activity/loadActivityModal";
@@ -15,6 +16,17 @@ import "../../../i18n";
 
 /** Flip `crash.media` to make the media layer throw during render. */
 const { crash } = vi.hoisted(() => ({ crash: { media: false } }));
+
+const { mockCapture, mockResetSession } = vi.hoisted(() => ({
+  mockCapture: vi.fn(),
+  mockResetSession: vi.fn(),
+}));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+  resetAnalyticsSession: () => mockResetSession(),
+}));
 
 vi.mock("@cx-sdk/catalog/media/splashMedia", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@cx-sdk/catalog/media/splashMedia")>();
@@ -244,5 +256,52 @@ describe("StartScreen mount — the session teardown owner (P9a)", () => {
     expect(screen.getByTestId("start-screen")).toBeInTheDocument();
     expect(read().cart.cartItems).toEqual([]);
     expect(read().menu.menu).toEqual({});
+  });
+});
+
+/*
+  audit-fixes B3 — a new PostHog session per guest. The splash mount sends
+  HomeLoaded ONCE (the ref-latched teardown effect — StrictMode's replay
+  included); a tap starts a new analytics session BEFORE it leaves for
+  /second, so the guest's first event lands in their own session.
+*/
+describe("StartScreen — analytics per guest (audit-fixes B3)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    mockCapture.mockReset();
+    mockResetSession.mockReset();
+  });
+
+  const homeLoaded = () =>
+    mockCapture.mock.calls.filter(([event]) => event === KioskEventName.HomeLoaded);
+
+  it("HomeLoaded once per splash visit, under StrictMode too", () => {
+    renderStart({ reactStrictMode: true });
+
+    expect(homeLoaded()).toEqual([[KioskEventName.HomeLoaded]]);
+    expect(mockResetSession).not.toHaveBeenCalled(); // a visit is not a guest
+  });
+
+  it("the tap resets the analytics session first, then navigates to /second", () => {
+    const onScreenAtReset: boolean[] = [];
+    mockResetSession.mockImplementation(() =>
+      onScreenAtReset.push(screen.queryByText("second-screen") === null)
+    );
+    renderStart();
+
+    fireEvent.click(screen.getByTestId("start-screen"));
+
+    expect(mockResetSession).toHaveBeenCalledTimes(1);
+    expect(onScreenAtReset).toEqual([true]); // still the splash when it ran
+    expect(screen.getByText("second-screen")).toBeInTheDocument();
+  });
+
+  it("the operator's hotspot is not a guest: no reset", () => {
+    renderStart();
+
+    fireEvent.click(screen.getByTestId("activity-hotspot"));
+
+    expect(mockResetSession).not.toHaveBeenCalled();
+    expect(screen.queryByText("second-screen")).not.toBeInTheDocument();
   });
 });

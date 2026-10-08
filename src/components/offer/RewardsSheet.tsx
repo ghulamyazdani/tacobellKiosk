@@ -4,7 +4,6 @@ import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCartOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   selectEntityMap,
   selectSubCategoryMap,
@@ -30,6 +29,7 @@ import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
@@ -134,10 +134,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     | undefined;
   const appliedOffer = useSelector(selectCartOffer) as SavingsOffer | undefined;
   const cartItems = useSelector(selectCartItems);
-  const currencySettings = useSelector(selectCurrency) as
-    | { symbol?: string; currency_symbol?: string }
-    | null
-    | undefined;
+  const currency = useCurrencySymbol();
   const entityMap = useSelector(selectEntityMap) as EntityMapIn;
   const subCategoryMap = useSelector(selectSubCategoryMap) as SubCategoryMapIn;
   const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
@@ -153,8 +150,6 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   // Menu names at render; offer names stay English (no per-language data).
   const { name } = useLocalized();
 
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const money = (value: number): string =>
     `${currency}${Number(value).toFixed(2)}`;
 

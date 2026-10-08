@@ -28,6 +28,7 @@ import useAppSettings from "../utils/useAppSettings";
 import useGlobalTriggerServices from "../globals/useGlobalTriggerServices";
 import AutoScroll from "../../utils/autoScroll";
 import { useTranslation } from "react-i18next";
+import useLocalized from "../utils/useLocalized";
 import {
   decreaseTier1selectedEntityQuantity,
   increaseTier1selectedEntityQuantity,
@@ -60,9 +61,11 @@ import {
   applyMultiPunchSelection,
   applySinglePunchSelection,
   checkCustomizationCount,
+  getEffectiveMax,
   insertLeadingItemsAfterModifier,
   type ContradictoryDelta,
 } from "@cx-sdk/ordering/customization/selectionRules";
+import { wouldExceedGroupMax } from "@cx-sdk/ordering/customization/groupMaxGuard";
 import {
   checkIfAllVariantIds,
   findFirstMinMaxViolation,
@@ -160,6 +163,24 @@ const useCustomization = ({
   const { triggerNotification } = useGlobalTriggerServices();
 
   const { t } = useTranslation();
+  const { name } = useLocalized();
+
+  /*
+    UB2: the ONE answer to every GROUP-max refusal — the guard below on a
+    tap / "+", and the engine's flexible max-limit branch — "You can choose
+    up to {{max}} {{group}}" over the PDP (GlobalErrorHost). The group name
+    is resolved in the guest's language at the tap (the completion
+    warning's precedent; the modal is modal, so it cannot go stale). The
+    per-ITEM cap keeps toast.alreadyReachedMaximumLimit.
+  */
+  const notifyGroupMax = (modifier: unknown) => {
+    triggerNotification(
+      t("pdp.groupMaxReached", {
+        max: Number(getEffectiveMax(modifier, isAllowMultiplePunch())),
+        group: name(modifier),
+      }),
+    );
+  };
 
   // const setIsOpenBottomSheet = (openType: any, status: any) => {
   //   dispatch(
@@ -486,8 +507,8 @@ const useCustomization = ({
       }
 
       // dispatch(closeSelectedEntity());
-    } catch (error) {
-      console.error(error);
+    } catch {
+      // Best effort: the close + navigate must never take the PDP down (C5: no log).
     }
   };
   // getTotalValue and checkIfAllVariantIds now live in the engine
@@ -749,6 +770,20 @@ const useCustomization = ({
     availableModifiers: any,
     nextModifier: any,
   ) => {
+    // UB2: the "+" never takes the GROUP past its effective max (counted in
+    // units, like the commit). A refusal writes nothing.
+    if (
+      wouldExceedGroupMax({
+        customizations: selectedCustomizations,
+        modifier,
+        item,
+        allowMultiplePunch: isAllowMultiplePunch(),
+        kind: "increase",
+      })
+    ) {
+      notifyGroupMax(modifier);
+      return selectedCustomizations;
+    }
     // Stepper math lives in the engine; the quick-customization advancement,
     // scrolling and mid-flow commits below run only when it actually
     // incremented — the same paths the original took.
@@ -841,6 +876,23 @@ const useCustomization = ({
     handleMultiAutoSelect?: any,
     selectedCustomizationsObject?: any,
   ) => {
+    // UB2: a tap that would ADD a unit past the group's effective max is
+    // refused out loud and writes nothing — no dispatch, no ModifierSelected,
+    // no contradictory update, no auto-advance. The engines' swap, a tap on a
+    // pick (remove / decrement) and the auto-select pass are never refused.
+    if (
+      !handleMultiAutoSelect &&
+      wouldExceedGroupMax({
+        customizations: selectedCustomizations,
+        modifier,
+        item,
+        allowMultiplePunch: isAllowMultiplePunch(),
+        kind: "tap",
+      })
+    ) {
+      notifyGroupMax(modifier);
+      return selectedCustomizations;
+    }
     //to be changed later
     // if (isAllowMultiplePunch()) {
     // alert("Multi punch");
@@ -990,8 +1042,12 @@ const useCustomization = ({
         });
       }
       return wasAdded;
-    } catch (error) {
-      console.error("addCustomizationToCart failed", error);
+    } catch {
+      // C5: the commit failed — the only trace on an unattended kiosk.
+      captureKioskEvent(KioskEventName.ErrorOccurred, {
+        error_source: "customization",
+        stage: "commit",
+      });
     }
   };
 
@@ -1457,13 +1513,9 @@ const useCustomization = ({
 
         setFalseGrayOut(modifier?._id);
       } else if (outcome.action === "max-limit") {
-        // Display error if max limit is reached
-        dispatch(
-          setShowErrorModalGlobal({
-            showErrorModal: true,
-            errorMessage: t("toast.alreadyReachedMaximumLimit"),
-          }),
-        );
+        // The group is full (the guard above normally answers first; this
+        // stays for the auto-select pass and data the guard fails open on).
+        notifyGroupMax(modifier);
 
         if (nextModifier) {
           AutoScroll(

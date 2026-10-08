@@ -134,6 +134,21 @@ describe("ErrorModal (Figma 1:988 Icon Modal + 1:4514 CTAs)", () => {
     ).toEqual(["components/common/GlobalErrorHost.tsx"]);
   });
 
+  it("danger (audit-fixes C4a): the primary fills tb-red; the default stays tb-purple", () => {
+    renderModal();
+    expect(screen.getByTestId("x-retry")).toHaveClass("bg-tb-purple");
+    expect(screen.getByTestId("x-retry")).not.toHaveClass("bg-tb-red");
+  });
+
+  it("danger: true → the red primary (white on #DE1313, ≈ 5:1), still the focused 280×60 CTA", () => {
+    renderModal({ primary: { label: "Yes, delete", testId: "x-delete", onClick: vi.fn(), danger: true } });
+    const primary = screen.getByTestId("x-delete");
+    expect(primary).toHaveClass("bg-tb-red", "text-tb-surface", "h-[60px]", "w-[280px]");
+    expect(primary).not.toHaveClass("bg-tb-purple");
+    expect(primary).toHaveFocus();
+    expect(screen.getByTestId("x-back")).not.toHaveClass("bg-tb-red");
+  });
+
   it("the skrim is inert: a tap outside the card chooses nothing", () => {
     const { primary, secondary } = renderModal();
     const skrim = screen

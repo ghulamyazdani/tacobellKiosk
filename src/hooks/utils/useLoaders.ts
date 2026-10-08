@@ -51,9 +51,9 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   filterPaymentOptions,
-  findMashreqPartner,
   type Entity,
 } from "@cx-sdk/payments/gateways/paymentOptions";
+import { toPaytmKind } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { useGetPaymentSettingsApiMutation } from "@cx-sdk/payments/services/paymentSettingsFetchApi";
 import { useGetDeploymentPaymentPartnersMutation } from "@cx-sdk/payments/services/paymentInfoApi";
 import { setLanguages } from "../../redux/features/multiLanguage/multiLanguage.slice";
@@ -85,9 +85,10 @@ type Stage = (action: UnknownAction) => void;
  * Why boot stopped — /LoadingResources picks its translated copy from this.
  * The config reasons are fixed in Cockpit; "unavailable" is everything else
  * (network, timeout, 5xx, malformed body), which only waiting can fix.
+ * The start-screen texts no longer stop a boot (audit-fixes B6): nothing in
+ * TB reads them.
  */
-export type BootFailure =
-  "unavailable" | "noLanguage" | "noPipelines" | "noStartText";
+export type BootFailure = "unavailable" | "noLanguage" | "noPipelines";
 
 /** A boot stop caused by the kiosk's configuration, not the network. */
 class BootConfigError extends Error {
@@ -220,8 +221,17 @@ function useLoaders() {
    *   opens the https://localhost:5000/EFTTransact terminal bridge during
    *   boot. Not ported. Beyond that, `filterPaymentOptions` PREPENDS a
    *   synthetic "Mashreq" payment option whenever the deployment carries that
-   *   partner, so the row is stripped below: in a pay-at-counter-only build a
-   *   terminal option must not exist even as data.
+   *   partner; only the Paytm rows are kept below, so it never exists even as
+   *   data.
+   * - Every other gateway's row (CX-22 / D11 widened, audit-fixes B1): only
+   *   the activated Paytm rows (PaytmDynamicQr / PaytmEdc) are stored, WHOLE
+   *   — `appSettings.paymentSettings` persists at device scope, and a Pine
+   *   Labs / Razorpay / Dojo / NI / Geidea / NeoLeap row carries its own
+   *   credentials (e.g. `partner_merchant_password`) that no TB screen
+   *   reads. The Paytm rows keep theirs (`paytm_dqr_secret_key`, …): a
+   *   relaunch lands on /start WITHOUT booting, and the checkout needs them
+   *   at call time. A device upgraded in place sheds the old rows at its
+   *   next successful boot.
    * - `console.error` on failure — replaced by a structured analytics event.
    *
    * Best-effort by design (Rule 2): none of it is required to place a
@@ -275,13 +285,12 @@ function useLoaders() {
         getAllIds,
       );
 
-      // SAFETY: drop the synthetic Mashreq row (see the note above).
-      const mashreqPartner = findMashreqPartner(partners);
-      const paymentOptions = mashreqPartner
-        ? validPaymentOptions.filter(
-            (option) => option?._id !== mashreqPartner?._id,
-          )
-        : validPaymentOptions;
+      // CX-22/D11: only Paytm rows (whole) reach device storage — the sole
+      // reader is pickPaytmSelections; this also drops the synthetic Mashreq
+      // row (see the note above).
+      const paymentOptions = validPaymentOptions.filter(
+        (option) => toPaytmKind(option?.setting_label) !== null,
+      );
 
       stage(setPaymentSettings(paymentOptions));
       stage(setGeneralSettings(generalSettings));
@@ -314,17 +323,10 @@ function useLoaders() {
     };
     try {
       //// Language
-      let isSecondarySet = false;
       const languageData = await getLanguageFromApi({
         brand_id: deploymentDetails?.brand_id,
       }).unwrap();
       if (languageData) {
-        if (
-          languageData?.secondary_language &&
-          Object.keys(languageData.secondary_language).length > 0
-        ) {
-          isSecondarySet = true;
-        }
         if (
           !languageData?.primary_language ||
           Object.keys(languageData.primary_language).length === 0
@@ -391,6 +393,24 @@ function useLoaders() {
         tenant_id: deploymentDetails?.tenant_id,
         channel: "Kiosk",
       }).unwrap();
+      // B6: a body that is not a settings object is a fault, not a config —
+      // "unavailable" (the retry ladder; nothing is committed, B2). The
+      // start-text throws (removed below) used to be its only guard. An EMPTY
+      // object is a real answer: boot on defaults (Rule 2, degrade over
+      // block) — never silently, the operator sees it in analytics.
+      if (
+        !settingsData ||
+        typeof settingsData !== "object" ||
+        Array.isArray(settingsData)
+      ) {
+        throw new Error("kiosk settings body");
+      }
+      if (Object.keys(settingsData).length === 0) {
+        captureKioskEvent(KioskEventName.ErrorOccurred, {
+          error_source: "boot",
+          stage: "settings_empty",
+        });
+      }
 
       stage(
         setOneCategoryAtATime(Boolean(settingsData?.one_category_at_a_time)),
@@ -425,12 +445,9 @@ function useLoaders() {
         setEnableBannerCollapse(Boolean(settingsData?.enable_banner_collapes)),
       );
 
-      if (!settingsData?.start_order_text_primary) {
-        throw new BootConfigError("noStartText");
-      }
-      if (isSecondarySet && !settingsData?.start_order_text_secondary) {
-        throw new BootConfigError("noStartText");
-      }
+      // B6 (PAR-08): start_order_text_* no longer stop a boot. They used to
+      // throw (fork parity) although nothing reads them — the fork's only
+      // reader (StartFooter) is not on its live splash either.
       // Degrade over block (Rule 2): this used to throw (fork parity), so a
       // missing ideal_time parked boot on the retry screen. Absent, the slice
       // value stands — resolveIdleSeconds() caps it at Rule 1's 120 s anyway.

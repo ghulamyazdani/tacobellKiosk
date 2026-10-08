@@ -125,7 +125,7 @@ async function mockKioskBackend(page: Page, opts: MockOptions) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -280,7 +280,44 @@ test.describe("figma-polish S3 — /second's order types and the picked pipeline
     await bagOneSalad(page);
     await expect(page.getByTestId("bag-total")).toContainText("£22.00");
     await expect(page.getByTestId("bag-pay")).toContainText("£22.00");
+    // U4: the packing charge rides the Taxes & charges line with the VAT
+    // (2.55 + 2.00); Round off is what the whole-pound Total added.
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£4.55");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("+£0.45");
     expect((await kioskState(page)).menuCharges).toEqual([MENU_CHARGE._id]);
+  });
+
+  test("MONEY, SLOW CHARGES (audit-fixes C1b): the deployment's charges call answers after the menu loaded — its late composition keeps the menu's packing charge (read back from the store)", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { pipelines: [TABLE, TAKE_AWAY], menuCharge: true });
+    await registerToStart(page);
+    // /second's get_data is not awaited (it races the menu): hold it until
+    // the menu has pushed its own charges (newest route wins).
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/cx/kiosk/get_data", async (route) => {
+      await held;
+      return route.fulfill({
+        json: {
+          charges: [],
+          deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
+        },
+      });
+    });
+    await orderAs(page, "p2");
+    expect((await kioskState(page)).menuCharges).toEqual([MENU_CHARGE._id]);
+    const answered = page.waitForResponse("**/api/cx/kiosk/get_data");
+    release();
+    await answered;
+
+    await bagOneSalad(page);
+    // round(17 × 1.15 + 2) — the packing charge survived the late answer.
+    await expect(page.getByTestId("bag-total")).toContainText("£22.00");
+    await expect(page.getByTestId("bag-pay")).toContainText("£22.00");
   });
 
   test("MONEY, TAKE AWAY → TABLE: the take-away guest pays the menu charge; the table guest after them does NOT", async ({

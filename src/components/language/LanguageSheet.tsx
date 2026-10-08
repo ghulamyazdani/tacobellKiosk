@@ -6,6 +6,7 @@ import {
   selectSelectedLanguage,
   setSelectedLanguage,
 } from "../../redux/features/multiLanguage/multiLanguage.slice";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface LanguageOption {
@@ -47,6 +48,12 @@ export default function LanguageSheet({ open, onClose }: LanguageSheetProps) {
   // L0: store the fork's slot `type` (by identity with the option object) —
   // every per-language read (pipeline names, MIAM and ticker copy) keys on it.
   const choose = (lang: LanguageOption) => {
+    // Every choice, a re-pick of the current one too (fork parity); codes on
+    // both sides (the fork sent the previous language's NAME).
+    captureKioskEvent(KioskEventName.LanguageChanged, {
+      selected_language_code: lang.code,
+      previous_language_code: selectedCode,
+    });
     dispatch(
       setSelectedLanguage(
         withDirection({

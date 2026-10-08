@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { mockCheckoutBackend } from "./fixtures/checkout";
@@ -25,7 +25,11 @@ import {
  * labels on one line; the loyalty seal's lettering and its two wordmark
  * copies fitting the ring; the loyalty bells keeping their mask; /second with
  * 3 or 5 order types keeping the title off the bell). The menu / PDP / bag /
- * ADA captures live in visual-order.spec.ts.
+ * ADA captures live in visual-order.spec.ts. Lane audit-fixes adds two DOM
+ * probes (no pixel comparison): the plastic sheen (UB3 — the alpha WebP at
+ * 50 % normal on the carousel, /second and the ADA brand zone, none on
+ * WELCOME or a single slide; `sheenProblems`) and the Order Complete
+ * gradient's tb-* tokens (C4b).
  *
  * Mocks and helpers are copied from the specs each walk cribs from (splash,
  * idle, checkout, loyalty, autoUpdate — no spec exports them, house
@@ -37,6 +41,10 @@ import {
  * Time: walks that need it install `page.clock` before the first goto and
  * pause it where a screen only lasts a few seconds (the update countdown, the
  * PAY AT COUNTER window, the REWARDS INCOMING seal).
+ *
+ * The fullscreen gate (audit-fixes U2, no frame) shows only in a WINDOWED
+ * browser: its walk runs on a taller screen than the 1080×1920 window (both
+ * projects otherwise pin the screen to the window, i.e. --kiosk).
  */
 
 const LOGIN_OK = {
@@ -112,6 +120,55 @@ async function capture(page: Page, name: string) {
     .toBe(true);
   await shot(page, name);
   expect.soft(await clippedText(page), `${name}: text the layout cuts off`).toEqual([]);
+}
+
+/**
+ * UB3: every plastic sheen in `scope` is Figma's plastic_2 as the stage-sized
+ * alpha WebP (crop and −90° baked in) at 50 %, normal blend, unturned and as
+ * wide as the stage — and its transparency survived decoding (the P1 JPEG
+ * was flattened onto white: the scratches lived only in the alpha). The
+ * bitmap is ~99.9 % translucent; a flattened copy is 0 %. Problems as text.
+ */
+function sheenProblems(scope: Locator): Promise<string[]> {
+  return scope.locator('img[src*="plastic-overlay"]').evaluateAll(async (elements) => {
+    if (elements.length === 0) return ["no plastic sheen"];
+    const stage = document.querySelector('[data-testid="kiosk-stage"]');
+    const k = stage ? stage.getBoundingClientRect().height / 1920 : 1;
+    const problems: string[] = [];
+    for (const img of elements as HTMLImageElement[]) {
+      const file = (img.getAttribute("src") ?? "").split("?")[0].split("/").pop() ?? "";
+      if (!/^plastic-overlay[^/]*\.webp$/.test(file)) problems.push(`${file}: not the alpha WebP`);
+      await img.decode().catch(() => undefined);
+      if (img.naturalWidth !== 1080 || img.naturalHeight !== 1920) {
+        problems.push(`${file}: decoded ${img.naturalWidth}×${img.naturalHeight}`);
+        continue;
+      }
+      const style = getComputedStyle(img);
+      if (style.opacity !== "0.5") problems.push(`${file}: opacity ${style.opacity}`);
+      if (style.mixBlendMode !== "normal") problems.push(`${file}: blend ${style.mixBlendMode}`);
+      const turn = `${style.transform} ${style.getPropertyValue("rotate")}`;
+      if (turn !== "none none") problems.push(`${file}: turned (${turn})`);
+      const width = Math.round(img.getBoundingClientRect().width / k);
+      if (width !== 1080) problems.push(`${file}: drawn ${width} px wide`);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return ["no 2d canvas"];
+      context.drawImage(img, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let sampled = 0;
+      let seeThrough = 0;
+      for (let alpha = 3; alpha < pixels.length; alpha += 4 * 97) {
+        sampled += 1;
+        if (pixels[alpha] < 250) seeThrough += 1;
+      }
+      if (seeThrough / sampled < 0.9) {
+        problems.push(`${file}: ${Math.round((100 * seeThrough) / sampled)} % see-through (flattened)`);
+      }
+    }
+    return problems;
+  });
 }
 
 
@@ -224,7 +281,7 @@ async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -461,6 +518,8 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(splash).toBeVisible({ timeout: 10_000 });
     await expect(splash).toContainText(en.splash.welcome);
     await capture(page, "entry-03-splash-welcome");
+    // UB3: WELCOME (1:5617) is the photo alone — no sheen.
+    await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(0);
 
     await holdHotspot(page, "activity-hotspot");
     await expect(page.getByTestId("activity-modal")).toContainText(
@@ -499,6 +558,8 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(splash).toContainText(en.splash.startOrder);
     await expect(splash).not.toContainText(en.splash.welcome);
     await capture(page, "entry-06-splash-full-bleed");
+    // UB3: the operator's single slide stays flat — no sheen over it.
+    await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(0);
   });
 
   test("SPLASH CAROUSEL: two images in the peek carousel under ORDER HERE (1:2203)", async ({
@@ -514,6 +575,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     // Centre card plus both peeks.
     await expect(splash.locator(`img[src^="${MEDIA_ORIGIN}"]`)).toHaveCount(3);
     await capture(page, "entry-07-splash-carousel");
+    expect.soft(await sheenProblems(splash), "entry-07: the carousel's sheen (UB3)").toEqual([]);
   });
 
   test("ORDER TYPE: /second (1:2581) in English and Arabic, the language sheet (1:4488), the idle prompt (1:4514) and the menu-error dialog in both languages", async ({
@@ -529,6 +591,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(second).toContainText(en.second.title);
     await expect(page.getByTestId("pipeline-p1")).toContainText("Dine In");
     await capture(page, "entry-08-second-en");
+    expect.soft(await sheenProblems(second), "entry-08: /second's sheen (UB3)").toEqual([]);
 
     await idlePrompt(page);
     await expect(page.getByTestId("idle-modal")).toContainText(en.idle.body);
@@ -639,6 +702,14 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("order-number")).toHaveText(/^#\d{5}$/);
     await capture(page, "entry-20-order-success");
+    // C4b: the 1:5932 gradient reads the four tb-* tokens — an undeclared
+    // token would void the whole declaration (no gradient at all).
+    await expect
+      .soft(page.getByTestId("order-success"))
+      .toHaveCSS(
+        "background-image",
+        /^linear-gradient\((180deg, )?rgb\(27, 7, 38\) 0%, rgb\(80, 16, 152\) 28%, rgb\(154, 35, 248\) 62%, rgb\(240, 122, 222\) 100%\)$/
+      );
   });
 
   test("LOYALTY CHECKOUT: /phone, the rewards sheet after the lookup, /customerName and the cancel-order modal (1:4552)", async ({
@@ -767,6 +838,12 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       await expect(page.locator('[data-testid^="pipeline-"]')).toHaveCount(1);
       await expect(page.getByTestId("pipeline-p2")).toHaveCount(0);
       await capture(page, `entry-30-second-deactivated-${mode}`);
+      if (mode === "ada") {
+        // UB3: the brand zone wears the same stage-sized sheen, cropped by the panel.
+        expect
+          .soft(await sheenProblems(page.getByTestId("ada-brand-zone")), "entry-30: the brand zone's sheen (UB3)")
+          .toEqual([]);
+      }
       const card = await page.getByTestId("pipeline-p1").boundingBox();
       expect
         .soft(Math.abs((card?.x ?? 0) + (card?.width ?? 0) / 2 - 540), `${mode}: the card is centred`)
@@ -823,6 +900,38 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       await expect(page.getByTestId("order-number")).toHaveText(/^#\d{5}$/);
       await expect(page.getByTestId("order-number")).toHaveClass(/\bmt-0\b/);
       await capture(page, `entry-31-order-success-loyalty-${mode}`);
+    });
+  }
+});
+
+test.describe("audit-fixes U2 — the fullscreen gate (no frame — design language)", () => {
+  // A windowed browser: the 1080×1920 window on a taller screen.
+  test.use({ contextOptions: { screen: { width: 1080, height: 2100 } } });
+
+  for (const mode of ["en", "ar"] as const) {
+    test(`FULLSCREEN GATE (${mode}): TAP TO CONTINUE over the guest's screen, until one tap enters fullscreen`, async ({
+      page,
+    }) => {
+      await mockKioskBackend(page, { arabic: true });
+      await registerToStart(page);
+      const gate = page.getByTestId("fullscreen-gate");
+      await expect(gate).toContainText(en.fullscreen.title);
+
+      if (mode === "ar") {
+        // One tap enters fullscreen; the guest picks Arabic on /second; a
+        // browser exit brings the gate back, now in Arabic.
+        await gate.click();
+        await expect
+          .poll(() => page.evaluate(() => document.fullscreenElement !== null))
+          .toBe(true);
+        await page.getByTestId("start-screen").click();
+        await expect(page.getByTestId("second-screen")).toBeVisible();
+        await chooseMode(page, "ar");
+        await page.evaluate(() => document.exitFullscreen());
+        await expect(gate).toContainText(ar.fullscreen.title);
+        await expect(gate).toContainText(ar.fullscreen.body);
+      }
+      await capture(page, `entry-32-fullscreen-gate-${mode}`);
     });
   }
 });

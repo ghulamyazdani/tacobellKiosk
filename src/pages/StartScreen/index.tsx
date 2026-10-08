@@ -20,7 +20,11 @@ import {
   msUntilScheduledRefresh,
   resolveSplashUpdateAction,
 } from "@cx-sdk/devices/updates/updatePolicy";
-import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import {
+  captureKioskEvent,
+  KioskEventName,
+  resetAnalyticsSession,
+} from "../../utils/analytics";
 import useLongPress from "../../hooks/utils/useLongPress";
 import useSessionReset from "../../hooks/utils/useSessionReset";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
@@ -85,6 +89,7 @@ export default function StartScreen() {
   useEffect(() => {
     if (didTeardownRef.current) return;
     didTeardownRef.current = true;
+    captureKioskEvent(KioskEventName.HomeLoaded);
     // Revoke FIRST — it reads the claimed coupon from this render's closure,
     // which the reset wipes. Fire-and-forget: a dead xeno.in must never hold
     // the splash (Rule 2).
@@ -223,7 +228,15 @@ export default function StartScreen() {
     <button
       type="button"
       data-testid="start-screen"
-      onClick={() => navigate("/second")}
+      onClick={() => {
+        // A new guest starts here: a new analytics session before their
+        // first event (audit-fixes B3). ponytail: the previous guest's
+        // fire-and-forget teardown (Xeno revoke ≤ 10 s, the Paytm release)
+        // can still report after a very quick tap and land in this session;
+        // upgrade: reset in the teardown once those settle.
+        resetAnalyticsSession();
+        navigate("/second");
+      }}
       className="relative isolate block h-full w-full cursor-pointer overflow-hidden bg-tb-purple text-left"
     >
       {/* `isolate`: nothing in the media layer can stack over the z-20

@@ -59,7 +59,7 @@ const renderRail = () =>
 describe("CompleteYourMealRail (locked decision 6 — source-2 isCartRecommended engine)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("renders null with no entityMap at all", () => {
@@ -193,7 +193,7 @@ describe("CompleteYourMealRail — tenant recommendations first (post-P9 29a)", 
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: TENANT_ENTITIES }));
     store.dispatch(setCartItems([BURGER_ROW]));
   });
@@ -264,7 +264,7 @@ describe("CompleteYourMealRail — card titles in the guest's language (post-P9 
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(
       setEntityMap({
         entityMap: {

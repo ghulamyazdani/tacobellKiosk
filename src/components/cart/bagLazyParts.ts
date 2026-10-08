@@ -28,3 +28,10 @@ export { planSplitEditCommit } from "@cx-sdk/ordering/cart/splitEdit";
 // …and the tier-2 CUSTOMIZE page (+ its private SDK tier2Logic): the PDP
 // mounts it only while MIAMTier2Open (loadPdpLazyParts, a scrim until then).
 export { default as Tier2CustomizationSheet } from "../customization/Tier2CustomizationSheet";
+// UB5: the country picker of /phone and the rewards-login modal.
+export { default as CountryPickerSheet } from "../phone/CountryPickerSheet";
+// audit-fixes A1: PAY's stock re-check (+ the 838-line OOS engine it runs) —
+// loaded at PAY by BagSheet.handlePay, never from a boot module.
+export { runCheckoutStockSweep, sameCartRows } from "@cx-sdk/catalog/oos/checkoutStockSweep";
+// audit-fixes U3: the bag's cooking-instructions sheet.
+export { default as InstructionsSheet } from "./InstructionsSheet";

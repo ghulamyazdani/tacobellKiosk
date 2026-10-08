@@ -3,12 +3,11 @@
  * the domain passes. Do not add NEW anys.
  */
 import { useMemo, useState } from "react";
-import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import closeIcon from "../../assets/icons/close.svg";
 // ?no-inline: a precached file, off the boot JS (SlotSelectionSheet's D7).
 import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
@@ -50,8 +49,7 @@ export default function SelectSizeModal({
   const { t } = useTranslation();
   const { name } = useLocalized();
   const ada = useAdaActive();
-  const currencySettings = useSelector(selectCurrency) as any;
-  const currency = currencySettings?.symbol ?? "";
+  const currency = useCurrencySymbol();
   const [selectedId, setSelectedId] = useState<string>("");
 
   const variants: any[] = useMemo(() => {

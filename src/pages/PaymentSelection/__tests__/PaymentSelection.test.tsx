@@ -64,11 +64,11 @@ vi.mock("../../../hooks/menuHooks/useOrderHook", () => ({
 const state = () => store.getState() as any;
 
 /**
- * The deployment blob shape the SDK's `checkIfCODAvailable` reads:
- * `entity.label === "Disable COD for Kiosk"` matched against `tabs[].tabLabel`.
- * The e2e fixture carries the fork's `name`/`tabType` spellings alongside
- * these — the two implementations diverge (documented in the screen header),
- * and this suite pins the one the screen actually calls.
+ * A "Disable COD for Kiosk" row with ONE ticked tab. Since audit-fixes A2 the
+ * SDK's `checkIfCODAvailable` is the fork's live rule: the row by `name` or
+ * `label`, the tab by `tabs[].tabType` (take-out spellings as one family),
+ * and only `selected: true` disables COD — `tabLabel` is no longer read
+ * (the full rule table: src/__tests__/codAvailability.test.ts).
  */
 const disableCodFor = (tabLabel: string) => [
   {
@@ -122,7 +122,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     store.dispatch({ type: "RESET_STATE" });
     seedCart();
     store.dispatch(setTabType("table"));
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setKioskSettings({ skip_crm_page: false }));
   });
 
@@ -155,6 +155,42 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.queryByTestId("payment-counter")).not.toBeInTheDocument();
       // Rule 1: a dead end still has a way back.
       expect(screen.getByTestId("payment-back")).toBeInTheDocument();
+    });
+
+    /*
+      audit-fixes A2 at the screen: Cockpit's DEFAULT row lists every tab
+      unticked. The old SDK rule matched tabLabel and ignored `selected`, so a
+      table session lost its only tender under it.
+    */
+    it("A2: Cockpit's default row (every tab unticked) keeps PAY AT COUNTER for a table session", () => {
+      store.dispatch(
+        setDeploymentInfo([
+          { name: "disable_roundoff", label: "Disable Round Off", selected: false },
+          {
+            name: "disable_cod_kiosk",
+            label: "Disable COD for Kiosk",
+            selected: false,
+            tabs: [
+              { tabLabel: "Table", tabType: "table", selected: false },
+              { tabLabel: "Take Out", tabType: "takeout", selected: false },
+              { tabLabel: "Delivery", tabType: "delivery", selected: false },
+            ],
+          },
+        ])
+      );
+      mount();
+
+      expect(screen.getByTestId("payment-counter")).toBeInTheDocument();
+      expect(screen.queryByTestId("payment-unavailable")).not.toBeInTheDocument();
+    });
+
+    it("A2: a take_out session under a ticked 'takeaway' tab has no COD (the take-out spellings are one tab)", () => {
+      store.dispatch(setTabType("take_out"));
+      store.dispatch(setDeploymentInfo(disableCodFor("takeaway")));
+      mount();
+
+      expect(screen.getByTestId("payment-unavailable")).toBeInTheDocument();
+      expect(screen.queryByTestId("payment-counter")).not.toBeInTheDocument();
     });
 
     it("matches the tab case-insensitively (SDK lowercases both sides)", () => {
@@ -495,11 +531,11 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       );
     });
 
-    it("renders a bare amount when the currency blob is the legacy number 1", () => {
+    it("falls back to ₹ when the currency blob is the legacy number 1 (UB1: never a bare amount)", () => {
       store.dispatch(setCurrency(1));
       mount();
 
-      expect(screen.getByTestId("payment-total")).toHaveTextContent("24.50");
+      expect(screen.getByTestId("payment-total")).toHaveTextContent("₹24.50");
     });
   });
 

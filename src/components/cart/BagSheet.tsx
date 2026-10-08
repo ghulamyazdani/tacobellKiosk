@@ -43,14 +43,26 @@ import {
   resolveCheckoutStockDecision,
 } from "@cx-sdk/ordering/checkout/checkoutPreflight";
 import {
-  selectCurrency,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { selectTabType } from "@cx-sdk/catalog/state/pipeline.slice";
-import { selectEntpShowCategory } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  selectEntpShowCategory,
+  setMinMaxErroredBaseItems,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { useLazyGetServerTimeQuery } from "@cx-sdk/catalog/services/settingsApi";
-import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
-import { setSelectedEntity } from "../../redux/features/menuSelections/menuSelections.slice";
+import { useGetOutOfStockMutation } from "@cx-sdk/catalog/services/outOfStockApi";
+import type { CheckoutStockSweep } from "@cx-sdk/catalog/oos/checkoutStockSweep";
+import { getTotalValueWithApplyAddonPrice } from "@cx-sdk/ordering/customization/pricing";
+import {
+  selectLicenseDetails,
+  selectTabId,
+} from "@cx-sdk/core/auth/authentication.slice";
+import {
+  setOutOfStockItems,
+  setSelectedEntity,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useOrderHook from "../../hooks/menuHooks/useOrderHook";
@@ -71,7 +83,7 @@ import {
   setCelebratedBarKey,
 } from "../../utils/offerCelebration";
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
-import BagItemRow from "./BagItemRow";
+import BagItemRow, { isRowUnavailable } from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
@@ -88,6 +100,7 @@ import {
 } from "@cx-sdk/catalog/state/pipeline.slice";
 import { selectOrderTypeSwitchNotice } from "../../redux/features/menuSelections/menuSelections.slice";
 import useKioskOpenServices from "../../hooks/kioskOpen/useKioskOpenServices";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { ErrorBoundary } from "../../ErrorBoundary";
 
 // Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
@@ -128,6 +141,10 @@ const OrderTypeSwitchNotice = lazy(async () => ({
 const EditHowManyModal = lazy(async () => ({
   default: (await import("./bagLazyParts")).EditHowManyModal,
 }));
+// audit-fixes U3 — the cooking-instructions sheet, same chunk.
+const InstructionsSheet = lazy(async () => ({
+  default: (await import("./bagLazyParts")).InstructionsSheet,
+}));
 
 /**
  * How long the CTA bar swallows taps after a rewards / picker / buy-stage
@@ -136,6 +153,9 @@ const EditHowManyModal = lazy(async () => ({
  * tap would start checkout.
  */
 const CTA_TAP_GUARD_MS = 500;
+
+/** A bill figure at the cent (U4: the column must add up on screen). */
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 interface BagSheetProps {
   open: boolean;
@@ -165,6 +185,24 @@ interface BagSheetProps {
  */
 const getLoyaltyPointsValue = (row: any) =>
   row?.extra_fields?.find((field: any) => field?.name === "Points Value")?.value;
+
+/**
+ * A PAY whose stock check flagged nothing: every row is in stock and on
+ * schedule, so a stale flag from an earlier PAY clears — on the LIVE row,
+ * everything else as the bill priced it.
+ */
+const clearStockFlags = (row: unknown): unknown => {
+  if (!isRowUnavailable(row)) return row;
+  const flagged = row as { selectedVariant?: Record<string, unknown> | null };
+  return {
+    ...flagged,
+    outOfStock: false,
+    isAvailable: true,
+    ...(flagged.selectedVariant
+      ? { selectedVariant: { ...flagged.selectedVariant, outOfStock: false } }
+      : {}),
+  };
+};
 
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired) — the
@@ -254,10 +292,14 @@ export default function BagSheet({
   const totalQuantity = Number(useSelector(cartQuantity) ?? 0);
   const cartOffer = useSelector(selectCartOffer) as any;
   const filteredOffers = useSelector(selectFilteredOffers) as any[] | null;
-  const currencySettings = useSelector(selectCurrency) as any;
+  const currency = useCurrencySymbol();
   const tabType = useSelector(selectTabType) as any;
   const showEntpCategory = useSelector(selectEntpShowCategory) as any;
   const tabId = useSelector(selectTabId) as any;
+  const licenseDetails = useSelector(selectLicenseDetails) as
+    | { deployment_id?: string }
+    | null
+    | undefined;
   // P7c loyalty reads: the partner coupon list drives the entry-tap branch
   // table, the customer phone is the XENO identity (set by /phone).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
@@ -275,10 +317,12 @@ export default function BagSheet({
     decreaseItemQuantityById,
     removeLoyaltyItemFromCart,
     isAnyLoyaltyItemPresentInCart,
+    replaceCartItems,
   } = useCartHook();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
   const { getCalculatedBill } = useOrderHook();
-  const { fetchMenu } = useMenuConverters();
+  const { fetchMenu, isAllowMultiplePunch, fetchModifierProperties } =
+    useMenuConverters();
   const { updateCartItemsByMenu } = useSchedulerConverter();
   const { getIsLoyaltyOn, shouldSkipCRM, getDeactivatedPipelines } =
     useAppSettings();
@@ -288,6 +332,7 @@ export default function BagSheet({
   const { rank } = useOfferSavings();
   const { handleCartDrivenRemoval, removeAppliedOffer } = useOfferApply();
   const [getServerTimeApi] = useLazyGetServerTimeQuery();
+  const [getOutOfStock] = useGetOutOfStockMutation();
 
   const [checkoutInProgress, setCheckoutInProgress] = useState(false);
   const [removeCandidate, setRemoveCandidate] = useState<any>(null);
@@ -301,6 +346,8 @@ export default function BagSheet({
   const [switchTarget, setSwitchTarget] = useState<SwitchablePipeline | null>(null);
   /** The multi-quantity row whose "edit how many" numpad is open. */
   const [editHowManyRow, setEditHowManyRow] = useState<unknown>(null);
+  /** U3: the cooking-instructions sheet is open. */
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const comingSoonTimer = useRef<number | null>(null);
   const stage = useBuyStage(open);
 
@@ -319,7 +366,6 @@ export default function BagSheet({
     return () => window.clearTimeout(id);
   }, [ctaTapGuard]);
 
-  const currency = currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const displayRows: any[] = consolidateGetItemsForDisplay(cartRdx?.cartItems);
   const isTakeOut = orderTypeKindOf(tabType) === "takeOut";
   const hasAppliedOffer = Boolean(cartOffer && Object.keys(cartOffer).length > 0);
@@ -717,8 +763,11 @@ export default function BagSheet({
       if (serverTimeData?.serverTime) {
         currentServerDateWithTime = moment(new Date(serverTimeData.serverTime));
       }
-      const { invalidSchedulerItemIds } = await updateCartItemsByMenu(
-        cartRdx?.cartItems,
+      // The scheduler's rows are structuredClone'd (mutable) — the stock
+      // sweep below runs on THEM, never on the frozen redux rows.
+      const preSweepRows = cartRdx?.cartItems;
+      const { updatedCart, invalidSchedulerItemIds } = await updateCartItemsByMenu(
+        preSweepRows,
         menuData,
         showEntpCategory,
         currentServerDateWithTime,
@@ -739,16 +788,78 @@ export default function BagSheet({
         );
       }
 
-      // updateOutOfStockFromApis + updateCartItemsInIndexDB are NOT ported
-      // to TB yet (no app-side module exists) — skipped per contract C1;
-      // resolveCheckoutStockDecision degrades gracefully on undefined
-      // outOfStockData (both OOS branches read it null-safely). NOTE (P7b
-      // contract): the blocked/outOfStock variant carries `removeOffer:
-      // {silent}|null` — always null while outOfStockData is undefined; when
-      // the OOS sweep is wired it must call handleCartDrivenRemoval(silent).
+      // A1 — the stock re-check (the fork's updateOutOfStockFromApis): the
+      // SDK sweep, lazy with the bag's chunk (the 838-line engine stays off
+      // the boot path). FAIL-OPEN (D-A1-1, fork parity): a failed chunk, a
+      // failed / timed-out feed (10 s transport bound), a non-array feed or
+      // any throw lets PAY through on today's path. No second check before
+      // the Paytm initiate (D-A1-4).
+      let sweep: CheckoutStockSweep | null = null;
+      let sameRows: ((a: unknown, b: unknown) => boolean) | null = null;
+      try {
+        const parts = await import("./bagLazyParts");
+        if (!mountedRef.current) return;
+        sameRows = parts.sameCartRows;
+        sweep = await parts.runCheckoutStockSweep(
+          updatedCart,
+          (ids) =>
+            getOutOfStock({
+              items_id: ids,
+              deployment_id: licenseDetails?.deployment_id,
+              tab_id: tabId,
+            }).unwrap(),
+          {
+            getTotalValueWithApplyAddonPrice,
+            isAllowMultiplePunch,
+            fetchModifierProperties,
+          },
+        );
+      } catch {
+        sweep = null;
+      }
+      if (!mountedRef.current) return;
+
+      if (!sweep || !sameRows) {
+        captureKioskEvent(KioskEventName.ErrorOccurred, {
+          error_source: "checkout_stock_sweep",
+        });
+      } else {
+        // CAS (D-A1-5): the guest changed the bag while the check ran — no
+        // write; the next PAY checks the bag as it is now.
+        const liveRows = (store.getState() as { cart?: { cartItems?: unknown } })
+          ?.cart?.cartItems;
+        if (!sameRows(liveRows, preSweepRows)) {
+          setCheckoutInProgress(false);
+          return;
+        }
+        dispatch(setOutOfStockItems(sweep.feedMap));
+        dispatch(setUpdatedBaseItems({ updatedBaseItems: sweep.updatedBaseItems }));
+        dispatch(
+          setMinMaxErroredBaseItems({
+            minMaxErroredBaseItems: sweep.minMaxErroredBaseItems,
+          }),
+        );
+        // ONE write (one dispatch + one Dexie replace), only when something
+        // is flagged or a live row carries a stale flag (D-A1-3). Flagged =
+        // a blocked PAY: the swept rows land and the guest sees the bag.
+        // Stale flags alone: this PAY proceeds on the bill it rendered, so
+        // only the flags clear — the swept rows would also land the
+        // scheduler's silent drops (an add-on out of its window) under an
+        // order priced and charged with them.
+        if (
+          sweep.updatedBaseItems.length > 0 ||
+          sweep.minMaxErroredBaseItems.length > 0 ||
+          isAnyItemUnavailable
+        ) {
+          replaceCartItems(sweep.updatedCart);
+        } else if (Array.isArray(liveRows) && liveRows.some(isRowUnavailable)) {
+          replaceCartItems(liveRows.map(clearStockFlags));
+        }
+      }
+
       const decision = resolveCheckoutStockDecision({
-        cartItems: cartRdx?.cartItems,
-        outOfStockData: undefined,
+        cartItems: preSweepRows,
+        outOfStockData: sweep ?? undefined,
         isAnyItemUnavailable,
         tabType,
         skipCRM: shouldSkipCRM(),
@@ -756,8 +867,31 @@ export default function BagSheet({
       });
 
       if (decision.kind === "blocked") {
-        // Only "itemUnavailable" is reachable without the OOS sweep, and its
-        // error modal is already up.
+        if (decision.reason === "outOfStock") {
+          // An out-of-stock freebie drops its offer (silently while paid
+          // rows still need the guest — the two notices never stack).
+          if (decision.removeOffer) {
+            handleCartDrivenRemoval(decision.removeOffer.silent);
+          }
+          // The existing notice (decision 2026-10-08: no new key).
+          if (decision.showOutOfStockError) {
+            dispatch(
+              setShowErrorModalGlobal({
+                showErrorModal: true,
+                errorMessage: t("bag.itemUnavailable"),
+              }),
+            );
+          }
+        } else if (decision.reason === "minMaxError" && !isAnyItemUnavailable) {
+          // A TB addition — the fork blocks here silently.
+          dispatch(
+            setShowErrorModalGlobal({
+              showErrorModal: true,
+              errorMessage: t("bag.someNeedChanges"),
+            }),
+          );
+        }
+        // "itemUnavailable": its error modal is already up.
         setCheckoutInProgress(false);
         return;
       }
@@ -848,6 +982,27 @@ export default function BagSheet({
     );
   };
 
+  // U3 — cooking instructions (fork Cart.tsx:1286-1294 / CartItemList
+  // :106-158): only the note's LENGTH reaches analytics.
+  const instructions = String(cartRdx?.instructions ?? "");
+  const openInstructions = () => {
+    captureKioskEvent(KioskEventName.AddInstructionClicked, {
+      has_existing_instruction: instructions !== "",
+    });
+    setInstructionsOpen(true);
+  };
+  const dismissInstructions = () => {
+    captureKioskEvent(KioskEventName.AddInstructionDismissed, {});
+    setInstructionsOpen(false);
+  };
+  const saveInstructions = (text: string) => {
+    captureKioskEvent(KioskEventName.InstructionAdded, {
+      instruction_length: text.length,
+    });
+    dispatch(setCartInstructions(text));
+    setInstructionsOpen(false);
+  };
+
   const payTotal =
     bill && Object.keys(bill).length > 0 ? Number(bill.getNetAmount()) : 0;
   // Live applied discount — always the BILL's figure (resolveShownSaving
@@ -856,6 +1011,23 @@ export default function BagSheet({
     bill && Object.keys(bill).length > 0
       ? Number(bill.getTotalDiscount?.() ?? 0)
       : 0;
+  // U4 (design language, the 1:3348 row geometry — sign-off): every figure
+  // from the SAME bill, read AFTER getNetAmount (above), which recomputes
+  // the charges (getCharges is undefined without any). Display only — never
+  // dispatched. Round off is what the engine's rounding added, so Sub Total
+  // − Discounts + Taxes & charges ± Round off = Total, to the cent.
+  const hasBill = !!bill && Object.keys(bill).length > 0;
+  const subTotal = hasBill ? round2(Number(bill.getSubtotal())) : 0;
+  const taxesAndCharges = hasBill
+    ? round2(
+        Number(bill.getTotalTax()) +
+          (Number(bill.getCharges()) || 0) +
+          Number(bill.getChargesTotalTax()),
+      )
+    : 0;
+  const roundOff = round2(
+    payTotal - (subTotal - round2(appliedDiscount) + taxesAndCharges),
+  );
   // F1: the applied offer row and its celebration show the OFFER's own
   // saving — a XENO reward's item discount is in the total, not the offer's.
   const offerDiscount = getBillOfferDiscount(bill);
@@ -876,6 +1048,23 @@ export default function BagSheet({
   });
   const canSwitch = !!switchCandidate && !checkoutInProgress;
 
+  // Chevron — the decorative "opens a sheet" affordance of the bag's entry
+  // rows (Rewards, cooking instructions).
+  const chevron = (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-[36px] w-[36px] shrink-0 text-tb-purple"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M8.29 5.29a1 1 0 0 1 1.42 0l6 6a1 1 0 0 1 0 1.42l-6 6a1 1 0 0 1-1.42-1.42L13.59 12 8.29 6.71a1 1 0 0 1 0-1.42Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+
   // A lazy overlay's loading / failed-chunk stand-in: its scrim, which closes
   // it (BuyStageSheet's buy-stage-loading precedent).
   const lazyDismiss = (testId: string, z: string, close: () => void) => (
@@ -892,6 +1081,11 @@ export default function BagSheet({
   );
   const editHowManyDismiss = lazyDismiss("edit-how-many-loading", "z-50", () =>
     setEditHowManyRow(null),
+  );
+  const instructionsDismiss = lazyDismiss(
+    "instructions-loading",
+    "z-50",
+    dismissInstructions,
   );
   // The rewards sheet / buy stage while their code is not here (loading, or
   // a failed chunk): their own scrim, closing like them — the bag stays
@@ -1125,23 +1319,48 @@ export default function BagSheet({
                         </span>
                       )}
                     </span>
-                    {/* Chevron — decorative affordance for "opens the sheet". */}
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-[36px] w-[36px] shrink-0 text-tb-purple"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        clipRule="evenodd"
-                        d="M8.29 5.29a1 1 0 0 1 1.42 0l6 6a1 1 0 0 1 0 1.42l-6 6a1 1 0 0 1-1.42-1.42L13.59 12 8.29 6.71a1 1 0 0 1 0-1.42Z"
-                        fill="currentColor"
-                      />
-                    </svg>
+                    {chevron}
                   </button>
                 )}
               </div>
             )}
+
+            {/* U3 — cooking instructions (design language, no frame —
+                sign-off): the Rewards entry-row geometry. The note persists
+                per customer and rides special_instructions on both order
+                paths; the empty-cart exit and the session reset clear it. */}
+            <div className="w-full border-t border-tb-grey-4 pt-[24px]">
+              <p
+                id="bag-instructions-title"
+                className="text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black"
+              >
+                {t("bag.instructions.title")}
+              </p>
+              {/* Named by the header AND the hint / note: the text alone
+                  ("no onions") says nothing about the button's purpose. */}
+              <button
+                type="button"
+                data-testid="bag-instructions-entry"
+                aria-labelledby="bag-instructions-title bag-instructions-text"
+                onClick={openInstructions}
+                className="flex min-h-[44px] w-full items-center gap-[24px] py-[24px] text-left"
+              >
+                {/* A shrink-to-fit dir="auto" leaf (P9f S2): one Arabic line
+                    keeps the header's left edge, a wrapped one right-aligns
+                    in its own box — never across the full row. */}
+                <span className="min-w-0 flex-1">
+                  <span
+                    id="bag-instructions-text"
+                    data-testid="bag-instructions-text"
+                    dir="auto"
+                    className="line-clamp-2 w-fit max-w-full text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple [overflow-wrap:anywhere]"
+                  >
+                    {instructions || t("bag.instructions.hint")}
+                  </span>
+                </span>
+                {chevron}
+              </button>
+            </div>
           </div>
 
           {/* Complete Your Meal — the rail gates itself (renders null when
@@ -1157,9 +1376,7 @@ export default function BagSheet({
               <p>{t("bag.subTotal")}</p>
               <p data-testid="bag-subtotal" className="text-right">
                 {currency}
-                {bill && Object.keys(bill).length > 0
-                  ? Number(bill.getSubtotal()).toFixed(2)
-                  : "0.00"}
+                {subTotal.toFixed(2)}
               </p>
             </div>
             {/* Discounts — Figma 1:3137: signed line between Sub Total and
@@ -1170,6 +1387,27 @@ export default function BagSheet({
                 <p data-testid="bag-discounts" className="text-right">
                   −{currency}
                   {appliedDiscount.toFixed(2)}
+                </p>
+              </div>
+            )}
+            {/* U4 — the tax the Total carries, then what its rounding added
+                (signed); each hidden at zero. */}
+            {taxesAndCharges >= 0.005 && (
+              <div className="flex w-full items-center justify-between pb-[16px] text-[28px] leading-[32px] text-black">
+                <p>{t("bag.taxesAndCharges")}</p>
+                <p data-testid="bag-taxes-charges" className="text-right">
+                  +{currency}
+                  {taxesAndCharges.toFixed(2)}
+                </p>
+              </div>
+            )}
+            {Math.abs(roundOff) >= 0.005 && (
+              <div className="flex w-full items-center justify-between pb-[16px] text-[28px] leading-[32px] text-black">
+                <p>{t("bag.roundOff")}</p>
+                <p data-testid="bag-round-off" className="text-right">
+                  {roundOff < 0 ? "−" : "+"}
+                  {currency}
+                  {Math.abs(roundOff).toFixed(2)}
                 </p>
               </div>
             )}
@@ -1329,6 +1567,19 @@ export default function BagSheet({
               row={editHowManyRow}
               onCancel={() => setEditHowManyRow(null)}
               onConfirm={handleEditHowManyConfirm}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+      {/* U3: the instructions sheet (z-50), its scrim while the chunk loads
+          or after it failed — closing like X (the draft discarded). */}
+      {instructionsOpen && (
+        <ErrorBoundary fallback={instructionsDismiss}>
+          <Suspense fallback={instructionsDismiss}>
+            <InstructionsSheet
+              initialValue={instructions}
+              onSave={saveInstructions}
+              onClose={dismissInstructions}
             />
           </Suspense>
         </ErrorBoundary>

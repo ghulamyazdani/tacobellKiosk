@@ -157,7 +157,7 @@ async function mockKioskBackend(page: Page) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -345,6 +345,10 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     // (round(8 − 2 + 0.90) — see header).
     await expect(page.getByTestId("bag-subtotal")).toContainText("£8.00");
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    // U4: VAT on the discounted £6 base, then what the whole-pound Total
+    // added — the column adds up: 8.00 − 2.00 + 0.90 + 0.10 = 7.00.
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£0.90");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("+£0.10");
     await expect(page.getByTestId("bag-total")).toContainText("£7.00");
 
     // CTA flips to ORDER & PAY at the discounted total (tb-display
@@ -527,6 +531,11 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
       page.getByTestId(`freebie-option-${CAESAR_DRESSING}`)
     ).toBeVisible();
     await expect(page.locator('[data-testid^="freebie-option-"]')).toHaveCount(2);
+    // Each plain option prices what CONFIRM will charge: £0.00, the menu
+    // price struck (the offer → menu conversion, audit-fixes C1a).
+    const tortilla = page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`);
+    await expect(tortilla).toContainText("£0.00");
+    await expect(tortilla).toContainText("£2.00");
 
     // An "or" choice needs a selection — CONFIRM without one is inert
     // (aria-disabled; Playwright rightly refuses to click it, which is
@@ -579,6 +588,41 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     );
   });
 
+  test("OUT-OF-STOCK CHOICE AT MENU LOAD (audit-fixes C1a): Tortilla Sauce is out when the menu loads — the 'or' sauce grant still applies, its picker offering Caesar alone", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    // Newest route wins: the menu loads with the sauce out.
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) =>
+      route.fulfill({
+        json: [
+          { item_id: TORTILLA_SAUCE, type: "item", partners: { partner_name: "Kiosk", inStock: false } },
+        ],
+      })
+    );
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+
+    // An "or" grant needs ONE resolvable entry: the sold-out sauce is not on
+    // offer, the other one is.
+    await pickAndSave(page, OFFER_FREE_SAUCE);
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+    await expect(page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`)).toHaveCount(0);
+    await expect(page.locator('[data-testid^="freebie-option-"]')).toHaveCount(1);
+    await page.getByTestId(`freebie-option-${CAESAR_DRESSING}`).click();
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page)).toHaveCount(2);
+    const caesarRow = bagRows(page).filter({ hasText: "Caesar Dressing" });
+    await expect(caesarRow.locator('[data-testid^="bag-free-chip-"]')).toHaveText("Free");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
   test("CART-DRIVEN REMOVAL: removing the last paid row auto-removes the freebie offer — notice survives the bag's empty-exit onto /menu, GOT IT clears it", async ({
     page,
   }) => {
@@ -622,5 +666,51 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     await page.getByTestId("offer-removal-gotit").click();
     await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
     await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+  });
+
+  test("PAY DROPS AN OUT-OF-STOCK FREEBIE (audit-fixes A1): the free salad sold out after it was granted — PAY removes the offer with the removal notice and sweeps its row, no stock error, still /cart; the next PAY goes on with the paid row", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await pickAndSave(page, OFFER_FREE_SALAD);
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£17.00`);
+
+    // From here the salad is out (newest route wins; the engine counts only
+    // the "Kiosk" partner's inStock: false).
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) =>
+      route.fulfill({
+        json: [
+          { item_id: GREEK_SALAD, type: "item", partners: { partner_name: "Kiosk", inStock: false } },
+        ],
+      })
+    );
+    await page.getByTestId("bag-pay").click();
+
+    // Only the freebie is out, and a guest cannot fix a freebie: the offer
+    // goes (out loud — no paid row needs the guest), never a stock error.
+    const notice = page.getByTestId("offer-removal-notice");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("Free Greek Salad with your order");
+    await expect(notice).toContainText("Your total is now £9.00");
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/cart$/);
+    await page.getByTestId("offer-removal-gotit").click();
+    await expect(notice).toHaveCount(0);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(bagRows(page).filter({ hasText: "Greek Salad" })).toHaveCount(0);
+    await expect(page.getByTestId("bag-rewards-applied")).toHaveCount(0);
+    await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+
+    // The next PAY checks the paid row alone and goes on.
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
   });
 });

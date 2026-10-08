@@ -2,7 +2,6 @@ import { Fragment, useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { buildDirectAddPayload } from "@cx-sdk/ordering/cart/addIntent";
 import { isBOGOOfferApplicable } from "@cx-sdk/ordering/offer/offerEngine";
 import {
@@ -21,6 +20,7 @@ import type { BuyStage } from "../../hooks/offerHooks/useBuyStage";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import {
   CART_UPSELL_IMAGE_HEIGHT_PX,
@@ -94,10 +94,7 @@ export default function BuyStageSheet({
     | { cartItems?: BuyCartRow[] }
     | null
     | undefined;
-  const currencySettings = useSelector(selectCurrency) as
-    | { symbol?: string; currency_symbol?: string }
-    | null
-    | undefined;
+  const currency = useCurrencySymbol();
   const {
     addItemToCart,
     IncreaseItemQuantityById,
@@ -115,8 +112,6 @@ export default function BuyStageSheet({
 
   const { offer, view } = stage;
   const cartItems = cart?.cartItems;
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const excludeLoyalty = excludesLoyalty(view.mode);
 
   const progress = getBuyStageProgress(offer as BuyStageOffer, view, cartItems);

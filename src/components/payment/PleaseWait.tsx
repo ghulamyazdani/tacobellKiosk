@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import bgTexture from "../../assets/splash/bg-texture.png";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import hourglass from "../../assets/payment/hourglass.png";
 
@@ -54,15 +54,14 @@ export default function PleaseWait({
           backgroundPosition: "top left",
         }}
       />
-      {/* A landscape stage box turned −90° about its centre = the portrait
-          stage. max-w-none: preflight's img max-width would clamp it to the
-          1080 page and break the cover. */}
+      {/* Figma's plastic_2 sheen: the stage-sized alpha bitmap (crop and
+          −90° baked in, UB3) at 50 %, normal blend. */}
       <img
         aria-hidden
         alt=""
         draggable={false}
         src={plasticOverlay}
-        className="absolute left-1/2 top-1/2 h-[1080px] w-[1920px] max-w-none -translate-x-1/2 -translate-y-1/2 -rotate-90 object-cover opacity-50 mix-blend-soft-light"
+        className="absolute inset-0 h-full w-full object-cover opacity-50"
       />
       {!ada && (
         <img

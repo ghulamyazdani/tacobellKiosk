@@ -27,7 +27,6 @@ import {
   buildVariantTierPayload,
 } from "@cx-sdk/ordering/cart/addIntent";
 import { checkCustomizationType } from "@cx-sdk/catalog/menu/menuUtils";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   closeBottomSheet,
   setSelectedEntity,
@@ -36,7 +35,9 @@ import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useTagFilter from "../../hooks/menuHooks/useTagFilter";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import closeIcon from "../../assets/icons/close.svg";
 
 /**
@@ -171,9 +172,7 @@ export default function MakeItAMealPrompt() {
     isSecondary ? secondaryMakeItAMeal : primaryMakeItAMeal
   );
   const headline = typeof operatorText === "string" ? operatorText.trim() : "";
-  const currencySettings = useSelector(selectCurrency) as any;
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
+  const currency = useCurrencySymbol();
 
   const combos: any[] = useMemo(() => {
     const resolved = (filterByTags(item?.upsellItems) ?? []) as any[];
@@ -215,7 +214,13 @@ export default function MakeItAMealPrompt() {
       dispatch(closeMakeItAMealSession({ force: false }));
       return;
     }
-    // Non-plain: the customization detour clears the session at commit/back
+    // Non-plain: both branches below open /customization (audit-fixes B3;
+    // the raw primary-language name — names are translated only at render).
+    captureKioskEvent(KioskEventName.CustomizationOpenedViaMIAM, {
+      item_id: combo?.id,
+      item_name: combo?.name,
+    });
+    // The customization detour clears the session at commit/back
     // (useCustomization.closeModalStates) — only the force latch must go now,
     // since openComboConstutientCustomizations leaves it standing.
     dispatch(setIsForceOpenMakeItAMealModal(false));

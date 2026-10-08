@@ -4,63 +4,41 @@
  * typed in later domain passes. Do not add NEW anys.
  */
 import { useDispatch } from "react-redux";
+/**
+ * Hollow upstream: every db call is commented out in the fork, so each
+ * function is a no-op kept for its callers (useOrderHook, useSessionReset).
+ * Their unreachable try/catch logging went with audit-fixes C5.
+ */
 function useOrderIndexDb() {
   // Verbatim parity: the original bound `dispatch` (unused — every db call
   // below is commented out upstream). The bare call keeps hook order identical.
   useDispatch();
   const addOrderToIndexedDb = (_order: any) => {
-    try {
-      // db.orders.add(order);
-    } catch (error) {
-      console.error("Error adding order to indexedDB:", error);
-    }
+    // db.orders.add(order);
   };
 
   //   update order status in indexedDb
   const updateOrderStatusIndexedDb = async (_orderId: any, _status: any) => {
-    try {
-      // await db.orders.update(orderId, { orderStatus: status });
-    } catch (error) {
-      console.error("Error updating order status in indexedDB:", error);
-    }
+    // await db.orders.update(orderId, { orderStatus: status });
   };
 
   //   delete order with order id
   const deleteOrderIndexedDb = async (_orderId: any) => {
-    try {
-      // await db.orders.where("orderId").equals(orderId).delete();
-    } catch (error) {
-      console.error("Error deleting order from indexedDB:", error);
-    }
+    // await db.orders.where("orderId").equals(orderId).delete();
   };
 
   const getOrdersFromIndexedDb = async () => {
-    try {
-      // const orders = await db.orders.toArray();
-      // return orders;
-    } catch (error) {
-      console.error("Error getting orders from indexedDB:", error);
-    }
+    // const orders = await db.orders.toArray();
+    // return orders;
   };
 
   const syncOrderFromIndexedDbToRedux = async () => {
-    try {
-      // const orders = await db.orders.toArray();
-      // dispatch(syncOngoingOrdersRdx(orders));
-      //   orders.forEach((order) => {
-      //     // dispatch(pushOrderInOngoingOrders(order));
-      //   });
-    } catch (error) {
-      console.error("Error getting orders from indexedDB:", error);
-    }
+    // const orders = await db.orders.toArray();
+    // dispatch(syncOngoingOrdersRdx(orders));
   };
 
   const deleteAllOrdersFromIndexedDb = async () => {
-    try {
-      // await db.orders.clear();
-    } catch (error) {
-      console.error("Error deleting all orders from indexedDB:", error);
-    }
+    // await db.orders.clear();
   };
 
   return {

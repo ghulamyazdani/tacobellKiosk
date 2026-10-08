@@ -99,7 +99,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   store.dispatch({ type: "RESET_STATE" });
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
 });
 
 afterEach(async () => {

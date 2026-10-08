@@ -25,13 +25,13 @@ import {
   buildVariantTierPayload,
   hasComboUpsell,
 } from "@cx-sdk/ordering/cart/addIntent";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setSelectedEntity } from "../../redux/features/menuSelections/menuSelections.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useGridView from "../../hooks/customization/useGridView";
 import useTagFilter from "../../hooks/menuHooks/useTagFilter";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -68,7 +68,7 @@ function SheetBody({ sheet }: { sheet: any }) {
   const blackListedItemsMIAM = useSelector(
     (state: RepeatSheetRootState) => state.makeItAMeal?.blackListedItems,
   );
-  const currencySettings = useSelector(selectCurrency) as any;
+  const currency = useCurrencySymbol();
 
   const rows: any[] = Array.isArray(sheet?.data) ? sheet.data : [];
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
@@ -79,8 +79,6 @@ function SheetBody({ sheet }: { sheet: any }) {
     return seed;
   });
 
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   const visibleRows = rows.filter(
     (row: any) => (quantities[String(row?.itemId)] ?? 0) > 0,
   );

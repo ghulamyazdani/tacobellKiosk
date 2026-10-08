@@ -51,7 +51,17 @@ vi.mock("../../../hooks/offerHooks/useOfferAutoApply", () => ({
 }));
 
 vi.mock("../../../hooks/menuHooks/useMenuConverters", () => ({
-  default: () => ({ fetchMenu: (...args: unknown[]) => mocks.fetchMenu(...args) }),
+  default: () => ({
+    fetchMenu: (...args: unknown[]) => mocks.fetchMenu(...args),
+    isAllowMultiplePunch: () => false,
+    fetchModifierProperties: () => [],
+  }),
+}));
+
+// audit-fixes A1: PAY's stock re-check answers an empty feed (in stock).
+vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@cx-sdk/catalog/services/outOfStockApi")>()),
+  useGetOutOfStockMutation: () => [() => ({ unwrap: () => Promise.resolve([]) })],
 }));
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
@@ -63,7 +73,10 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
   ...(await importOriginal<typeof import("../../../hooks/schedulerHooks/useSchedulerConverter")>()),
   default: () => ({
     isValidAsPerSchedulers: () => true,
-    updateCartItemsByMenu: async () => ({ updatedCart: [], invalidSchedulerItemIds: [] }),
+    updateCartItemsByMenu: async (rows: unknown[]) => ({
+      updatedCart: structuredClone(rows),
+      invalidSchedulerItemIds: [],
+    }),
   }),
 }));
 
@@ -139,7 +152,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER }]));
     store.dispatch(setPipelines([P1, P2]));
     store.dispatch(setSelectedPipeline(P1));

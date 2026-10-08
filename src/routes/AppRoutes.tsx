@@ -186,8 +186,14 @@ export function AppRoutes() {
       } catch (error) {
         // Dexie unavailable (corrupted DB, private mode): start with an
         // empty cart rather than crash the shell — Rule 2. The write mirror
-        // keeps working independently.
-        console.error("[AppRoutes] cart rehydrate from Dexie failed:", error);
+        // keeps working independently. The guest's bag is lost: reported
+        // with the root cause (syncCartOnReLoad wraps it).
+        const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+        captureKioskEvent(KioskEventName.ErrorOccurred, {
+          error_source: "dexie",
+          stage: "rehydrate",
+          error_message: cause instanceof Error ? cause.message : String(cause),
+        });
       }
       setCartRehydrated(true);
     };

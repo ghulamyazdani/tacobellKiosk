@@ -81,7 +81,10 @@
     "unavailable": "Unavailable",
     "quickAdd": "Quick add",
     "total": "Total",
-    "viewMyBag": "View my bag"
+    "viewMyBag": "View my bag",
+    "veg": "Veg",
+    "nonVeg": "Non-veg",
+    "filters": "Filters"
   },
   "activity": {
     "title": "Activity Center",
@@ -125,7 +128,8 @@
     "backspace": "Backspace",
     "layerToggle": "Toggle numbers and symbols",
     "go": "Go",
-    "clear": "Clear"
+    "clear": "Clear",
+    "space": "Space"
   },
   "pdp": {
     "back": "Back",
@@ -143,7 +147,8 @@
     "discardBody": "Your customizations will be lost",
     "discardKeep": "Keep editing",
     "discardConfirm": "Discard",
-    "groupCount": "{{count}} of {{max}}"
+    "groupCount": "{{count}} of {{max}}",
+    "groupMaxReached": "You can choose up to {{max}} {{group}}"
   },
   "pack": {
     "selectGroup": "Select {{name}}",
@@ -187,7 +192,15 @@
     "itemUnavailable": "Some items are not available right now",
     "checkoutFailed": "Something went wrong — please try again",
     "discounts": "Discounts",
-    "orderAndPay": "Order & Pay"
+    "orderAndPay": "Order & Pay",
+    "someNeedChanges": "Some items in your bag need changes",
+    "choicesUnavailable": "Some choices are no longer available",
+    "instructions": {
+      "title": "Cooking instructions",
+      "hint": "Add a note for the kitchen"
+    },
+    "taxesAndCharges": "Taxes & charges",
+    "roundOff": "Round off"
   },
   "offers": {
     "title": "Rewards",
@@ -341,7 +354,8 @@
     "hide": "Hide",
     "invalidNumber": "Please enter a valid phone number",
     "exactDigits": "Phone number should be exactly {{digits}} digits",
-    "digitRange": "Phone number should be between {{min}} and {{max}} digits"
+    "digitRange": "Phone number should be between {{min}} and {{max}} digits",
+    "changeCountry": "Country code {{dialCode}}. Tap to change"
   },
   "customerName": {
     "title": "What's your name?",
@@ -416,6 +430,10 @@
     "startAgain": "Start again",
     "continue": "continue ordering",
     "countdownA11y": "Starting again in {{seconds}} seconds"
+  },
+  "fullscreen": {
+    "title": "TAP TO CONTINUE",
+    "body": "This kiosk runs in full screen. Tap anywhere to continue."
   },
   "paytm": {
     "methodQr": "Pay with UPI QR",

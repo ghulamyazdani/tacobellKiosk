@@ -5,8 +5,9 @@
  */
 // Thin wrapper over the pure loyalty engine (@cx-sdk/ordering/loyalty/loyaltyEngine).
 // This hook keeps ONLY the impure edges: redux selectors/dispatches, the RTK
-// Query executeLoyaltyEvent transport, uuid generation, console logging, the
-// localStorage claimed-coupon cleanup, and the raw Xeno undoRewardRedemption
+// Query executeLoyaltyEvent transport, uuid generation, failure reports
+// (ErrorOccurred — audit-fixes C5), the localStorage claimed-coupon cleanup,
+// and the raw Xeno undoRewardRedemption
 // fetch (Xeno's own origin, so it stays off the kiosk transport and its
 // credentials; bounded, never retried — see checkAndRevokeLoyaltyReward).
 // All payload building, coupon/menu matching, discount math and the
@@ -60,6 +61,25 @@ const XENO_REVOKE_TIMEOUT_MS = 10_000;
  * dedupes (unconfirmed).
  */
 let revokingClaim: string | undefined;
+
+/**
+ * A loyalty call that threw: it still resolves undefined (each caller's
+ * no-answer path), and is reported — never the phone or a coupon (C5).
+ */
+const reportLoyaltyFailure = (
+  stage:
+    | "executeLoyalty"
+    | "validateCoupon"
+    | "redeemLoyaltyPoints"
+    | "redeemLoyaltyPointsForReeloPoints"
+    | "enterOtpAndRedeem",
+  error: unknown,
+) =>
+  captureKioskEvent(KioskEventName.ErrorOccurred, {
+    error_source: "loyalty",
+    stage,
+    error_message: error instanceof Error ? error.message : String(error),
+  });
 
 function useLoyalty() {
   const [executeLoyaltyEvent, { isLoading: isLoyaltyEventLoading, reset: resetLoyaltyEvent }] =
@@ -133,7 +153,7 @@ function useLoyalty() {
       // };
       return resp;
     } catch (error) {
-      console.error("Error in executeLoyalty: ", error);
+      reportLoyaltyFailure("executeLoyalty", error);
     }
   };
 
@@ -167,7 +187,7 @@ function useLoyalty() {
       // };
       return resp;
     } catch (error) {
-      console.error("Error in executeLoyalty: ", error);
+      reportLoyaltyFailure("validateCoupon", error);
     }
   };
 
@@ -202,7 +222,7 @@ function useLoyalty() {
       // };
       return resp;
     } catch (error) {
-      console.error("Error in executeLoyalty: ", error);
+      reportLoyaltyFailure("redeemLoyaltyPoints", error);
     }
   };
 
@@ -252,12 +272,8 @@ function useLoyalty() {
     return resp;
   };
 
-  const getAllLoyaltyItemsFromMenu = (coupons: any) => {
-    // Verbatim from the pre-extraction implementation; the engine half is
-    // console-free, so the log lives here. Output is unchanged.
-    console.log("menuData0-0-0", menuData);
-    return getAllLoyaltyItemsFromMenuEngine(coupons, menuData);
-  };
+  const getAllLoyaltyItemsFromMenu = (coupons: any) =>
+    getAllLoyaltyItemsFromMenuEngine(coupons, menuData);
 
   const redeemItem = (item: any) => {
     return redeemItemEngine(item);
@@ -385,7 +401,7 @@ function useLoyalty() {
       // };
       return resp;
     } catch (error) {
-      console.error("Error in executeLoyalty: ", error);
+      reportLoyaltyFailure("redeemLoyaltyPointsForReeloPoints", error);
     }
   };
 
@@ -430,7 +446,7 @@ function useLoyalty() {
       // };
       return resp;
     } catch (error) {
-      console.error("Error in executeLoyalty: ", error);
+      reportLoyaltyFailure("enterOtpAndRedeem", error);
     }
   };
 

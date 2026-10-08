@@ -136,8 +136,8 @@ describe("Activity Center — Reload resources + Data loaded (P9e)", () => {
 /*
   P9f (axe button-name / label): the fullscreen toggle is a named switch whose
   aria-checked follows the store, and the passcode field is labelled by its
-  prompt. Disabling stays passcode-gated; the passcode itself never appears in
-  tests (the off state is seeded through the store).
+  prompt. Disabling stays passcode-gated; here the off state is seeded through
+  the store (only the U2 block below types the inherited passcode).
 */
 describe("Activity Center — accessible names (P9f)", () => {
   beforeEach(() => {
@@ -168,5 +168,154 @@ describe("Activity Center — accessible names (P9f)", () => {
     const input = screen.getByLabelText(i18n.t("activity.passcodePrompt"));
     expect(input).toBe(screen.getByTestId("activity-passcode-input"));
     expect(input).toHaveAttribute("type", "password");
+  });
+});
+
+/*
+  audit-fixes U2 — the toggle now drives a real gate (FullscreenGate). The
+  right passcode turns it off AND leaves fullscreen (fork parity: the
+  operator gets the browser back); it is typed on the on-screen keyboard
+  (D-U2-3 — a touch-only kiosk has no other), docked under a lifted card;
+  the description is translated lazy copy (D-U2-4). jsdom has no Fullscreen
+  API: fullscreenElement / exitFullscreen are stubbed per test.
+*/
+describe("Activity Center — the fullscreen lock's operator side (audit-fixes U2)", () => {
+  const exitFullscreen = vi.fn(() => Promise.resolve());
+
+  const mandatory = () =>
+    (store.getState() as { appSettings: { mandatoryFullscreen: boolean } }).appSettings
+      .mandatoryFullscreen;
+
+  const openPasscode = () => {
+    mount();
+    fireEvent.click(screen.getByRole("switch", { name: i18n.t("activity.fullscreen") }));
+  };
+
+  /** Types on the docked KioskKeyboard: shift is single-shot, symbols and digits behind 123. */
+  const typeOnKeyboard = (keys: string[]) => {
+    const keyboard = within(screen.getByTestId("kiosk-keyboard"));
+    for (const key of keys) {
+      fireEvent.click(keyboard.getByRole("button", { name: key }));
+    }
+  };
+  const SHIFT = i18n.t("keyboard.shift");
+  const LAYER = i18n.t("keyboard.layerToggle");
+  /** The inherited constant (PROGRESS open decision: a server-issued secret is owed). */
+  const RIGHT = [SHIFT, "p", "o", "s", LAYER, "@", "1", "2", "3"];
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    exitFullscreen.mockClear();
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: exitFullscreen,
+    });
+  });
+
+  afterEach(() => {
+    delete (document as unknown as Record<string, unknown>).exitFullscreen;
+    delete (document as unknown as Record<string, unknown>).fullscreenElement;
+  });
+
+  it("the description is translated lazy copy and follows the toggle", () => {
+    mount();
+    expect(screen.getByTestId("activity-modal")).toHaveTextContent(
+      i18n.t("activity.fullscreenOn")
+    );
+
+    act(() => {
+      store.dispatch(setMandatoryFullscreen(false));
+    });
+    expect(screen.getByTestId("activity-modal")).toHaveTextContent(
+      i18n.t("activity.fullscreenOff")
+    );
+    expect(i18n.t("activity.fullscreenOff")).not.toBe("activity.fullscreenOff");
+  });
+
+  it("the passcode block docks the on-screen keyboard (not before), the field takes no OS keyboard, and the card lifts above it", () => {
+    mount();
+    expect(screen.queryByTestId("kiosk-keyboard")).toBeNull();
+
+    fireEvent.click(screen.getByRole("switch", { name: i18n.t("activity.fullscreen") }));
+
+    const keyboard = screen.getByTestId("kiosk-keyboard");
+    expect(keyboard.parentElement).toHaveClass("absolute", "bottom-[90px]", "left-0", "w-full");
+    expect(keyboard.parentElement?.parentElement).toBe(screen.getByTestId("activity-modal"));
+    expect(screen.getByTestId("activity-passcode-input")).toHaveAttribute("inputmode", "none");
+    const card = screen.getByTestId("activity-passcode").parentElement;
+    expect(card).toHaveClass("top-[700px]");
+    expect(card).not.toHaveClass("top-1/2");
+
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("activity.cancel") }));
+    expect(screen.queryByTestId("kiosk-keyboard")).toBeNull();
+  });
+
+  it("the keyboard types into the field: shift is single-shot, symbols and digits on the 123 layer", () => {
+    openPasscode();
+
+    typeOnKeyboard(RIGHT);
+
+    expect(screen.getByTestId("activity-passcode-input")).toHaveValue("Pos@123");
+  });
+
+  it("the right passcode (keyboard GO) turns the lock off AND leaves fullscreen", () => {
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: document.documentElement,
+    });
+    openPasscode();
+    typeOnKeyboard(RIGHT);
+
+    fireEvent.click(screen.getByTestId("keyboard-go"));
+
+    expect(mandatory()).toBe(false);
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("activity-passcode")).toBeNull();
+    expect(screen.queryByTestId("kiosk-keyboard")).toBeNull();
+  });
+
+  it("the right passcode in a window that is not fullscreen (--kiosk): the lock goes off, nothing to leave", () => {
+    openPasscode();
+    typeOnKeyboard(RIGHT);
+
+    fireEvent.click(screen.getByTestId("activity-passcode-submit"));
+
+    expect(mandatory()).toBe(false);
+    expect(exitFullscreen).not.toHaveBeenCalled();
+  });
+
+  it("a refused exit changes nothing else: the lock is still off and nothing throws", async () => {
+    exitFullscreen.mockImplementationOnce(() => Promise.reject(new TypeError("not granted")));
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: document.documentElement,
+    });
+    openPasscode();
+    typeOnKeyboard(RIGHT);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("activity-passcode-submit"));
+    });
+
+    expect(mandatory()).toBe(false);
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("a wrong passcode keeps the lock on, stays in fullscreen and clears the field", () => {
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: document.documentElement,
+    });
+    openPasscode();
+    typeOnKeyboard(["a", LAYER, "0"]);
+
+    fireEvent.click(screen.getByTestId("keyboard-go"));
+
+    expect(mandatory()).toBe(true);
+    expect(exitFullscreen).not.toHaveBeenCalled();
+    expect(screen.getByTestId("activity-passcode-error")).toHaveTextContent(
+      i18n.t("activity.invalidPasscode")
+    );
+    expect(screen.getByTestId("activity-passcode-input")).toHaveValue("");
   });
 });

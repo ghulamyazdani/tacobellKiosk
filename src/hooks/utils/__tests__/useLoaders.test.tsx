@@ -16,7 +16,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setPipelines } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setLastBootAt } from "@cx-sdk/devices/updates/autoUpdate.slice";
-import { store } from "../../../redux/app/store";
+import { persistor, store } from "../../../redux/app/store";
 import { setLanguages } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { resolveIdleSeconds } from "../useIdleTimeout";
 import useLoaders from "../useLoaders";
@@ -223,19 +223,6 @@ describe("useLoaders — categorised boot failures (P9b R7)", () => {
       "noLanguage",
     ],
     ["no pipelines", () => (boot.pipelines = () => Promise.resolve([])), "noPipelines"],
-    ["no start-screen text", () => (boot.settings = {}), "noStartText"],
-    [
-      "a secondary language without its start-screen text",
-      () => {
-        boot.language = () =>
-          Promise.resolve({
-            primary_language: { name: "English", code: "en" },
-            secondary_language: { name: "العربية", code: "ar" },
-          });
-        boot.settings = { ...START_TEXT };
-      },
-      "noStartText",
-    ],
   ])("configuration: %s → %s", async (_label, arrange, reason) => {
     arrange();
 
@@ -294,6 +281,89 @@ describe("useLoaders — categorised boot failures (P9b R7)", () => {
         error_detail: "TimeoutError: signal timed out",
       },
     ]);
+  });
+});
+
+/*
+  audit-fixes B6 (PAR-08): start_order_text_* no longer stop a boot — nothing
+  in TB reads them (the fork's only reader is not on its live splash). Their
+  throws were also the ONLY guard against a body that is not a settings
+  object, so that guard is explicit now: null / an array / a scalar is a
+  fault ("unavailable": the retry ladder, nothing committed — B2), while an
+  EMPTY {} is a real answer that boots on defaults AND is reported (user
+  decision 2026-10-07: never a silent degrade).
+*/
+describe("useLoaders — the start-screen text no longer blocks boot (B6)", () => {
+  const lastBootAt = () =>
+    (store.getState() as { autoUpdate: { lastBootAt: number } }).autoUpdate.lastBootAt;
+  const kioskSettings = () =>
+    (store.getState() as { appSettings: { kiosk_settings: unknown } }).appSettings
+      .kiosk_settings;
+  const SETTINGS_EMPTY = { error_source: "boot", stage: "settings_empty" };
+
+  it.each<[string, () => void]>([
+    ["no start-screen text", () => (boot.settings = { ideal_time: "90", enable_loyalty: false })],
+    [
+      "a secondary language without its start-screen text",
+      () => {
+        boot.language = () =>
+          Promise.resolve({
+            primary_language: { name: "English", code: "en" },
+            secondary_language: { name: "العربية", code: "ar" },
+          });
+        boot.settings = { ...START_TEXT };
+      },
+    ],
+  ])("%s → the boot commits and stamps lastBootAt", async (_label, arrange) => {
+    arrange();
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(lastBootAt()).toBeGreaterThan(0);
+    expect(kioskSettings()).toEqual(boot.settings);
+    // A body with keys is not "empty": no settings_empty report.
+    expect(mockCapture).not.toHaveBeenCalledWith("error_occurred", SETTINGS_EMPTY);
+  });
+
+  it("an EMPTY {} body boots on defaults AND reports it (never a silent degrade)", async () => {
+    boot.settings = {};
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(lastBootAt()).toBeGreaterThan(0);
+    expect(kioskSettings()).toEqual({});
+    expect(mockCapture).toHaveBeenCalledWith("error_occurred", SETTINGS_EMPTY);
+    expect(
+      mockCapture.mock.calls.filter(([, props]) => (props as { stage?: string })?.stage === "settings_empty")
+    ).toHaveLength(1);
+    // Not a boot failure.
+    expect(eventsFrom("boot")).toEqual([]);
+  });
+
+  it.each<[string, unknown]>([
+    ["null", null],
+    ["undefined", undefined],
+    ["an array", [{ start_order_text_primary: "Start order" }]],
+    ["an empty array", []],
+    ["a string", "settings"],
+    ["a number", 1],
+  ])("a %s settings body → unavailable: nothing committed, no stamp, no settings_empty", async (_label, body) => {
+    boot.settingsCall = () => Promise.resolve(body);
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith("unavailable");
+    expect(lastBootAt()).toBe(0);
+    expect(eventsFrom("boot")).toEqual([
+      expect.objectContaining({ source: "boot", failure: "unavailable", error_detail: "kiosk settings body" }),
+    ]);
+    expect(mockCapture).not.toHaveBeenCalledWith("error_occurred", SETTINGS_EMPTY);
   });
 });
 
@@ -772,14 +842,17 @@ describe("useLoaders — stage → commit: a boot writes all or nothing (P9e)", 
       "unavailable",
     ],
     [
-      "a middle await: settings without the start text (B2 — the staged settings are dropped)",
-      () => (boot.settings = { one_category_at_a_time: true, enable_loyalty: true }),
-      "noStartText",
+      "a later await after a degraded settings body was STAGED (B2 — the staged settings are dropped)",
+      () => {
+        boot.settings = { one_category_at_a_time: true, enable_loyalty: true };
+        boot.deploy = () => Promise.reject(new TypeError("deploy"));
+      },
+      "unavailable",
     ],
     [
-      "a middle await: a null settings body (B2)",
+      "a middle await: a null settings body (B2, B6)",
       () => (boot.settingsCall = () => Promise.resolve(null)),
-      "noStartText",
+      "unavailable",
     ],
     [
       "a middle await: the settings call times out",
@@ -1025,11 +1098,13 @@ describe("useLoaders — stage → commit: a boot writes all or nothing (P9e)", 
   });
 
   it("P9d under stage → commit: a valid media answer is NOT stored when a later step fails the boot", async () => {
-    boot.settings = {};
+    boot.settingsCall = () => Promise.reject(TIMEOUT);
 
-    const { onError } = await bootRecording();
+    const { onError, types } = await bootRecording();
 
-    expect(onError).toHaveBeenCalledWith("noStartText");
+    expect(onError).toHaveBeenCalledWith("unavailable");
+    expect(boot.media).toHaveBeenCalledTimes(1);
+    expect(types).not.toContain("appSettings/setMediaData");
     expect(state().appSettings.mediaData).toEqual(OLD.media);
   });
 
@@ -1119,7 +1194,7 @@ describe("useLoaders — MIAM texts (post-P9 29c)", () => {
 
   it.each<[string, () => void, string]>([
     ["the deployment-info call throws (after the settings step)", () => (boot.deploy = () => Promise.reject(new TypeError("deploy"))), "unavailable"],
-    ["no start text in the same settings body", () => (boot.settings = { make_it_meal_primary: "NEW PRIMARY", make_it_meal_secondary: "NEW SECONDARY" }), "noStartText"],
+    ["a malformed settings body (an array, B6)", () => (boot.settingsCall = () => Promise.resolve([{ make_it_meal_primary: "NEW PRIMARY" }])), "unavailable"],
   ])("a later boot failure (%s) leaves the previous texts", async (_label, arrange, reason) => {
     seedTexts("OLD PRIMARY", "OLD SECONDARY");
     boot.settings = { ...START_TEXT, make_it_meal_primary: "NEW PRIMARY", make_it_meal_secondary: "NEW SECONDARY" };
@@ -1159,7 +1234,7 @@ describe("useLoaders — tenant recommendations refresh (post-P9 29b)", () => {
   it.each<[string, () => void]>([
     ["the first await (language) times out", () => (boot.language = () => Promise.reject(TIMEOUT))],
     ["no pipelines", () => (boot.pipelines = () => Promise.resolve([]))],
-    ["settings without the start text", () => (boot.settings = {})],
+    ["a null settings body (B6)", () => (boot.settingsCall = () => Promise.resolve(null))],
     ["the deployment-info call throws", () => (boot.deploy = () => Promise.reject(new TypeError("deploy")))],
   ])("never runs on a failed boot: %s", async (_label, arrange) => {
     arrange();
@@ -1179,5 +1254,82 @@ describe("useLoaders — tenant recommendations refresh (post-P9 29b)", () => {
     expect(boot.refresh).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+  audit-fixes B1 (CX-22, D11 widened): appSettings.paymentSettings persists at
+  device scope, so only the activated Paytm rows reach it — WHOLE, because a
+  relaunch never re-boots and the DQR checkout needs its secret at call time.
+  Every other gateway's row (here Pine Labs with its merchant password, and
+  Razorpay) and the synthetic Mashreq row are dropped at the boot stage.
+*/
+describe("useLoaders — payment rows (CX-22 / D11)", () => {
+  const activated = (setting_label: string, extra: Record<string, unknown>[]) => ({
+    _id: `row-${setting_label}`,
+    deployment_id: "dep-1",
+    license_key: "lic-1",
+    setting_label,
+    channel: "Kiosk",
+    group: "payment",
+    setting_id: setting_label,
+    tenant_id: "tenant-1",
+    value: [
+      { fieldType: "checkbox", id: "activate", value: true, label: "Activate" },
+      ...extra.map((field) => ({ fieldType: "text", label: String(field.id), ...field })),
+    ],
+  });
+  const DQR = activated("PaytmDynamicQr", [
+    { id: "paytm_dqr_merchant_guid", value: "guid-1" },
+    { id: "paytm_dqr_secret_key", value: "dqr-secret-1" },
+  ]);
+  const EDC = activated("PaytmEdc", [{ id: "paytm_device_id", value: "edc-1" }]);
+  const PINE_LABS = activated("PineLabsPlutus", [
+    { id: "partner_merchant_id", value: "pine-merchant" },
+    { id: "partner_merchant_password", value: "PINE-PASSWORD-1" },
+  ]);
+  const RAZORPAY = activated("Razorpay", [{ id: "razorpay_key_secret", value: "RZP-SECRET-1" }]);
+  const GENERAL = { group: "general", setting_id: "tent_number_range", channel: "Kiosk" };
+
+  const paymentSettings = () =>
+    (store.getState() as { appSettings: { paymentSettings: unknown } }).appSettings
+      .paymentSettings;
+
+  it("CX-22: only the Paytm rows are stored, whole", async () => {
+    boot.device = () =>
+      Promise.resolve({ data: [PINE_LABS, DQR, RAZORPAY, GENERAL, EDC] });
+    boot.partners.mockImplementation(() =>
+      Promise.resolve({ paymentPartners: [{ _id: "mashreq-1", partner_name: "Mashreq" }] })
+    );
+
+    const { onError, onSuccess } = await runBoot();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    // Exactly the two Paytm rows, in option order, value[] intact (the
+    // synthetic Mashreq row, Pine Labs and Razorpay are gone).
+    expect(paymentSettings()).toEqual([DQR, EDC]);
+    // The general half is untouched by the filter.
+    expect(
+      (store.getState() as { appSettings: { generalSettings: unknown } }).appSettings.generalSettings
+    ).toEqual([GENERAL]);
+    // No stored row, no serialized state and nothing on disk holds another
+    // gateway's credentials.
+    await persistor.flush();
+    const disk = window.localStorage.getItem("persist:root") ?? "";
+    for (const secret of ["partner_merchant_password", "PINE-PASSWORD-1", "RZP-SECRET-1", "Mashreq"]) {
+      expect(JSON.stringify(store.getState()), secret).not.toContain(secret);
+      expect(disk, secret).not.toContain(secret);
+    }
+    expect(disk).toContain("dqr-secret-1"); // the Paytm row stays whole (D11)
+  });
+
+  it("no Paytm row activated → an empty list is stored (a real answer, not a failure)", async () => {
+    boot.device = () => Promise.resolve({ data: [PINE_LABS, RAZORPAY, GENERAL] });
+
+    const { onSuccess } = await runBoot();
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(paymentSettings()).toEqual([]);
   });
 });

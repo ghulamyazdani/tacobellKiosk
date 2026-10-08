@@ -102,7 +102,7 @@ const DRINK = {
 const PACK = { id: "pk", name: "Pack", price: 9, applyAddonsPrice: true, modifiers: [SIDES._id, DRINK._id] };
 
 const seed = () => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: { [SALT._id]: SALT, [SIDES._id]: SIDES, [DRINK._id]: DRINK } }));
   store.dispatch(
     setEntityMenuObject({

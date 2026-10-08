@@ -29,7 +29,6 @@ import {
   tier2SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import {
-  selectCurrency,
   selectHidePlusIconFromItem,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
@@ -54,6 +53,7 @@ import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServic
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import ScrollIndicator from "../chrome/ScrollIndicator";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import OptionCard, {
@@ -114,8 +114,7 @@ export default function Tier2CustomizationSheet() {
     selectTier2CustomizationModalForConfirmation,
   );
   const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
-  const currencySettings = useSelector(selectCurrency) as any;
-  const currency = currencySettings?.symbol ?? "";
+  const currency = useCurrencySymbol();
   const pageScrollRef = useRef<HTMLDivElement>(null);
   const ada = useAdaActive();
 
@@ -504,7 +503,14 @@ export default function Tier2CustomizationSheet() {
     );
     if (items.length === 0) return null;
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
-    const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1;
+    // UB2: the EFFECTIVE bounds decide the presentation (the PDP's rule): an
+    // effective 1/1 group is radio cards, never steppers; "Required" follows
+    // the effective min.
+    const amp = isAllowMultiplePunch();
+    const minPicks = Number(getEffectiveMin(group, amp));
+    const maxPicks = Number(getEffectiveMax(group, amp));
+    const oneOfOne = minPicks === 1 && maxPicks === 1;
+    const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
 
     return (
@@ -521,8 +527,8 @@ export default function Tier2CustomizationSheet() {
               sum + Number(s?.quantity ?? 0),
             0,
           )}
-          max={Number(getEffectiveMax(group, isAllowMultiplePunch()))}
-          required={Number(group?.min ?? 0) > 0}
+          max={maxPicks}
+          required={minPicks > 0}
           errored={errored}
         />
         {stepper ? (

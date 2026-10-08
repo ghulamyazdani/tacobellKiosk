@@ -177,7 +177,7 @@ beforeEach(async () => {
   store.dispatch({ type: "RESET_STATE" });
   dexieRows.length = 0;
   mockCapture.mockReset();
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setSelectedLanguage(AR_SESSION));
   await act(async () => {
     await i18n.changeLanguage("ar");

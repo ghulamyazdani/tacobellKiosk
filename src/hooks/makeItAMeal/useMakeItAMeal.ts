@@ -440,12 +440,6 @@ function useMakeItAMeal() {
       entity,
     );
     if (!decision) return;
-    console.log(
-      "Selected Customizations",
-      selectedCustomizations,
-      decision.anyCustomizationPresent,
-      entity?.id,
-    );
     if (decision.shouldPromptReplace) {
       //open the remove
       dispatch(

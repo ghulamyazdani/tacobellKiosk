@@ -23,6 +23,8 @@ interface PdpIncompleteWarningProps {
   fetchModifierProperties: FetchModifierProperties;
   /** The PDP's pack-slot test: a slot group among them → the box title. */
   isBox: (group: unknown) => boolean;
+  /** UB2: ADD TO BAG before a size is picked — the warning names the size. */
+  sizeMissing?: boolean;
   onClose: () => void;
 }
 
@@ -69,21 +71,24 @@ const listIncompleteGroups = (
  * full-width GOT IT; z-80 over the PDP, embedded hosts included). Mounted
  * afresh by each failed ADD TO BAG (the PDP keys it per tap); it names every
  * incomplete group as the guest saw them at that tap, and shows nothing when
- * there is none (a rejected split edit fails with every group complete). The
+ * there is none (a rejected split edit fails with every group complete) —
+ * or, with `sizeMissing` (UB2: ADD TO BAG before a size), names the size. The
  * non-box title is design language (sign-off). Lazy (bagLazyParts — D7: the
  * one lazy entry).
  */
 export default function PdpIncompleteWarning(props: PdpIncompleteWarningProps) {
-  const { isBox, onClose } = props;
+  const { isBox, sizeMissing, onClose } = props;
   const { t, i18n } = useTranslation();
   const { name } = useLocalized();
   const { isAllowMultiplePunch } = useAllowMultiplePunch();
   const [groups] = useState(() => listIncompleteGroups(props, isAllowMultiplePunch()));
 
-  if (groups.length === 0) return null;
+  if (!sizeMissing && groups.length === 0) return null;
 
   // Lower-cased and joined in the guest's language ("drink and side" / "… و …").
-  const names = groups.map((group) => name(group));
+  const names = sizeMissing
+    ? [t("pdp.incomplete.size")]
+    : groups.map((group) => name(group));
   let joined: string;
   try {
     joined = new Intl.ListFormat(i18n.language, { type: "conjunction" }).format(

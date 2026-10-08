@@ -7,9 +7,12 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
+import { convertCategoryData } from "@cx-sdk/catalog/menu/menuFilteringUtils";
+import { buildVariantCommitPayload } from "@cx-sdk/ordering/customization/commitPayload";
+import { buildVariantTierPayload } from "@cx-sdk/ordering/cart/addIntent";
 import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
 import {
-  selectCurrency,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
@@ -35,7 +38,9 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import CategoryRail from "../../components/menu/CategoryRail";
+import MenuFilterChips from "../../components/menu/MenuFilterChips";
 import ProductAddedModal from "../../components/menu/ProductAddedModal";
 import SelectSizeModal from "../../components/menu/SelectSizeModal";
 import MenuItemCard from "../../components/menu/MenuItemCard";
@@ -111,12 +116,15 @@ interface MenuProps {
   bagOpen?: boolean;
 }
 
+/** The raw fields B3's item events read (primary-language, never localized). */
+type TrackedEntity = { id?: unknown; name?: unknown } | null | undefined;
+
 export default function Menu({ bagOpen = false }: MenuProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const menu = useSelector(selectMenu) as any;
-  const currencySettings = useSelector(selectCurrency) as any;
+  const currency = useCurrencySymbol();
   // P7c loyalty reads: the partner coupon list drives the CTA-bar label and
   // the entry-tap branch table; the customer phone is the XENO identity
   // (written by /phone, or by the login modal when the guest skipped it).
@@ -156,12 +164,23 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const filters = useSelector(selectFilters) as string[] | undefined;
 
-  const currency = currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
-
-  const categories: any[] = useMemo(
+  const allCategories: any[] = useMemo(
     () => (Array.isArray(menu?.categories) ? menu.categories : []),
     [menu]
+  );
+  /**
+   * U1 — the VEG / NON-VEG chips' selection (`state.filter.filters`) narrows
+   * the rail AND the sections through the SDK's non-mutating filter (emptied
+   * sub-categories and categories drop out; no tag → the menu itself).
+   */
+  const categories: typeof allCategories = useMemo(
+    () =>
+      filters?.length
+        ? (convertCategoryData({ categories: allCategories }, filters).categories ?? [])
+        : allCategories,
+    [allCategories, filters]
   );
   const railCategories = useMemo(
     () =>
@@ -171,8 +190,38 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       })),
     [categories, name]
   );
-  const activeCategoryId = selectedCategoryId || railCategories[0]?.id || "";
-  const isEmpty = categories.length === 0;
+  // A filter can take the selected category away: the first row stands in.
+  const activeCategoryId = railCategories.some((c) => c.id === selectedCategoryId)
+    ? selectedCategoryId
+    : (railCategories[0]?.id ?? "");
+  // The UNFILTERED menu: emptiness drives the P9b refetch and the menu-error
+  // dialog below — a filter that empties the grid is neither.
+  const isEmpty = allCategories.length === 0;
+
+  /**
+   * B3 (PAR-07) — MenuViewed once per mount, when the menu is there (a late
+   * refetch counts on arrival; fork Menu.tsx:227-252). /cart is a separate
+   * `<Menu bagOpen />` element, so /menu ↔ /cart remounts — the bag's mount
+   * is not a menu view. Ref-latched: StrictMode re-runs effects.
+   */
+  const menuViewedRef = useRef(false);
+  useEffect(() => {
+    if (bagOpen || menuViewedRef.current || allCategories.length === 0) return;
+    menuViewedRef.current = true;
+    captureKioskEvent(KioskEventName.MenuViewed, {
+      category_count: allCategories.length,
+      total_items: allCategories.reduce(
+        (count: number, category: { subCategories?: unknown }) =>
+          count +
+          (Array.isArray(category?.subCategories) ? category.subCategories : []).reduce(
+            (sum: number, sub: { entities?: unknown }) =>
+              sum + (Array.isArray(sub?.entities) ? sub.entities.length : 0),
+            0
+          ),
+        0
+      ),
+    });
+  }, [allCategories, bagOpen]);
 
   /* ------------------------------------------------------------------ *
    * P9b — menu re-drive (Rule 2; fork parity, posistKiosk Menu.tsx:218) *
@@ -216,6 +265,29 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     captureKioskEvent(KioskEventName.SupCategoryClicked, { category_id: id });
   };
 
+  /** A filter chip changed the sections: back to the top, first rail row. */
+  const handleFilterChange = () => {
+    setSelectedCategoryId("");
+    if (paneRef.current) paneRef.current.scrollTop = 0;
+  };
+
+  /**
+   * B3 — analytics carry the RAW primary-language fields (names resolve only
+   * at render, never into analytics).
+   */
+  const trackItem = (
+    event: KioskEventName,
+    entity: TrackedEntity,
+    extra?: Record<string, unknown>
+  ) => captureKioskEvent(event, { item_id: entity?.id, item_name: entity?.name, ...extra });
+  /** A quick add that LANDED (addEntity / addItemToCart returned true). */
+  const trackAdded = (entity: TrackedEntity, itemPrice: unknown, itemType: unknown) =>
+    trackItem(KioskEventName.ItemAddedToCart, entity, {
+      item_price: itemPrice,
+      quantity: 1,
+      item_type: itemType,
+    });
+
   /**
    * Intent routing (classifier = SDK addIntent via useAddEntityToCart):
    * - add        → straight into the cart (increments an existing row)
@@ -231,23 +303,36 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * whole in-session subtree by AppRoutes' InSessionOverlays layout route, so
    * the same tap works from /forYou and /customization too. Do NOT re-mount
    * them on this page.
+   *
+   * B3 events (fork ItemCard parity): ItemClicked on a card tap (never the
+   * "+"), before the unavailable return; ItemAddedToCart only when the item
+   * landed (a DP-cap rejection returns false and sends nothing); the PDP
+   * opens → CustomizationOpened; the combo prompt → MakeItAMealOpened.
    */
   const handleEntityAction = (entity: any, fromQuickAdd = false) => {
+    if (!fromQuickAdd) {
+      trackItem(KioskEventName.ItemClicked, entity, {
+        item_price: entity?.price,
+        category: entity?.subCategoryId,
+      });
+    }
     const intent = getAddIntent(entity);
     if (intent === "unavailable") return;
     if (intent === "add") {
-      addEntity(entity);
+      if (addEntity(entity)) trackAdded(entity, entity?.price, entity?.type);
       return;
     }
     if (intent === "variant") {
       if (fromQuickAdd) {
         setSizeEntity(entity);
       } else {
+        trackItem(KioskEventName.CustomizationOpened, entity, { source: "menu" });
         addEntity(entity); // tier-1 variant session → PDP
       }
       return;
     }
     if (intent === "upsell") {
+      trackItem(KioskEventName.MakeItAMealOpened, entity);
       addEntity(entity); // executor dispatches openMakeItAMealModal
       return;
     }
@@ -257,6 +342,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     }
     // modifiers → tier-1 customization session (navigates to /customization
     // itself).
+    trackItem(KioskEventName.CustomizationOpened, entity, { source: "menu" });
     openDoubleTierModal(entity, () => {}, undefined);
   };
 
@@ -268,24 +354,28 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       // Size chosen but the variant carries modifier groups → the PDP, through
       // the card tap's own tier-1 variant session (a bare navigate had none,
       // so the PDP bounced back), with the chosen size already confirmed.
+      trackItem(KioskEventName.CustomizationOpened, parent, { source: "menu" });
       addEntity(parent, { preselectedVariantId: variant.id });
       return;
     }
-    // Engine-native variant row: dp/id/name read from selectedVariant; the
-    // bill prices a VARIANT row by variantPrice (SDK orderBuilder
-    // calculatePriceNew; buildVariantCommitPayload sets it on the PDP path) —
-    // without it the bag bills £NaN.
-    addItemToCart(
-      // total_price: the slice's subTotal reducer multiplies it by quantity.
-      {
-        ...parent,
+    // B5 (CX-07): the PDP's commit builder — one money shape. The PDP's own
+    // SelectedEntity (buildVariantTierPayload) and no modifiers, so the row
+    // carries baseItem / baseItemPrice / variantPrice / customizations like
+    // a PDP-built one (a bag Edit reads baseItem) and the bill prices it by
+    // variantPrice. A plain paid row: the MIAM flags off (the
+    // stripBuyStageMarkers precedent).
+    const landed = addItemToCart(
+      buildVariantCommitPayload({
+        selectedEntity: buildVariantTierPayload(parent).selectedEntity,
         selectedVariant: variant,
-        variantPrice: variant?.price,
-        total_price: variant?.price,
+        mergedCustomizations: {},
         quantity: 1,
-      },
+        isMakeItAMealItem: false,
+        makeItAMealSelectedItem: {},
+      }),
       "VARIANT"
     );
+    if (landed) trackAdded(parent, variant?.price, "VARIANT");
   };
 
   /* ------------------------------------------------------------------ *
@@ -356,10 +446,10 @@ export default function Menu({ bagOpen = false }: MenuProps) {
 
   /**
    * Every OTHER navigate("/cart") in this app is a BACKWARD return —
-   * ProductAddedModal's `added-view-bag`, CustomerName, Checkout, and the bag
-   * sheet's own close — and must never be upsold. Re-offering "complete your
-   * meal" to somebody reversing OUT of the cart is the worst outcome
-   * available, so the upsell hangs off this handler alone.
+   * CustomerName, Checkout, and the bag sheet's own close — and must never
+   * be upsold. Re-offering "complete your meal" to somebody reversing OUT of
+   * the cart is the worst outcome available, so the upsell hangs off this
+   * handler alone.
    *
    * Three-factor AND, evaluated HERE rather than on /forYou so the customer
    * never sees a screen flash up and redirect itself away:
@@ -415,7 +505,12 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           categories={railCategories}
           selectedId={activeCategoryId}
           onSelect={handleRailSelect}
-        />
+        >
+          {/* U1 chips under the bell; a crash fails open (no chips). */}
+          <ErrorBoundary fallback={null}>
+            <MenuFilterChips onChange={handleFilterChange} />
+          </ErrorBoundary>
+        </CategoryRail>
         <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center gap-6">
@@ -499,7 +594,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       </div>
       <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
       <ProductAddedModal
-        onQuickAdd={(entity) => addEntity(entity, { suppressAddedModal: true })}
+        onQuickAdd={(entity) => {
+          if (addEntity(entity, { suppressAddedModal: true })) {
+            trackAdded(entity, entity?.price, entity?.type);
+          }
+        }}
       />
       <SelectSizeModal
         entity={sizeEntity}

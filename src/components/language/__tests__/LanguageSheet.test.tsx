@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { Provider } from "react-redux";
@@ -11,6 +11,14 @@ import {
 import useLocalized from "../../../hooks/utils/useLocalized";
 import LanguageSheet from "../LanguageSheet";
 import i18n from "../../../i18n";
+import { KioskEventName } from "@cx-sdk/core";
+
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
 
 /*
   P9f — framer-motion removed: the sheet has a CSS entrance and NO exit. With
@@ -161,5 +169,61 @@ describe("LanguageSheet stores the fork's slot type (post-P9 L0)", () => {
 
     expect(selectSelectedLanguage(store.getState())).toEqual({ name: "", code: "" });
     expect(screen.getByTestId("slot")).toHaveTextContent("primary");
+  });
+});
+
+/*
+  audit-fixes B3 — LanguageChanged on every choice (fork parity, a re-pick of
+  the current language too), with language CODES on both sides (the fork sent
+  the previous language's name). The scrim / X send nothing.
+*/
+describe("LanguageSheet — LanguageChanged (audit-fixes B3)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(
+      setLanguages({
+        primary_language: { name: "English", code: "en" },
+        secondary_language: { name: "Arabic", code: "ar" },
+      })
+    );
+    mockCapture.mockReset();
+  });
+
+  const changes = () =>
+    mockCapture.mock.calls.filter(([event]) => event === KioskEventName.LanguageChanged);
+
+  it("choosing Arabic on a fresh session: en → ar (the blank code means the primary)", () => {
+    renderSheet();
+
+    fireEvent.click(screen.getByTestId("language-ar"));
+
+    expect(mockCapture).toHaveBeenCalledWith(KioskEventName.LanguageChanged, {
+      selected_language_code: "ar",
+      previous_language_code: "en",
+    });
+    expect(changes()).toHaveLength(1);
+  });
+
+  it("back to English from Arabic: ar → en; a re-pick of the current one still reports; the scrim reports nothing", () => {
+    // Held open (the real sheet closes on a choice) to choose three times.
+    const onClose = vi.fn();
+    render(
+      <Provider store={store}>
+        <LanguageSheet open onClose={onClose} />
+      </Provider>
+    );
+
+    fireEvent.click(screen.getByTestId("language-ar"));
+    fireEvent.click(screen.getByTestId("language-en"));
+    fireEvent.click(screen.getByTestId("language-en"));
+    const [scrim] = screen.getAllByRole("button", { name: i18n.t("language.close") });
+    fireEvent.click(scrim);
+
+    expect(changes().map(([, props]) => props)).toEqual([
+      { selected_language_code: "ar", previous_language_code: "en" },
+      { selected_language_code: "en", previous_language_code: "ar" },
+      { selected_language_code: "en", previous_language_code: "en" },
+    ]);
+    expect(onClose).toHaveBeenCalledTimes(4);
   });
 });

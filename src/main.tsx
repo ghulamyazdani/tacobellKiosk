@@ -9,7 +9,11 @@ import {
   installChunkErrorRecovery,
   setChunkFailureHealer,
 } from "./utils/chunkRecovery";
-import { captureKioskEvent, startAnalytics } from "./utils/analytics";
+import {
+  captureKioskEvent,
+  KioskEventName,
+  startAnalytics,
+} from "./utils/analytics";
 import { store, persistor } from "./redux/app/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import App from "./App.tsx";
@@ -29,6 +33,10 @@ setAnalyticsPort({ capture: captureKioskEvent });
 
 // PostHog loads off the boot chunk; calls made before it arrives are queued (P9f).
 void startAnalytics();
+// Once per page load (fork parity: AppRoutes' mount; audit-fixes B3).
+captureKioskEvent(KioskEventName.pageRefreshed, {
+  route_path: window.location.pathname,
+});
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

@@ -57,6 +57,42 @@ export default tseslint.config(
     },
   },
   {
+    // UB1: the backend's currencySettings is { currency, text, uniDec, uniHex };
+    // 17 price sites read an invented `symbol` key and printed bare amounts.
+    // One reader resolves the symbol (SDK getCurrencyText); block the next copy.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/hooks/utils/useCurrencySymbol.ts",
+      "src/hooks/utils/useAppSettings.ts",
+      "src/**/__tests__/**",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@cx-sdk/catalog/state/appSettings.slice",
+              importNames: ["selectCurrency"],
+              message: "Prices read the symbol through useCurrencySymbol().",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // CLAUDE.md rule 4 (audit-fixes C5): no console in production code — a
+    // failure a guest or operator should know about goes to ErrorOccurred
+    // (captureKioskEvent), best-effort mirrors swallow theirs. Tests are
+    // exempt: spy assertions name console.error.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/__tests__/**"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
     // e2e: no fixed sleeps — they flake under load and hide the real wait.
     files: ["tests/e2e/**/*.ts"],
     rules: {

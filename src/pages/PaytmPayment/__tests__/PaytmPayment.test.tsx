@@ -67,7 +67,7 @@ const BILL = "17280000000054321";
 const seed = (kind: "edc" | "dqr") => {
   store.dispatch(setCartItems([{ id: "cw", itemId: "cw-1", name: "CW", quantity: 1, type: "ITEM", total_price: 9 }]));
   store.dispatch(setAmount(9));
-  store.dispatch(setCurrency({ symbol: "₹" }));
+  store.dispatch(setCurrency({ currency: "INR", text: "₹" }));
   store.dispatch(setAutenticationDetails({ deploymentDetails: { _id: "d" }, licenseDetails: {} }));
   store.dispatch(setPaymentSettings(SETTINGS));
   store.dispatch(setKioskPaymentType({ type: kind === "edc" ? "PaytmEdc" : "PaytmDynamicQr" }));

@@ -27,7 +27,9 @@ import {
  * fixtures/clippedText.ts — soft, so every shot is still taken), plus the
  * targeted checks the fonts lane's payment fixes need (`expectCompressed`:
  * the frames' Cm Bd styles on the CTA cards, the TOTAL bar and Order
- * Complete's PROCEED line).
+ * Complete's PROCEED line). Lane audit-fixes adds the plastic-sheen DOM
+ * probe on PleaseWait and the EDC screen (UB3 — `sheenProblems`, copied from
+ * visual-entry: the alpha WebP at 50 % normal, unturned, its alpha intact).
  *
  * Covered, in English, Arabic and ADA: /payment with 3, 2 and 1 tiles (the
  * COD tile says PAY AT RESTAURANT — the longest label) and its unavailable
@@ -157,6 +159,55 @@ async function capture(page: Page, name: string) {
 }
 
 /**
+ * UB3 (copied from visual-entry): every plastic sheen in `scope` is Figma's
+ * plastic_2 as the stage-sized alpha WebP (crop and −90° baked in) at 50 %,
+ * normal blend, unturned and as wide as the stage — and its transparency
+ * survived decoding (the P1 JPEG was flattened onto white). The bitmap is
+ * ~99.9 % translucent; a flattened copy is 0 %. Problems as text.
+ */
+function sheenProblems(scope: Locator): Promise<string[]> {
+  return scope.locator('img[src*="plastic-overlay"]').evaluateAll(async (elements) => {
+    if (elements.length === 0) return ["no plastic sheen"];
+    const stage = document.querySelector('[data-testid="kiosk-stage"]');
+    const k = stage ? stage.getBoundingClientRect().height / 1920 : 1;
+    const problems: string[] = [];
+    for (const img of elements as HTMLImageElement[]) {
+      const file = (img.getAttribute("src") ?? "").split("?")[0].split("/").pop() ?? "";
+      if (!/^plastic-overlay[^/]*\.webp$/.test(file)) problems.push(`${file}: not the alpha WebP`);
+      await img.decode().catch(() => undefined);
+      if (img.naturalWidth !== 1080 || img.naturalHeight !== 1920) {
+        problems.push(`${file}: decoded ${img.naturalWidth}×${img.naturalHeight}`);
+        continue;
+      }
+      const style = getComputedStyle(img);
+      if (style.opacity !== "0.5") problems.push(`${file}: opacity ${style.opacity}`);
+      if (style.mixBlendMode !== "normal") problems.push(`${file}: blend ${style.mixBlendMode}`);
+      const turn = `${style.transform} ${style.getPropertyValue("rotate")}`;
+      if (turn !== "none none") problems.push(`${file}: turned (${turn})`);
+      const width = Math.round(img.getBoundingClientRect().width / k);
+      if (width !== 1080) problems.push(`${file}: drawn ${width} px wide`);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return ["no 2d canvas"];
+      context.drawImage(img, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let sampled = 0;
+      let seeThrough = 0;
+      for (let alpha = 3; alpha < pixels.length; alpha += 4 * 97) {
+        sampled += 1;
+        if (pixels[alpha] < 250) seeThrough += 1;
+      }
+      if (seeThrough / sampled < 0.9) {
+        problems.push(`${file}: ${Math.round((100 * seeThrough) / sampled)} % see-through (flattened)`);
+      }
+    }
+    return problems;
+  });
+}
+
+/**
  * The fonts lane's payment fix: the frames' compressed text styles render in
  * .tb-compressed (Archivo 62 %/700) at the frame's size — CTA/Compressed
  * Large, Cm Bd 48/44, on the /payment and /receipt cards and the /payment
@@ -259,7 +310,7 @@ async function mockKioskBackend(
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "IN", currencySettings: { symbol: "₹" } },
+        deployment: { countryCode: "IN", currencySettings: { currency: "INR", text: "₹" } },
       },
     })
   );
@@ -525,6 +576,9 @@ test.describe("lane fonts — payment captures", () => {
       await expect.poll(initiate.parked).toBe(true);
       await expect(page.getByTestId("paytm-preparing")).toContainText(t.paytm.wait.preparing);
       await capture(page, `pay-07-receipt-preparing-${mode}`);
+      expect
+        .soft(await sheenProblems(page.getByTestId("paytm-preparing")), `pay-07-${mode}: PleaseWait's sheen (UB3)`)
+        .toEqual([]);
       initiate.release();
       const failed = page.getByTestId("paytm-initiate-failed");
       await expect(failed).toContainText(t.paytm.failed.busy, { timeout: 15_000 });
@@ -547,6 +601,9 @@ test.describe("lane fonts — payment captures", () => {
       await expect(page.getByTestId("paytm-total")).toContainText(TOTAL);
       await expect(page.getByTestId("paytm-countdown")).toBeVisible();
       await capture(page, `pay-10-edc-${mode}`);
+      expect
+        .soft(await sheenProblems(page.getByTestId("paytm-screen")), `pay-10-${mode}: the EDC screen's sheen (UB3)`)
+        .toEqual([]);
 
       await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
       await page.getByTestId("paytm-cancel").click();
@@ -743,14 +800,25 @@ test.describe("lane fonts — payment captures", () => {
     await expect(modal).toContainText(en.activity.loyaltyUnavailable);
     await capture(page, "pay-27-activity-en");
 
-    // Mandatory fullscreen starts on: switching it off asks for the passcode.
+    // Mandatory fullscreen starts on: switching it off asks for the passcode,
+    // typed on the on-screen keyboard docked under the lifted card (U2).
     await page.getByTestId("activity-fullscreen-toggle").click();
-    await page.getByTestId("activity-passcode-input").fill("0000");
+    const keyboard = page.getByTestId("kiosk-keyboard");
+    await keyboard.getByRole("button", { name: en.keyboard.layerToggle }).click();
+    for (let i = 0; i < 4; i++) {
+      await keyboard.getByRole("button", { name: "0", exact: true }).click();
+    }
+    await expect(page.getByTestId("activity-passcode-input")).toHaveValue("0000");
     await page.getByTestId("activity-passcode-submit").click();
     await expect(page.getByTestId("activity-passcode-error")).toContainText(
       en.activity.invalidPasscode
     );
+    await expect(keyboard).toBeVisible();
     await capture(page, "pay-28-activity-passcode-en");
+    // The card's last row stays clear of the keyboard (the card centres on 700).
+    const lastRow = await page.getByTestId("activity-close").boundingBox();
+    const keys = await keyboard.boundingBox();
+    expect.soft((lastRow?.y ?? 0) + (lastRow?.height ?? 0), "card above the keyboard").toBeLessThan(keys?.y ?? 0);
 
     await page.getByTestId("activity-logout").click();
     await expect(page.getByTestId("activity-logout-confirm")).toContainText(

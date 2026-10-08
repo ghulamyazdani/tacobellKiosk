@@ -15,7 +15,7 @@ import {
   STAGE_WIDTH,
 } from "./KioskStage";
 import bgTexture from "../../assets/splash/bg-texture.png";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbLogoLockup from "../../assets/brand/tb-logo-lockup.svg";
 
 /**
@@ -109,8 +109,8 @@ export function ReachZone({ children }: { children: ReactNode }) {
           style={{ width: STAGE_WIDTH, height: ADA_BRAND_ZONE_HEIGHT }}
         >
           {/* The splash/second backdrop, cropped to the panel: texture tile
-              from top-left, plastic sheen at FULL-stage size so its
-              object-cover crop matches what the guest just saw. */}
+              from top-left, the plastic sheen at FULL-stage size (the bitmap
+              is the stage) so its top matches what the guest just saw. */}
           <span
             aria-hidden
             className="absolute inset-0"
@@ -123,7 +123,7 @@ export function ReachZone({ children }: { children: ReactNode }) {
           <img
             alt=""
             src={plasticOverlay}
-            className="absolute left-0 top-0 object-cover opacity-40 mix-blend-soft-light"
+            className="absolute left-0 top-0 opacity-50"
             style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}
           />
           {/* Lockup 1:5394, centred in the panel (Figma x434 y245 at the

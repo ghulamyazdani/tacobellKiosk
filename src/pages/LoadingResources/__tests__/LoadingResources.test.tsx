@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -56,6 +56,13 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/analytics")>()),
   captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
 }));
+
+// The Activity Center's code rides the ONE lazy chunk (bagLazyParts). Its
+// cold transform can outlast a test's 5 s budget on a loaded machine, so it
+// is warmed once here; the tests are about the hold, not the transform.
+beforeAll(async () => {
+  await import("../../../components/cart/bagLazyParts");
+}, 60_000);
 
 /** `state` is the router state the splash hands over (P9e refresh mode). */
 const mount = ({
@@ -140,7 +147,6 @@ describe("LoadingResources — boot recovery (P9b R7)", () => {
   it.each([
     ["noLanguage", "loading.configNoLanguage"],
     ["noPipelines", "loading.configNoPipelines"],
-    ["noStartText", "loading.configNoStartText"],
   ] as const)("a configuration failure (%s) names its fix under 'Configuration error'", async (failure, body) => {
     mount();
     await failLatest(failure);
@@ -370,7 +376,7 @@ describe("LoadingResources — refresh mode (P9e)", () => {
   it.each([
     ["scheduled", "unavailable"],
     ["brand", "noPipelines"],
-    ["operator", "noStartText"],
+    ["operator", "noPipelines"],
     ["scheduled", "noLanguage"],
   ] as const)(
     "trigger %s, failure %s → stamps, reports and goes back to /start AT ONCE — no dialog, no ladder, no reconnect retry",

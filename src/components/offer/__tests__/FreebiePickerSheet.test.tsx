@@ -309,7 +309,7 @@ const getItemRows = () =>
 describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   });
 
@@ -457,7 +457,7 @@ describe("FreebiePickerSheet — lane offers review fixes", () => {
   });
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
     store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
@@ -652,7 +652,7 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
   });
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
     store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
@@ -924,7 +924,7 @@ describe("FreebiePickerSheet — group-wise pick N (G3)", () => {
   });
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
     store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));

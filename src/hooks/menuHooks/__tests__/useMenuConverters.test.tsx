@@ -11,7 +11,11 @@ import {
   setIsDynamicPricingEnabled,
 } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { pushCharges, setMenuCharges } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  pushCharges,
+  setDeploymentCharges,
+  setMenuCharges,
+} from "@cx-sdk/ordering/state/cart.slice";
 import { setOffersFetchFailed } from "@cx-sdk/ordering/state/offer.slice";
 import { store } from "../../../redux/app/store";
 import useMenuConverters from "../useMenuConverters";
@@ -269,6 +273,9 @@ describe("fetchMenu — lane bag-pdp pins (real offer + dynamic-pricing hooks)",
     store.dispatch({ type: "RESET_STATE" });
     window.localStorage.clear();
     window.localStorage.setItem("deploymentCharges", JSON.stringify([DEPLOYMENT_CHARGE]));
+    // C1b: fetchMenu reads the deployment charges back from REDUX (the app
+    // writes both together); the pinned payloads below are unchanged.
+    store.dispatch(setDeploymentCharges([DEPLOYMENT_CHARGE]));
     store.dispatch(setTabType("dine_in"));
     net.realHooks = true;
     net.serverTime = () => Promise.resolve({ serverTime: "2026-10-07T12:00:00.000Z" });
@@ -447,6 +454,19 @@ describe("fetchMenu — lane bag-pdp pins (real offer + dynamic-pricing hooks)",
     expect(actions.map((action) => action.type)).toEqual(DEFAULT_TYPES_DP_ON);
     expect(actions.map((action) => digest(action.payload))).toEqual(DEFAULT_DIGESTS_DP_ON);
     expect(writes).toEqual(DEFAULT_WRITES_DP_ON);
+  });
+
+  it("C1b: a stale localStorage mirror over an empty store (a logout purge) — redux wins, only the menu charge", async () => {
+    store.dispatch(setDeploymentCharges([]));
+    expect(window.localStorage.getItem("deploymentCharges")).toBe(JSON.stringify([DEPLOYMENT_CHARGE]));
+
+    const { actions, writes } = await record((fetchMenu) =>
+      fetchMenu("t2", false, false, PIPELINE),
+    );
+
+    const packing = { id: "mc-pack", name: "Packing", value: 10, type: "fixed" };
+    expect(actions.find(pushCharges.match)?.payload).toEqual([packing]);
+    expect(writes).toContainEqual(["charges", JSON.stringify([packing])]);
   });
 
   /** A staged fetch: what reached apply / mirror, and what leaked to the store / localStorage. */

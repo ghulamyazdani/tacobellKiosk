@@ -3,10 +3,41 @@
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { useTranslation } from "react-i18next";
+import { useSelector } from "react-redux";
+import {
+  selectMinMaxErroredBaseItems,
+  selectUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
+import VegMark from "../menu/VegMark";
 import plusIcon from "../../assets/icons/plus.svg";
+
+/** The stock / schedule flags PAY writes onto a cart row. */
+interface StockFlags {
+  outOfStock?: unknown;
+  isAvailable?: unknown;
+  selectedVariant?: { outOfStock?: unknown } | null;
+}
+
+/**
+ * A row the kitchen cannot serve right now: out of stock (the base item or
+ * its size — PAY's stock re-check, A1) or outside its schedule. BagSheet's
+ * write-back reads the same rule for a stale flag.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared with BagSheet's PAY write-back; HMR falls back to a reload for this file
+export const isRowUnavailable = (row: unknown): boolean => {
+  const flags = (row ?? {}) as StockFlags;
+  return Boolean(
+    flags.outOfStock ||
+      flags.selectedVariant?.outOfStock ||
+      flags.isAvailable === false,
+  );
+};
+
+/** Menu.slice's PAY lists (never persisted; the next PAY rewrites them). */
+const asIdList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 interface BagItemRowProps {
   row: any;
@@ -57,6 +88,8 @@ export default function BagItemRow({
   const { name } = useLocalized();
   const { IncreaseItemQuantityById, decreaseItemQuantityById, getAllCustomizationList } =
     useCartHook();
+  const updatedBaseItems = asIdList(useSelector(selectUpdatedBaseItems));
+  const minMaxErroredBaseItems = asIdList(useSelector(selectMinMaxErroredBaseItems));
 
   const lines: any[] = getAllCustomizationList(row?.customizations) ?? [];
   // A cart row is the menu entity spread into the row, so `aggregator_image`
@@ -108,10 +141,22 @@ export default function BagItemRow({
       ? t("loyalty.percentOff", { value: row?.discount_value })
       : t("loyalty.free");
 
+  // A1 looks (design language, sign-off): unavailable = loyalty-visual's
+  // 1:3858 ineligible look (art 50 % + "Unavailable"); a row PAY found with
+  // a lost or invalid pick gets one red line and keeps Edit to fix it. Their
+  // testids never start "bag-row-": the specs count rows by that prefix.
+  const unavailable = isRowUnavailable(row);
+  const flaggedByPay =
+    updatedBaseItems.includes(row?.itemId) ||
+    minMaxErroredBaseItems.includes(row?.itemId);
+  const needsChanges = !unavailable && flaggedByPay;
+
   // Branch table: the reward is removable ONLY once the kitchen can no longer
-  // serve it. Everything else is reversed by the bag's auto-reversal effect.
-  const canRemoveLoyalty =
-    isLoyaltyRow && Boolean(row?.outOfStock || row?.isAvailable === false);
+  // serve it — out of stock / unavailable, or PAY found a lost pick (the
+  // fork's updatedBaseItems leg, CartItem.tsx:640-644) or a broken group. A
+  // reward has no Edit, so Remove is its only way out of a blocked PAY
+  // (Rule 1). Everything else is reversed by the bag's auto-reversal effect.
+  const canRemoveLoyalty = isLoyaltyRow && (unavailable || flaggedByPay);
 
   const canIncrease = !(row?.outOfStock || row?.isAvailable === false);
   const canEdit =
@@ -163,17 +208,30 @@ export default function BagItemRow({
         <img
           alt=""
           src={imageUrl}
-          className="h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
+          className={`h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain${
+            unavailable ? " opacity-50" : ""
+          }`}
         />
       ) : (
-        <span className="h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+        <span
+          className={`h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6${
+            unavailable ? " opacity-50" : ""
+          }`}
+        />
       )}
 
       <div className="flex min-w-0 flex-1 flex-col items-start gap-[10px]">
         <div className="flex flex-wrap items-center gap-[12px]">
-          <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
-            {name(row)}
-          </p>
+          {/* The mark and the name share a NON-wrapping line: in the
+              flex-wrap row a name wider than the column dropped below the
+              mark and left it alone on its own line. mt 6 = (36 − 24) / 2
+              centres it on the name's first line. */}
+          <div className="flex min-w-0 items-start gap-[12px]">
+            <VegMark entity={row} size={24} className="mt-[6px]" />
+            <p className="min-w-0 text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
+              {name(row)}
+            </p>
+          </div>
           {isGetItemRow && (
             <span
               data-testid={`bag-free-chip-${row?.itemId}`}
@@ -191,6 +249,22 @@ export default function BagItemRow({
             </span>
           )}
         </div>
+        {unavailable && (
+          <p
+            data-testid={`bag-unavailable-${row?.itemId}`}
+            className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
+          >
+            {t("menu.unavailable")}
+          </p>
+        )}
+        {needsChanges && (
+          <p
+            data-testid={`bag-changed-${row?.itemId}`}
+            className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-red"
+          >
+            {t("bag.choicesUnavailable")}
+          </p>
+        )}
         {(row?.type === "VARIANT" || lines.length > 0) && (
           <div className="flex flex-col gap-[4px] text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
             {row?.type === "VARIANT" && row?.selectedVariant?.name && (

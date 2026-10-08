@@ -6,6 +6,8 @@ import { AppRoutes } from "./routes";
 import { KioskStage } from "./components/stage/KioskStage";
 import { ReachZone } from "./components/stage/ReachZone";
 import NetworkStatusOverlay from "./components/common/NetworkStatusOverlay";
+import FullscreenGate from "./components/common/FullscreenGate";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { PWAUpdateHandler } from "./components/autoUpdate/PWAUpdateHandler";
 import useFcmRegistration from "./hooks/firebase/useFcmRegistration";
 import useTenantRecommendations from "./hooks/recommendation/useTenantRecommendations";
@@ -15,7 +17,8 @@ import i18n, { DEFAULT_LANGUAGE } from "./i18n";
 
 /**
  * App shell. Boot-order invariants (see CLAUDE.md):
- * - NetworkStatusOverlay / PWAUpdateHandler are always mounted.
+ * - NetworkStatusOverlay / FullscreenGate / PWAUpdateHandler are always
+ *   mounted, outside the Router.
  * - Kiosk hardening: zoom, devtools keys, context menu blocked; every
  *   listener detached on unmount (24/7 uptime — leaks are real leaks).
  * - ReachZone wraps the routes INSIDE KioskStage: it is the containing block
@@ -23,7 +26,10 @@ import i18n, { DEFAULT_LANGUAGE } from "./i18n";
  *   zone in the ADA view (P9c). It must sit inside Router (useLocation).
  * - FCM (P9e): useFcmRegistration — latch-, config- and permission-gated,
  *   never prompts; firebase is a lazy chunk, never on the boot path.
- *   FullscreenPrompt lands with its feature.
+ * - FullscreenGate (audit-fixes U2): while the operator's mandatoryFullscreen
+ *   is on and the kiosk is registered, a window that is not fullscreen gets
+ *   one full-window "TAP TO CONTINUE" button. It fails open — and behind its
+ *   own boundary (fallback null) a crash in it can never take the app down.
  * - Tenant recommendations (post-P9 29a): their Dexie copy loads once per
  *   launch, because a relaunch never boots (P9e) — without it a reload
  *   loses the bag rail's tenant source until the next boot (≤ 6 h).
@@ -112,6 +118,9 @@ const App = () => {
   return (
     <>
       <NetworkStatusOverlay />
+      <ErrorBoundary fallback={null}>
+        <FullscreenGate />
+      </ErrorBoundary>
       <PWAUpdateHandler />
       <Router>
         <KioskStage>

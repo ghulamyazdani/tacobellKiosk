@@ -16,6 +16,7 @@ import {
 import { clearFilters } from "@cx-sdk/catalog/state/filter.slice";
 import { resetOffersFetchStatus } from "@cx-sdk/ordering/state/offer.slice";
 import { removeCustomerDetails } from "@cx-sdk/core/customer/customerInfo.slice";
+import { emtyCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import {
   closeLoyaltyItemsModal,
   resetLoyaltySession,
@@ -111,6 +112,9 @@ const useSessionReset = () => {
     // resets it).
     resetAppliedBarCelebration();
     dispatch(removeCustomerDetails());
+    // UB5: a country pick is the guest's — the next guest starts at IN/+91
+    // (no `picked`), then /second applies the deployment default.
+    dispatch(emtyCountryCode());
     dispatch(resetLoyaltySession());
     dispatch(emptySelectedLanguage());
     dispatch(clearMediaDataConvertedItems());
@@ -127,6 +131,9 @@ const useSessionReset = () => {
     dispatch(setRecommendationDetour(false));
     // The order-type switch's removal notice names THIS customer's items.
     dispatch(clearOrderTypeSwitchNotice());
+    // PAY's stock map (A1) is a snapshot of THIS customer's bag: left set,
+    // the next guest's recommendations skip items restocked since.
+    dispatch(setOutOfStockItems({}));
 
     // Menu UI position is customer-scoped even when menu DATA is kept.
     dispatch(setMenuScrollPosition(0));
@@ -146,7 +153,6 @@ const useSessionReset = () => {
     );
     if (scope === "full") {
       dispatch(closeAccessibilityMode());
-      dispatch(setOutOfStockItems({}));
     }
 
     // The session timer's persisted timeRemaining must not leak into the

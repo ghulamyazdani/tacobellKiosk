@@ -92,7 +92,7 @@ const closeCount = (spy: { mock: { calls: unknown[][] } }) =>
 beforeEach(() => {
   store.dispatch({ type: "RESET_STATE" });
   resetAppliedBarCelebration();
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
   store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   mockCapture.mockClear();

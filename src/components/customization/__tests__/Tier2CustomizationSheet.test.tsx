@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -285,7 +285,7 @@ describe("Tier2CustomizationSheet calories (P9f)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   afterEach(async () => {
@@ -363,7 +363,7 @@ describe("Tier2CustomizationSheet — the full-screen CUSTOMIZE page (item 42)",
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("page structure: the z-60 page (no backdrop); the band, the Counter and the sections in #scrollCustomizableItem2; BACK + UPDATE pinned below", () => {
@@ -501,5 +501,113 @@ describe("Tier2CustomizationSheet — the full-screen CUSTOMIZE page (item 42)",
     const discard = screen.getByTestId("tier2-discard-overlay");
     expect(discard).toHaveClass("absolute", "inset-0", "z-[70]");
     expect(discard.parentElement).toBe(screen.getByTestId("tier2-sheet"));
+  });
+});
+
+/*
+  audit-fixes UB2 on the tier-2 page (the PDP's rule, CustomizationLimits):
+  the EFFECTIVE bounds pick the presentation — an effective 1/1 group is
+  radio cards (a second tap swaps) even with an item cap above 1, and
+  "Required" follows the effective min; the shared hook's group-max guard
+  refuses a unit past the group max out loud, writing nothing.
+*/
+describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
+  /** 1/1 with an ITEM cap of 3 (it used to render steppers → "3 of 1"). */
+  const DRINK = {
+    ...ICE_GROUP,
+    name: "Drink",
+    multiplePunchMin: 0,
+    multiplePunchMax: 6,
+    multiplePunchMaxItem: 3,
+    constituentItems: [
+      { id: "cola", name: "Cola", price: 0, isActive: true },
+      { id: "lemonade", name: "Lemonade", price: 0, isActive: true },
+    ],
+  };
+  /** 0/2 stepper rows (item cap 2). */
+  const SAUCES = {
+    ...ICE_GROUP,
+    name: "Sauces",
+    min: 0,
+    max: 2,
+    multiplePunchMin: 0,
+    multiplePunchMax: 2,
+    multiplePunchMaxItem: 2,
+    constituentItems: [
+      { id: "salsa", name: "Salsa", price: 0, isActive: true },
+      { id: "ranch", name: "Ranch", price: 0, isActive: true },
+    ],
+  };
+  const stepperFor = (item: string) =>
+    screen.queryByRole("button", { name: `${i18n.t("pdp.increase")} ${item}` });
+  const picks = () =>
+    (tier2SelectedCustomization(store.getState()).dl_addons ?? []).map(
+      (row: { id: string; quantity: number }) => [row.id, row.quantity]
+    );
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  afterEach(() => {
+    store.dispatch(setAllowMultiplePunch(false));
+  });
+
+  it("an effective 1/1 group with an item cap of 3 is radio cards, Required; a second tap swaps — no error", async () => {
+    seedOpenTier2(ENTITY, DRINK);
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+
+    expect(stepperFor("Cola")).toBeNull();
+    expect(within(group).getByText(i18n.t("pdp.required"))).toBeInTheDocument();
+    expect(group).not.toHaveTextContent(/\bof\b/);
+    expect(screen.getByTestId("tier2-option-cola")).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(screen.getByTestId("tier2-option-cola"));
+    await userEvent.click(screen.getByTestId("tier2-option-lemonade"));
+
+    expect(picks()).toEqual([["lemonade", 1]]);
+    expect(screen.getByTestId("tier2-option-lemonade")).toHaveAttribute("aria-pressed", "true");
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
+  });
+
+  it("multi-punch ON: the same group reads its multi-punch bounds — no Required (min 0), '0 of 6', stepper rows", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    seedOpenTier2(ENTITY, DRINK);
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+
+    expect(within(group).queryByText(i18n.t("pdp.required"))).toBeNull();
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 6 }));
+    expect(stepperFor("Cola")).toBeInTheDocument();
+  });
+
+  it("a third Sauces unit is refused out loud: ONE global error 'You can choose up to 2 Sauces', the picks unchanged", () => {
+    seedOpenTier2(ENTITY, SAUCES);
+    // Spied before the mount: the hook binds dispatch at render.
+    const dispatch = vi.spyOn(store, "dispatch");
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    expect(picks()).toEqual([["salsa", 2]]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 2, max: 2 }));
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
+
+    dispatch.mockClear();
+    fireEvent.click(stepperFor("Ranch") as HTMLElement);
+
+    expect(dispatch.mock.calls.map(([action]) => (action as { type: string }).type)).toEqual([
+      "appSettings/setShowErrorModalGlobal",
+    ]);
+    expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 2 Sauces");
+    expect(picks()).toEqual([["salsa", 2]]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 2, max: 2 }));
+    dispatch.mockRestore();
   });
 });

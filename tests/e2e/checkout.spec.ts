@@ -53,7 +53,10 @@ import {
  * `resolveCheckoutRoute` return "payment" for a dine-in tab and "tent" for a
  * table tab — the two routes this phase builds. The loyalty ("customerName")
  * and no-loyalty-no-skipCRM ("phone") legs of the fan-out belong to
- * loyalty.spec.ts and are deliberately not duplicated here.
+ * loyalty.spec.ts and are deliberately not duplicated here — except
+ * audit-fixes A3's CANCEL ORDER case, which needs the "phone" leg (skipCRM
+ * off via bootToBagWithOneBurger's third argument). A2's COCKPIT DEFAULT ROW
+ * serves Cockpit's unticked COD row through `deploymentSettings`.
  *
  * ── FIXTURE MONEY (same facts as bag.spec.ts's header) ──────────────────
  * Every slim-menu item carries VAT@15%, which the bill engine treats as
@@ -160,7 +163,7 @@ async function mockKioskBackend(page: Page, { skipCRM = true } = {}) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -217,6 +220,24 @@ async function openBag(page: Page) {
 }
 
 const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
+
+/**
+ * Cockpit's DEFAULT "Disable COD for Kiosk" row (posistApp app.js:19418-19437,
+ * the projected fields the kiosk endpoint returns): present, every tab
+ * UNTICKED. Under the pre-A2 SDK rule (tabLabel match, `selected` ignored) a
+ * table or delivery session lost COD to it.
+ */
+const COCKPIT_DEFAULT_COD_ROW = {
+  _id: "disable_cod_kiosk_default",
+  name: "disable_cod_kiosk",
+  label: "Disable COD for Kiosk",
+  selected: false,
+  tabs: [
+    { tabLabel: "Table", tabType: "table", selected: false },
+    { tabLabel: "Take Out", tabType: "takeout", selected: false },
+    { tabLabel: "Delivery", tabType: "delivery", selected: false },
+  ],
+};
 
 /**
  * The shared opening of every scenario: mocks (in the mandatory order), boot,
@@ -348,8 +369,8 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     page,
   }) => {
     test.slow();
-    // The fixture writes BOTH key spellings of the disable-COD entity, so the
-    // screen behaves the same under the SDK check and the page-local one.
+    // The fixture's disable-COD row ticks the session's tab (selected: true),
+    // which is what turns COD off under the fork's live rule (A2).
     const checkout = await bootToBagWithOneBurger(page, { codDisabled: true });
 
     await page.getByTestId("bag-pay").click();
@@ -365,6 +386,133 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await page.getByTestId("payment-back").click();
     await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
     await expect(bagRows(page)).toHaveCount(1);
+
+    expect(checkout.placeOrderCount).toBe(0);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("COCKPIT DEFAULT ROW: an unticked 'Disable COD for Kiosk' row keeps PAY AT COUNTER on a table tab (A2 — the fork's live rule)", async ({
+    page,
+  }) => {
+    test.slow();
+    const checkout = await bootToBagWithOneBurger(page, {
+      tabType: "table",
+      deploymentSettings: [COCKPIT_DEFAULT_COD_ROW],
+    });
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("tent-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("tent-skip").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    // Only a ticked tab (selected: true) turns COD off.
+    await expect(page.getByTestId("payment-counter")).toBeVisible();
+    await expect(page.getByTestId("payment-unavailable")).toHaveCount(0);
+
+    // The row really was served to this boot.
+    expect(checkout.deploymentSettingsCount).toBeGreaterThan(0);
+    expect(checkout.placeOrderCount).toBe(0);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("TAKE-OUT TICK: the Cockpit row with Take Out ticked turns COD off for a take_away session — the take-out spellings are one family, matched on tabType, never tabLabel (A2)", async ({
+    page,
+  }) => {
+    test.slow();
+    // The Cockpit row's take-out tab is `takeout` ("Take Out"); this session's
+    // pipeline says `take_away`.
+    const checkout = await bootToBagWithOneBurger(page, {
+      tabType: "take_away",
+      deploymentSettings: [
+        {
+          ...COCKPIT_DEFAULT_COD_ROW,
+          tabs: COCKPIT_DEFAULT_COD_ROW.tabs.map((tab) =>
+            tab.tabType === "takeout" ? { ...tab, selected: true } : tab
+          ),
+        },
+      ],
+    });
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-unavailable")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("payment-counter")).toHaveCount(0);
+
+    expect(checkout.deploymentSettingsCount).toBeGreaterThan(0);
+    expect(checkout.placeOrderCount).toBe(0);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("LABEL-ONLY ROW: a 'Disable COD for Kiosk' row that carries only its label (the pre-A2 SDK's key) still turns COD off for its ticked tab (A2: name OR label)", async ({
+    page,
+  }) => {
+    test.slow();
+    const checkout = await bootToBagWithOneBurger(page, {
+      deploymentSettings: [
+        {
+          _id: "disable_cod_kiosk_label_only",
+          label: "Disable COD for Kiosk",
+          tabs: [{ tabLabel: "Dine In", tabType: "dine_in", selected: true }],
+        },
+      ],
+    });
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-unavailable")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("payment-counter")).toHaveCount(0);
+    expect(checkout.placeOrderCount).toBe(0);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("CHECKOUT /phone CANCEL ORDER asks first: NO keeps the bag; YES ends on /start and the next guest's bag is empty (A3)", async ({
+    page,
+  }) => {
+    test.slow();
+    // skipCRM OFF, loyalty off, dine-in: resolveCheckoutRoute → "phone", so
+    // PAY opens /phone in CHECKOUT mode (the guest has a bag).
+    const checkout = await bootToBagWithOneBurger(page, {}, { skipCRM: false });
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("phone-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // NO: the confirm closes and nothing else moves — Back still finds the bag.
+    await page.getByTestId("footer-cancel").click();
+    await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
+    await page.getByTestId("cancel-order-cancel").click();
+    await expect(page.getByTestId("cancel-order-modal")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/phone$/);
+    await page.getByTestId("phone-back").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
+
+    // YES: only a navigation to /start, whose mount ends the session (H1).
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("phone-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("footer-cancel").click();
+    await page.getByTestId("cancel-order-confirm").click();
+    await expect(page.getByTestId("start-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page).toHaveURL(/\/start$/);
+
+    // The next guest starts with an empty bag.
+    await page.getByTestId("start-screen").click();
+    await page.getByTestId("pipeline-p1").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
 
     expect(checkout.placeOrderCount).toBe(0);
     expectNothingDangerousWasContacted(checkout);

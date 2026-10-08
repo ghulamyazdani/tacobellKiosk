@@ -35,4 +35,34 @@ describe("CategoryRail (Menu-Categories)", () => {
     fireEvent.click(screen.getByTestId("rail-cravings"));
     expect(onSelect).toHaveBeenCalledWith("cravings");
   });
+
+  /*
+    audit-fixes U1 — an optional slot between the bell and the list (Menu puts
+    the diet chips there). Only the list scrolls; nothing renders without it.
+  */
+  it("renders its children between the bell and the scrolling list", () => {
+    render(
+      <CategoryRail categories={CATEGORIES} selectedId="tacos" onSelect={vi.fn()}>
+        <div data-testid="rail-slot" />
+      </CategoryRail>
+    );
+
+    const rail = screen.getByTestId("category-rail");
+    const [bell, slot, list] = Array.from(rail.children);
+    expect(bell.tagName).toBe("IMG");
+    expect(slot).toBe(screen.getByTestId("rail-slot"));
+    expect(list).toHaveClass("overflow-y-auto");
+    expect(list).toContainElement(screen.getByTestId("rail-tacos"));
+    expect(slot).not.toContainElement(screen.getByTestId("rail-tacos"));
+  });
+
+  it("without children: the bell, then the list — nothing in between", () => {
+    render(<CategoryRail categories={CATEGORIES} selectedId="tacos" onSelect={vi.fn()} />);
+
+    const children = Array.from(screen.getByTestId("category-rail").children);
+    expect(children).toHaveLength(2);
+    expect(children[0].tagName).toBe("IMG");
+    expect(children[1]).toHaveClass("overflow-y-auto");
+  });
 });
+

@@ -165,7 +165,7 @@ const cartState = () => (store.getState() as any).cart;
 describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   });
 
@@ -414,7 +414,7 @@ const renderWithAddItems = (onAddItems?: (...args: any[]) => void) => {
 describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: SAUCE_ENTITY } }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   });

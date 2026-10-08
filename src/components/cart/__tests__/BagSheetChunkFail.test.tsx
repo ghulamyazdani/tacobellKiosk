@@ -28,8 +28,10 @@ import "../../../i18n";
   was only Suspense's. Each test waits until every mounted part's boundary
   has tripped (one local_fallback per part) before it looks.
   Seams: analytics, navigation, PAY's revalidation (fetchMenu, the server
-  time, the scheduler sweep), and the buy-stage hook (armed by hand — its
-  real arming path is the rewards sheet, which is in the failed chunk).
+  time, the scheduler sweep — copies of the rows, like the real one — and
+  the stock feed), and the buy-stage hook (armed by hand — its real arming
+  path is the rewards sheet, which is in the failed chunk). audit-fixes A1:
+  PAY's stock re-check lives in the same chunk, so it fails OPEN here.
 */
 
 const mocks = vi.hoisted(() => ({
@@ -55,7 +57,16 @@ vi.mock("react-router-dom", async (importOriginal) => ({
 }));
 
 vi.mock("../../../hooks/menuHooks/useMenuConverters", () => ({
-  default: () => ({ fetchMenu: (...args: unknown[]) => mocks.fetchMenu(...args) }),
+  default: () => ({
+    fetchMenu: (...args: unknown[]) => mocks.fetchMenu(...args),
+    isAllowMultiplePunch: () => false,
+    fetchModifierProperties: () => [],
+  }),
+}));
+
+vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@cx-sdk/catalog/services/outOfStockApi")>()),
+  useGetOutOfStockMutation: () => [() => ({ unwrap: () => Promise.resolve([]) })],
 }));
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
@@ -67,7 +78,10 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
   ...(await importOriginal<typeof import("../../../hooks/schedulerHooks/useSchedulerConverter")>()),
   default: () => ({
     isValidAsPerSchedulers: () => true,
-    updateCartItemsByMenu: async () => ({ updatedCart: [], invalidSchedulerItemIds: [] }),
+    updateCartItemsByMenu: async (rows: unknown[]) => ({
+      updatedCart: structuredClone(rows),
+      invalidSchedulerItemIds: [],
+    }),
   }),
 }));
 
@@ -164,7 +178,7 @@ const tap = async (testId: string) => {
 describe("BagSheet with the lazy UI chunk failed (G2b): every part degrades locally", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setPipelines([P1]));
     store.dispatch(setSelectedPipeline(P1));
     store.dispatch(setTabType("dine_in"));
@@ -212,7 +226,8 @@ describe("BagSheet with the lazy UI chunk failed (G2b): every part degrades loca
     fireEvent.click(screen.getByTestId("bag-inc-cb-1"));
     expect(cartItems()[0].quantity).toBe(3);
 
-    // …and PAY runs its revalidation and moves on into the checkout.
+    // …and PAY runs its revalidation and moves on into the checkout: the
+    // stock re-check (in the failed chunk) fails OPEN and says so (A1).
     await tap("bag-pay");
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledTimes(1));
     expect(mocks.fetchMenu).toHaveBeenCalledTimes(1);
@@ -220,6 +235,9 @@ describe("BagSheet with the lazy UI chunk failed (G2b): every part degrades loca
       expect.stringMatching(/^\/(tent|payment|customerName|phone)$/),
       { state: { checkoutRoute: expect.any(String) } }
     );
+    expect(mocks.capture).toHaveBeenCalledWith("error_occurred", {
+      error_source: "checkout_stock_sweep",
+    });
   });
 
   it("the rail, the celebration and the freebie picker are simply absent", async () => {
@@ -244,6 +262,25 @@ describe("BagSheet with the lazy UI chunk failed (G2b): every part degrades loca
     expect(screen.queryByTestId("rewards-loading")).not.toBeInTheDocument();
     expect(screen.getByTestId("bag-pay")).toBeEnabled();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("the cooking-instructions entry (U3) opens the NAMED instructions-loading scrim, which closes on tap; the note is untouched", async () => {
+    await renderBag();
+
+    await tap("bag-instructions-entry");
+    expect(mocks.capture).toHaveBeenCalledWith("Add_instruction_clicked", { has_existing_instruction: false });
+    // The sheet's part fails behind its own boundary, like the others.
+    await waitFor(() => expect(localFallbacks()).toBe(5));
+    const scrim = screen.getByTestId("instructions-loading");
+    expect(scrim).toHaveAccessibleName("Close");
+    expect(scrim).toHaveClass("absolute", "inset-0", "z-50");
+    expect(screen.queryByTestId("instructions-sheet")).not.toBeInTheDocument();
+
+    await tap("instructions-loading");
+    expect(screen.queryByTestId("instructions-loading")).not.toBeInTheDocument();
+    expect(mocks.capture).toHaveBeenCalledWith("Add_instruction_dismissed", {});
+    expect((store.getState() as unknown as { cart: { instructions: string } }).cart.instructions).toBe("");
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
   });
 
   it("an armed buy stage shows buy-stage-loading (named), whose tap abandons the stage", async () => {

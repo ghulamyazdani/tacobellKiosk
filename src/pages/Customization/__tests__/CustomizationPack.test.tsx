@@ -289,8 +289,8 @@ describe("Customization page — pack partition (P6c)", () => {
     const drink = screen.getByTestId("pack-slot-pack1_2_combo");
     expect(drink).toHaveTextContent("Large Cola");
     expect(drink).toHaveTextContent("Swap");
-    // default store has no currency symbol configured → bare "+0.75"
-    expect(drink).toHaveTextContent("+0.75");
+    // no currency configured → the SDK's "₹" fallback (UB1: never a bare amount)
+    expect(drink).toHaveTextContent("+₹0.75");
     // tier-2 never opened on the plain path
     expect(MIAMTier2Open(store.getState())).toBe(false);
   });
@@ -442,7 +442,7 @@ const seedD5 = (
   bottomSheet: Record<string, unknown> = { type: "customizableItem", openType: "new" },
   entities: Record<string, unknown> = {}
 ) => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: D5_MODIFIERS }));
   store.dispatch(
     setEntityMenuObject({
@@ -562,7 +562,7 @@ describe("Customization page — D5: one-option slots are pre-selected (item 42)
       baseItem: { ...D5_PACK, modifiers: [D5_SIDES._id, D5_DRINK._id] },
       modifiers: [D5_SIDES._id, D5_DRINK._id],
     };
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: D5_MODIFIERS }));
     store.dispatch(setCartItems([{ ...ROW }]));
     store.dispatch(openMakeItAMealModal({ isOpen: false, selectedItem: {}, availableCombos: [] }));

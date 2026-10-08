@@ -30,12 +30,14 @@ import {
   setPaytmQrCode,
 } from "@cx-sdk/payments/state/payment.slice";
 import { setOrderId } from "@cx-sdk/ordering/state/order.slice";
+import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import storage from "redux-persist/es/storage";
 import { persistor, store } from "../../../redux/app/store";
 import {
   markOfferAutoApplied,
   optOutOfAutoApply,
 } from "../../../redux/features/offerSession/offerSession.slice";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import {
   getCelebratedBarKey,
   setCelebratedBarKey,
@@ -234,6 +236,47 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
 
       expect(state().offerSession).toEqual({ autoApplyOptOut: false, autoAppliedOfferId: null });
       expect(getCelebratedBarKey()).toBeNull();
+    }
+  );
+
+  /*
+    audit-fixes fixer (F3): PAY writes the stock feed's map (A1) — a snapshot
+    of THIS guest's bag that the recommendation surfaces filter on. Both
+    scopes end it: Place New Order must not hide items restocked since.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") clears PAY\'s stock map',
+    async (scope) => {
+      store.dispatch(setOutOfStockItems({ fries: { _id: "fries", inStock: false } }));
+
+      await fireReset(scope);
+
+      expect(state().menuSelections.outOfStockItems).toEqual({});
+    }
+  );
+
+  /*
+    audit-fixes UB5: a country pick (picked: true) is the GUEST's — it is
+    persisted for crash recovery, so only the reset ends it. Every guest
+    starts at the IN/+91 default WITHOUT `picked`, which lets /second apply
+    the deployment default again.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") restores IN/+91 without `picked`',
+    async (scope) => {
+      store.dispatch(
+        setCountryCode({ code: "AE", dialCode: "+971", min: 9, max: 9, picked: true })
+      );
+
+      await fireReset(scope);
+
+      expect(state().auth.selectedCountryCode).toEqual({
+        code: "IN",
+        dialCode: "+91",
+        min: 10,
+        max: 10,
+      });
+      expect(state().auth.selectedCountryCode).not.toHaveProperty("picked");
     }
   );
 

@@ -26,7 +26,6 @@ const FAILURE_MESSAGE: Record<BootFailure, string> = {
   unavailable: "loading.unavailableBody",
   noLanguage: "loading.configNoLanguage",
   noPipelines: "loading.configNoPipelines",
-  noStartText: "loading.configNoStartText",
 };
 
 /**

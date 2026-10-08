@@ -45,7 +45,7 @@ describe("PDP scroll indicator (post-P9 26)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(openMakeItAMealSession());
     store.dispatch(
       setTier1BottomSheetAndSelectedEntity({

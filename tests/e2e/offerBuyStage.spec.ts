@@ -70,6 +70,7 @@ const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8, 3 addon groups (PDP pa
 const GREEK_SALAD = "5dd1093829754a432f2c32e2"; // £17, plain
 const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2, plain (menu one-tap)
 const CAESAR_DRESSING = "5dd109392b29ee1f2a82a49c"; // £2, plain
+const LARGE_FRIES = "5dd10938eb1ccee31ca352fa"; // £9, one optional addon group (PDP path)
 
 /** U+2212 MINUS SIGN — the literal character the bag renders, NOT a hyphen. */
 const MINUS = "−";
@@ -219,6 +220,27 @@ const SOL_SAUCE_AND = itemOffer({
 });
 
 /**
+ * sameOrLess plain BOGO with an "and" buy side — a Cheese Burger AND Large
+ * Fries — granting a Greek Salad: the ceiling is the buy side's SUM
+ * (£8 + £9 = £17), so the £17 salad fits, where either alone (£9 at most)
+ * would cap it out.
+ */
+const SOL_SALAD_BUY_AND = itemOffer({
+  _id: "offer-sol-salad-buy-and",
+  name: "Buy a burger and fries get a salad free",
+  getItemOnly: false,
+  sameOrLess: true,
+  applicable: applicableBuy([
+    buyRaw(CHEESE_BURGER, "Cheese Burger", 1),
+    buyRaw(LARGE_FRIES, "Large Fries", 1),
+  ]),
+  getItems: {
+    items: [getEntry("gi-sol-buy-and-salad", GREEK_SALAD, "Greek Salad", "and")],
+    categories: [],
+  },
+});
+
+/**
  * Boot + menu mocks (copied from offers.spec.ts). Order matters: Playwright
  * matches routes newest-first, so the catch-all is registered FIRST and every
  * specific mock after it. The print agent is cross-origin (the catch-all
@@ -276,7 +298,7 @@ async function mockKioskBackend(page: Page) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -380,6 +402,8 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     // the gap inline and commits nothing (force: Playwright refuses the
     // aria-disabled control, which is itself the guarantee).
     await expect(page.getByTestId("buy-stage-counter")).toHaveText("0 of 2 added");
+    // UB1: a tile prices in the deployment's symbol (the raw menu price).
+    await expect(page.getByTestId(`buy-stage-tile-${TORTILLA_SAUCE}`)).toContainText("£2");
     await expect(page.getByTestId("buy-stage-unlocked")).toHaveCount(0);
     await expect(page.getByTestId("buy-stage-continue")).toHaveAttribute(
       "aria-disabled",
@@ -844,6 +868,42 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£12.00");
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(SOL_SAUCE_OR.name);
+  });
+
+  test("E12 sameOrLess over an 'and' buy side: the ceiling is the buy side's SUM — a Cheese Burger AND Large Fries (£8 + £9) carry the free £17 Greek Salad that either alone could not", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [SOL_SALAD_BUY_AND]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    const fries = page.getByTestId(`item-${LARGE_FRIES}`);
+    await fries.scrollIntoViewIfNeeded();
+    await fries.click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await openBag(page);
+
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-radio-${SOL_SALAD_BUY_AND._id}`)).toBeVisible();
+    await page.getByTestId(`offer-row-${SOL_SALAD_BUY_AND._id}`).click();
+    await page.getByTestId("rewards-save").click();
+    // One "and" entry under the ceiling: applied directly, no picker.
+    await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page)).toHaveCount(3);
+    await expectFreeRow(page, "Greek Salad", "£0.00", "£17.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£34.00");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£17.00`);
+    // VAT on the paid £17 only: round(17 × 1.15) = £20.
+    await expect(page.getByTestId("bag-total")).toContainText("£20.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(SOL_SALAD_BUY_AND.name);
   });
 
   test("E11 a stalled bag chunk never traps the customer: while the rewards sheet's code loads, its scrim is the sheet's own Close — a tap closes it and the bag works; once the code arrives, rewards and the stage work", async ({

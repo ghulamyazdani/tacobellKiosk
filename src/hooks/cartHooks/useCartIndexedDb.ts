@@ -17,12 +17,15 @@ import {
 import { db } from "../../models/db";
 import { removeBlackListed } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 
+// Every write here is the best-effort Dexie MIRROR of the redux cart: a failed
+// one is swallowed (the redux cart stays the truth); a lost mirror is reported
+// where it bites — AppRoutes' rehydrate after a reload (audit-fixes C5).
 function useCartIndexedDb() {
   const addToIndexedDbCart = async (item: any) => {
     try {
       await db.cartItems.add(item);
-    } catch (error) {
-      console.error("Error adding item to cart:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -31,8 +34,8 @@ function useCartIndexedDb() {
     try {
       await db.cartItems.update(itemId, item);
       // alert("Item updated in cart");
-    } catch (error) {
-      console.error(error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -50,11 +53,9 @@ function useCartIndexedDb() {
           // Increment the quantity field, then update the item in the database
           await db.cartItems.put(incrementRowQuantity(item));
         }
-      } else {
-        console.error(`Item with itemId ${itemId} not found.`);
       }
-    } catch (error) {
-      console.error("Error incrementing quantity:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -79,19 +80,10 @@ function useCartIndexedDb() {
             await db.cartItems.where("itemId").equals(item.itemId).delete();
 
             await db.cartItems.where("itemId").equals(item.itemId);
-            // // console.log(
-            //   `Item with itemId ${itemId} removed from database.`,
-            //   items,
-            // );
           } else {
             // Update the item in the database
             await db.cartItems.put(item);
-            // // console.log(
-            //   `Quantity for item with itemId ${itemId} decremented successfully.`,
-            // );
           }
-        } else {
-          // console.log(`Item with itemId ${itemId} not found.`);
         }
       } else {
         // Get the item from the database using itemId
@@ -104,20 +96,14 @@ function useCartIndexedDb() {
             // If quantity is <= 0, remove the item from the database
             dispatcher(removeBlackListed({ id: item?.id } as any));
             await db.cartItems.where(IDKEY).equals(itemId).delete();
-            // console.log(`Item with itemId ${itemId} removed from database.`);
           } else {
             // Update the item in the database
             await db.cartItems.put(item);
-            // // console.log(
-            //   `Quantity for item with itemId ${itemId} decremented successfully.`,
-            // );
           }
-        } else {
-          // console.log(`Item with itemId ${itemId} not found.`);
         }
       }
-    } catch (error) {
-      console.error("Error decrementing quantity:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -129,12 +115,9 @@ function useCartIndexedDb() {
       if (item) {
         // Remove the item from the database
         await db.cartItems.where(IDKEY).equals(itemId).delete();
-        // console.log(`Item with itemId ${itemId} removed from database.`);
-      } else {
-        // console.log(`Item with itemId ${itemId} not found.`);
       }
-    } catch (error) {
-      console.error("Error removing item from cart:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -142,8 +125,8 @@ function useCartIndexedDb() {
     try {
       // Delete the item from the database using itemId
       await db.cartItems.where("itemId").equals(itemId).delete();
-    } catch (error) {
-      console.error("Error deleting item from cart:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -194,8 +177,8 @@ function useCartIndexedDb() {
           await db.cartItems.bulkAdd(items);
         }
       });
-    } catch (error) {
-      console.error("Error replacing cart:", error);
+    } catch {
+      // best effort (see above)
     }
   };
 
@@ -203,24 +186,17 @@ function useCartIndexedDb() {
     try {
       // Clear the cartItems table
       await db.cartItems.clear();
-    } catch (error) {
-      console.error("Error clearing cart:", error);
+    } catch {
+      // best effort (see above)
     }
-    // db.delete()
-    //   .then(() => {
-    //   })
-    //   .catch((err) => {
-    //     console.error("Could not delete database");
-    //   })
-    //   .finally(() => {});
   };
 
   const getCartLength = async () => {
     try {
       const items = await db.cartItems.toArray();
       return countCartRows(items);
-    } catch (error) {
-      console.error("Error getting cart length:", error);
+    } catch {
+      // undefined: the length is unknown
     }
   };
 

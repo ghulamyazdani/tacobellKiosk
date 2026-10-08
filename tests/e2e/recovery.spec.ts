@@ -89,6 +89,7 @@ const MENU_BUDGET_MS = 30_000;
 
 const GET_MENU_URL = "**/api/cx/kiosk/getMenu";
 const KIOSK_SETTINGS_URL = "**/api/cx/get_kiosk_settings";
+const PIPELINES_URL = "**/api/cx/kiosk/getPipelines";
 const LOYALTY_PARTNER_URL = "**/api/cx/kiosk/getLoyaltyPartner";
 /** All Xeno ops share execute_event; the op is the event_name query param. */
 const REDEEM_COUPON_URL = /\/api\/partners\/execute_event\?.*event_name=redeem_coupon/;
@@ -158,7 +159,7 @@ async function mockKioskBackend(page: Page, opts: KioskMockOptions = {}) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -457,11 +458,18 @@ test.describe("P9b Rule 2 recovery", () => {
   }) => {
     test.slow();
     await mockKioskBackend(page);
+    // Boots are counted on the pipelines call (every boot makes it; the
+    // settings call comes after it).
+    const pipelines = await answerInTurn(page, PIPELINES_URL, [
+      // 1st boot: pipelines answer; the settings call after them fails.
+      (route) => route.fallback(),
+      // 2nd boot: reachable but misconfigured (no pipeline) → config error.
+      // (audit-fixes B6: a missing splash text no longer stops a boot.)
+      (route) => route.fulfill({ json: [] }),
+    ]);
     const settings = await answerInTurn(page, KIOSK_SETTINGS_URL, [
       // 1st boot: the backend is down → "unavailable".
       (route) => route.fulfill({ status: 500, json: {} }),
-      // 2nd boot: reachable but misconfigured (no splash text) → config error.
-      (route) => route.fulfill({ json: { ideal_time: "180" } }),
     ]);
     const retryNote = (seconds: string) =>
       new RegExp(`^${en.loading.retryIn.replace("{{seconds}}", seconds)}$`);
@@ -481,17 +489,20 @@ test.describe("P9b Rule 2 recovery", () => {
       page.getByRole("button", { name: /back to registration/i })
     ).toHaveCount(0);
     await expect(page).toHaveURL(/\/LoadingResources$/);
+    expect(pipelines.count).toBe(1);
     expect(settings.count).toBe(1);
 
     // The countdown retries by itself; the next stop is a CONFIG error with
     // its own reason, and the cadence steps up to 30 s.
-    await stepClockUntil(page, () => settings.count === 2);
+    await stepClockUntil(page, () => pipelines.count === 2);
     await expect(
       page.getByRole("alertdialog", { name: en.loading.errorTitle })
     ).toBeVisible();
-    await expect(dialog).toContainText(en.loading.configNoStartText);
+    await expect(dialog).toContainText(en.loading.configNoPipelines);
     await expect(note).toHaveText(retryNote("(30|29)"));
-    expect(settings.count).toBe(2);
+    expect(pipelines.count).toBe(2);
+    // The config stop came before the settings step.
+    expect(settings.count).toBe(1);
 
     // Operator escape (replaces "Back to registration"): the splash's hidden
     // 3 s top-left hold opens the Activity Center over the dialog.
@@ -503,10 +514,11 @@ test.describe("P9b Rule 2 recovery", () => {
     await expect(dialog).toBeVisible();
 
     // The rest of the 30 s: the third boot succeeds.
-    await stepClockUntil(page, () => settings.count === 3, { timeout: 30_000 });
+    await stepClockUntil(page, () => pipelines.count === 3, { timeout: 30_000 });
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/start$/);
-    expect(settings.count).toBe(3);
+    expect(pipelines.count).toBe(3);
+    expect(settings.count).toBe(2);
   });
 
   test("LOYALTY DOWN AT BOOT: the kiosk boots and sells loyalty-off (the Activity Center says Unavailable, a pipeline goes straight to /menu); the next splash visit retries and brings /phone back", async ({

@@ -16,7 +16,9 @@ import { clippedText } from "./fixtures/clippedText";
  * lane used it as its BEFORE/AFTER tool, and any lane that touches text
  * metrics can rerun it.
  *
- * Covered: /menu (rail, hero, grid, CTA total; top and scrolled), the single
+ * Covered: /menu (rail with the VEG / NON-VEG chips, hero, grid, the diet
+ * marks, CTA total; top and scrolled; a NON-VEG filter in EN / AR / ADA —
+ * audit-fixes U1), the single
  * PDP (long-description clamp + groups), the added modal with its strip, the
  * repeat sheet, the MIAM prompt, the pack PDP with its slot sheet and tier-2
  * sheet, /forYou, the bag (rows with an addon line, totals, rail), the remove
@@ -35,12 +37,15 @@ import { clippedText } from "./fixtures/clippedText";
  * TB India menu's median name is 32 characters and a third run past 40): on
  * Large Fries, which lands on the menu grid, /forYou, the bag rail, the added
  * modal, the tier-2 sheet title and its pack slot; on the Greek Salad hero
- * (a 4-line name the hero photo yields to; the rewards rail's 2-line title
- * box); and on two imageless options (a PDP addon and the tier-2 pick) whose
- * name shares a row with the radio. Pack constituents carry "360 Cal" too
- * (the slot info line). Item photos load
+ * (a 4-line name, clamped at 3 since UB4 so the photo keeps its 326 px; the
+ * rewards rail's 2-line title box); and on two imageless options (a PDP
+ * addon and the tier-2 pick) whose name shares a row with the radio. Pack
+ * constituents carry "360 Cal" too (the slot info line). Item photos load
  * from S3 as in every other spec; a shot waits until each <img> settled
- * (loaded or failed).
+ * (loaded or failed). Since UB4 the menu-card photos are `object-cover`
+ * (cropped by design), so clippedText's contained-photo check no longer
+ * covers them — menuCardImage.spec measures their fill instead; the added
+ * modal's tile photos stay `object-contain` and stay checked.
  */
 
 const LOGIN_OK = {
@@ -100,9 +105,9 @@ const OFFER_FREE_SAUCE = "offer-free-sauce-choice";
 
 /** Real-length names (header): two TB India item names — 53 characters, and
  * the reference menu's longest (70) on the hero: 4 lines in its 352-px name
- * box, so the photo gives way, and a clamped 2-line title on the rewards
- * rail — and two imageless options (their name shares the row with the
- * tile's radio). */
+ * box, clamped at 3 (UB4: the photo keeps its height), and a clamped 2-line
+ * title on the rewards rail — and two imageless options (their name shares
+ * the row with the tile's radio). */
 const LONG_NAMES: Record<string, string> = {
   [LARGE_FRIES]: "Melted Cheese Quesadilla Veg + Seasoned Fries & Pepsi",
   [GREEK_SALAD]: "2 Value Rice Bowl Non Veg+1 Small Fries+1 Cinnamon Twists+2 Pepsi Zero",
@@ -210,7 +215,7 @@ async function mockKioskBackend(page: Page, opts: MockOptions = {}) {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -584,6 +589,26 @@ test.describe("visual capture — ordering screens", () => {
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();
     await capture(page, "order-25-ar-rewards-sheet");
   });
+
+  for (const mode of MODES) {
+    test(`VEG FILTER (${mode}): every card's diet mark and the rail's VEG / NON-VEG chips — NON-VEG on narrows the rail and the grid`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { arabic: mode === "ar" });
+      await startOrder(page, mode);
+
+      const nonVeg = page.getByTestId("menu-filter-non-veg");
+      await expect(page.getByTestId("menu-filter-veg")).toBeVisible();
+      await expect(page.locator('[data-testid^="item-"] [data-testid^="veg-mark-"]')).toHaveCount(12);
+      await nonVeg.click();
+      await expect(nonVeg).toHaveAttribute("aria-pressed", "true");
+      // The slim fixture's four non-veg items, all in Side Orders.
+      await expect(page.locator('[data-testid^="item-"]')).toHaveCount(4);
+      await expect(page.getByTestId("category-rail").locator('[data-testid^="rail-"]')).toHaveCount(1);
+      await capture(page, `order-31-menu-veg-filter-${mode}`);
+    });
+  }
 
   for (const mode of MODES) {
     test(`FIGMA-POLISH (${mode}): the pack builder (FIXED + CHOICE slots, the '0 of 2' counter), the full-screen CUSTOMIZE page, the PDP 'You Might Like' rail and the global error over the bag (a failed PAY)`, async ({

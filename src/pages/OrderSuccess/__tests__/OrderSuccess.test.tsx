@@ -15,6 +15,7 @@ import {
 } from "@cx-sdk/ordering/state/order.slice";
 import { turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import { IdleHoldContext } from "../../../hooks/utils/useIdleTimeout";
 import OrderSuccess, { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../index";
@@ -25,6 +26,8 @@ import i18n from "../../../i18n";
 
   Mocked, and only these:
   - useNavigate, so the two exits (/start vs /second) are assertable;
+  - the analytics adapter (pass-through), so the order of the exit events
+    and the per-guest session reset (audit-fixes B3) is assertable;
   - usePrintUtility, so "printed exactly once, with the pushed order, BEFORE
     the reset wiped it" can be asserted by snapshotting the store at call
     time. The print gate itself is covered by usePrintUtility's own suite —
@@ -38,6 +41,24 @@ import i18n from "../../../i18n";
 
 const mockNavigate = vi.fn();
 const mockPrintOrderTicket = vi.fn();
+
+/** Every analytics call, in order: ["capture", event] or ["reset"]. */
+const { analyticsLog } = vi.hoisted(() => ({ analyticsLog: [] as unknown[][] }));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../utils/analytics")>();
+  return {
+    ...actual,
+    captureKioskEvent: (...args: Parameters<typeof actual.captureKioskEvent>) => {
+      analyticsLog.push(["capture", args[0]]);
+      actual.captureKioskEvent(...args);
+    },
+    resetAnalyticsSession: () => {
+      analyticsLog.push(["reset"]);
+      actual.resetAnalyticsSession();
+    },
+  };
+});
 
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
@@ -314,6 +335,58 @@ describe("OrderSuccess — Order Complete", () => {
 
       expect(mockNavigate).toHaveBeenCalledTimes(1);
       expect(mockNavigate).toHaveBeenCalledWith("/second");
+    });
+  });
+
+  /*
+    audit-fixes B3 — Place New Order skips the splash tap, where a guest's
+    analytics session normally starts, so it resets the session itself:
+    AFTER this guest's closing events. Start Over and the countdown go to
+    /start, whose splash tap resets for the next guest.
+  */
+  describe("the analytics session (audit-fixes B3)", () => {
+    beforeEach(() => {
+      analyticsLog.length = 0;
+    });
+
+    const resets = () => analyticsLog.filter(([kind]) => kind === "reset");
+
+    it("Place New Order: OrderCompleted, SessionEnd and AccountSignoutSuccess, THEN one reset", () => {
+      mount();
+      analyticsLog.length = 0; // the mount's OrderSuccessViewed
+      tap("order-success-neworder");
+
+      expect(analyticsLog).toEqual([
+        ["capture", KioskEventName.OrderCompleted],
+        ["capture", KioskEventName.SessionEnd],
+        ["capture", KioskEventName.AccountSignoutSuccess],
+        ["reset"],
+      ]);
+    });
+
+    it("Start Over does not reset (the next guest's splash tap does)", () => {
+      mount();
+      tap("order-success-startover");
+
+      expect(analyticsLog).toContainEqual(["capture", KioskEventName.SessionEnd]);
+      expect(resets()).toEqual([]);
+    });
+
+    it("the countdown's exit does not reset either", () => {
+      mount();
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
+      expect(resets()).toEqual([]);
+    });
+
+    it("one exit, one reset: a second tap and the countdown add none", () => {
+      mount();
+      tap("order-success-neworder");
+      tap("order-success-neworder");
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 5);
+
+      expect(resets()).toHaveLength(1);
     });
   });
 

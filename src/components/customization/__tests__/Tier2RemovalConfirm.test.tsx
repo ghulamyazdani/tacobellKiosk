@@ -133,7 +133,7 @@ describe("Tier2CustomizationSheet — the tier-1 removal confirm (item 24)", () 
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("EDIT, qty 1, hide-plus on: '−' opens the removal confirm — an alertdialog, focus on its primary; not the discard prompt", () => {
@@ -294,7 +294,7 @@ describe("item 24 on the PDP: the emptied slot is priced and caught by the compl
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("YES → the PDP total drops the pick's price (no throw) and ADD TO BAG names the emptied slot", async () => {
