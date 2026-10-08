@@ -78,9 +78,11 @@ const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
 /** Modifier groups, upsellItems = [Dream box 1,]: MIAM first when combo upsell is on. */
 const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
 const DREAM_BOX = "68dd79409030ed3064aee28c";
-/** Dream box's single-option Nuggets slot (pack.spec.ts G_NUGGETS / NUGGETS_PICK). */
+/** Dream box's single-option Nuggets slot — pre-selected and FIXED (D5). */
 const G_NUGGETS = `${DREAM_BOX}_5_combo`;
-const NUGGETS_PICK = "66e952596dd4d13b6564a528";
+/** Dream box's six-option Drinks slot (pack.spec.ts G_DRINKS / PEPSI_SMALL). */
+const G_DRINKS = `${DREAM_BOX}_3_combo`;
+const PEPSI_SMALL = "5dd27b527973647b693e428b";
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
 /** +£1, in EXTRA_GROUP. */
 const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e";
@@ -95,6 +97,7 @@ const AR = {
   cheeseBurgerDescription: "تشيز برجر",
   dreamBox: "بوكس الحلم 1",
   nuggetsPick: "4 قطع ناجتس + صوص باربيكيو",
+  pepsiSmall: "ببسي  صغير",
   extraGroup: "اختر من إضافات إلى تشيز برجر",
   extraPickles: "إضافة كمية المخلل",
   greekSalad: "سلطة يونانية",
@@ -420,18 +423,19 @@ test.describe("Post-P9 names + operator copy in the guest's language", () => {
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
 
-    // A pack PDP: the slot card names its preview pick, and the SELECT sheet
-    // its options, from the aliases. Nothing is picked (back to /menu).
+    // A pack PDP: the FIXED Nuggets card names its pre-selected pick (D5),
+    // and the Drinks SELECT sheet its options, from the aliases. Nothing is
+    // committed (back to /menu).
     const box = page.getByTestId(`item-${DREAM_BOX}`);
     await box.scrollIntoViewIfNeeded();
     await box.click();
     await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
     await expect(pdp.locator("h1")).toContainText(AR.dreamBox);
     await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toContainText(AR.nuggetsPick);
-    await page.getByTestId(`pack-slot-open-${G_NUGGETS}`).click();
+    await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
     const sheet = page.getByTestId("slot-sheet");
-    await expect(sheet.getByTestId(`slot-option-${NUGGETS_PICK}`)).toBeVisible();
-    await expect(sheet).toContainText(AR.nuggetsPick);
+    await expect(sheet.getByTestId(`slot-option-${PEPSI_SMALL}`)).toBeVisible();
+    await expect(sheet).toContainText(AR.pepsiSmall);
     await page.getByTestId("slot-sheet-close").click();
     await expect(sheet).toHaveCount(0);
     await page.getByTestId("pdp-back").click();

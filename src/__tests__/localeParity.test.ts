@@ -90,4 +90,18 @@ describe("locale parity — en ↔ ar", () => {
     expect(placeholders(EN.get(key))).toEqual(expected);
     expect(placeholders(AR.get(key))).toEqual(expected);
   });
+
+  it.each([
+    ["toast.dpMaxQuantity", ["max", "session"]],
+    ["second.noPipelines", []],
+    ["pdp.groupCount", ["count", "max"]],
+    ["pack.choose", []],
+    ["pack.remove", []],
+  ])("lane figma-polish: %s exists in both (boot copy, not lazy.json) with the same placeholders", (key, expected) => {
+    expect(flatten(en).some(([path]) => path === key), key).toBe(true);
+    expect(flatten(ar).some(([path]) => path === key), key).toBe(true);
+    expect(placeholders(EN.get(key))).toEqual(expected);
+    expect(placeholders(AR.get(key))).toEqual(expected);
+    expect(AR.get(key)).not.toBe(EN.get(key));
+  });
 });

@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createElement } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { Provider } from "react-redux";
+import { store } from "../redux/app/store";
+import SelectSizeModal from "../components/menu/SelectSizeModal";
+import "../i18n";
 
 /*
   P9f (rtl-a11y §3.7) — the only automated contrast guard for the textured and
@@ -95,5 +101,51 @@ describe("contrast regressions stay fixed (static)", () => {
 
   it("no 35 % black text is left (placeholders were 2.43:1)", () => {
     expect(sources.filter(({ source }) => source.includes("text-black/35")).map(({ file }) => file)).toEqual([]);
+  });
+});
+
+/*
+  Lane figma-polish S2: the disabled Select-a-Size CTA is Figma Grey 3
+  (#B9B9B9, sampled on 1:5646) under white text — ≈ 2.0:1, below AA. WCAG
+  1.4.3 exempts text on an INACTIVE control only, so Grey 3 may only ever fill
+  a control while it is `disabled` (and the enabled CTA is purple, ≈ 11:1).
+*/
+describe("Grey 3 — only on a disabled control (lane figma-polish S2)", () => {
+  it("white on tb-grey-3 is ≈ 2.0:1 — under 4.5, so it is exempt only as a disabled control", () => {
+    expect(BASE["tb-grey-3"]).toBe("#b9b9b9");
+    expect(contrast("white", "tb-grey-3")).toBeCloseTo(1.96, 2);
+    expect(contrast("white", "tb-grey-3")).toBeLessThan(4.5);
+    expect(contrast("white", "tb-purple")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("bg-tb-grey-3 fills only SelectSizeModal's CTA — and that CTA is `disabled` exactly while it is grey", () => {
+    const sources = readdirSync(SRC, { recursive: true, encoding: "utf8" })
+      .filter((file) => /\.tsx?$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
+      .filter((file) => readFileSync(join(SRC, file), "utf8").includes("bg-tb-grey-3"));
+    expect(sources).toEqual(["components/menu/SelectSizeModal.tsx"]);
+
+    const entity = {
+      id: "box",
+      name: "Box",
+      variants: [
+        { id: "v-l", name: "Large", price: 8, isActive: true },
+        { id: "v-r", name: "Regular", price: 6, isActive: true },
+      ],
+    };
+    render(
+      createElement(Provider, {
+        store,
+        children: createElement(SelectSizeModal, { entity, onClose: vi.fn(), onContinue: vi.fn() }),
+      })
+    );
+    const cta = screen.getByTestId("size-continue");
+
+    expect(cta).toHaveClass("bg-tb-grey-3", "text-tb-surface");
+    expect(cta).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("size-v-r"));
+    expect(cta).toBeEnabled();
+    expect(cta).not.toHaveClass("bg-tb-grey-3");
+    expect(cta).toHaveClass("bg-tb-purple");
   });
 });

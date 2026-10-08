@@ -1746,8 +1746,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(page.getByTestId("payment-card")).toContainText(en.payment.payWithCard);
     await expect(page.getByTestId("payment-qr")).toContainText(en.paytm.methodQr);
     for (const box of boxes) {
-      // D9: (848 − 24·2) / 3 = 266.67 px, all on one row.
-      expect(Math.abs((box?.width ?? 0) - 800 / 3)).toBeLessThan(1);
+      // D9 + S4: (856 − 24·2) / 3 = 269.33 px, all on one row.
+      expect(Math.abs((box?.width ?? 0) - 808 / 3)).toBeLessThan(1);
       expect(box?.y).toBe(boxes[0]?.y);
     }
 
@@ -1759,7 +1759,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 1, dqrInit: 0, edcInit: 0 });
   });
 
-  test("E15b a COD-only deployment shows the single 412 px PAY AT COUNTER tile", async ({
+  test("E15b a COD-only deployment shows the single 416 px PAY AT COUNTER tile", async ({
     page,
   }) => {
     test.slow();
@@ -1768,7 +1768,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(page.getByTestId("payment-card")).toHaveCount(0);
     await expect(page.getByTestId("payment-qr")).toHaveCount(0);
     const box = await page.getByTestId("payment-counter").boundingBox();
-    expect(Math.round(box?.width ?? 0)).toBe(412);
+    expect(Math.round(box?.width ?? 0)).toBe(416);
     expect(mocks.paytm.total).toBe(0);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 0 });
   });

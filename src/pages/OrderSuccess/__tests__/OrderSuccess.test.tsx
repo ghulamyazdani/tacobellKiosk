@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setKioskSettings, toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
@@ -397,5 +397,72 @@ describe("OrderSuccess — Order Complete", () => {
 
       expect(hold.mock.calls).toEqual([[1], [-1]]);
     });
+  });
+});
+
+/*
+  Lane figma-polish S4 #5/#6/#7 — the text block of 1:5932 (guest) and
+  1:3437 / 1:3778 (loyalty) at top 345: a guest gets the Title/H3 thank-you
+  (48/44, −1) in the frame's 569 px box, 24 above the Title/H1 number
+  (116/98, −3.27); a loyalty customer gets ONE H1 block — "ORDER" and the
+  number both 116/98, the number at mt-0. The bell sits at 128; ADA keeps its
+  bottom-570 anchor (P9c) and drops the bell.
+*/
+describe("OrderSuccess — the Figma text block (S4)", () => {
+  const H1 = ["text-[116px]", "leading-[98px]", "tracking-[-3.27px]"];
+  const heading = () => screen.getByRole("heading", { level: 1 });
+  const block = () => heading().parentElement as HTMLElement;
+  const number = () => screen.getByTestId("order-number");
+  const signIn = () => {
+    store.dispatch(setKioskSettings({ enable_loyalty: true }));
+    store.dispatch(turnOnLoyalty({}));
+    store.dispatch(setPhoneNumberRdx("9876543210"));
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockNavigate.mockReset();
+    mockPrintOrderTicket.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    seedPlacedOrder();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("guest: the thank-you is Title/H3 in the 569 px box; the H1 number 24 below it; the block at 345 (920 wide); the bell at 128", () => {
+    mount();
+
+    expect(heading()).toHaveTextContent(i18n.t("success.thankYou"));
+    expect(heading()).toHaveClass("mx-auto", "w-[569px]", "text-[48px]", "leading-[44px]", "tracking-[-1px]");
+    expect(heading()).not.toHaveClass("text-[116px]");
+    expect(number()).toHaveClass(...H1, "mt-[24px]");
+    expect(block()).toHaveClass("top-[345px]", "w-[920px]");
+    expect(block().className).not.toContain("top-[300px]");
+    expect(screen.getAllByAltText("Taco Bell")[0]).toHaveClass("top-[128px]");
+  });
+
+  it("loyalty: ONE H1 block — 'ORDER' and the number both 116/98 −3.27, the number at mt-0, natural width", () => {
+    signIn();
+    mount();
+
+    expect(heading()).toHaveTextContent(i18n.t("success.orderHeading"));
+    expect(heading()).toHaveClass(...H1);
+    expect(heading()).not.toHaveClass("w-[569px]");
+    expect(heading()).not.toHaveClass("text-[48px]");
+    expect(number()).toHaveClass(...H1, "mt-0");
+    expect(number()).not.toHaveClass("mt-[24px]");
+    expect(block()).toHaveClass("top-[345px]");
+  });
+
+  it("ADA keeps the bottom-570 anchor (never the 345 top) and drops the bell; the classes follow the same split", () => {
+    store.dispatch(toggleAccessibilityMode());
+    mount();
+
+    expect(block()).toHaveClass("bottom-[570px]");
+    expect(block()).not.toHaveClass("top-[345px]");
+    expect(heading()).toHaveClass("w-[569px]", "text-[48px]");
+    expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
   });
 });

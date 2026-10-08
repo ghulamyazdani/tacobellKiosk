@@ -92,7 +92,10 @@ import { ErrorBoundary } from "../../ErrorBoundary";
 
 // Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
 // entry would grow the boot path). `await import()`, never `.then`: a failed
-// chunk must reach chunkRecovery's reload. The rail's locked prop contract
+// chunk must reach chunkRecovery's reload. Each mount sits behind a local
+// ErrorBoundary (outside its Suspense), so a chunk that fails inside
+// chunkRecovery's no-reload window degrades that part only — rows, totals
+// and PAY stay usable. The rail's locked prop contract
 // is { onDetour? }; the offer-only sheets (rewards, freebie picker, buy
 // stage) and the celebration keep the boot path inside its P9f budget.
 const CompleteYourMealRail = lazy(async () => ({
@@ -890,6 +893,27 @@ export default function BagSheet({
   const editHowManyDismiss = lazyDismiss("edit-how-many-loading", "z-50", () =>
     setEditHowManyRow(null),
   );
+  // The rewards sheet / buy stage while their code is not here (loading, or
+  // a failed chunk): their own scrim, closing like them — the bag stays
+  // covered and a stalled download never traps the customer.
+  const rewardsLoading = rewardsOpen ? (
+    <button
+      type="button"
+      aria-label={t("offers.close")}
+      data-testid="rewards-loading"
+      onClick={() => setRewardsOpen(false)}
+      className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
+    />
+  ) : null;
+  const buyStageLoading = (
+    <button
+      type="button"
+      aria-label={t("offers.close")}
+      data-testid="buy-stage-loading"
+      onClick={() => stage.abandon()}
+      className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
+    />
+  );
 
   const orderTypeSegment = (
     key: "eatin" | "takeout",
@@ -1122,9 +1146,11 @@ export default function BagSheet({
 
           {/* Complete Your Meal — the rail gates itself (renders null when
               the upsell engine yields too few items) and owns its heading. */}
-          <Suspense fallback={null}>
-            <CompleteYourMealRail onDetour={onClose} />
-          </Suspense>
+          <ErrorBoundary fallback={null}>
+            <Suspense fallback={null}>
+              <CompleteYourMealRail onDetour={onClose} />
+            </Suspense>
+          </ErrorBoundary>
 
           <div className="mt-[40px] px-[48px] pb-[32px]">
             <div className="flex w-full items-center justify-between border-t border-tb-grey-4 pb-[16px] pt-[16px] text-[28px] leading-[32px] text-black">
@@ -1212,94 +1238,78 @@ export default function BagSheet({
           BEFORE the sheet's onClose, handing this page the offer. */}
       {/* The rewards sheet and the picker stay mounted while the bag is
           open (each renders null closed), so their chunk loads with the bag.
-          Rewards OPEN while its code still loads = its own scrim, closing
-          like it: the bag stays covered and a stalled download never traps
-          the customer (nothing was chosen yet). */}
-      <Suspense
-        fallback={
-          rewardsOpen ? (
-            <button
-              type="button"
-              aria-label={t("offers.close")}
-              data-testid="rewards-loading"
-              onClick={() => setRewardsOpen(false)}
-              className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
-            />
-          ) : null
-        }
-      >
-        <RewardsSheet
-          open={rewardsOpen}
-          onClose={() => setRewardsOpen(false)}
-          onNeedsPicker={(offer) => setPickerOffer(offer)}
-          onAddItems={(offer, view) => {
-            setStageBlocked(null);
-            stage.start(offer, view);
-          }}
-        />
-      </Suspense>
-      {stage.buyStage && (
-        // Fallback = the sheet's own scrim, closing like it: the bag beneath
-        // stays covered while the chunk loads, and a stalled download never
-        // traps the customer (nothing was added yet — abandon is a no-op
-        // rollback).
-        <Suspense
-          fallback={
-            <button
-              type="button"
-              aria-label={t("offers.close")}
-              data-testid="buy-stage-loading"
-              onClick={() => stage.abandon()}
-              className="absolute inset-0 z-50 h-full w-full bg-tb-purple/80"
-            />
-          }
-        >
-          <BuyStageSheet
-            stage={stage.buyStage}
-            continuing={stage.continuing}
-            blockedMessage={stageBlocked}
-            onBack={() => {
-              stage.abandon();
-              setRewardsOpen(true);
+          Rewards OPEN while its code still loads, or after it failed = its
+          own scrim, closing like it (nothing was chosen yet). */}
+      <ErrorBoundary fallback={rewardsLoading}>
+        <Suspense fallback={rewardsLoading}>
+          <RewardsSheet
+            open={rewardsOpen}
+            onClose={() => setRewardsOpen(false)}
+            onNeedsPicker={(offer) => setPickerOffer(offer)}
+            onAddItems={(offer, view) => {
+              setStageBlocked(null);
+              stage.start(offer, view);
             }}
-            onClose={() => stage.abandon()}
-            onContinue={handleStageContinue}
           />
         </Suspense>
+      </ErrorBoundary>
+      {stage.buyStage && (
+        // Fallback = the sheet's own scrim, closing like it (nothing was
+        // added yet — abandon is a no-op rollback).
+        <ErrorBoundary fallback={buyStageLoading}>
+          <Suspense fallback={buyStageLoading}>
+            <BuyStageSheet
+              stage={stage.buyStage}
+              continuing={stage.continuing}
+              blockedMessage={stageBlocked}
+              onBack={() => {
+                stage.abandon();
+                setRewardsOpen(true);
+              }}
+              onClose={() => stage.abandon()}
+              onContinue={handleStageContinue}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
       {/* null fallback: only the rewards sheet or the buy stage (this same
           chunk) can open the picker, so its code is always in by then. */}
-      <Suspense fallback={null}>
-        <FreebiePickerSheet
-          open={!!pickerOffer}
-          offer={pickerOffer}
-          onClose={() => {
-            // A buy-stage journey that ends here without the offer landing
-            // rolls its paid rows back (no-op when no stage is armed).
-            stage.rollbackIfAbandoned();
-            setPickerOffer(null);
-          }}
-        />
-      </Suspense>
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <FreebiePickerSheet
+            open={!!pickerOffer}
+            offer={pickerOffer}
+            onClose={() => {
+              // A buy-stage journey that ends here without the offer landing
+              // rolls its paid rows back (no-op when no stage is armed).
+              stage.rollbackIfAbandoned();
+              setPickerOffer(null);
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
       <OfferTierHost />
       {/* null fallback = its idle look (it is invisible until a customer
           apply, seconds after the bag opens); it reads cart.offerModal on
           mount, so an apply that lands while the chunk loads still plays. */}
-      <Suspense fallback={null}>
-        <OfferAppliedCelebration
-          discount={offerDiscount}
-          currency={currency}
-          sheetHeight={sheetHeight}
-        />
-      </Suspense>
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <OfferAppliedCelebration
+            discount={offerDiscount}
+            currency={currency}
+            sheetHeight={sheetHeight}
+          />
+        </Suspense>
+      </ErrorBoundary>
       <OfferRemovalNotice bill={bill ?? undefined} />
       {/* bag-pdp lane overlays (z-stack above): EditHowManyModal z-50 ·
           switch dialogs z-[80] · switch in-flight z-[85] · switch notice
           z-[89] (fixed). Lazy, each behind a scrim that closes it — while the
-          chunk loads, and (boundary) for a part that fails to render. A chunk
-          that fails to LOAD never gets this far: the rail and the rewards
-          sheets load it with the bag, unguarded, so chunkRecovery reloads
-          (cart kept) or, on a page under 60 s old, the crash screen shows. */}
+          chunk loads, and (boundary) for a part that fails to load or render.
+          Every lazy part of the bag is guarded the same way: a chunk that
+          fails to LOAD reloads via chunkRecovery (cart kept) or, on a page
+          under 60 s old, degrades only its own part while chunkRecovery's
+          healer schedules the reload for the splash's next dwell. */}
       {switchTarget && (
         <ErrorBoundary fallback={switchDismiss}>
           <Suspense fallback={switchDismiss}>

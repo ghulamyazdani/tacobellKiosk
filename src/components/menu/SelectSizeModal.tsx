@@ -8,7 +8,10 @@ import { useTranslation } from "react-i18next";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useAdaActive from "../../hooks/utils/useAdaActive";
 import closeIcon from "../../assets/icons/close.svg";
+// ?no-inline: a precached file, off the boot JS (SlotSelectionSheet's D7).
+import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
 
 interface SelectSizeModalProps {
   entity: any | null;
@@ -17,10 +20,27 @@ interface SelectSizeModalProps {
 }
 
 /**
- * "SELECT A SIZE" — Figma "Select a Size v2" (1:5628/1:5683). Hero card for
- * the first/default variant (BEST VALUE tag), smaller tiles for the rest,
- * radio selection, CONTINUE disabled until a size is chosen. Price shown as
- * a delta vs the cheapest variant (Figma: "+£2.50" / base shows absolute).
+ * D12: the BEST VALUE claim needs data — only a hero variant that carries a
+ * "best value" badge shows it (MenuItemCard's NEW-badge precedent). No
+ * variant carries one today, so it is hidden.
+ */
+const isBestValue = (variant: { badges?: unknown } | null | undefined): boolean => {
+  const badges = variant?.badges;
+  // A badge is `{ name }` or a bare string; RegExp#test coerces either.
+  return (
+    Array.isArray(badges) &&
+    badges.some((b: { name?: unknown } | null) =>
+      /best\s*value/i.test((b?.name ?? b ?? "") as string),
+    )
+  );
+};
+
+/**
+ * "SELECT A SIZE" — Figma "Select a Size v2" modal 1:5701 (1:5683 complete /
+ * 1:5628 incomplete). Arch hero for the first variant, 247 px tiles for the
+ * rest, 36 px radios (hero bottom-right, tiles top-right), CONTINUE disabled
+ * (Grey 3) until a size is chosen. Price shown as a delta vs the cheapest
+ * variant (Figma: "+£2.50" / base shows absolute).
  */
 export default function SelectSizeModal({
   entity,
@@ -29,6 +49,7 @@ export default function SelectSizeModal({
 }: SelectSizeModalProps) {
   const { t } = useTranslation();
   const { name } = useLocalized();
+  const ada = useAdaActive();
   const currencySettings = useSelector(selectCurrency) as any;
   const currency = currencySettings?.symbol ?? "";
   const [selectedId, setSelectedId] = useState<string>("");
@@ -64,12 +85,19 @@ export default function SelectSizeModal({
   };
 
   // Render helper, NOT a component (react-hooks/static-components).
-  const renderRadio = (v: any) => (
+  // Figma Status 1:5708 / 1:5722: 36 px; a 1 px purple ring, or a purple
+  // fill with the check at inset 16.67 % (24 px).
+  const renderRadio = (v: any, corner: string) => (
     <span
-      className={`absolute bottom-[12px] right-[12px] h-[28px] w-[28px] rounded-full border-2 ${
-        selectedId === v.id ? "border-tb-purple bg-tb-purple" : "border-tb-purple/40 bg-tb-surface"
+      aria-hidden
+      className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
+        selectedId === v.id ? "bg-tb-purple" : "border border-tb-purple"
       }`}
-    />
+    >
+      {selectedId === v.id && (
+        <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />
+      )}
+    </span>
   );
 
   return (
@@ -78,21 +106,24 @@ export default function SelectSizeModal({
         type="button"
         aria-label={t("language.close")}
         onClick={onClose}
-        className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
+        className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
       {/* Capped by the containing block (Menu's h-full root → the reach
-          container) minus 2×24 px: 1500 on the 1920 stage, 1074 in the 1122
-          ADA reach zone (= ADA_MODAL_MAX_HEIGHT). Header + X and CONTINUE
-          are pinned and only the size tiles scroll, so a capped card (four
-          or more sizes in ADA ≈ 1156 px) never pushes the CTA out of reach.
-          Unscrolled it is the same box as the one-piece p-[32px] layout it
-          replaced. */}
-      <div className="tb-modal-enter absolute left-1/2 top-1/2 flex max-h-[min(1500px,calc(100%_-_48px))] w-[560px] flex-col overflow-hidden rounded-[16px] bg-tb-surface">
-        <div className="shrink-0 px-[32px] pt-[32px]">
-          <h2 className="tb-display mb-[8px] pr-[56px] text-center text-[30px] leading-[1] tracking-[-1px] text-tb-purple-vibrant">
+          container) minus 2×24 px: 1500 on the 1920 stage (the 1133 px card
+          never binds), 1074 in the 1122 ADA reach zone (=
+          ADA_MODAL_MAX_HEIGHT). Header + X and CONTINUE are pinned and only
+          the sizes scroll, so a capped card never pushes the CTA out of
+          reach. Figma: pt 80 · header 92 · 75 · sizes 727 · 75 · CTA 60 ·
+          pb 24 = 1133. ADA (no frame; design language, flagged): pt 48 and
+          24 gaps = 999, so the standard hero + one tile row fits the 1074
+          cap: no tile name or price below the fold of a list that shows no
+          scrollbar (a 2-line name still fits; 4+ sizes scroll). */}
+      <div className={`tb-modal-enter absolute left-1/2 top-1/2 flex max-h-[min(1500px,calc(100%_-_48px))] w-[680px] flex-col items-center overflow-hidden rounded-[16px] bg-tb-surface px-[24px] pb-[24px] ${ada ? "gap-[24px] pt-[48px]" : "gap-[75px] pt-[80px]"}`}>
+        <div className="flex w-[502px] shrink-0 flex-col items-center gap-[24px] text-center">
+          <h2 className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
             {t("size.title")}
           </h2>
-          <p className="mb-[24px] text-center text-[22px] font-medium text-black">
+          <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
             {name(entity)}
           </p>
         </div>
@@ -100,36 +131,54 @@ export default function SelectSizeModal({
           type="button"
           aria-label={t("language.close")}
           onClick={onClose}
-          className="absolute right-[24px] top-[24px] h-[44px] w-[44px]"
+          className="absolute right-[25px] top-[25px] h-[48px] w-[48px]"
         >
           <img alt="" src={closeIcon} className="h-full w-full" />
         </button>
 
-        <div className="min-h-0 overflow-y-auto px-[32px]">
+        <div className="flex min-h-0 w-[504px] flex-col gap-[26px] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {hero && (
             <button
               type="button"
               data-testid={`size-${hero.id}`}
+              aria-pressed={selectedId === hero.id}
               onClick={() => setSelectedId(hero.id)}
-              className="relative mb-[16px] flex w-full flex-col items-center rounded-b-[8px] rounded-t-[400px] bg-tb-grey-6 px-[24px] pb-[20px] pt-[40px]"
+              className="relative flex h-[453px] w-[504px] shrink-0 flex-col items-center rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
             >
-              <span className="tb-compressed mb-[8px] bg-tb-yellow px-[10px] py-[8px] text-[20px] leading-[16px] text-black">
-                {t("size.bestValue")}
-              </span>
-              <p className="text-[26px] font-medium capitalize text-black">{name(hero)}</p>
-              <p className="mb-[8px] text-[17px] text-tb-ink-purple">
-                {priceLabel(hero)}
-                {calText(hero)}
-              </p>
+              {/* Figma 1:5707: the 326 px image band sits at the hero's foot,
+                  the photo at 7.25 % / 20.25 % of it (445 × 232). */}
               {heroImage && (
-                <img alt="" src={heroImage} className="h-[220px] w-full object-contain" />
+                <img
+                  alt=""
+                  src={heroImage}
+                  className="absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain"
+                />
               )}
-              {renderRadio(hero)}
+              <span className="relative flex w-[352px] flex-col items-center gap-[16px] text-center">
+                {isBestValue(hero) && (
+                  <span
+                    data-testid="size-best-value"
+                    className="tb-compressed bg-tb-yellow px-[8px] py-[9px] text-[24px] leading-[18px] text-black"
+                  >
+                    {t("size.bestValue")}
+                  </span>
+                )}
+                <span className="flex w-full flex-col items-center gap-[8px]">
+                  <span className="w-full text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
+                    {name(hero)}
+                  </span>
+                  <span className="text-[18px] leading-[20px] text-tb-ink-purple">
+                    {priceLabel(hero)}
+                    {calText(hero)}
+                  </span>
+                </span>
+              </span>
+              {renderRadio(hero, "bottom-[12px] right-[12px]")}
             </button>
           )}
 
           {rest.length > 0 && (
-            <div className="mb-[24px] grid grid-cols-2 gap-[16px]">
+            <div className="grid shrink-0 grid-cols-2 gap-[10px]">
               {rest.map((v: any) => {
                 const imageUrl = resolveEntityImage(v);
                 return (
@@ -137,18 +186,25 @@ export default function SelectSizeModal({
                     key={v.id}
                     type="button"
                     data-testid={`size-${v.id}`}
+                    aria-pressed={selectedId === v.id}
                     onClick={() => setSelectedId(v.id)}
-                    className="relative flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[16px] pb-[44px]"
+                    className="relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
                   >
-                    {imageUrl && (
-                      <img alt="" src={imageUrl} className="mb-2 h-[120px] w-full object-contain" />
-                    )}
-                    <p className="text-[19px] font-medium capitalize text-black">{name(v)}</p>
-                    <p className="text-[15px] text-tb-ink-purple">
-                      {priceLabel(v)}
-                      {calText(v)}
-                    </p>
-                    {renderRadio(v)}
+                    <span className="h-[108px] w-[206px]">
+                      {imageUrl && (
+                        <img alt="" src={imageUrl} className="h-full w-full object-contain" />
+                      )}
+                    </span>
+                    <span className="flex w-full flex-col items-start gap-[4px]">
+                      <span className="w-full text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
+                        {name(v)}
+                      </span>
+                      <span className="text-[18px] leading-[20px] text-tb-ink-purple">
+                        {priceLabel(v)}
+                        {calText(v)}
+                      </span>
+                    </span>
+                    {renderRadio(v, "right-[13px] top-[11px]")}
                   </button>
                 );
               })}
@@ -156,19 +212,17 @@ export default function SelectSizeModal({
           )}
         </div>
 
-        <div className="shrink-0 px-[32px] pb-[32px]">
-          <button
-            type="button"
-            data-testid="size-continue"
-            disabled={!selected}
-            onClick={() => selected && onContinue(selected)}
-            className={`tb-display w-full rounded-[8px] py-[20px] text-center text-[20px] min-h-[44px] ${
-              selected ? "bg-tb-purple text-tb-surface" : "bg-tb-grey-4 text-tb-surface"
-            }`}
-          >
-            {t("size.continue")}
-          </button>
-        </div>
+        <button
+          type="button"
+          data-testid="size-continue"
+          disabled={!selected}
+          onClick={() => selected && onContinue(selected)}
+          className={`tb-display h-[60px] w-full shrink-0 rounded-[4px] text-center text-[18px] leading-[16px] text-tb-surface ${
+            selected ? "bg-tb-purple" : "bg-tb-grey-3"
+          }`}
+        >
+          {t("size.continue")}
+        </button>
       </div>
     </div>
   );

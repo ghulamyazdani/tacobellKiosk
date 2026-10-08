@@ -4,7 +4,11 @@ import { Provider } from "react-redux";
 import { CookiesProvider } from "react-cookie";
 import { PersistGate } from "redux-persist/integration/react";
 import { setAnalyticsPort } from "@cx-sdk/core";
-import { installChunkErrorRecovery } from "./utils/chunkRecovery";
+import { initiateWholeAppUpdate } from "@cx-sdk/devices/updates/autoUpdate.slice";
+import {
+  installChunkErrorRecovery,
+  setChunkFailureHealer,
+} from "./utils/chunkRecovery";
 import { captureKioskEvent, startAnalytics } from "./utils/analytics";
 import { store, persistor } from "./redux/app/store";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -15,6 +19,9 @@ import "./i18n";
 // FIRST side effect, before anything can trigger a lazy import: a failed
 // chunk fetch after a deploy must reload, not dead-end (Rule 2).
 installChunkErrorRecovery();
+// A failed chunk inside the no-reload window heals at the splash's next
+// dwell (the loadPaytmScreen / loadActivityModal path), never mid-order.
+setChunkFailureHealer(() => store.dispatch(initiateWholeAppUpdate()));
 
 // The SDK's analytics seam — registered before first render so no early
 // engine call drops events.

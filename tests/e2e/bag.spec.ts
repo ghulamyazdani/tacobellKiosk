@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +56,12 @@ const slimMenu = JSON.parse(
     "utf-8"
   )
 );
+const en = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
+    "utf-8"
+  )
+);
 /** The bag-pdp lane's copy (rendered only by lazy chunks — src/i18n/lazyCopy.ts). */
 const enLazy = JSON.parse(
   readFileSync(
@@ -75,12 +81,18 @@ const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7: neither the parent's price nor the other size's
 
+/** The Cheese Burger's Extra Pickles addon group (its +£1 EXTRA_PICKLES). */
+const PICKLES_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
+
 /**
  * The slim menu with SIZED_ITEM given two active sizes and no modifier
  * groups, so its quick-add "+" opens Select a Size (the fast lane that
  * builds its own VARIANT row — the PDP path is covered above).
+ * `largeGroups` (figma-polish S1): SIZE_LARGE carries the Extra Pickles
+ * group, so CONTINUE on Large opens the PDP on that size instead;
+ * `requiredGroup` makes that group required (min 1).
  */
-function sizedMenu() {
+function sizedMenu({ largeGroups = false, requiredGroup = false } = {}) {
   const menu = JSON.parse(JSON.stringify(slimMenu));
   for (const category of menu.categories)
     for (const sub of category.subCategories)
@@ -91,8 +103,17 @@ function sizedMenu() {
           entity.variants = [
             [SIZE_REGULAR, "Regular", 5],
             [SIZE_LARGE, "Large", 7],
-          ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
+          ].map(([id, name, price]) => ({
+            id,
+            name,
+            price,
+            isActive: true,
+            subCategoryId: sub.id,
+            ...(largeGroups && id === SIZE_LARGE ? { modifiers: [PICKLES_GROUP] } : {}),
+          }));
         }
+  if (requiredGroup)
+    for (const group of menu.modifiers) if (group._id === PICKLES_GROUP) group.min = 1;
   return menu;
 }
 
@@ -101,7 +122,14 @@ function sizedMenu() {
  * matches routes newest-first, so the catch-all is registered FIRST and
  * every specific mock after it.
  */
-async function mockKioskBackend(page: Page, { comboUpsell = false, sized = false } = {}) {
+async function mockKioskBackend(
+  page: Page,
+  {
+    comboUpsell = false,
+    sized = false,
+    sizeGroups = false,
+  }: { comboUpsell?: boolean; sized?: boolean; sizeGroups?: boolean | "required" } = {}
+) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
   // The print agent is cross-origin: the catch-all above never sees it.
   await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
@@ -144,7 +172,11 @@ async function mockKioskBackend(page: Page, { comboUpsell = false, sized = false
     })
   );
   await page.route("**/api/cx/kiosk/getMenu", (r) =>
-    r.fulfill({ json: sized ? sizedMenu() : slimMenu })
+    r.fulfill({
+      json: sized
+        ? sizedMenu({ largeGroups: sizeGroups !== false, requiredGroup: sizeGroups === "required" })
+        : slimMenu,
+    })
   );
   await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
   await page.route("**/api/tenants/getServerTime", (r) =>
@@ -404,8 +436,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("edit-how-many")).toHaveCount(0);
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("Update");
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
-    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveClass(
-      /border-tb-purple/
+    // Item 42: the option card is ONE button; its radio state is aria-pressed.
+    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveAttribute(
+      "aria-pressed",
+      "true"
     );
 
     // Change the selection: Add Cheese +£1 → £10.00, then UPDATE.
@@ -472,8 +506,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("pdp-qty")).toHaveText("2");
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("Update");
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£18.00");
-    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveClass(
-      /border-tb-purple/
+    // Item 42: the option card is ONE button; its radio state is aria-pressed.
+    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveAttribute(
+      "aria-pressed",
+      "true"
     );
     await page.getByTestId(`pdp-option-${ADD_CHEESE}`).click();
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£20.00");
@@ -748,6 +784,48 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 
+  test("PAY FAILURE IS VISIBLE (G1): a preflight that fails raises the global error over the bag (bag.checkoutFailed, GOT IT on top); GOT IT leaves the bag open with PAY live, and the next PAY proceeds", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await openBag(page);
+
+    // The preflight's server-time read fails (it was silent before G1).
+    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
+    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    await page.getByTestId("bag-pay").click();
+    const dialog = page.getByRole("alertdialog", { name: en.bag.checkoutFailed });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("data-testid", "global-error");
+    const ok = page.getByTestId("global-error-ok");
+    await expect(ok).toHaveText(en.offers.gotIt);
+    // GOT IT is the top-most element at its centre: nothing paints over it.
+    expect(
+      await ok.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })
+    ).toBe(true);
+    await expect(page).toHaveURL(/\/cart$/);
+
+    await ok.click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId("bag-pay")).toBeEnabled();
+    await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
+
+    // The server is back: the same PAY proceeds to the checkout route.
+    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    await expect(page.getByTestId("phone-screen")).toBeVisible();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+  });
+
   test("SIZE FAST LANE: quick-add → Select a Size → CONTINUE bills the chosen size — the added modal's total agrees with the bar and the bag pays it with VAT, never £NaN", async ({
     page,
   }) => {
@@ -826,5 +904,100 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(bagRows(page).nth(1)).toContainText("Regular");
     await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
     await expect(page.getByTestId("bag-total")).toContainText("£14.00");
+  });
+
+  test("SIZE FAST LANE WITH GROUPS (S1): Large carries a modifier group, so CONTINUE opens the PDP already on Large (no picker); Extra Pickles + ADD TO BAG lands ONE VARIANT row — Sub £8.00, Total with VAT, never NaN", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true, sizeGroups: true });
+    await bootRegisteredToMenu(page);
+    const quickAdd = page.getByTestId(`quick-add-${SIZED_ITEM}`);
+    await quickAdd.scrollIntoViewIfNeeded();
+    await quickAdd.click();
+
+    // S2 (1:5628): nothing chosen — CONTINUE disabled on Grey 3 (#B9B9B9),
+    // and no BEST VALUE claim without a data field (D12).
+    const sizeContinue = page.getByTestId("size-continue");
+    const large = page.getByTestId(`size-${SIZE_LARGE}`);
+    await expect(sizeContinue).toBeDisabled();
+    await expect(sizeContinue).toHaveCSS("background-color", "rgb(185, 185, 185)");
+    await expect(page.getByTestId("size-best-value")).toHaveCount(0);
+    await expect(large).toHaveAttribute("aria-pressed", "false");
+    await large.click();
+    await expect(large).toHaveAttribute("aria-pressed", "true");
+    await expect(sizeContinue).toBeEnabled();
+    await sizeContinue.click();
+
+    // The PDP opens on the chosen size: no picker, "Large · Change".
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("select-size-modal")).toHaveCount(0);
+    await expect(page.getByTestId("pdp-variant-picker")).toHaveCount(0);
+    await expect(page.getByTestId("pdp-change-size")).toHaveText(`Large · ${en.pdp.change}`);
+    await expect(page.getByTestId(`pdp-group-${PICKLES_GROUP}`)).toBeVisible();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£7.00");
+    await page.getByTestId(`pdp-option-${EXTRA_PICKLES}`).click();
+    await expect(page.getByTestId(`pdp-option-${EXTRA_PICKLES}`)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+
+    // ONE VARIANT row (Large + Extra Pickles); round(8 × 1.15 = 9.2) = £9.
+    await openBag(page);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(bagRows(page).first()).toContainText("Large");
+    await expect(bagRows(page).first()).toContainText("Extra Pickles");
+    const rowType = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __kioskStore: { getState: () => { cart: { cartItems: { type?: string }[] } } };
+          }
+        ).__kioskStore.getState().cart.cartItems.map((row) => row.type)
+    );
+    expect(rowType).toEqual(["VARIANT"]);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£8.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+    await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
+    await expect(page.getByTestId("bag-sheet")).not.toContainText("NaN");
+  });
+
+  test("SIZE FAST LANE, REQUIRED GROUP (S1 + G1): an incomplete ADD TO BAG on the preselected size is answered by the completion warning ALONE — never the global error under it — and the size survives GOT IT", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true, sizeGroups: "required" });
+    await bootRegisteredToMenu(page);
+    const quickAdd = page.getByTestId(`quick-add-${SIZED_ITEM}`);
+    await quickAdd.scrollIntoViewIfNeeded();
+    await quickAdd.click();
+    await page.getByTestId(`size-${SIZE_LARGE}`).click();
+    await page.getByTestId("size-continue").click();
+    await expect(page.getByTestId("pdp-change-size")).toHaveText(`Large · ${en.pdp.change}`);
+
+    // The required Extra group is empty: the VARIANT commit refuses once.
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("pdp-incomplete")).toBeVisible();
+    await expect(page.getByTestId(`pdp-group-${PICKLES_GROUP}`)).toHaveClass(/ring-red-500/);
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page.getByRole("alertdialog")).toHaveCount(1);
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page.getByTestId("pdp-change-size")).toHaveText(`Large · ${en.pdp.change}`);
+
+    // Completed, it lands: one VARIANT row at £8.00.
+    await page.getByTestId(`pdp-option-${EXTRA_PICKLES}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
   });
 });

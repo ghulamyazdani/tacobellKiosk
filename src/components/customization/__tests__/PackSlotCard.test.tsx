@@ -46,27 +46,26 @@ const renderCard = (
 };
 
 describe("PackSlotCard (Figma 1:4641 — pack slot grid card)", () => {
-  it("empty slot: preview item + empty ring + SELECT {group} CTA", () => {
+  // Item 42 (1:2930): an empty CHOICE slot shows the slot's own name over its
+  // first option's photo, an empty radio and SELECT {group} — no meta.
+  it("empty slot: the slot's name, an empty radio + SELECT {group} CTA", () => {
     renderCard();
     const card = screen.getByTestId("pack-slot-pack1_2_combo");
-    expect(card).toHaveTextContent("Cola"); // preview constituent shown
-    expect(card).toHaveTextContent("170 Cal"); // cal line for a free pick
+    expect(card).toHaveTextContent("Drink"); // the slot (group) name
+    expect(card).not.toHaveTextContent("Cola");
+    expect(card).not.toHaveTextContent("170 Cal");
     expect(card).toHaveTextContent("Select Drink"); // pack.selectGroup
     expect(card).not.toHaveTextContent("Swap");
     // empty ring — no ✓ check mark rendered
-    expect(card.querySelector("svg")).toBeNull();
+    expect(card.querySelector('img[src*="radio-check"]')).toBeNull();
   });
 
-  it("empty slot without a preview image or item falls back to the group-name placeholder", () => {
+  it("empty slot without a preview image or item: the slot name, an empty photo box", () => {
     renderCard({ previewItem: undefined });
     const card = screen.getByTestId("pack-slot-pack1_2_combo");
-    // group name appears as placeholder art AND as the title line
     expect(card).toHaveTextContent("Drink");
     expect(card).toHaveTextContent("Select Drink");
-    // P9f contrast: ink-purple/60 on grey-6 is 4.98:1 (/40 was 2.65:1).
-    const [art] = screen.getAllByText("Drink");
-    expect(art).toHaveClass("bg-tb-grey-6", "text-tb-ink-purple/60");
-    expect(art).not.toHaveClass("text-tb-ink-purple/40");
+    expect(card.querySelector("img")).toBeNull(); // imageless: nothing, not a placeholder
   });
 
   it("selected slot: pick's name, ✓ badge and SWAP CTA", () => {
@@ -77,18 +76,17 @@ describe("PackSlotCard (Figma 1:4641 — pack slot grid card)", () => {
     expect(card).toHaveTextContent("Pepsi");
     expect(card).toHaveTextContent("Swap"); // pack.swap
     expect(card).not.toHaveTextContent("Select Drink");
-    expect(card.querySelector("svg")).not.toBeNull(); // filled ✓ badge
+    expect(card.querySelector('img[src*="radio-check"]')).not.toBeNull(); // filled ✓ badge
   });
 
-  it("priced pick shows +currency price instead of calories", () => {
+  it("priced pick shows the Figma meta: +currency price | calories", () => {
     renderCard({
       selection: [
         { id: "d-large", name: "Large Cola", price: 0.75, calorieCount: 360 },
       ],
     });
     const card = screen.getByTestId("pack-slot-pack1_2_combo");
-    expect(card).toHaveTextContent("+£0.75");
-    expect(card).not.toHaveTextContent("360 Cal");
+    expect(card).toHaveTextContent("+£0.75 | 360 Cal");
   });
 
   it("errored slot swaps the border for the red error ring", () => {
@@ -107,5 +105,95 @@ describe("PackSlotCard (Figma 1:4641 — pack slot grid card)", () => {
     const { onOpen } = renderCard();
     await userEvent.click(screen.getByTestId("pack-slot-open-pack1_2_combo"));
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+  Lane figma-polish item 42 (1:2930): a one-option slot with its pick is an
+  INCLUDED item — FIXED: no radio, not tappable, the pick's name / meta, and
+  CUSTOMIZE only when the pick can be customized (the PDP passes onCustomize
+  only then). A CHOICE slot (several options, or an EMPTY one-option slot)
+  keeps the radio, the overlay (pack-slot-open-*) and its CTA
+  (pack-slot-cta-*), both opening the slot sheet.
+*/
+describe("PackSlotCard — FIXED vs CHOICE (item 42)", () => {
+  const FRIES = { id: "fries", name: "Large Fries", price: 0.5, calorieCount: 360, image_url: "" };
+  const SIDES = { _id: "pack1_3_combo", name: "Sides", min: 1, max: 1 };
+  const radio = (card: HTMLElement) => card.querySelector("span[aria-hidden='true'].rounded-full");
+
+  const renderSlot = (overrides: Partial<Parameters<typeof PackSlotCard>[0]> = {}) => {
+    const onOpen = vi.fn();
+    const onCustomize = vi.fn();
+    render(
+      <PackSlotCard
+        group={SIDES}
+        selection={[{ ...FRIES, quantity: 1 }]}
+        previewItem={FRIES}
+        currency="£"
+        fixed
+        onOpen={onOpen}
+        {...overrides}
+      />,
+      { wrapper }
+    );
+    return { onOpen, onCustomize, card: screen.getByTestId("pack-slot-pack1_3_combo") };
+  };
+
+  it("FIXED, not customizable: the pick's name and meta, no radio, nothing tappable, no CTA", () => {
+    const { card } = renderSlot();
+
+    expect(card.tagName).toBe("DIV");
+    expect(card).toHaveTextContent("Large Fries");
+    expect(card).toHaveTextContent("+£0.50 | 360 Cal");
+    expect(card).not.toHaveTextContent("Sides");
+    expect(radio(card)).toBeNull();
+    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(screen.queryByTestId("pack-slot-open-pack1_3_combo")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pack-slot-cta-pack1_3_combo")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pack-slot-customize-pack1_3_combo")).not.toBeInTheDocument();
+  });
+
+  it("FIXED and customizable: ONE button — pack-slot-customize-* (t('pack.customize')) — calling onCustomize, never onOpen", async () => {
+    const onCustomize = vi.fn();
+    const { onOpen, card } = renderSlot({ onCustomize });
+    const customize = screen.getByTestId("pack-slot-customize-pack1_3_combo");
+
+    expect(screen.getAllByRole("button")).toEqual([customize]);
+    expect(customize).toHaveTextContent("Customize");
+    expect(card).toContainElement(customize);
+    expect(radio(card)).toBeNull();
+
+    await userEvent.click(customize);
+    expect(onCustomize).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("an EMPTY one-option slot (fixed, no pick) is a CHOICE slot: radio off, the slot name, SELECT — and no CUSTOMIZE", async () => {
+    const onCustomize = vi.fn();
+    const { onOpen, card } = renderSlot({ selection: [], onCustomize });
+
+    expect(radio(card)).not.toBeNull();
+    expect(card).toHaveTextContent("Sides");
+    expect(screen.getByTestId("pack-slot-cta-pack1_3_combo")).toHaveTextContent("Select Sides");
+    expect(screen.queryByTestId("pack-slot-customize-pack1_3_combo")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("pack-slot-open-pack1_3_combo"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onCustomize).not.toHaveBeenCalled();
+  });
+
+  it("CHOICE, picked: the radio check, SWAP on pack-slot-cta-*; the CTA and the overlay (LAST, named SWAP) both open the sheet", async () => {
+    const { onOpen, card } = renderSlot({ fixed: false });
+    const cta = screen.getByTestId("pack-slot-cta-pack1_3_combo");
+    const overlay = screen.getByTestId("pack-slot-open-pack1_3_combo");
+
+    expect(radio(card)?.querySelector("img")?.getAttribute("src")).toContain("radio-check");
+    expect(cta).toHaveTextContent("Swap");
+    expect(overlay).toHaveAccessibleName("Swap");
+    expect(card.lastElementChild).toBe(overlay);
+
+    await userEvent.click(cta);
+    await userEvent.click(overlay);
+    expect(onOpen).toHaveBeenCalledTimes(2);
   });
 });

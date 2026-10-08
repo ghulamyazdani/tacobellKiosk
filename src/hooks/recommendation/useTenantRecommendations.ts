@@ -23,7 +23,7 @@ import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
   Tenant (S3) cart recommendations — the app half of posistKiosk's
   useRecommendationHook (post-P9 29a/29b). The ranking lives in the SDK
   (catalog/recommendation/tenantRecommendations); this file owns the URL, the
-  fetch, the Dexie copy and the bag-rail selector.
+  fetch, the Dexie copy and the two rail selectors (bag, PDP).
 
   The map is device data, never session state: it lives in redux memory
   (state.recommendation, NOT persisted — the store's single persist:root
@@ -176,12 +176,18 @@ export default function useTenantRecommendations(): {
 /** Shared, so the D7-off rail and a no-match cart never mint a new array. */
 const EMPTY: RecommendedEntity[] = [];
 
+const selectComboUpsell = (state: TenantRecsRootState) =>
+  state.appSettings?.kiosk_settings?.enable_combo_upsell;
+
 /**
- * The bag rail's tenant list, memoised over its inputs. D7 (TB semantics,
- * a divergence from the fork, which ignores the flag here):
- * `enable_cart_upsell_screen: false` hides the tenant list too, so the flag
- * keeps meaning "no in-bag rail".
+ * D7 (TB semantics, a divergence from the fork, which ignores the flag here):
+ * `enable_cart_upsell_screen: false` hides the tenant lists too, so the flag
+ * keeps meaning "no suggestion rail" — the bag's and the PDP's.
  */
+const selectRailOff = (state: TenantRecsRootState) =>
+  state.appSettings?.kiosk_settings?.enable_cart_upsell_screen === false;
+
+/** The bag rail's tenant list, memoised over its inputs (D7 above). */
 const selectTenantRailItems = createSelector(
   [
     selectTenantMap,
@@ -189,10 +195,8 @@ const selectTenantRailItems = createSelector(
     selectEntityMap,
     selectOutOfStockItems,
     selectFilters,
-    (state: TenantRecsRootState) =>
-      state.appSettings?.kiosk_settings?.enable_combo_upsell,
-    (state: TenantRecsRootState) =>
-      state.appSettings?.kiosk_settings?.enable_cart_upsell_screen === false,
+    selectComboUpsell,
+    selectRailOff,
   ],
   (map, cartItems, entityMap, outOfStock, filters, comboUpsell, railOff) =>
     railOff
@@ -210,4 +214,46 @@ const selectTenantRailItems = createSelector(
 /** Tenant recommendations for the current cart; [] when none apply. */
 export function useTenantRailItems(): RecommendedEntity[] {
   return useSelector(selectTenantRailItems);
+}
+
+/**
+ * The PDP "You Might Like" list (Figma 1:2657 / 1:5867): the bag rail's tenant
+ * source for ONE item — its map entry (keyed by baseItem_id) ranked against
+ * the live menu by the same SDK call, eligibility rules and D7 flag. The item
+ * itself is skipped (the SDK treats it as "in the cart"); items already in the
+ * bag stay. No isCartRecommended fallback: that list is global, not per item.
+ * reselect 5 memoises per (state, entityId), so an unrelated store change
+ * returns the same array.
+ */
+const selectTenantItemSuggestions = createSelector(
+  [
+    selectTenantMap,
+    selectEntityMap,
+    selectOutOfStockItems,
+    selectFilters,
+    selectComboUpsell,
+    selectRailOff,
+    (_state: TenantRecsRootState, entityId: string | undefined) => entityId,
+  ],
+  (map, entityMap, outOfStock, filters, comboUpsell, railOff, entityId) => {
+    if (railOff || !entityId) return EMPTY;
+    const items = collectTenantRecommendations(
+      map,
+      [{ id: entityId }],
+      entityMap,
+      outOfStock,
+      filters,
+      comboUpsell,
+    );
+    return items.length > 0 ? items : EMPTY;
+  },
+);
+
+/** Tenant suggestions for one menu item; [] when none apply. */
+export function useTenantItemSuggestions(
+  entityId: string | undefined,
+): RecommendedEntity[] {
+  return useSelector((state: TenantRecsRootState) =>
+    selectTenantItemSuggestions(state, entityId),
+  );
 }

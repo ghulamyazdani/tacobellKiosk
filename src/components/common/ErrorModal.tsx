@@ -9,7 +9,8 @@ interface ErrorModalAction {
 interface ErrorModalProps {
   testId: string;
   title: string;
-  message: string;
+  /** Body under the title; omitted/empty = no body (the GlobalErrorHost's message IS its title, 1:6288). */
+  message?: string;
   /** Small line under the message (the boot retry countdown). */
   note?: string;
   primary: ErrorModalAction;
@@ -50,7 +51,7 @@ export default function ErrorModal({
       role="alertdialog"
       aria-modal="true"
       aria-labelledby={`${testId}-title`}
-      aria-describedby={`${testId}-message`}
+      aria-describedby={message ? `${testId}-message` : undefined}
       className="absolute inset-0 z-[80]"
     >
       <div aria-hidden className="absolute inset-0 bg-tb-purple/80" />
@@ -67,12 +68,14 @@ export default function ErrorModal({
           >
             {title}
           </h2>
-          <p
-            id={`${testId}-message`}
-            className="text-[28px] leading-[32px] text-tb-ink-purple"
-          >
-            {message}
-          </p>
+          {message && (
+            <p
+              id={`${testId}-message`}
+              className="text-[28px] leading-[32px] text-tb-ink-purple"
+            >
+              {message}
+            </p>
+          )}
           {note && (
             <p
               data-testid={`${testId}-note`}

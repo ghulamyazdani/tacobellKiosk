@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Request, type Route } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -60,6 +60,12 @@ const slimMenu = JSON.parse(
     "utf-8"
   )
 );
+const en = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
+    "utf-8"
+  )
+);
 
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
 /** Modifier groups: a card tap opens the PDP. isCartRecommended. */
@@ -70,6 +76,10 @@ const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 const GREEK_SALAD = "5dd1093829754a432f2c32e2";
 /** NOT flagged: on the rail only from the tenant file. */
 const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b";
+/** +£1, in the Cheese Burger's addon group: the guest's own PDP pick (R1). */
+const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e";
+/** £2, plain, in no tenant list: the SILENT ADD control (R1). */
+const CAESAR_DRESSING = "5dd109392b29ee1f2a82a49c";
 
 const RECS_HOST = "https://recommendations.e2e.test";
 const RECS_URL = `${RECS_HOST}/data.json`;
@@ -516,5 +526,178 @@ test.describe("Post-P9 tenant recommendations (bag rail)", () => {
     await openBag(page);
     await expect(page.locator('[data-testid^="bag-row-"]')).toHaveCount(1);
     await expect(page.getByTestId("bag-rail")).toHaveCount(0);
+  });
+});
+
+/** The PDP rail's item ids, left to right (R1). */
+async function pdpRailIds(page: Page): Promise<string[]> {
+  await expect(page.getByTestId("pdp-rail")).toBeVisible();
+  return page
+    .locator('[data-testid^="pdp-rail-item-"]')
+    .evaluateAll((cards) =>
+      cards.map((card) => (card.getAttribute("data-testid") ?? "").replace("pdp-rail-item-", ""))
+    );
+}
+
+/** The in-cart count pill: the card's only purple span (forYou.spec quantityPill). */
+const quantityPill = (card: Locator) => card.locator("span.bg-tb-purple");
+
+/** Cart rows as [id, quantity] (DEV-only window.__kioskStore). */
+const cartRows = (page: Page) =>
+  page.evaluate(() =>
+    (
+      window as unknown as {
+        __kioskStore: {
+          getState: () => { cart: { cartItems: { id?: string; quantity?: number }[] } };
+        };
+      }
+    ).__kioskStore
+      .getState()
+      .cart.cartItems.map((row) => [row.id, row.quantity])
+  );
+
+/** Card tap → the item's PDP (its groups up: the rail renders in that same commit). */
+async function openPdp(page: Page, itemId: string) {
+  const card = page.getByTestId(`item-${itemId}`);
+  await card.scrollIntoViewIfNeeded();
+  await card.click();
+  await expect(page.getByTestId("customization-screen")).toBeVisible();
+  await expect(page.locator('[data-testid^="pdp-group-"]').first()).toBeVisible();
+}
+
+test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, per item)", () => {
+  test("PDP RAIL: the Cheese Burger PDP offers ITS tenant suggestions — one-tap adds only, by occurrences; a tap adds without leaving the PDP or touching the guest's picks, the count pill confirms it, and the PDP still commits", async ({
+    page,
+  }) => {
+    test.slow();
+    await useTenantRecommendations(page);
+    await mockKioskBackend(page);
+    await mockS3(page);
+    await registerToStart(page);
+    await expect.poll(() => tenantMapKeys(page)).toEqual([CHEESE_BURGER]);
+    await startOrderToMenu(page);
+
+    // The guest's own customisation first: Extra Pickles (+£1).
+    await openPdp(page, CHEESE_BURGER);
+    const pickles = page.getByTestId(`pdp-option-${EXTRA_PICKLES}`);
+    await pickles.click();
+    await expect(pickles).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
+
+    const rail = page.getByTestId("pdp-rail");
+    await rail.scrollIntoViewIfNeeded();
+    await expect(rail).toContainText(en.added.youMightLike);
+    // Large Fries ranks first (5) but needs its own PDP: never offered here.
+    expect(await pdpRailIds(page)).toEqual([TORTILLA_SAUCE, GREEK_SALAD]);
+    const sauce = page.getByTestId(`pdp-rail-item-${TORTILLA_SAUCE}`);
+    await expect(sauce).toHaveAccessibleName(`${en.menu.quickAdd} Tortilla Sauce`);
+    await expect(sauce).toContainText("£2.00");
+    await expect(quantityPill(sauce)).toHaveCount(0);
+
+    await sauce.click();
+    await expect(quantityPill(sauce)).toHaveText("1");
+    await expect(page).toHaveURL(/\/customization$/);
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+    await expect(pickles).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
+    expect(await cartRows(page)).toEqual([[TORTILLA_SAUCE, 1]]);
+
+    await sauce.click();
+    await expect(quantityPill(sauce)).toHaveText("2");
+    expect(await cartRows(page)).toEqual([[TORTILLA_SAUCE, 2]]);
+
+    // The customised burger still lands beside them: two rows (the CTA's
+    // "(n)" counts rows), 2 × £2 + £9 on the menu's CTA.
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
+    await expect(page.getByTestId("cta-total")).toContainText("£13.00");
+    expect(await cartRows(page)).toEqual([
+      [TORTILLA_SAUCE, 2],
+      [CHEESE_BURGER, 1],
+    ]);
+  });
+
+  test("NO MAP ENTRY: an item the tenant file never mentions shows no rail, while the Cheese Burger's PDP beside it does", async ({
+    page,
+  }) => {
+    test.slow();
+    await useTenantRecommendations(page);
+    await mockKioskBackend(page);
+    await mockS3(page);
+    await registerToStart(page);
+    await expect.poll(() => tenantMapKeys(page)).toEqual([CHEESE_BURGER]);
+    await startOrderToMenu(page);
+
+    await openPdp(page, CHEESE_BURGER);
+    await expect(page.getByTestId("pdp-rail")).toBeVisible();
+    await page.getByTestId("pdp-back").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+
+    // Large Fries has its own PDP (an addon group) and no map entry.
+    await openPdp(page, LARGE_FRIES);
+    await expect(page.getByTestId("pdp-rail")).toHaveCount(0);
+    await expect(page.locator('[data-testid^="pdp-rail-item-"]')).toHaveCount(0);
+  });
+
+  test("D7: enable_cart_upsell_screen:false hides the PDP rail too, with the tenant list loaded", async ({
+    page,
+  }) => {
+    test.slow();
+    await useTenantRecommendations(page);
+    await mockKioskBackend(page, { enable_cart_upsell_screen: false });
+    await mockS3(page);
+    await registerToStart(page);
+    // Precondition: the tenant list IS loaded.
+    await expect.poll(() => tenantMapKeys(page)).toEqual([CHEESE_BURGER]);
+    await startOrderToMenu(page);
+
+    await openPdp(page, CHEESE_BURGER);
+    await expect(page.getByTestId("pdp-rail")).toHaveCount(0);
+    await expect(page.locator('[data-testid^="pdp-rail-item-"]')).toHaveCount(0);
+  });
+
+  test("SILENT ADD: a suggestion the menu confirms with the added modal (it carries recommendedItems) is added from the PDP rail silently — BACK lands on a bare /menu with it in the bag", async ({
+    page,
+  }) => {
+    test.slow();
+    await useTenantRecommendations(page);
+    await mockKioskBackend(page);
+    // Tortilla Sauce (and the control's Caesar Dressing) recommend Greek
+    // Salad, so a FIRST plain add of either earns the added modal
+    // (useCartHook) — unless the caller suppresses it.
+    const menu = structuredClone(slimMenu);
+    for (const category of menu.categories)
+      for (const sub of category.subCategories)
+        for (const entity of sub.entities)
+          if (entity.id === TORTILLA_SAUCE || entity.id === CAESAR_DRESSING)
+            entity.recommendedItems = [GREEK_SALAD];
+    await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
+    await mockS3(page);
+    await registerToStart(page);
+    await expect.poll(() => tenantMapKeys(page)).toEqual([CHEESE_BURGER]);
+    await startOrderToMenu(page);
+
+    await openPdp(page, CHEESE_BURGER);
+    const sauce = page.getByTestId(`pdp-rail-item-${TORTILLA_SAUCE}`);
+    await sauce.scrollIntoViewIfNeeded();
+    await sauce.click();
+    await expect(quantityPill(sauce)).toHaveText("1");
+    await page.getByTestId("pdp-back").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    // Nothing was queued behind the PDP: no added modal greets the guest.
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+    expect(await cartRows(page)).toEqual([[TORTILLA_SAUCE, 1]]);
+
+    // Control: the same configuration added from the menu does earn the
+    // modal (a first add — an in-cart plain item only bumps its row).
+    const card = page.getByTestId(`item-${CAESAR_DRESSING}`);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
   });
 });

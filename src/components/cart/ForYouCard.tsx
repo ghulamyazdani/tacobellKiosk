@@ -66,6 +66,12 @@ export interface ForYouCardProps {
    */
   testId: string;
   onAdd: (entity: RecommendedEntity) => void;
+  /**
+   * The PDP rail's ProductSuggestion card (1:1829): a 192x85 photo 76 px
+   * down, the 72 px name / price block 24 px off the foot, the count pill
+   * top-left. Default: the bag rail's text-over-photo card (1:3171).
+   */
+  imageTop?: boolean;
 }
 
 /**
@@ -101,6 +107,7 @@ function ForYouCardBase({
   customizeLabel,
   testId,
   onAdd,
+  imageTop = false,
 }: ForYouCardProps) {
   const { t } = useTranslation();
 
@@ -118,6 +125,42 @@ function ForYouCardBase({
   */
   const oneTap = !!entity?.isDirectlyAddable;
 
+  const text = (
+    <span
+      className={`flex flex-col gap-[4px] ${
+        imageTop ? "mb-[24px] h-[72px] px-[24px]" : "pl-[24px] pr-[64px] pt-[24px]"
+      }`}
+    >
+      <span
+        className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
+        style={{
+          lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
+          maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
+        }}
+      >
+        {title}
+      </span>
+      <span className="block text-[18px] leading-[20px] text-tb-ink-purple">
+        {priceLine}
+      </span>
+    </span>
+  );
+  const imageClass = imageTop ? "mx-[24px] mt-[76px] h-[85px] w-[192px]" : "w-full";
+  const imageStyle = imageTop ? undefined : { height: CART_UPSELL_IMAGE_HEIGHT_PX };
+  const image = imageUrl ? (
+    <img
+      alt=""
+      src={imageUrl}
+      className={`min-h-0 object-contain ${imageClass}`}
+      style={imageStyle}
+    />
+  ) : (
+    // Reserve the band rather than collapsing it: the card height is
+    // fixed, so an imageless item must keep its text where its neighbours
+    // keep theirs.
+    <span className={`block min-h-0 ${imageClass}`} style={imageStyle} />
+  );
+
   return (
     <button
       type="button"
@@ -130,36 +173,8 @@ function ForYouCardBase({
         height: CART_UPSELL_CARD_HEIGHT_PX,
       }}
     >
-      <span className="flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px]">
-        <span
-          className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
-          style={{
-            lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
-            maxHeight: CART_UPSELL_TITLE_HEIGHT_PX,
-          }}
-        >
-          {title}
-        </span>
-        <span className="block text-[18px] leading-[20px] text-tb-ink-purple">
-          {priceLine}
-        </span>
-      </span>
-      {imageUrl ? (
-        <img
-          alt=""
-          src={imageUrl}
-          className="min-h-0 w-full object-contain"
-          style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-        />
-      ) : (
-        // Reserve the band rather than collapsing it: the card height is
-        // fixed, so an imageless item must keep its text where its neighbours
-        // keep theirs.
-        <span
-          className="block min-h-0 w-full"
-          style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-        />
-      )}
+      {imageTop ? image : text}
+      {imageTop ? text : image}
       <span
         aria-hidden="true"
         className="absolute right-[12px] top-[12px] flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]"
@@ -170,7 +185,7 @@ function ForYouCardBase({
           on the first glyphs of the name (pl-24, pt-24). No Figma frame draws
           it (1:3171's rail has none) — design language, flagged. */}
       {quantity > 0 && (
-        <span className="absolute bottom-[12px] left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface">
+        <span className={`absolute ${imageTop ? "top-[12px]" : "bottom-[12px]"} left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface`}>
           {quantity}
         </span>
       )}

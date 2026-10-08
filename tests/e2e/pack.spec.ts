@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,10 @@ import { fileURLToPath } from "node:url";
  *   `enable_combo_upsell` kiosk setting is on.
  * All slot picks are price 0 and no priced addon is selected in these flows,
  * so the committed pack total is exactly the base price: £25.00.
+ * - figma-polish D5: a one-option slot (Sandwich, Sides, Nuggets) is an
+ *   INCLUDED item — pre-selected at open and FIXED (no radio, no SELECT
+ *   sheet; Sides' Large Fries carries CUSTOMIZE on the card). Drinks (6
+ *   options) is the one CHOICE slot, so every "left empty" case uses it.
  *
  * Lane bag-pdp: item 23 — a failed ADD TO BAG names every incomplete group
  * in the completion warning (`pdp-incomplete`, Figma 1:2855, lazy) — and
@@ -67,13 +71,16 @@ const G_SIDES = `${DREAM_BOX}_2_combo`;
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 const G_NUGGETS = `${DREAM_BOX}_5_combo`;
 const G_SNACKS = `${DREAM_BOX}_6_combo`;
-const SANDWICH_PICK = "65d4a2d2003967427ed83616"; // Double Max Burger + Nachos Burger
 const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 const FRIES_ADDON_GROUP = `${LARGE_FRIES}_1573980470_addons`;
 const WITHOUT_SALT = "5dff2ea756bc05b83f9e34cd";
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
-const NUGGETS_PICK = "66e952596dd4d13b6564a528"; // 4Pcs Nuggets + Bbq Sauce
+const SEVEN_UP_SMALL = "5dd27b6e9a6dc93557275a17";
 const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
+/** Snacks' two options: +£5 each (min 0 / max 2). */
+const CHILI_NUGGETS = "696df06f5a77225b771e978a";
+const SMOKY_DONUTS = "696df0a73173e810122fe276";
+const SMOKY_DONUTS_NAME = "3 pcs Mini Smoky Cheese Donuts.";
 
 /**
  * Boot + menu mocks. Order matters: Playwright matches routes newest-first,
@@ -194,13 +201,12 @@ const incompleteBody = (groups: string) =>
   (enLazy.pdp.incomplete.body as string).replace("{{groups}}", groups);
 
 /**
- * Item 24 setup: Sides → Customize Large Fries (tier-2 NEW) → Without Salt →
- * SAVE, then reopen the pick's Customize — now a tier-2 EDIT at qty 1.
+ * Item 24 setup: the pre-selected Large Fries (FIXED Sides slot, D5) → the
+ * card's CUSTOMIZE (tier-2 NEW) → Without Salt → UPDATE, then CUSTOMIZE
+ * again — now a tier-2 EDIT at qty 1.
  */
 async function openSidesFriesInTier2Edit(page: Page) {
-  await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-  await expect(page.getByTestId("slot-sheet")).toBeVisible();
-  await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+  await page.getByTestId(`pack-slot-customize-${G_SIDES}`).click();
   const tier2 = page.getByTestId("tier2-sheet");
   await expect(tier2).toBeVisible();
   await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
@@ -208,14 +214,28 @@ async function openSidesFriesInTier2Edit(page: Page) {
   await expect(tier2).not.toBeVisible();
   const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
   await expect(sidesCard).toContainText("Large Fries");
-  await expect(sidesCard).toContainText(en.pack.swap);
+  await expect(sidesCard).toContainText(en.pack.customize);
 
-  // The pick now carries customizations → its Customize opens an EDIT.
-  await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-  await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+  // The pick now carries customizations → its CUSTOMIZE opens an EDIT.
+  await page.getByTestId(`pack-slot-customize-${G_SIDES}`).click();
   await expect(tier2).toBeVisible();
   await expect(page.getByTestId("tier2-qty")).toHaveText("1");
 }
+
+/**
+ * An option card's radio (OptionCard): the one aria-hidden span directly under
+ * the card — the photo and text spans carry no aria-hidden. A FIXED slot has
+ * none; a CHOICE slot's is filled (bg-tb-purple) once picked.
+ */
+const radioOf = (card: Locator) => card.locator(':scope > span[aria-hidden="true"]');
+
+/** The tier-2 page paints over `target`'s centre (the PDP control is not tappable). */
+const underTier2Page = (target: Locator) =>
+  target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return Boolean(top?.closest('[data-testid="tier2-sheet"]'));
+  });
 
 /** The PDP's tier-1 selection keys + the removal flag (DEV-only window.__kioskStore). */
 function tier1Selections(page: Page) {
@@ -291,16 +311,24 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await expect(drinksCard).toContainText("Pepsi Small");
     await expect(drinksCard).toContainText("Swap");
 
-    // --- Sides slot: Large Fries is tier-2 capable → Customize link ---
-    await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-    await expect(sheet).toBeVisible();
-    await expect(sheet.getByTestId(`slot-option-${LARGE_FRIES}`)).toBeVisible();
-    await sheet.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+    // --- The one-option slots are included items (D5): pre-selected and
+    // FIXED — no SELECT sheet, no Swap. ---
+    for (const [group, pick] of [
+      [G_SANDWICH, "Double Max Burger + Nachos Burger"],
+      [G_SIDES, "Large Fries"],
+      [G_NUGGETS, "4Pcs Nuggets + Bbq Sauce"],
+    ]) {
+      await expect(page.getByTestId(`pack-slot-${group}`)).toContainText(pick);
+      await expect(page.getByTestId(`pack-slot-open-${group}`)).toHaveCount(0);
+      await expect(page.getByTestId(`pack-slot-${group}`)).not.toContainText(en.pack.swap);
+    }
 
-    // Tier-2 sheet: the Large Fries addon group with Without Salt.
+    // --- Sides: Large Fries is tier-2 capable → CUSTOMIZE on the card ---
+    await page.getByTestId(`pack-slot-customize-${G_SIDES}`).click();
+
+    // The tier-2 CUSTOMIZE page: the Large Fries addon group with Without Salt.
     const tier2 = page.getByTestId("tier2-sheet");
     await expect(tier2).toBeVisible();
-    await expect(page.getByTestId("slot-sheet")).not.toBeVisible();
     const friesGroup = tier2.getByTestId(`tier2-group-${FRIES_ADDON_GROUP}`);
     await expect(friesGroup).toBeVisible();
     await expect(friesGroup).toContainText("Choose From Without for Large Fries");
@@ -308,16 +336,11 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await page.getByTestId("tier2-sheet-save").click();
     await expect(tier2).not.toBeVisible();
 
-    // Back on the PDP the Sides slot carries the customized pick.
+    // Back on the PDP the Sides slot carries the customized pick, still FIXED.
     const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
     await expect(sidesCard).toContainText("Large Fries");
-    await expect(sidesCard).toContainText("Swap");
-
-    // --- Fill the two single-option slots ---
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
-    await expect(page.getByTestId(`pack-slot-${G_SANDWICH}`)).toContainText("Swap");
-    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
-    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toContainText("Swap");
+    await expect(sidesCard).toContainText(en.pack.customize);
+    await expect(page.getByTestId(`pack-slot-open-${G_SIDES}`)).toHaveCount(0);
 
     // --- Commit: pack 25 + all picks price 0 = £25.00 ---
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
@@ -337,19 +360,15 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await bootRegisteredToMenu(page);
     await openDreamBoxPack(page);
 
-    // Fill Sandwich, Sides (plain pick — no tier-2 detour) and Drinks;
-    // leave Nuggets (min 1) empty.
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
-    await pickSlot(page, G_SIDES, LARGE_FRIES);
-    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
-
+    // Sandwich, Sides and Nuggets are pre-selected (D5); leave Drinks — the
+    // one CHOICE slot (min 1) — empty.
     await page.getByTestId("pdp-add-to-bag").click();
 
     // No commit: still on the PDP, no added modal, and the empty slot's
     // card carries the min/max errored ring (first violating group).
     await expect(page.getByTestId("customization-screen")).toBeVisible();
     await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toHaveClass(
+    await expect(page.getByTestId(`pack-slot-${G_DRINKS}`)).toHaveClass(
       /ring-red-500/
     );
     // Filled slots stay clean.
@@ -364,7 +383,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     });
     await expect(warning).toBeVisible();
     await expect(page.getByTestId("pdp-incomplete")).toBeVisible();
-    await expect(warning).toHaveAccessibleDescription(incompleteBody("nuggets"));
+    await expect(warning).toHaveAccessibleDescription(incompleteBody("drinks"));
     await expect(page.getByTestId("pdp-incomplete-gotit")).toHaveText(en.offers.gotIt);
     await test.info().attach("pdp-incomplete", {
       body: await page.screenshot(),
@@ -373,7 +392,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await page.getByTestId("pdp-incomplete-gotit").click();
     await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
     await expect(page.getByTestId("customization-screen")).toBeVisible();
-    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toHaveClass(
+    await expect(page.getByTestId(`pack-slot-${G_DRINKS}`)).toHaveClass(
       /ring-red-500/
     );
 
@@ -391,17 +410,15 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
     await openDreamBoxPack(page);
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
-    await pickSlot(page, G_SIDES, LARGE_FRIES);
-    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    // D5: Sandwich, Sides and Nuggets are pre-selected; Drinks is left empty.
 
     await page.getByTestId("pdp-add-to-bag").click();
-    await expect(page.getByTestId("pdp-incomplete")).toContainText(incompleteBody("nuggets"));
+    await expect(page.getByTestId("pdp-incomplete")).toContainText(incompleteBody("drinks"));
     await page.getByTestId("pdp-incomplete-gotit").click();
     await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
 
-    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
-    await expect(page.getByTestId(`pack-slot-${G_NUGGETS}`)).toContainText(en.pack.swap);
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    await expect(page.getByTestId(`pack-slot-${G_DRINKS}`)).toContainText(en.pack.swap);
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
@@ -420,10 +437,11 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await bootRegisteredToMenu(page);
     await openDreamBoxPack(page);
 
-    // Capture-only: the restyled SELECT sheet (Figma 1:2814).
-    await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
+    // Capture-only: the restyled SELECT sheet (Figma 1:2814) — Drinks, the
+    // one CHOICE slot (the one-option slots are pre-selected, D5).
+    await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
     await expect(page.getByTestId("slot-sheet")).toBeVisible();
-    await expect(page.getByTestId(`slot-customize-${LARGE_FRIES}`)).toBeVisible();
+    await expect(page.getByTestId(`slot-option-${PEPSI_SMALL}`)).toBeVisible();
     await test.info().attach("slot-selection-sheet", {
       body: await page.screenshot(),
       contentType: "image/png",
@@ -451,10 +469,9 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     expect(after.keys).not.toContain("undefined");
     expect(after.removalFlag).toBe(false);
 
-    // Every other slot filled: the warning names exactly the removed one.
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    // Every other slot filled (Sandwich / Nuggets pre-selected, D5): the
+    // warning names exactly the removed one.
     await pickSlot(page, G_DRINKS, PEPSI_SMALL);
-    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
     await page.getByTestId("pdp-add-to-bag").click();
     const warning = page.getByRole("alertdialog", { name: enLazy.pdp.incomplete.titleBox });
     await expect(warning).toBeVisible();
@@ -486,12 +503,11 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await expect(page.getByTestId("tier2-sheet")).not.toBeVisible();
     const sidesCard = page.getByTestId(`pack-slot-${G_SIDES}`);
     await expect(sidesCard).toContainText("Large Fries");
-    await expect(sidesCard).toContainText(en.pack.swap);
+    await expect(sidesCard).toContainText(en.pack.customize);
     expect((await tier1Selections(page)).groups).toContain(G_SIDES);
 
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
+    // Sandwich / Nuggets are pre-selected (D5): only Drinks needs a pick.
     await pickSlot(page, G_DRINKS, PEPSI_SMALL);
-    await pickSlot(page, G_NUGGETS, NUGGETS_PICK);
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
@@ -537,11 +553,19 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
   }) => {
     test.slow();
     await mockKioskBackend(page, { arabic: true });
+    // D5 pre-selects one-option slots: give Nuggets a second option (Snacks'
+    // first constituent) so it stays an empty CHOICE slot beside Drinks.
+    const menu = structuredClone(slimMenu);
+    const groups = menu.modifiers as { _id: string; constituentItems: unknown[] }[];
+    const snacks = groups.find((group) => group._id === G_SNACKS);
+    groups.find((group) => group._id === G_NUGGETS)?.constituentItems.push(
+      structuredClone(snacks?.constituentItems[0])
+    );
+    await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
     await bootRegisteredToMenu(page, { arabic: true });
     await openDreamBoxPack(page);
-    // Leave Drinks and Nuggets empty (scan order: drinks, then nuggets).
-    await pickSlot(page, G_SANDWICH, SANDWICH_PICK);
-    await pickSlot(page, G_SIDES, LARGE_FRIES);
+    // Leave Drinks and Nuggets empty (scan order: drinks, then nuggets);
+    // Sandwich and Sides are pre-selected.
     await page.getByTestId("pdp-add-to-bag").click();
 
     const warning = page.getByTestId("pdp-incomplete");
@@ -579,6 +603,280 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     // GOT IT in Arabic closes it like in English.
     await page.getByTestId("pdp-incomplete-gotit").click();
     await expect(warning).toHaveCount(0);
+  });
+});
+
+test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE page, BYO cards, stepper rows", () => {
+  test("FIXED SLOT CUSTOMIZE: Large Fries is pre-selected and radio-less; CUSTOMIZE opens the full-screen tier-2 page; UPDATE keeps the slot radio-less, the total unchanged, and the pick's Without Salt on the next CUSTOMIZE", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    const sides = page.getByTestId(`pack-slot-${G_SIDES}`);
+    const drinks = page.getByTestId(`pack-slot-${G_DRINKS}`);
+    await expect(sides).toContainText("Large Fries");
+    // FIXED: no radio and no tap target — the CHOICE slot beside it has both.
+    await expect(radioOf(sides)).toHaveCount(0);
+    await expect(page.getByTestId(`pack-slot-open-${G_SIDES}`)).toHaveCount(0);
+    await expect(radioOf(drinks)).toHaveCount(1);
+    await expect(page.getByTestId(`pack-slot-open-${G_DRINKS}`)).toHaveCount(1);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
+    // CUSTOMIZE only where the pick can take it: the Sandwich and Nuggets
+    // picks have no groups, so their FIXED cards carry no CTA at all.
+    for (const group of [G_SANDWICH, G_NUGGETS]) {
+      await expect(radioOf(page.getByTestId(`pack-slot-${group}`))).toHaveCount(0);
+      await expect(page.getByTestId(`pack-slot-customize-${group}`)).toHaveCount(0);
+    }
+
+    const customize = page.getByTestId(`pack-slot-customize-${G_SIDES}`);
+    await expect(customize).toHaveText(en.pack.customize);
+    await customize.click();
+
+    // D4: a full-screen page over the whole PDP root, not a sheet.
+    const tier2 = page.getByTestId("tier2-sheet");
+    await expect(tier2).toBeVisible();
+    await expect(tier2.getByTestId(`tier2-group-${FRIES_ADDON_GROUP}`)).toBeVisible();
+    const pageBox = await tier2.boundingBox();
+    const pdpBox = await page.getByTestId("customization-screen").boundingBox();
+    expect(pageBox && { w: pageBox.width, h: pageBox.height, x: pageBox.x, y: pageBox.y }).toEqual({
+      w: 1080,
+      h: 1920,
+      x: 0,
+      y: 0,
+    });
+    expect(pdpBox && { w: pdpBox.width, h: pdpBox.height }).toEqual({ w: 1080, h: 1920 });
+    expect(await underTier2Page(page.getByTestId("pdp-add-to-bag")), "the PDP CTA is covered").toBe(
+      true
+    );
+    await expect(tier2).toContainText(en.pack.customize);
+    await expect(tier2.locator("h2")).toHaveText("Large Fries");
+    await expect(page.getByTestId("tier2-sheet-close")).toContainText(en.pdp.back);
+    await expect(page.getByTestId("tier2-sheet-save")).toContainText(en.bag.update);
+
+    await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
+    await expect(tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await page.getByTestId("tier2-sheet-save").click();
+    await expect(tier2).toHaveCount(0);
+
+    // Still an included item: radio-less, not tappable, CUSTOMIZE, £25.00.
+    await expect(sides).toContainText("Large Fries");
+    await expect(radioOf(sides)).toHaveCount(0);
+    await expect(page.getByTestId(`pack-slot-open-${G_SIDES}`)).toHaveCount(0);
+    await expect(customize).toHaveText(en.pack.customize);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
+    // The UPDATE landed: CUSTOMIZE again is an EDIT of the saved pick.
+    await customize.click();
+    await expect(page.getByTestId("tier2-qty")).toHaveText("1");
+    await expect(tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  });
+
+  test("TIER-2 BACK follows the discard rule: a NEW session with a pick asks first (KEEP keeps the pick, DISCARD drops it), an untouched NEW session and an EDIT close at once, and the EDIT keeps what was saved", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+    const customize = page.getByTestId(`pack-slot-customize-${G_SIDES}`);
+    const tier2 = page.getByTestId("tier2-sheet");
+    const withoutSalt = tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`);
+    const back = page.getByTestId("tier2-sheet-close");
+    const prompt = page.getByRole("alertdialog", { name: en.pdp.discardTitle });
+
+    // NEW + a pick: BACK asks before losing it.
+    await customize.click();
+    await withoutSalt.click();
+    await back.click();
+    await expect(page.getByTestId("tier2-discard-overlay")).toBeVisible();
+    await expect(prompt).toHaveAccessibleDescription(en.pdp.discardBody);
+    await expect(page.getByTestId("tier2-discard-cancel")).toHaveText(en.pdp.discardKeep);
+    await page.getByTestId("tier2-discard-cancel").click();
+    await expect(page.getByTestId("tier2-discard-overlay")).toHaveCount(0);
+    await expect(tier2).toBeVisible();
+    await expect(withoutSalt).toHaveAttribute("aria-pressed", "true");
+
+    await back.click();
+    await expect(page.getByTestId("tier2-discard-confirm")).toHaveText(en.pdp.discardConfirm);
+    await page.getByTestId("tier2-discard-confirm").click();
+    await expect(page.getByTestId("tier2-discard-overlay")).toHaveCount(0);
+    await expect(tier2).toHaveCount(0);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
+
+    // Discarded: the next CUSTOMIZE is a fresh NEW session — and an
+    // untouched NEW session closes at once.
+    await customize.click();
+    await expect(withoutSalt).toHaveAttribute("aria-pressed", "false");
+    await back.click();
+    await expect(tier2).toHaveCount(0);
+    await expect(page.getByTestId("tier2-discard-overlay")).toHaveCount(0);
+
+    // Saved, then EDITed: BACK on an EDIT never asks and keeps the saved pick.
+    await customize.click();
+    await withoutSalt.click();
+    await page.getByTestId("tier2-sheet-save").click();
+    await expect(tier2).toHaveCount(0);
+    await customize.click();
+    await expect(page.getByTestId("tier2-qty")).toHaveText("1");
+    await expect(withoutSalt).toHaveAttribute("aria-pressed", "true");
+    await back.click();
+    await expect(tier2).toHaveCount(0);
+    await expect(page.getByTestId("tier2-discard-overlay")).toHaveCount(0);
+    await customize.click();
+    await expect(withoutSalt).toHaveAttribute("aria-pressed", "true");
+    expect((await tier1Selections(page)).groups).toContain(G_SIDES);
+  });
+
+  test("BYO CHOOSE / REMOVE (D9 amended) and the slot SWAP: on a multi-pick `_combo` card CHOOSE picks and the label turns REMOVE (never SWAP), REMOVE takes the pick back; a CHOICE slot's SWAP replaces its pick; the pack lands at £30.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    // Snacks as BYO CARDS: one punch per item (the fixture's 2 makes them
+    // stepper rows), still min 0 / max 2.
+    const menu = structuredClone(slimMenu);
+    const snacksGroup = (menu.modifiers as { _id: string; multiplePunchMaxItem?: number }[]).find(
+      (group) => group._id === G_SNACKS
+    );
+    if (!snacksGroup) throw new Error("fixture: no Snacks group");
+    snacksGroup.multiplePunchMaxItem = 1;
+    await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    const snacks = page.getByTestId(`pdp-group-${G_SNACKS}`);
+    const chili = page.getByTestId(`pdp-option-${CHILI_NUGGETS}`);
+    const chiliCta = page.getByTestId(`pdp-option-cta-${CHILI_NUGGETS}`);
+    const count = (picked: number) =>
+      en.pdp.groupCount.replace("{{count}}", String(picked)).replace("{{max}}", "2");
+    await expect(snacks).toContainText(count(0));
+    await expect(chiliCta).toHaveText(en.pack.choose);
+    await expect(radioOf(chili)).not.toHaveClass(/bg-tb-purple/);
+
+    await chiliCta.click();
+    await expect(snacks).toContainText(count(1));
+    await expect(chiliCta).toHaveText(en.pack.remove);
+    await expect(chiliCta).not.toHaveText(en.pack.swap);
+    await expect(radioOf(chili)).toHaveClass(/bg-tb-purple/);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
+
+    // The card body picks too (the overlay named by the item).
+    await snacks.getByRole("button", { name: SMOKY_DONUTS_NAME, exact: true }).click();
+    await expect(snacks).toContainText(count(2));
+    await expect(page.getByTestId(`pdp-option-cta-${SMOKY_DONUTS}`)).toHaveText(en.pack.remove);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£35.00");
+
+    // REMOVE does what it says.
+    await chiliCta.click();
+    await expect(snacks).toContainText(count(1));
+    await expect(chiliCta).toHaveText(en.pack.choose);
+    await expect(radioOf(chili)).not.toHaveClass(/bg-tb-purple/);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
+
+    // A CHOICE slot's SWAP replaces its pick (never adds a second).
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    const drinksCta = page.getByTestId(`pack-slot-cta-${G_DRINKS}`);
+    await expect(drinksCta).toHaveText(en.pack.swap);
+    await drinksCta.click();
+    await expect(page.getByTestId("slot-sheet")).toBeVisible();
+    await page.getByTestId(`slot-option-${SEVEN_UP_SMALL}`).click();
+    await page.getByTestId("slot-sheet-save").click();
+    await expect(page.getByTestId("slot-sheet")).toHaveCount(0);
+    const drinks = page.getByTestId(`pack-slot-${G_DRINKS}`);
+    await expect(drinks).toContainText("7 Up Small");
+    await expect(drinks).not.toContainText("Pepsi Small");
+    await expect(drinksCta).toHaveText(en.pack.swap);
+
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-total")).toContainText("£30.00");
+  });
+
+  test("STEPPER ROW (D6): the trash glyph replaces '−' only at quantity 1 — '−' at 2 — and both are the same −1 control with the same name", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    // Snacks: multiplePunchMaxItem 2 → Cards/Item/Old stepper rows.
+    const snacks = page.getByTestId(`pdp-group-${G_SNACKS}`);
+    const row = page.getByTestId(`pdp-option-${CHILI_NUGGETS}`);
+    const decrease = row.getByRole("button", { name: /^Decrease quantity/ });
+    const increase = row.getByRole("button", { name: /^Increase quantity/ });
+    const glyph = decrease.locator("img");
+    const count = (picked: number) =>
+      en.pdp.groupCount.replace("{{count}}", String(picked)).replace("{{max}}", "2");
+
+    await increase.click();
+    await expect(snacks).toContainText(count(1));
+    await expect(glyph).toHaveAttribute("src", /trash\.svg/);
+    const nameAtOne = await decrease.getAttribute("aria-label");
+
+    await increase.click();
+    await expect(snacks).toContainText(count(2));
+    await expect(glyph).toHaveAttribute("src", /qty-minus\.svg/);
+    expect(await decrease.getAttribute("aria-label")).toBe(nameAtOne);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£35.00");
+
+    // '−' at 2 takes ONE off; the trash at 1 takes the last one.
+    await decrease.click();
+    await expect(snacks).toContainText(count(1));
+    await expect(glyph).toHaveAttribute("src", /trash\.svg/);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
+    await decrease.click();
+    await expect(snacks).toContainText(count(0));
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£25.00");
+    await expect(glyph).toHaveAttribute("src", /qty-minus\.svg/);
+  });
+
+  test("FULL GROUP (G1): a BYO group capped at one pick refuses a second CHOOSE out loud — the TRANSLATED global error over the PDP (it was an English literal) — and the first pick and the total stay", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    // Snacks as BYO cards capped at ONE pick (min 0 / max 1, one punch each).
+    const menu = structuredClone(slimMenu);
+    const snacksGroup = (
+      menu.modifiers as { _id: string; max?: number; multiplePunchMaxItem?: number }[]
+    ).find((group) => group._id === G_SNACKS);
+    if (!snacksGroup) throw new Error("fixture: no Snacks group");
+    snacksGroup.max = 1;
+    snacksGroup.multiplePunchMaxItem = 1;
+    await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    const chiliCta = page.getByTestId(`pdp-option-cta-${CHILI_NUGGETS}`);
+    const donutsCta = page.getByTestId(`pdp-option-cta-${SMOKY_DONUTS}`);
+    await chiliCta.click();
+    await expect(chiliCta).toHaveText(en.pack.remove);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
+
+    await donutsCta.click();
+    await expect(
+      page.getByRole("alertdialog", { name: en.toast.alreadyReachedMaximumLimit })
+    ).toBeVisible();
+    await expect(page.getByTestId("global-error")).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toHaveCount(1);
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(chiliCta).toHaveText(en.pack.remove);
+    await expect(donutsCta).toHaveText(en.pack.choose);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
   });
 });
 

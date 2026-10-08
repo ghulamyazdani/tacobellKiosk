@@ -155,9 +155,8 @@ export default function Tent() {
   );
 
   /**
-   * Inline banner rather than `setShowErrorModalGlobal`: the global error
-   * modal is rendered by the menu screens only, so dispatching it here would
-   * be a silent no-op and the refusal would be invisible (Rule 2).
+   * Inline banner by design, not `setShowErrorModalGlobal` (GlobalErrorHost):
+   * the range hint sits next to the field it is about.
    */
   const showRangeError = useCallback(() => {
     setRangeError(

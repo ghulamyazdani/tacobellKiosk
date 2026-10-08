@@ -12,10 +12,17 @@ import {
   setCurrency,
   setDeploymentInfo,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  makeItAMealIsSessionOpen,
+  makeItAMealTier1BottomSheet,
+  tier1CustomizationSelectedEntity,
+} from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { store } from "../../../redux/app/store";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
 import Menu from "../index";
 import "../../../i18n";
+
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn() }));
 
 // Same seams as Menu.test: the mount's fetchMenu stays pending, navigation is
 // a spy.
@@ -36,8 +43,25 @@ vi.mock(
 );
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mocks.navigate,
 }));
+// S1: the REAL executor, its calls recorded.
+vi.mock("../../../hooks/menuHooks/useAddEntityToCart", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../hooks/menuHooks/useAddEntityToCart")>();
+  return {
+    ...actual,
+    default: () => {
+      const hook = actual.default();
+      return {
+        ...hook,
+        addEntity: (...args: Parameters<typeof hook.addEntity>) => {
+          mocks.addEntity(...args);
+          return hook.addEntity(...args);
+        },
+      };
+    },
+  };
+});
 
 /** Exclusive VAT 15 % (the e2e fixture menu's tax shape). */
 const VAT_15 = [
@@ -66,12 +90,27 @@ const TACO = {
   ],
 };
 
+/** S1: a sized item whose LARGE size carries modifier groups → the PDP. */
+const BOX = {
+  id: "e-box",
+  name: "Cravings Box",
+  price: 0,
+  hasVariant: true,
+  isVariant: false,
+  outOfStock: false,
+  taxes: VAT_15,
+  variants: [
+    { id: "b-regular", name: "Regular", price: 7, taxes: VAT_15 },
+    { id: "b-large", name: "Large", price: 9, taxes: VAT_15, modifiers: ["box_addons"] },
+  ],
+};
+
 const MENU = {
   categories: [
     {
       id: "c1",
       name: "Tacos",
-      subCategories: [{ id: "s1", name: "Tacos", entities: [TACO] }],
+      subCategories: [{ id: "s1", name: "Tacos", entities: [TACO, BOX] }],
     },
   ],
 };
@@ -91,6 +130,8 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     store.dispatch(
       setDeploymentInfo([{ name: "disable_roundoff", selected: true }]),
     );
+    mocks.navigate.mockReset();
+    mocks.addEntity.mockReset();
   });
 
   it("the committed row carries the size's variantPrice, so the bill is the size price plus its tax (was NaN)", () => {
@@ -106,6 +147,12 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     expect(row.type).toBe("VARIANT");
     expect(row.selectedVariant.id).toBe("v-large");
     expect(row.variantPrice).toBe(6);
+    // S1: a size WITHOUT groups is the VARIANT add exactly as before —
+    // no addEntity, no tier-1 session, no navigation.
+    expect(row).toMatchObject({ id: "e-taco", total_price: 6, quantity: 1 });
+    expect(mocks.addEntity).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(makeItAMealIsSessionOpen(store.getState())).toBeFalsy();
 
     const { result } = renderHook(() => useOrderHook(), { wrapper });
     const bill = result.current.getCalculatedBill(cart);
@@ -114,5 +161,38 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     expect(Number.isFinite(net)).toBe(true);
     expect(subtotal).toBeCloseTo(6, 2);
     expect(net).toBeCloseTo(6.9, 2); // 6 + 15 % exclusive VAT
+  });
+
+  /*
+    S1: a size WITH modifier groups goes to the PDP through addEntity — the
+    card tap's own tier-1 VARIANT session (the old bare navigate had none, so
+    the PDP's no-session guard bounced straight back) — with the chosen size
+    carried as preselectedVariantId.
+  */
+  it("CONTINUE on a size with modifiers calls addEntity(parent, {preselectedVariantId}) — no bare navigate, nothing in the cart", () => {
+    render(<Menu />, { wrapper });
+
+    fireEvent.click(screen.getByTestId("quick-add-e-box"));
+    fireEvent.click(screen.getByTestId("size-b-large"));
+    fireEvent.click(screen.getByTestId("size-continue"));
+
+    expect(mocks.addEntity).toHaveBeenCalledTimes(1);
+    expect(mocks.addEntity).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "e-box", hasVariant: true }),
+      { preselectedVariantId: "b-large" }
+    );
+    // The ONE navigation is addEntity's own (path + its state slot), never a
+    // bare navigate("/customization") without a session.
+    expect(mocks.navigate.mock.calls).toStrictEqual([["/customization", undefined]]);
+    expect(makeItAMealIsSessionOpen(store.getState())).toBe(true);
+    expect(makeItAMealTier1BottomSheet(store.getState())).toEqual({
+      isOpen: true,
+      type: "variant",
+      openType: "new",
+      preselectedVariantId: "b-large",
+    });
+    expect(tier1CustomizationSelectedEntity(store.getState())).toMatchObject({ id: "e-box" });
+    expect((store.getState() as any).cart.cartItems).toEqual([]);
+    expect(screen.queryByTestId("select-size-modal")).not.toBeInTheDocument();
   });
 });

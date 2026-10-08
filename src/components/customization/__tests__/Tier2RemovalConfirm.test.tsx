@@ -328,6 +328,8 @@ describe("item 24 on the PDP: the emptied slot is priced and caught by the compl
         currentCustomizations: { selectedCustomizations: { [SINGLE._id]: [COLA_1] }, group: SINGLE },
       });
     });
+    // The tier-2 page is lazy (bagLazyParts, warmed at PDP mount).
+    await screen.findByTestId("tier2-sheet");
     tap("tier2-qty-decrease");
     tap("tier2-remove-confirm");
 

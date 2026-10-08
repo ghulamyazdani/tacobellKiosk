@@ -187,6 +187,30 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
       expect(screen.queryByTestId("bag-edit-cb-1")).not.toBeInTheDocument();
     });
 
+    // Lane figma-polish S4 #10 (verified 1:3193): the Edit link is the
+    // CTA/Show more style — Exp Bd 16/24, −0.08, purple, underlined — and
+    // keeps its 44 px target.
+    it("the Edit link is CTA/Show more (Exp Bd 16/24, −0.08, purple, underline) and stays ≥ 44 × 44", () => {
+      renderRow(BURGER_ROW);
+      const edit = screen.getByTestId("bag-edit-cb-1");
+
+      expect(edit).toHaveTextContent("Edit");
+      expect(edit).toHaveClass(
+        "tb-display",
+        "font-bold",
+        "normal-case",
+        "text-[16px]",
+        "leading-[24px]",
+        "tracking-[-0.08px]",
+        "text-tb-purple",
+        "underline",
+        "min-h-[44px]",
+        "min-w-[44px]",
+        "inline-flex",
+        "items-center"
+      );
+    });
+
     it("Edit tap hands the row to onEdit (the sheet owns the B1 recipe)", async () => {
       const onEdit = vi.fn();
       renderRow(BURGER_ROW, { onEdit });

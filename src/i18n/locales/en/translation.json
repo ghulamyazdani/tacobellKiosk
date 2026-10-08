@@ -20,7 +20,8 @@
     "dineIn": "Dine In",
     "takeOut": "Take Out",
     "closed": "Closed",
-    "preparingMenu": "Building your menu…"
+    "preparingMenu": "Building your menu…",
+    "noPipelines": "Ordering isn't available at this kiosk right now. Please order at the counter."
   },
   "notFound": {
     "title": "Page not found",
@@ -141,7 +142,8 @@
     "discardTitle": "Are you sure?",
     "discardBody": "Your customizations will be lost",
     "discardKeep": "Keep editing",
-    "discardConfirm": "Discard"
+    "discardConfirm": "Discard",
+    "groupCount": "{{count}} of {{max}}"
   },
   "pack": {
     "selectGroup": "Select {{name}}",
@@ -150,7 +152,9 @@
     "upgrades": "Upgrades",
     "customize": "Customize",
     "save": "Save",
-    "cal": "{{value}} Cal"
+    "cal": "{{value}} Cal",
+    "choose": "Choose",
+    "remove": "Remove"
   },
   "miam": {
     "title": "Would you like to make it a meal?",
@@ -403,7 +407,8 @@
     "alreadyReachedMaximumLimit": "You've already reached the maximum for this option",
     "selectVariantFirst": "Please choose a size first",
     "selectAllCustomizations": "Please complete every required choice",
-    "fillCustomizationFields": "Please finish customising this item"
+    "fillCustomizationFields": "Please finish customising this item",
+    "dpMaxQuantity": "You can add up to {{max}} items during the {{session}} session"
   },
   "idle": {
     "title": "you have been inactive",

@@ -4,7 +4,7 @@
  * later loyalty domain pass. Do not add NEW anys.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -835,6 +835,98 @@ describe("LoyaltyRewardsSheet (Xeno redemption surface — contract step 6)", ()
       expect(
         screen.getByTestId("loyalty-redeem").closest(".overflow-y-auto")
       ).toBeNull();
+    });
+  });
+
+  /*
+    Lane figma-polish G3 — the guest's first touch stops the countdown AND
+    takes its bar down. cancelTimer only clears the interval (it is also the
+    effect cleanup), so the bar used to stay painted at its frozen width; the
+    `touched` flag is set by the interaction handler alone, so StrictMode's
+    mount → cleanup → mount still shows the bar on open.
+  */
+  describe("the drain bar shows only while the sheet is untouched (G3)", () => {
+    const sheet = () => screen.queryByTestId("loyalty-rewards-sheet");
+    const drainBar = () => sheet()?.querySelector(".bg-tb-pink") ?? null;
+    const advance = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      seedIdentifiedCustomer();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("a timed sheet shows the decorative 6 px bar across the top, full width on open", () => {
+      openSheet(true);
+      renderSheet();
+
+      const bar = drainBar();
+      expect(bar).toHaveClass("absolute", "left-0", "top-0", "h-[6px]", "bg-tb-pink");
+      expect(bar).toHaveAttribute("aria-hidden", "true");
+      expect(bar).toHaveStyle({ width: "100%" });
+    });
+
+    it.each([
+      ["a pointerdown", (dialog: HTMLElement) => fireEvent.pointerDown(dialog)],
+      ["a scroll", (dialog: HTMLElement) => fireEvent.scroll(dialog)],
+    ])("after %s the bar is gone at once, and the sheet never auto-closes at 0", (_touch, touch) => {
+      openSheet(true);
+      renderSheet();
+      advance(3_000);
+      expect(drainBar()).toHaveStyle({ width: "88%" });
+
+      act(() => {
+        touch(screen.getByRole("dialog"));
+      });
+      expect(drainBar()).toBeNull();
+
+      advance(60_000); // well past the 25 s countdown's zero
+      expect(drainBar()).toBeNull();
+      expect(sheet()).toBeInTheDocument();
+      expect(loyaltyState().loyaltyItemsModal.isOpen).toBe(true);
+    });
+
+    it("StrictMode (reactStrictMode: true): mount → cleanup → mount still shows the bar on open, and it drains", () => {
+      openSheet(true);
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/menu"]}>
+            <LoyaltyRewardsSheet />
+          </MemoryRouter>
+        </Provider>,
+        { reactStrictMode: true }
+      );
+
+      expect(drainBar()).toHaveStyle({ width: "100%" });
+      advance(1_000);
+      expect(drainBar()).toHaveStyle({ width: "96%" });
+    });
+
+    it("an untimed sheet (the menu / bag entry) never shows it", () => {
+      openSheet(false);
+      renderSheet();
+
+      expect(drainBar()).toBeNull();
+      advance(30_000);
+      expect(drainBar()).toBeNull();
+      expect(sheet()).toBeInTheDocument();
+    });
+
+    it("an ADA sheet never shows it, even on the timed open", () => {
+      store.dispatch(toggleAccessibilityMode());
+      openSheet(true);
+      renderSheet();
+
+      expect(drainBar()).toBeNull();
+      advance(30_000);
+      expect(drainBar()).toBeNull();
+      expect(sheet()).toBeInTheDocument();
     });
   });
 });

@@ -203,7 +203,7 @@ describe("PDP names in the guest's language (post-P9 28)", () => {
     expect(description.textContent).toBe(AR_DESCRIPTION);
     expect(description.textContent).not.toMatch(ISOLATES);
     expect(description).toHaveAttribute("dir", "auto");
-    expect(description).toHaveClass("w-fit", "text-start", "max-w-[860px]");
+    expect(description).toHaveClass("w-fit", "text-start", "max-w-[682px]");
     expect(description.childElementCount).toBe(0);
   });
 

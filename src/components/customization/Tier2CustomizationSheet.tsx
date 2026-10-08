@@ -53,18 +53,31 @@ import useCustomization from "../../hooks/customization/useCustomization";
 import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServices";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
-import closeIcon from "../../assets/icons/close.svg";
+import useAdaActive from "../../hooks/utils/useAdaActive";
+import ScrollIndicator from "../chrome/ScrollIndicator";
+import { ErrorBoundary } from "../../ErrorBoundary";
+import OptionCard, {
+  Counter,
+  CtaBar,
+  formatOptionMeta,
+  GroupHeader,
+  OptionRow,
+} from "./OptionCard";
 
 // Unique id for a repeat-capable tier-1 row (fork's generateUniqueId).
 // Module-level: only ever called from user-event commits, never in render.
 const generateUniqueId = (id: any) => `${Date.now()}_${id}`;
 
 /**
- * Tier-2 (nested) customization sheet — the "Customize" surface reached from
- * a pack slot's SELECT sheet (new) or from an already-customized slot pick
- * (edit). Full-height white sheet over a purple-tinted backdrop, in the pack
- * design language (Figma 1:4761/1:4692 family; the nested frames 1:4895 were
- * not pullable — same language, flagged for sign-off).
+ * Tier-2 (nested) customization — the full-screen CUSTOMIZE page (item 42,
+ * D4: Figma 1:2984 / 1:5051 family) reached from a pack slot's SELECT sheet
+ * or CUSTOMIZE (new), or from an already-customized slot pick (edit): the
+ * Hero/Customize band, the PDP's group sections, BACK + UPDATE. Lazy: it
+ * rides in bagLazyParts (+ the SDK tier2Logic only it imports) and the PDP
+ * mounts it only while MIAMTier2Open — each open is a fresh mount.
+ * BLOCKED, never faked: NONE / REGULAR / EXTRA levels, REMOVED / ADD,
+ * RECOMMENDED, UNAVAILABLE and an upgrade card's CUSTOMIZE (no data; no
+ * tier-3).
  *
  * Binds the ported useCustomization EXACTLY like the fork's
  * CustomizationTier2: args {cartRef, isOpenBottomSheet (tier-2 bottomSheet),
@@ -103,6 +116,8 @@ export default function Tier2CustomizationSheet() {
   const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
   const currencySettings = useSelector(selectCurrency) as any;
   const currency = currencySettings?.symbol ?? "";
+  const pageScrollRef = useRef<HTMLDivElement>(null);
+  const ada = useAdaActive();
 
   const isEditOpen = isOpenBottomSheet?.openType === "edit";
   // Item 24: "−" at qty 1 of an EDIT (hide-plus on) asks before removing the
@@ -463,23 +478,13 @@ export default function Tier2CustomizationSheet() {
     SelectedEntity?.applyAddonsPrice,
   );
   const total = (Number(addonsValue || 0) + basePrice) * quantity;
+  const heroImage = resolveEntityImage(SelectedEntity);
 
   const entityCal = (() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
     return value ? ` | ${t("pack.cal", { value })}` : "";
   })();
-
-  const itemMeta = (item: any) => {
-    const cal = item?.calorieCount;
-    const calValue = typeof cal === "object" ? cal?.value : cal;
-    const parts: string[] = [];
-    if (Number(item?.price) > 0) {
-      parts.push(`+${currency}${Number(item.price).toFixed(2)}`);
-    }
-    if (calValue) parts.push(t("pack.cal", { value: calValue }));
-    return parts.join(" | ");
-  };
 
   const selectionFor = (group: any): any[] =>
     (selectedCustomizations ?? {})[group?._id] ?? [];
@@ -488,9 +493,10 @@ export default function Tier2CustomizationSheet() {
   const quantityOf = (group: any, item: any) =>
     selectionFor(group).find((s: any) => s?.id === item?.id)?.quantity ?? 0;
 
-  // Same visual idiom as the tier-1 PDP renderGroup: 3-col single-select
-  // cards, stepper rows for multiPunch groups. Section id={group._id} — the
-  // hook's error AutoScroll targets it inside #scrollCustomizableItem2.
+  // The PDP's building blocks with this session's handlers: radio cards
+  // (no CTAs, no badges) for one-per-tap groups, stepper rows for
+  // multi-punch ones. Section id={group._id} — the hook's error AutoScroll
+  // targets it inside #scrollCustomizableItem2.
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
     const items: any[] = (group?.constituentItems ?? []).filter(
@@ -500,130 +506,70 @@ export default function Tier2CustomizationSheet() {
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
     const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1;
     const errored = (erroredSection as any)?.id === group?._id;
-    const min = Number(group?.min ?? 0);
 
     return (
       <section
         key={group._id}
         id={group._id}
         data-testid={`tier2-group-${group._id}`}
-        className={`mb-[40px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
       >
-        <div className="mb-[16px] flex items-baseline gap-4">
-          <h3 className="text-[24px] font-bold text-black">{name(group)}</h3>
-          {min > 0 && (
-            <span
-              className={`text-[16px] ${errored ? "text-red-600 font-bold" : "text-tb-ink-purple/60"}`}
-            >
-              {t("pdp.required")}
-            </span>
+        <GroupHeader
+          name={name(group)}
+          count={selectionFor(group).reduce(
+            (sum: number, s: { quantity?: unknown } | null) =>
+              sum + Number(s?.quantity ?? 0),
+            0,
           )}
-        </div>
+          max={Number(getEffectiveMax(group, isAllowMultiplePunch()))}
+          required={Number(group?.min ?? 0) > 0}
+          errored={errored}
+        />
         {stepper ? (
-          <div className="flex flex-col divide-y divide-tb-grey-4 rounded-[8px] bg-tb-grey-6">
+          <div className="flex flex-col gap-[24px]">
             {items.map((item: any) => {
               const qty = quantityOf(group, item);
-              const meta = itemMeta(item);
-              const imageUrl = resolveEntityImage(item);
               return (
-                <div
+                <OptionRow
                   key={item.id}
-                  data-testid={`tier2-option-${item.id}`}
-                  className="flex items-center gap-[16px] p-[16px]"
-                >
-                  {imageUrl && (
-                    <img
-                      alt=""
-                      src={imageUrl}
-                      className="h-[72px] w-[72px] object-contain"
-                    />
-                  )}
-                  <div className="flex-1">
-                    <p className="text-[20px] font-medium capitalize text-black">
-                      {name(item)}
-                    </p>
-                    {meta && (
-                      <p className="text-[16px] text-tb-ink-purple/70">{meta}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-[12px]">
-                    <button
-                      type="button"
-                      aria-label={`${t("pdp.decrease")} ${name(item)}`}
-                      onClick={() => decreaseCustomization(group, item)}
-                      className="h-[44px] w-[44px] rounded-full border-2 border-tb-purple text-[24px] font-bold text-tb-purple"
-                    >
-                      –
-                    </button>
-                    <span className="w-[36px] text-center text-[22px] font-bold">
-                      {qty}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`${t("pdp.increase")} ${name(item)}`}
-                      onClick={() =>
-                        qty === 0
-                          ? addCustomizations(
-                              group,
-                              { ...item, quantity: 1 },
-                              null,
-                              nextGroup,
-                              false,
-                            )
-                          : increaseCustomization(group, item, null, nextGroup)
-                      }
-                      className="h-[44px] w-[44px] rounded-full bg-tb-purple text-[24px] font-bold text-tb-surface"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                  testId={`tier2-option-${item.id}`}
+                  image={resolveEntityImage(item)}
+                  name={name(item)}
+                  meta={formatOptionMeta(item, currency, t)}
+                  qty={qty}
+                  onDecrease={() => decreaseCustomization(group, item)}
+                  onIncrease={() =>
+                    qty === 0
+                      ? addCustomizations(
+                          group,
+                          { ...item, quantity: 1 },
+                          null,
+                          nextGroup,
+                          false,
+                        )
+                      : increaseCustomization(group, item, null, nextGroup)
+                  }
+                  decreaseLabel={`${t("pdp.decrease")} ${name(item)}`}
+                  increaseLabel={`${t("pdp.increase")} ${name(item)}`}
+                />
               );
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-[16px]">
-            {items.map((item: any) => {
-              const selected = isSelected(group, item);
-              const meta = itemMeta(item);
-              const imageUrl = resolveEntityImage(item);
-              return (
-                // No photo: the name sits on the radio's row, so px-[44px]
-                // keeps it centred and 8 px clear of the 26 px radio (right-10).
-                <button
-                  key={item.id}
-                  type="button"
-                  data-testid={`tier2-option-${item.id}`}
-                  onClick={() =>
-                    addCustomizations(group, item, null, nextGroup, false)
-                  }
-                  className={`relative flex min-h-[44px] flex-col items-center rounded-[8px] border-2 bg-tb-grey-6 p-[16px] pb-[20px] ${
-                    imageUrl ? "" : "px-[44px]"
-                  } ${selected ? "border-tb-purple" : "border-transparent"}`}
-                >
-                  {imageUrl && (
-                    <img
-                      alt=""
-                      src={imageUrl}
-                      className="mb-2 h-[96px] w-full object-contain"
-                    />
-                  )}
-                  <p className="text-[18px] font-medium capitalize leading-[22px] text-black">
-                    {name(item)}
-                  </p>
-                  {meta && (
-                    <p className="text-[15px] text-tb-ink-purple/70">{meta}</p>
-                  )}
-                  <span
-                    className={`absolute right-[10px] top-[10px] h-[26px] w-[26px] rounded-full border-2 ${
-                      selected
-                        ? "border-tb-purple bg-tb-purple"
-                        : "border-tb-purple/40 bg-tb-surface"
-                    }`}
-                  />
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
+            {items.map((item: any) => (
+              <OptionCard
+                key={item.id}
+                testId={`tier2-option-${item.id}`}
+                image={resolveEntityImage(item)}
+                name={name(item)}
+                meta={formatOptionMeta(item, currency, t)}
+                radio={isSelected(group, item) ? "on" : "off"}
+                onSelect={() =>
+                  addCustomizations(group, item, null, nextGroup, false)
+                }
+              />
+            ))}
           </div>
         )}
       </section>
@@ -688,66 +634,41 @@ export default function Tier2CustomizationSheet() {
   );
 
   return (
-    <div data-testid="tier2-sheet" className="absolute inset-0 z-[60]">
-      {/* Purple-tinted backdrop (SELECT-sheet design language). Not a close
-          target — dismissal is explicit via the X, kiosk-safe. */}
-      <div className="absolute inset-0 bg-tb-purple-vibrant/70" />
+    // The full-screen CUSTOMIZE page (D4; 1:2984 / 1:5051 family) over the
+    // whole PDP root, its footer strip included (as 1:5051). Opacity-only
+    // entrance: a transform here would fight nothing today, but the page
+    // needs none (one transform owner per element).
+    <div
+      data-testid="tier2-sheet"
+      className="absolute inset-0 z-[60] flex flex-col bg-tb-surface"
+      style={{ animation: "tbTier2PageEnter 0.2s ease-out both" }}
+    >
+      <style>{`@keyframes tbTier2PageEnter{from{opacity:0}to{opacity:1}}@keyframes tbTier2DialogEnter{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
-      {/* Bottom-anchored entrance, scoped like SlotSelectionSheet's:
-          index.css's tb-modal-enter ends at translate(-50%,-50%) (centered
-          modals), which would shift this full-width sheet half off-screen. */}
-      <style>{`@keyframes tbTier2SheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}@keyframes tbTier2DialogEnter{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The hook's error AutoScroll targets this id. */}
       <div
-        className="absolute inset-x-0 bottom-0 top-[96px] flex flex-col overflow-hidden rounded-t-[24px] bg-tb-surface"
-        style={{ animation: "tbTier2SheetEnter 0.2s ease-out both" }}
+        ref={pageScrollRef}
+        id="scrollCustomizableItem2"
+        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {/* Header: centered display title, X top-right, qty + price line */}
-        <div className="relative shrink-0 px-[48px] pb-[20px] pt-[40px]">
-          <h2 className="tb-display px-[64px] text-center text-[34px] uppercase leading-[1.05] tracking-[-1px] text-tb-purple">
-            {name(SelectedEntity)}
-          </h2>
-          <button
-            type="button"
-            data-testid="tier2-sheet-close"
-            aria-label={t("language.close")}
-            onClick={closeSheet}
-            className="absolute right-[32px] top-[32px] h-[44px] w-[44px]"
-          >
-            <img alt="" src={closeIcon} className="h-full w-full" />
-          </button>
-
-          <div className="mt-[20px] flex items-center justify-center gap-[32px]">
-            <div className="flex items-center gap-[12px]">
-              <button
-                type="button"
-                data-testid="tier2-qty-decrease"
-                aria-label={t("pdp.decrease")}
-                onClick={decreaseEntityQuantity}
-                className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-tb-grey-6 text-[26px] font-bold text-tb-ink-purple"
-              >
-                –
-              </button>
-              <span
-                data-testid="tier2-qty"
-                className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-tb-purple text-[24px] font-bold text-tb-surface"
-              >
-                {quantity}
-              </span>
-              {!hidePlusButton && (
-                <button
-                  type="button"
-                  data-testid="tier2-qty-increase"
-                  aria-label={t("pdp.increase")}
-                  onClick={increaseEntityQuantity}
-                  className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-tb-grey-6 text-[26px] font-bold text-tb-ink-purple"
-                >
-                  +
-                </button>
-              )}
-            </div>
+        {/* Hero/Customize (1:4924): CUSTOMIZE at y 48, the 328×202 image
+            centred at y 207, name + price | cal centred at y 380. */}
+        <div className="flex min-h-[450px] flex-col items-center bg-tb-grey-6 px-[24px] pb-[24px] pt-[32px]">
+          <p className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
+            {t("pack.customize")}
+          </p>
+          <span className="mt-[42px] flex h-[202px] w-[328px] items-center justify-center">
+            {heroImage && (
+              <img alt="" src={heroImage} className="h-full w-full object-contain" />
+            )}
+          </span>
+          <div className="mt-[42px] flex w-[768px] flex-col items-center gap-[8px] text-center">
+            <h2 className="text-[28px] font-medium leading-[32px] tracking-[-0.5px] text-black">
+              {name(SelectedEntity)}
+            </h2>
             <p
               data-testid="tier2-price-line"
-              className="text-[22px] font-medium text-tb-ink-purple"
+              className="text-[20px] leading-[20px] text-tb-ink-purple"
             >
               {currency}
               {total.toFixed(2)}
@@ -756,28 +677,44 @@ export default function Tier2CustomizationSheet() {
           </div>
         </div>
 
-        {/* Group sections — the hook's error AutoScroll targets this id */}
-        <div
-          id="scrollCustomizableItem2"
-          className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[40px] pt-[8px]"
-        >
+        {/* The pick's own quantity — no frame draws it on this page: the
+            PDP's Counter, right-aligned above the first section. */}
+        <div className="flex justify-end px-[24px] pt-[24px]">
+          <Counter
+            testId="tier2-qty"
+            value={quantity}
+            onDecrease={decreaseEntityQuantity}
+            onIncrease={hidePlusButton ? undefined : increaseEntityQuantity}
+            decreaseLabel={t("pdp.decrease")}
+            increaseLabel={t("pdp.increase")}
+          />
+        </div>
+
+        <div className="flex flex-col gap-[64px] p-[24px]">
           {(sortedModifiers ?? []).map((group: any, i: number) =>
             renderGroup(group, i),
           )}
         </div>
-
-        {/* SAVE bar (SELECT-sheet CTA pattern) */}
-        <div className="shrink-0 px-[24px] pb-[24px] pt-[16px]">
-          <button
-            type="button"
-            data-testid="tier2-sheet-save"
-            onClick={() => addTier2CustomizationToMIAMCart()}
-            className="tb-display h-[88px] w-full rounded-[8px] bg-tb-purple text-[26px] uppercase tracking-[0.5px] text-tb-surface"
-          >
-            {t("pack.save")}
-          </button>
-        </div>
       </div>
+      <ErrorBoundary fallback={null}>
+        <ScrollIndicator
+          target={pageScrollRef}
+          top={ada ? 488 : 703}
+          height={ada ? 394 : 790}
+          testId="tier2-scrollbar"
+        />
+      </ErrorBoundary>
+
+      {/* CTA/Bottom screen (1:589, 1:2984 "UPDATE"): BACK = today's close
+          (the discard prompt rule), UPDATE = the commit. */}
+      <CtaBar
+        backTestId="tier2-sheet-close"
+        backLabel={t("pdp.back")}
+        onBack={closeSheet}
+        actionTestId="tier2-sheet-save"
+        action={t("bag.update")}
+        onAction={() => addTier2CustomizationToMIAMCart()}
+      />
 
       {discardPromptOpen &&
         renderConfirm("tier2-discard", keepEditing, discardAndClose)}

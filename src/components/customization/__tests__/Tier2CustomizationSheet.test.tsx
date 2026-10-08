@@ -1,10 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import {
   MIAMTier2Open,
+  openTier2EditModal,
   setTeir2SelectedEntity,
   setTier1SelectedCustomization,
   setTier2BottomSheet,
@@ -15,7 +16,10 @@ import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   selectErrorMessageGlobal,
   selectShowErrorModalGlobal,
+  setAllowMultiplePunch,
   setCurrency,
+  setHidePlusIconFromItem,
+  toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import Tier2CustomizationSheet from "../Tier2CustomizationSheet";
@@ -311,5 +315,191 @@ describe("Tier2CustomizationSheet calories (P9f)", () => {
     expect(option).toHaveTextContent(i18n.t("pack.cal", { value: 10 }));
     expect(header).not.toHaveTextContent("Cal");
     expect(option).not.toHaveTextContent("Cal");
+  });
+});
+
+/*
+  Lane figma-polish item 42 (D4) — tier-2 is the full-screen CUSTOMIZE page
+  (Figma 1:2984 / 1:5051 family): a z-60 page with no backdrop, ONE scroller
+  (#scrollCustomizableItem2 — the hook's AutoScroll target) holding the
+  Hero/Customize band, the Counter and the group sections, and the 148 px CTA
+  bar pinned below it: BACK (tier2-sheet-close, the discard-prompt rule) and
+  UPDATE (tier2-sheet-save, the same commit for new and edit sessions). The
+  confirms stay at z-70, above the page.
+*/
+describe("Tier2CustomizationSheet — the full-screen CUSTOMIZE page (item 42)", () => {
+  /** A tier-1 pick of Large Cola already customized with Regular Ice. */
+  const COLA_EDIT = {
+    ...ENTITY,
+    itemId: "1700000000001_d-large",
+    customizations: { dl_addons: [{ id: "ice", name: "Regular Ice", price: 0, quantity: 1 }] },
+  };
+  const FRIES_PICK = { id: "fries", name: "Fries", price: 0, quantity: 1, itemId: "1700000000002_fries" };
+  const EDIT_GROUP = { ...SLOT_GROUP, max: 2, multiplePunchMax: 2, multiplePunchMaxItem: 2 };
+
+  /** openTier2EditModal's reducer takes an untyped payload (Tier2RemovalConfirm's seam). */
+  const seedEditTier2 = (hidePlus = false) => {
+    const tier1 = { [SLOT_GROUP._id]: [COLA_EDIT, FRIES_PICK] };
+    store.dispatch(setModifiersMap({ modifiersMap: { dl_addons: ICE_GROUP } }));
+    store.dispatch(setHidePlusIconFromItem(hidePlus));
+    store.dispatch(setTier1SelectedCustomization(tier1));
+    store.dispatch({
+      type: openTier2EditModal.type,
+      payload: {
+        customizations: { selectedEntity: { ...COLA_EDIT }, selectedCustomizations: COLA_EDIT.customizations },
+        bottomSheet: { isOpen: true, type: "customizableItem", openType: "edit" },
+        groupId: SLOT_GROUP._id,
+        currentCustomizations: { selectedCustomizations: tier1, group: EDIT_GROUP },
+      },
+    });
+  };
+  const scroller = () => document.getElementById("scrollCustomizableItem2") as HTMLElement;
+  const slotPicks = () =>
+    (tier1SelectedCustomization(store.getState()) as Record<string, Array<Record<string, unknown>>>)[SLOT_GROUP._id];
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+  });
+
+  it("page structure: the z-60 page (no backdrop); the band, the Counter and the sections in #scrollCustomizableItem2; BACK + UPDATE pinned below", () => {
+    seedOpenTier2();
+    renderSheet();
+    const page = screen.getByTestId("tier2-sheet");
+
+    expect(page).toHaveClass("absolute", "inset-0", "z-[60]", "flex", "flex-col", "bg-tb-surface");
+    expect(page.querySelector('[aria-hidden][class*="bg-tb-purple-vibrant"]')).toBeNull();
+    expect(page).toContainElement(scroller());
+    expect(scroller()).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+
+    // Hero/Customize (1:4924): CUSTOMIZE, the 328 × 202 image box, the name (the h2) and the price line.
+    const band = scroller().firstElementChild as HTMLElement;
+    expect(band).toHaveClass("min-h-[450px]", "bg-tb-grey-6");
+    const title = within(band).getByText(i18n.t("pack.customize"));
+    expect(title.tagName).toBe("P");
+    expect(title).toHaveClass("tb-display", "text-[32px]", "leading-[32px]", "text-tb-purple");
+    expect(band.querySelector(".h-\\[202px\\].w-\\[328px\\]")).not.toBeNull();
+    expect(within(band).getByRole("heading", { level: 2 })).toHaveTextContent("Large Cola");
+    expect(band).toContainElement(screen.getByTestId("tier2-price-line"));
+
+    // The Counter and the sections scroll with the page; a section's id is the AutoScroll anchor.
+    for (const id of ["tier2-qty-decrease", "tier2-qty", "tier2-qty-increase", "tier2-group-dl_addons", "tier2-option-ice"]) {
+      expect(scroller()).toContainElement(screen.getByTestId(id));
+    }
+    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveAttribute("id", "dl_addons");
+    expect(screen.getByTestId("tier2-option-ice")).toHaveAttribute("aria-pressed", "false");
+
+    // CTA/Bottom screen (1:589): BACK + UPDATE, outside the scroller.
+    const back = screen.getByTestId("tier2-sheet-close");
+    const update = screen.getByTestId("tier2-sheet-save");
+    expect(scroller()).not.toContainElement(back);
+    expect(scroller()).not.toContainElement(update);
+    expect(back).toHaveTextContent(i18n.t("pdp.back"));
+    expect(update).toHaveTextContent(i18n.t("bag.update"));
+    expect(update.parentElement).toHaveClass("h-[148px]", "bg-tb-purple");
+    expect(page.lastElementChild).toBe(update.parentElement);
+  });
+
+  it.each([
+    ["normal", false, "703px", "790px"],
+    ["ADA", true, "488px", "394px"],
+  ])("the page's own scroll indicator (%s): the PDP's track geometry", (_mode, ada, top, height) => {
+    if (ada) store.dispatch(toggleAccessibilityMode());
+    seedOpenTier2();
+    renderSheet();
+
+    expect(screen.getByTestId("tier2-scrollbar")).toHaveStyle({ top, height });
+    expect(screen.getByTestId("tier2-sheet")).toContainElement(screen.getByTestId("tier2-scrollbar"));
+  });
+
+  it("a multi-pick group's header counts Σ quantities against its max ('count of max'); a one-pick group shows none", () => {
+    const SAUCES = {
+      ...ICE_GROUP,
+      name: "Sauces",
+      min: 0,
+      max: 2,
+      multiplePunchMin: 0,
+      multiplePunchMax: 3,
+      multiplePunchMaxItem: 2,
+      constituentItems: [{ id: "salsa", name: "Salsa", price: 0, isActive: true }],
+    };
+    seedOpenTier2(ENTITY, SAUCES);
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+
+    expect(group).toHaveTextContent("0 of 2");
+    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("pdp.increase")} Salsa` }));
+    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("pdp.increase")} Salsa` }));
+    expect(group).toHaveTextContent("2 of 2");
+    // The max is the EFFECTIVE one SAVE validates: multiplePunchMax under multiple punch.
+    act(() => {
+      store.dispatch(setAllowMultiplePunch(true));
+    });
+    expect(group).toHaveTextContent("2 of 3");
+
+    cleanup();
+    act(() => {
+      store.dispatch({ type: "RESET_STATE" });
+    });
+    seedOpenTier2();
+    renderSheet();
+    expect(screen.getByTestId("tier2-group-dl_addons")).not.toHaveTextContent(/\bof\b/);
+  });
+
+  it("UPDATE commits an EDIT session: the same pick (by itemId) is replaced with its new nested choice, nothing added, the page closes", () => {
+    seedEditTier2();
+    renderSheet();
+    expect(screen.getByTestId("tier2-option-ice")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("tier2-option-no-ice"));
+    fireEvent.click(screen.getByTestId("tier2-sheet-save"));
+
+    const picks = slotPicks();
+    expect(picks.map((pick) => pick.itemId)).toEqual(["1700000000001_d-large", "1700000000002_fries"]);
+    expect((picks[0].customizations as Record<string, Array<{ id: string }>>).dl_addons.map((item) => item.id)).toEqual([
+      "no-ice",
+    ]);
+    expect(picks[1]).toEqual(FRIES_PICK);
+    expect(MIAMTier2Open(store.getState())).toBe(false);
+    expect(screen.queryByTestId("tier2-sheet")).not.toBeInTheDocument();
+  });
+
+  it("BACK on an EDIT never asks (the discard rule is NEW-only): it closes and the tier-1 pick is untouched", () => {
+    seedEditTier2();
+    renderSheet();
+
+    fireEvent.click(screen.getByTestId("tier2-option-no-ice"));
+    fireEvent.click(screen.getByTestId("tier2-sheet-close"));
+
+    expect(screen.queryByTestId("tier2-discard-overlay")).not.toBeInTheDocument();
+    expect(MIAMTier2Open(store.getState())).toBe(false);
+    expect(slotPicks()[0]).toEqual(COLA_EDIT);
+  });
+
+  it("the confirms stay at z-70 ABOVE the z-60 page: the item-24 removal confirm and the discard prompt", async () => {
+    seedEditTier2(true);
+    renderSheet();
+    const page = screen.getByTestId("tier2-sheet");
+
+    fireEvent.click(screen.getByTestId("tier2-qty-decrease"));
+    const removal = screen.getByTestId("tier2-remove-overlay");
+    expect(removal).toHaveClass("absolute", "inset-0", "z-[70]");
+    expect(removal.parentElement).toBe(page);
+    fireEvent.click(screen.getByTestId("tier2-remove-cancel"));
+
+    // A NEW session's dirty BACK → the discard prompt, the same layer.
+    act(() => {
+      store.dispatch({ type: "RESET_STATE" });
+      seedOpenTier2();
+    });
+    await userEvent.click(screen.getByTestId("tier2-option-ice"));
+    await userEvent.click(screen.getByTestId("tier2-sheet-close"));
+    const discard = screen.getByTestId("tier2-discard-overlay");
+    expect(discard).toHaveClass("absolute", "inset-0", "z-[70]");
+    expect(discard.parentElement).toBe(screen.getByTestId("tier2-sheet"));
   });
 });

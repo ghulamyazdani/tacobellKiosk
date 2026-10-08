@@ -1,30 +1,36 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
+  MIAMTier2Open,
   openMakeItAMealModal,
   openMakeItAMealSession,
   openTier1Modal,
   setIsForceOpenMakeItAMealModal,
   setTeir1SelectedEntity,
+  setTeir2SelectedEntity,
   setTier1BottomSheet,
   setTier1BottomSheetAndSelectedEntity,
   setTier1SelectedCustomization,
+  setTier2BottomSheet,
+  tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { store } from "../../../redux/app/store";
 import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
 import Customization from "../index";
+import { loadPdpLazyParts } from "../loadPdpLazyParts";
 import "../../../i18n";
 
 /*
   Lane bag-pdp — the PDP's lazy parts ride in the ONE bag chunk (D7). When
   that chunk fails to load (a deploy re-hashed it; Chromium caches the failed
   fetch for the life of the page) the PDP must keep a working path:
-  - item 23: a failed ADD TO BAG shows no warning — today's ring only — and
-    finishing the group still adds;
+  - item 23: the load starts at PDP MOUNT (G2c, loadPdpLazyParts), never at
+    the tap; a failed ADD TO BAG then shows no warning — today's ring only —
+    and finishing the group still adds;
   - item 20: a split edit has no planner, so UPDATE writes nothing and the PDP
     stays; BACK still leaves with the bag untouched.
   The whole chunk REALLY rejects here: one of its modules fails to evaluate.
@@ -79,7 +85,11 @@ const DRINK = {
   multiplePunchMaxItem: 1,
   order: 1,
   isActive: true,
-  constituentItems: [{ id: "cola", name: "Cola", price: 0, isActive: true }],
+  // Two options: a one-option slot is pre-selected since item 42 (D5).
+  constituentItems: [
+    { id: "cola", name: "Cola", price: 0, isActive: true },
+    { id: "lemonade", name: "Lemonade", price: 0, isActive: true },
+  ],
 };
 
 const BURGER: Row = {
@@ -148,13 +158,13 @@ describe("the PDP keeps working when the lazy bag chunk failed (lane bag-pdp)", 
       }),
     );
     renderPdp();
+    // G2c: the mount started the load (joined here); it fails before any tap.
+    await act(async () => {
+      expect(await loadPdpLazyParts()).toBeNull();
+    });
     await tap("pdp-add-to-bag");
-    await waitFor(() =>
-      expect(mocks.capture).toHaveBeenCalledWith(
-        "error_occurred",
-        expect.objectContaining({ error_source: "react_boundary", recovery_path: "local_fallback" }),
-      ),
-    );
+    // Quietly: no boundary trips, nothing over the ringed PDP.
+    expect(mocks.capture).not.toHaveBeenCalledWith("error_occurred", expect.anything());
     expect(screen.queryByTestId("pdp-incomplete")).not.toBeInTheDocument();
     expect(screen.getByTestId(`pack-slot-${DRINK._id}`)).toHaveClass("ring-4", "ring-red-500");
     expect(cartItems()).toHaveLength(0);
@@ -165,6 +175,49 @@ describe("the PDP keeps working when the lazy bag chunk failed (lane bag-pdp)", 
     await tap("pdp-add-to-bag");
     expect(cartItems()).toHaveLength(1);
     expect(cartItems()[0]).toMatchObject({ id: "pack1", quantity: 1 });
+  });
+
+  it("G2c: tier-2 opened after the REAL failed load is the named tier2-loading scrim; its tap closes tier-2, the tier-1 picks stay", async () => {
+    store.dispatch(setModifiersMap({ modifiersMap: { [DRINK._id]: DRINK } }));
+    store.dispatch(openMakeItAMealSession());
+    store.dispatch(
+      setTier1BottomSheetAndSelectedEntity({
+        bottomSheet: { isOpen: true, status: "", type: "customizableItem", openType: "new", editCustomizationContent: {} },
+        selectedEntity: { id: "pack1", name: "Pack", price: 9.99, modifiers: [DRINK._id] },
+      }),
+    );
+    renderPdp();
+    await act(async () => {
+      expect(await loadPdpLazyParts()).toBeNull();
+    });
+    await tap(`pack-slot-open-${DRINK._id}`);
+    await tap("slot-option-cola");
+    await tap("slot-sheet-save");
+    const picks = tier1SelectedCustomization(store.getState());
+    expect(picks[DRINK._id]).toHaveLength(1);
+
+    await act(async () => {
+      store.dispatch(
+        setTeir2SelectedEntity({
+          entity: { id: "cola", name: "Cola", price: 0, quantity: 1, modifiers: [] },
+          groupId: DRINK._id,
+          currentCustomizations: { selectedCustomizations: picks, group: DRINK },
+        }),
+      );
+      store.dispatch(
+        setTier2BottomSheet({ isOpen: true, type: "customizableItem", openType: "new", status: "", editCustomizationContent: {} }),
+      );
+    });
+    const scrim = screen.getByTestId("tier2-loading");
+    expect(scrim).toHaveAccessibleName("Close");
+    expect(scrim).toHaveClass("absolute", "inset-0", "z-[60]");
+    expect(screen.queryByTestId("tier2-sheet")).not.toBeInTheDocument();
+
+    await tap("tier2-loading");
+    expect(MIAMTier2Open(store.getState())).toBe(false);
+    expect(screen.queryByTestId("tier2-loading")).not.toBeInTheDocument();
+    expect(tier1SelectedCustomization(store.getState())).toEqual(picks);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("item 20: without its planner a split edit writes nothing and the PDP stays; BACK leaves, bag untouched", async () => {

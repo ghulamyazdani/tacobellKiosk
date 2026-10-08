@@ -172,35 +172,86 @@ describe("SelectSizeModal", () => {
     fireEvent.click(screen.getByTestId("size-continue"));
     expect(onContinue).toHaveBeenCalledWith(ENTITY.variants[1]);
   });
+
+  // Lane figma-polish S2 (D12): the BEST VALUE chip, shown only for a hero
+  // size carrying a best-value badge, is the translated copy beside the alias.
+  it("Arabic: a best-value hero shows t('size.bestValue') in Arabic next to its alias; the CTA is t('size.continue')", async () => {
+    await arabicSession();
+    const variants = [{ ...ENTITY.variants[0], badges: [{ name: "Best Value" }] }, ENTITY.variants[1]];
+    render(<SelectSizeModal entity={{ ...ENTITY, variants }} onClose={vi.fn()} onContinue={vi.fn()} />, { wrapper });
+    const hero = screen.getByTestId("size-v-large");
+
+    expect(within(hero).getByTestId("size-best-value")).toHaveTextContent(i18n.t("size.bestValue"));
+    expect(hero).not.toHaveTextContent(/best value/i);
+    expect(hero).toHaveTextContent(iso(AR_LARGE), { normalizeWhitespace: false });
+    expect(screen.getByTestId("size-continue")).toHaveTextContent(i18n.t("size.continue"));
+  });
 });
 
 describe("PackSlotCard (incl. pack.selectGroup)", () => {
   const GROUP = { _id: "pack1_2_combo", name: "Drink", aliases: AR(AR_DRINK_GROUP), min: 1, max: 1 };
   const PREVIEW = { id: "d-cola", name: "Cola", aliases: AR(AR_COLA), price: 0, calorieCount: 170, image_url: "" };
 
-  it("Arabic: the CTA and the button's accessible name are pack.selectGroup with the isolated group alias; the slot shows the preview alias", async () => {
+  // Item 42: an EMPTY choice slot names the slot itself (the group alias,
+  // Figma 1:2934 "Regular Drink") over the preview's photo; the visible CTA is
+  // its own button and the overlay carries the same name; a pick shows its
+  // own alias.
+  it("Arabic: the CTA and the overlay's accessible name are pack.selectGroup with the isolated group alias; the empty slot shows the group alias, a pick its own", async () => {
     await arabicSession();
-    render(<PackSlotCard group={GROUP} selection={[]} previewItem={PREVIEW} currency="£" onOpen={vi.fn()} />, {
-      wrapper,
-    });
+    const { rerender } = render(
+      <PackSlotCard group={GROUP} selection={[]} previewItem={PREVIEW} currency="£" onOpen={vi.fn()} />,
+      { wrapper },
+    );
     const label = i18n.t("pack.selectGroup", { name: iso(AR_DRINK_GROUP) });
     const open = screen.getByTestId("pack-slot-open-pack1_2_combo");
+    const card = screen.getByTestId("pack-slot-pack1_2_combo");
 
     expect(label).toContain(AR_DRINK_GROUP);
     expect(open).toHaveAccessibleName(label);
-    expect(within(open).getByText(label)).toBeInTheDocument(); // the visible CTA = the name
-    expect(open).toHaveTextContent(iso(AR_COLA), { normalizeWhitespace: false });
-    expect(open).not.toHaveTextContent("Cola");
+    expect(within(screen.getByTestId("pack-slot-cta-pack1_2_combo")).getByText(label)).toBeInTheDocument(); // the visible CTA = the name
+    expect(within(card).getByText(iso(AR_DRINK_GROUP))).toBeInTheDocument();
+    expect(card).not.toHaveTextContent("Drink");
+
+    rerender(
+      <PackSlotCard group={GROUP} selection={[{ ...PREVIEW, quantity: 1 }]} previewItem={PREVIEW} currency="£" onOpen={vi.fn()} />,
+    );
+    expect(screen.getByTestId("pack-slot-pack1_2_combo")).toHaveTextContent(iso(AR_COLA), { normalizeWhitespace: false });
+    expect(screen.getByTestId("pack-slot-pack1_2_combo")).not.toHaveTextContent("Cola");
   });
 
-  it("Arabic: without a preview the placeholder and the slot line show the group alias", async () => {
+  it("Arabic: without a preview the slot line shows the group alias", async () => {
     await arabicSession();
     render(<PackSlotCard group={GROUP} selection={[]} previewItem={null} currency="£" onOpen={vi.fn()} />, {
       wrapper,
     });
 
-    expect(screen.getAllByText(iso(AR_DRINK_GROUP))).toHaveLength(2); // placeholder + slot line
+    expect(screen.getAllByText(iso(AR_DRINK_GROUP))).toHaveLength(1); // the slot line (no placeholder art since item 42)
     expect(screen.getByTestId("pack-slot-pack1_2_combo")).not.toHaveTextContent("Drink");
+  });
+
+  // Item 42: a FIXED (one-option, picked) slot names its pick, and its
+  // CUSTOMIZE is the translated verb.
+  it("Arabic: a FIXED slot shows the pick's alias and an Arabic CUSTOMIZE — never the English name or verb", async () => {
+    await arabicSession();
+    render(
+      <PackSlotCard
+        group={GROUP}
+        selection={[{ ...PREVIEW, quantity: 1 }]}
+        previewItem={PREVIEW}
+        currency="£"
+        fixed
+        onCustomize={vi.fn()}
+        onOpen={vi.fn()}
+      />,
+      { wrapper },
+    );
+    const card = screen.getByTestId("pack-slot-pack1_2_combo");
+    const customize = screen.getByTestId("pack-slot-customize-pack1_2_combo");
+
+    expect(card).toHaveTextContent(iso(AR_COLA), { normalizeWhitespace: false });
+    expect(customize).toHaveAccessibleName(i18n.t("pack.customize"));
+    expect(card).not.toHaveTextContent("Cola");
+    expect(card).not.toHaveTextContent(/customize/i);
   });
 });
 
@@ -311,6 +362,21 @@ describe("Tier2CustomizationSheet", () => {
     expect(sheet).not.toHaveTextContent("Large Cola");
     expect(sheet).not.toHaveTextContent("Regular Ice");
   });
+
+  // Item 42 (D4): the CUSTOMIZE page's own copy — the band title, the group
+  // counter (Title/H7 "count of max") and the BACK / UPDATE bar — is Arabic.
+  it("Arabic: the page's CUSTOMIZE title, the 'count of max' counter and BACK / UPDATE are translated", async () => {
+    await arabicSession();
+    openTier2();
+    render(<Tier2CustomizationSheet />, { wrapper });
+    const sheet = screen.getByTestId("tier2-sheet");
+
+    expect(within(sheet).getByText(i18n.t("pack.customize"))).toBeInTheDocument();
+    expect(screen.getByTestId("tier2-group-dl_sauce")).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 3 }));
+    expect(screen.getByTestId("tier2-sheet-close")).toHaveTextContent(i18n.t("pdp.back"));
+    expect(screen.getByTestId("tier2-sheet-save")).toHaveTextContent(i18n.t("bag.update"));
+    expect(sheet).not.toHaveTextContent(/customize|update|back|\bof\b/i);
+  });
 });
 
 describe("BagItemRow", () => {
@@ -381,6 +447,15 @@ describe("BagItemRow", () => {
     expect(row).toHaveTextContent(iso(AR_PEPSI), { normalizeWhitespace: false });
     expect(lineOf(row, AR_LARGE).textContent).toBe(iso(AR_LARGE));
     expect(row).not.toHaveTextContent("Large");
+  });
+
+  // S4 #10: the restyled Edit link (CTA/Show more) is still the translated verb.
+  it("Arabic: the Edit link is t('bag.edit') in Arabic", async () => {
+    await arabicSession();
+    renderRow(CUSTOMIZABLE);
+
+    expect(screen.getByTestId("bag-edit-cb-1")).toHaveTextContent(i18n.t("bag.edit"));
+    expect(screen.getByTestId("bag-edit-cb-1")).not.toHaveTextContent("Edit");
   });
 
   it("switching back to English restores the row, add-on and variant names", async () => {

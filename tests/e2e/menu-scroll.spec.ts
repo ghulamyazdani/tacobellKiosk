@@ -59,9 +59,12 @@ const slimMenu = JSON.parse(
 const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
 /** Pack PDP: four `_combo` slot cards + the Snacks group; overflows. */
 const DREAM_BOX = "68dd79409030ed3064aee28c";
-/** Nuggets slot (min 1): picking it auto-scrolls the PDP to the next group. */
-const G_NUGGETS = `${DREAM_BOX}_5_combo`;
-const NUGGETS_PICK = "66e952596dd4d13b6564a528";
+/**
+ * Drinks slot (min 1, six options — the one CHOICE slot: the one-option slots
+ * are pre-selected, D5): picking it auto-scrolls the PDP to the next group.
+ */
+const G_DRINKS = `${DREAM_BOX}_3_combo`;
+const PEPSI_SMALL = "5dd27b527973647b693e428b";
 /** One one-option addon group: its PDP fits the stage. */
 const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 
@@ -298,9 +301,9 @@ test.describe("Post-P9 scroll indicator (Figma 1:5263)", () => {
     // A slot pick: the SDK auto-scrolls the PDP to the next group, and the
     // thumb follows (no variants in this fixture — a slot is the change).
     expect(await pane.evaluate((el) => el.scrollTop)).toBe(0);
-    await page.getByTestId(`pack-slot-open-${G_NUGGETS}`).click();
+    await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
     await expect(page.getByTestId("slot-sheet")).toBeVisible();
-    await page.getByTestId(`slot-option-${NUGGETS_PICK}`).click();
+    await page.getByTestId(`slot-option-${PEPSI_SMALL}`).click();
     await page.getByTestId("slot-sheet-save").click();
     await expect(page.getByTestId("slot-sheet")).not.toBeVisible();
     await expect.poll(() => pane.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);

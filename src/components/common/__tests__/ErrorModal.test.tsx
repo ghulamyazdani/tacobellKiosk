@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import ErrorModal from "../ErrorModal";
 
@@ -100,6 +102,36 @@ describe("ErrorModal (Figma 1:988 Icon Modal + 1:4514 CTAs)", () => {
   it("no note prop → no note element", () => {
     renderModal();
     expect(screen.queryByTestId("x-error-note")).not.toBeInTheDocument();
+  });
+
+  // G1: the GlobalErrorHost's message IS its title (1:6288) — no body.
+  it.each([
+    ["omitted", undefined],
+    ["empty", ""],
+  ])("message %s: no body <p> and no aria-describedby — the title alone names it", (_label, message) => {
+    renderModal({ message, secondary: undefined });
+    const dialog = screen.getByRole("alertdialog");
+
+    expect(dialog).toHaveAccessibleName("We couldn't load the menu");
+    expect(dialog).not.toHaveAttribute("aria-describedby");
+    expect(dialog.querySelector("p")).toBeNull();
+    expect(document.getElementById("x-error-message")).toBeNull();
+  });
+
+  it("every existing caller still passes a message (body + aria-describedby unchanged); only GlobalErrorHost omits it", () => {
+    const SRC = join(import.meta.dirname, "../../..");
+    const elements = readdirSync(SRC, { recursive: true, encoding: "utf8" })
+      .filter((file) => /\.tsx$/.test(file) && !/__tests__|\.test\.tsx$/.test(file))
+      .flatMap((file) =>
+        [...readFileSync(join(SRC, file), "utf8").matchAll(/<ErrorModal\b[\s\S]*?\/>/g)].map(
+          ([element]) => ({ file, element })
+        )
+      );
+
+    expect(elements.length).toBeGreaterThan(10);
+    expect(
+      elements.filter(({ element }) => !/\bmessage=\{/.test(element)).map(({ file }) => file)
+    ).toEqual(["components/common/GlobalErrorHost.tsx"]);
   });
 
   it("the skrim is inert: a tap outside the card chooses nothing", () => {

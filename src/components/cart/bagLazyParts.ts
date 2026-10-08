@@ -20,6 +20,11 @@ export { default as OrderTypeSwitchNotice } from "./OrderTypeSwitchNotice";
 export { default as EditHowManyModal } from "./EditHowManyModal";
 // The PDP's lazy part too (D7: new PDP surfaces lazy-load through this entry).
 export { default as PdpIncompleteWarning } from "../customization/PdpIncompleteWarning";
-// …and the PDP split-edit planner (useCustomization takes a handle while the
-// numpad's split marker is set — the numpad already loaded this chunk).
+// …and the PDP split-edit planner (the PDP hands it into useCustomization
+// from loadPdpLazyParts — the numpad that starts a split edit already loaded
+// this chunk; the hook itself must not import it: the tier-2 page below uses
+// the hook, a dependency cycle).
 export { planSplitEditCommit } from "@cx-sdk/ordering/cart/splitEdit";
+// …and the tier-2 CUSTOMIZE page (+ its private SDK tier2Logic): the PDP
+// mounts it only while MIAMTier2Open (loadPdpLazyParts, a scrim until then).
+export { default as Tier2CustomizationSheet } from "../customization/Tier2CustomizationSheet";

@@ -4,6 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { DEFAULT_EVENTS, useIdleTimer } from "react-idle-timer";
 import { selectIdealTimeout } from "@cx-sdk/catalog/state/appSettings.slice";
 import IdleTimeoutModal from "../components/common/IdleTimeoutModal";
+import GlobalErrorHost from "../components/common/GlobalErrorHost";
 import {
   IDLE_PROMPT_SECONDS,
   IdleHoldContext,
@@ -53,6 +54,11 @@ const ACTIVITY_EVENTS = DEFAULT_EVENTS.filter((event) => event !== "focus");
  * Descendants suspend the timer through IdleHoldContext (useIdleHold).
  * `disabled` stops the library outright; re-enabling starts a fresh full
  * period.
+ *
+ * ── GLOBAL ERROR ────────────────────────────────────────────────────────
+ * GlobalErrorHost (z-[95]) mounts here: exactly the in-session subtree, so
+ * a stale error never flashes over /start before its reset. No idle hold —
+ * an abandoned error still times out; the prompt (z-100) paints above it.
  */
 export default function IdleGuard() {
   const navigate = useNavigate();
@@ -122,6 +128,7 @@ export default function IdleGuard() {
   return (
     <IdleHoldContext.Provider value={adjustHold}>
       <Outlet />
+      <GlobalErrorHost />
       {prompted && (
         <IdlePrompt
           getRemainingTime={getRemainingTime}

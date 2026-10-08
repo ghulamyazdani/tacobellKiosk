@@ -126,6 +126,8 @@ interface BackendOptions {
   menu?: boolean;
   /** Order types on /second (default 1): Dine In, then MORE_PIPELINES. */
   pipelines?: number;
+  /** The tenant's accessibility_mode: the footer offers ADA DISPLAY. */
+  ada?: boolean;
 }
 
 /** The extra order types of the 3- and 5-card /second walks (no frame). */
@@ -182,6 +184,7 @@ async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
           : {}),
         ...(opts.loyalty ? LOYALTY_SETTINGS : {}),
         ...(opts.loyalty === "optional" ? { crm_phone_mandatory: false } : {}),
+        ...(opts.ada ? { accessibility_mode: true } : {}),
       },
     })
   );
@@ -299,6 +302,41 @@ async function openBag(page: Page) {
     await page.getByTestId("foryou-primary").click();
   }
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
+}
+
+type Mode = "en" | "ar" | "ada";
+const MODES: Mode[] = ["en", "ar", "ada"];
+
+/** /second: Arabic, or the ADA view, as the mode asks. */
+async function chooseMode(page: Page, mode: Mode) {
+  if (mode === "ar") {
+    await page.getByTestId("footer-language").click();
+    await page.getByTestId("language-ar").click();
+    await expect(page.getByTestId("language-sheet")).toHaveCount(0);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  }
+  if (mode === "ada") {
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+  }
+}
+
+/** getKisokDeviceData: this device may not sell `ids` (figma-polish S3). */
+async function mockDeactivatedPipelines(page: Page, ids: string[]) {
+  await page.route("**/api/cx/getKisokDeviceData", (r) =>
+    r.fulfill({
+      json: [
+        {
+          _id: "general_deactivated_pipelines",
+          setting_id: "deactivated_pipelines",
+          setting_label: "deactivated_pipelines",
+          group: "general",
+          channel: "Kiosk",
+          value: { value: ids },
+        },
+      ],
+    })
+  );
 }
 
 /** The hidden operator gesture (useLongPress): a 3 s hold, in fake time. */
@@ -711,4 +749,80 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     expect.soft(room.length, "wordmark copies").toBe(2);
     expect.soft(Math.min(...room), `seal: px left after each copy ${room}`).toBeGreaterThanOrEqual(0);
   });
+
+  for (const mode of MODES) {
+    test(`ORDER TYPE, DEACTIVATED (${mode}): the one order type this device may sell, centred — the other is deactivated (figma-polish S3; no frame — design language)`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { arabic: true, menu: false, pipelines: 2, ada: true });
+      await mockDeactivatedPipelines(page, ["p2"]);
+      await registerToStart(page);
+      await page.getByTestId("start-screen").click();
+      await expect(page.getByTestId("second-screen")).toBeVisible();
+      await chooseMode(page, mode);
+      await expect(page.getByTestId("second-screen")).toContainText(
+        (mode === "ar" ? ar : en).second.title
+      );
+      await expect(page.locator('[data-testid^="pipeline-"]')).toHaveCount(1);
+      await expect(page.getByTestId("pipeline-p2")).toHaveCount(0);
+      await capture(page, `entry-30-second-deactivated-${mode}`);
+      const card = await page.getByTestId("pipeline-p1").boundingBox();
+      expect
+        .soft(Math.abs((card?.x ?? 0) + (card?.width ?? 0) / 2 - 540), `${mode}: the card is centred`)
+        .toBeLessThanOrEqual(1);
+      const at = await orderTypeGeometry(page);
+      expect.soft(at.titleTop, `${mode}: title top vs the bell's bottom`).toBeGreaterThanOrEqual(at.bellBottom);
+      expect.soft(at.cardsBottom, `${mode}: the card vs the footer`).toBeLessThanOrEqual(at.footerTop);
+    });
+
+    test(`ORDER COMPLETE, LOYALTY (${mode}): an identified guest's Order Complete — ONE H1 block, 'ORDER' over the number (1:3437)`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { loyalty: "mandatory", arabic: mode === "ar", ada: mode === "ada" });
+      const checkout = await mockCheckoutBackend(page);
+      await mockXenoLoyalty(page);
+      await registerToStart(page);
+      await page.getByTestId("start-screen").click();
+      await expect(page.getByTestId("second-screen")).toBeVisible();
+      await chooseMode(page, mode);
+      await page.getByTestId("pipeline-p1").click();
+      await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+      await typeDigits(page, LOYALTY_PHONE);
+      await page.getByTestId("phone-continue").click();
+      await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+      // The lookup opens the rewards sheet: closed, no reward claimed.
+      await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
+      await page.getByTestId("loyalty-rewards-close").click();
+      await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
+
+      await addCheeseBurgerViaPdp(page);
+      await openBag(page);
+      await page.getByTestId("bag-pay").click();
+      await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("customer-name-input")).toHaveText(
+        CUSTOMER_NAME_ROWS[0].firstname
+      );
+      await page.getByTestId("customer-name-continue").click();
+      await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId("payment-counter").click();
+      // /payment's 3 s cancel window ends by routing to /receipt.
+      await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId("receipt-none").click();
+      await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+      expect(checkout.placeOrderCount).toBe(1);
+
+      // The loyalty layout: the heading reads ORDER and the number sits
+      // right under it (no 24 px gap) — the guest's reads "Thank you".
+      const copy = mode === "ar" ? ar : en;
+      await expect(page.getByTestId("order-success").locator("h1")).toContainText(
+        copy.success.orderHeading
+      );
+      await expect(page.getByTestId("order-success")).not.toContainText(copy.success.thankYou);
+      await expect(page.getByTestId("order-number")).toHaveText(/^#\d{5}$/);
+      await expect(page.getByTestId("order-number")).toHaveClass(/\bmt-0\b/);
+      await capture(page, `entry-31-order-success-loyalty-${mode}`);
+    });
+  }
 });

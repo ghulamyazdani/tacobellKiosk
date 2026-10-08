@@ -521,6 +521,60 @@ test.describe("P9a idle timeout + session integrity", () => {
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
   });
 
+  test("GLOBAL ERROR (G1): an unanswered global error never holds the kiosk — the idle prompt paints ABOVE it at 100 s, the timeout lands on /start at 120 s with the error gone, and the next session starts clean", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addGreekSaladOneTap(page, "(1)");
+    await openBag(page);
+
+    // A real one: PAY's preflight fails (bag.spec PAY FAILURE IS VISIBLE).
+    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
+    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    await page.getByTestId("bag-pay").click();
+    const error = page.getByTestId("global-error");
+    await expect(error).toBeVisible();
+    await expect(error).toContainText(en.bag.checkoutFailed);
+    // Back up for the next session's menu fetch; the error stays open.
+    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
+
+    // No auto-dismiss, no idle hold: the prompt comes at 100 s, over it.
+    await idleToPrompt(page);
+    await expect(error).toBeVisible();
+    const continueButton = page.getByTestId("idle-continue");
+    expect(
+      await continueButton.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      }),
+      "the idle prompt paints above the global error"
+    ).toBe(true);
+
+    // 120 s: /start, the error gone with the session.
+    await idleToTimeout(page);
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expectStaysOnStart(page);
+    const errorFlag = () =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kioskStore: { getState: () => { appSettings: { showGlobalError?: boolean } } };
+            }
+          ).__kioskStore.getState().appSettings.showGlobalError
+      );
+    expect(await errorFlag()).toBe(false);
+
+    // The next customer: an empty bag and no error waiting for them.
+    await startOrderToMenu(page);
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
+    await page.clock.runFor(2_000);
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    expect(await errorFlag()).toBe(false);
+  });
+
   test("SPLASH: /start never prompts — 10 minutes untouched stays on the splash", async ({
     page,
   }) => {

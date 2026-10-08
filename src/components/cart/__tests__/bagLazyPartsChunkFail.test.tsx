@@ -19,11 +19,11 @@ import "../../../i18n";
   renders must leave the guest a working bag: the switch flow and the "how
   many" numpad degrade to their scrim, which closes them; the removal notice
   renders nothing and blocks nothing. Each fallback is a LOCAL boundary
-  (reported, never a reload). A chunk that fails to LOAD never reaches them in
-  the app: the bag's rail and rewards sheets load the same chunk on open with
-  no local boundary, so chunkRecovery reloads (cart kept) or, on a page under
-  60 s old, the crash screen shows (main's design, loadActivityModal.ts). The
-  PDP's half is pages/Customization/__tests__/CustomizationChunkFail.test.tsx.
+  (reported, never a reload). Since figma-polish G2 every lazy bag part has
+  such a boundary, so a chunk that fails to LOAD degrades its parts the same
+  way (chunkRecovery reloads outside its no-reload window, else its healer
+  flags the reload for the splash). The PDP's half is
+  pages/Customization/__tests__/CustomizationChunkFail.test.tsx.
 */
 
 const mocks = vi.hoisted(() => ({ capture: vi.fn(), navigate: vi.fn() }));

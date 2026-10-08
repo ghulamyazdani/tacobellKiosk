@@ -20,7 +20,8 @@
     "dineIn": "تناول في المطعم",
     "takeOut": "طلب خارجي",
     "closed": "مغلق",
-    "preparingMenu": "جارٍ تجهيز القائمة…"
+    "preparingMenu": "جارٍ تجهيز القائمة…",
+    "noPipelines": "الطلب غير متاح في هذا الكشك حاليًا. يرجى الطلب من الكاشير."
   },
   "notFound": {
     "title": "الصفحة غير موجودة",
@@ -141,7 +142,8 @@
     "discardTitle": "هل أنت متأكد؟",
     "discardBody": "سيتم فقدان تخصيصاتك",
     "discardKeep": "متابعة التعديل",
-    "discardConfirm": "تجاهل"
+    "discardConfirm": "تجاهل",
+    "groupCount": "{{count}} من {{max}}"
   },
   "pack": {
     "selectGroup": "اختر {{name}}",
@@ -150,7 +152,9 @@
     "upgrades": "الترقيات",
     "customize": "تخصيص",
     "save": "حفظ",
-    "cal": "{{value}} سعرة حرارية"
+    "cal": "{{value}} سعرة حرارية",
+    "choose": "اختر",
+    "remove": "إزالة"
   },
   "miam": {
     "title": "هل ترغب في جعلها وجبة؟",
@@ -403,7 +407,8 @@
     "alreadyReachedMaximumLimit": "لقد وصلت بالفعل إلى الحد الأقصى لهذا الخيار",
     "selectVariantFirst": "يرجى اختيار الحجم أولاً",
     "selectAllCustomizations": "يرجى إكمال جميع الخيارات المطلوبة",
-    "fillCustomizationFields": "يرجى إنهاء تخصيص هذا الصنف"
+    "fillCustomizationFields": "يرجى إنهاء تخصيص هذا الصنف",
+    "dpMaxQuantity": "يمكنك إضافة {{max}} عناصر كحد أقصى خلال فترة {{session}}"
   },
   "idle": {
     "title": "لم تقم بأي نشاط منذ فترة",

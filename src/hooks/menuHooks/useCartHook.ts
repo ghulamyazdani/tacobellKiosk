@@ -51,6 +51,7 @@ import {
   setRecommendationDetour,
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import i18n from "../../i18n";
 import { useStore } from "react-redux";
 import {
   hasItemRecommendations,
@@ -59,7 +60,6 @@ import {
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import {
   buildCartItemContent,
-  buildDpMaxQuantityErrorMessage,
   buildGetItemRdxContent,
   cartIDGenerator,
   doesGetItemExist as doesGetItemExistEngine,
@@ -118,11 +118,17 @@ function useCartHook() {
   const isDpMaxQuantityValid = (item: any) =>
     isDpMaxQuantityValidEngine(item, cart?.cartItems, currentSessionRdx);
 
+  // Translated here (the SDK's English buildDpMaxQuantityErrorMessage stays
+  // for the fork); i18n.t, not useTranslation: this hook is instantiated by
+  // dozens of components and must not subscribe them to language changes.
   const showDpMaxQuantityError = () => {
     dispatch(
       setShowErrorModalGlobal({
         showErrorModal: true,
-        errorMessage: buildDpMaxQuantityErrorMessage(currentSessionRdx),
+        errorMessage: i18n.t("toast.dpMaxQuantity", {
+          max: currentSessionRdx?._extras?.maxQtyItem,
+          session: currentSessionRdx?.sessionName ?? "",
+        }),
       }),
     );
   };
