@@ -356,6 +356,66 @@ test.describe("UB5: the country-code picker", () => {
     ]);
   });
 
+  test("no pick: the bag's order-type switch never re-applies the deployment default — even when its get_data names another country (an operator edit mid-session), the guest keeps +91", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    // Newest route wins: get_data answers `deploymentCountry`, India until
+    // the switch.
+    let deploymentCountry = INDIA;
+    const dataCountries: string[] = [];
+    await page.route("**/api/cx/kiosk/get_data", (route) => {
+      dataCountries.push(deploymentCountry.code);
+      return route.fulfill({
+        json: {
+          charges: [],
+          deployment: {
+            countryCode: deploymentCountry,
+            currencySettings: { currency: "INR", text: "₹" },
+          },
+        },
+      });
+    });
+    await registerToStart(page);
+    await startToPhone(page);
+    await expect(pill(page)).toContainText("+91");
+    await typeDigits(page, "9876543210");
+    await page.getByTestId("phone-continue").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("loyalty-rewards-close").click();
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
+    // /second's get_data has answered (India) before the operator's edit.
+    await expect.poll(() => dataCountries.length).toBeGreaterThan(0);
+    const india = { code: "IN", dialCode: "+91", min: 10, max: 10 };
+    expect(await selectedCountry(page)).toEqual(india);
+
+    const salad = page.getByTestId(`item-${GREEK_SALAD}`);
+    await salad.scrollIntoViewIfNeeded();
+    await salad.click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await page.getByTestId("cta-view-bag").click();
+    await page.waitForURL(/\/(forYou|cart)$/);
+    if (new URL(page.url()).pathname === "/forYou") {
+      await page.getByTestId("foryou-primary").click();
+    }
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+
+    deploymentCountry = { name: "United Arab Emirates", dial_code: "+971", code: "AE" };
+    await page.getByTestId("bag-ordertype-takeout").click();
+    await expect(page.getByTestId("bag-ordertype-confirm")).toBeVisible();
+    await page.getByTestId("bag-ordertype-confirm-yes").click();
+    await expect(page.getByTestId("bag-ordertype-takeout")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+      { timeout: 15_000 }
+    );
+    // The switch's staged fetch saw the UAE and committed — the country
+    // stayed the session's (no pick, no `picked`).
+    expect(dataCountries).toContain("AE");
+    expect(await selectedCountry(page)).toEqual(india);
+  });
+
   test("ADA: the sheet fits the 1122 px reach zone, every control inside it, and axe finds no WCAG A/AA violation", async ({
     page,
   }) => {
