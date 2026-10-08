@@ -1,4 +1,7 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../src");
+/* Scan src only (e2e-harness F4): docs/CLAUDE.md/spec edits no longer push
+ * Vite frames into running e2e pages. A class written only outside src is
+ * never generated. */
 
 /*
  * Type: the Figma file uses GT America (commercial, Grilli Type; the design

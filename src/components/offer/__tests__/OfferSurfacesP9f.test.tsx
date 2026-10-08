@@ -41,7 +41,9 @@ const AR_LARGE = "كبير";
 const NACHOS = { id: "nachos", name: "Nachos", price: 20, aliases: AR(AR_NACHOS) };
 
 // The rail's source: one plain (add-intent) suggestion with an ar alias.
-vi.mock("../../../hooks/menuHooks/useCartUpsell", () => ({
+// importOriginal: RewardsSheet also reads selectMenuSellableEntityMap (UB6).
+vi.mock("../../../hooks/menuHooks/useCartUpsell", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   default: () => ({ items: [NACHOS], shouldShowUpsell: true, getBreakdown: () => ({}) }),
 }));
 

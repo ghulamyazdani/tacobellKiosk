@@ -22,6 +22,11 @@ import {
   setIsForceOpenMakeItAMealModal,
   setTier1BottomSheetAndSelectedEntity,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
+import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  toMenuSellableEntity,
+  type ModifierGroupMap,
+} from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import {
   buildVariantSelectionEntity,
   buildVariantTierPayload,
@@ -163,6 +168,7 @@ export default function MakeItAMealPrompt() {
   const isOpen = useSelector(makeItAMealIsOpen, shallowEqual);
   const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
   const item = useSelector(makeItMealSelectedItem, shallowEqual);
+  const modifierMap = useSelector(selectModifierMap) as ModifierGroupMap;
   const { isSecondary, name, text } = useLocalized();
   // 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
   // headline. The guest's slot only — no cross-language fallback, so an
@@ -177,8 +183,12 @@ export default function MakeItAMealPrompt() {
 
   const combos: any[] = useMemo(() => {
     const resolved = (filterByTags(item?.upsellItems) ?? []) as any[];
-    return resolved.filter((c: any) => c?.isActive && !c?.outOfStock);
-  }, [item, filterByTags]);
+    // UB6 F1: as the menu sells them (upsellItems embed RAW entities) — a dead
+    // pack would sell empty at full price; a dead plain item is one-tap.
+    return resolved
+      .map((c) => toMenuSellableEntity(c, modifierMap))
+      .filter((c: any) => c?.isActive && !c?.outOfStock);
+  }, [item, filterByTags, modifierMap]);
 
   // Multi-combo selection. Derived-with-fallback rather than an effect, so
   // "first preselected" holds even when the combo list changes underneath.

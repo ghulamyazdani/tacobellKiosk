@@ -6,7 +6,6 @@ import { selectCartOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
-  selectEntityMap,
   selectSubCategoryMap,
   selectVariantObject,
 } from "@cx-sdk/catalog/state/Menu.slice";
@@ -27,7 +26,9 @@ import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
-import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
+import useCartUpsell, {
+  selectMenuSellableEntityMap,
+} from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useLocalized from "../../hooks/utils/useLocalized";
 import { resolveEntityImage } from "../../utils/entityImage";
@@ -138,7 +139,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     | { symbol?: string; currency_symbol?: string }
     | null
     | undefined;
-  const entityMap = useSelector(selectEntityMap) as EntityMapIn;
+  const entityMap = useSelector(selectMenuSellableEntityMap) as EntityMapIn;
   const subCategoryMap = useSelector(selectSubCategoryMap) as SubCategoryMapIn;
   const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
 
@@ -244,7 +245,9 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   // Buy stages for the locked bogoBuySide rows — only where TB can finish
   // the offer (canOfferBuyStage: no group mode, no get-categories). A row
   // whose view fails to resolve (or throws on a malformed payload) simply
-  // stays inert, as before.
+  // stays inert, as before. Tiles come from the menu-sellable map (UB6 F1):
+  // a dead pack is off the menu, so it drops like any off-menu entry (a
+  // plain-and row goes inert) instead of selling empty at full price.
   const buyStageViews = useMemo(() => {
     const views = new Map<string, BuyStageView>();
     sections.lockedRows.forEach((row) => {
