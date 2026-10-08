@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency, setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendation.slice";
@@ -105,6 +105,7 @@ describe("YouMightLikeRail (R1 — PDP 'You Might Like')", () => {
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: ENTITY_MAP }));
     store.dispatch(setReccomendationCategoryMap(MAP));
+    store.dispatch(setModifiersMap({ modifiersMap: { wrap_addons: { _id: "wrap_addons", isActive: true } } }));
     mocks.navigate.mockReset();
     mocks.addEntity.mockReset();
   });

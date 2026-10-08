@@ -7,7 +7,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { mutateAddToCartModal } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectSubTotal } from "@cx-sdk/ordering/state/cart.slice";
-import { selectEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectMenuSellableEntityMap } from "../../hooks/menuHooks/useCartUpsell";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
@@ -40,7 +40,7 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
   const modal = useSelector(
     (s: any) => s.menuSelections?.addToCartModal ?? { isOpen: false, item: {} }
   );
-  const entityMap = useSelector(selectEntityMap) as any;
+  const entityMap = useSelector(selectMenuSellableEntityMap) as any;
   // The menu CTA bar's live subTotal (same "Total" label). netAmount is only
   // mirrored while the bag is open, so it read £0.00 / a stale bill here.
   const cartAmount = useSelector(selectSubTotal) ?? 0;

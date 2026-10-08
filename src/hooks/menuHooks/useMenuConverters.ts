@@ -695,12 +695,15 @@ function useMenuConverters() {
   }
 
   //global function to fetch all the modifier groups and there items if it is not variant
+  // Drops ids the menu's `modifiers` lacks: the SDK resolver keeps the fork's
+  // trailing-`undefined` quirk, and the PDP seed read `group._id` off one
+  // (UB6 — the crash screen from the bag rail).
   const fetchModifierProperties = (modifiersToBeSearched: Array<string>) => {
     return resolveLegacyModifierGroups(
       selectModifiersRdx,
       modifiersToBeSearched,
       deepClone,
-    );
+    )?.filter(Boolean);
   };
 
   const fetchModifierPropertiesAll = (

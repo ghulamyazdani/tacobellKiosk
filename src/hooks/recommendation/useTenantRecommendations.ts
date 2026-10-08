@@ -4,7 +4,7 @@ import { useDispatch, useSelector, useStore } from "react-redux";
 import { isTimeoutError, withTimeoutRetry } from "@cx-sdk/core";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendation.slice";
-import { selectEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectMenuSellableEntityMap } from "../menuHooks/useCartUpsell";
 import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
 import type {
   EntityMap,
@@ -192,7 +192,7 @@ const selectTenantRailItems = createSelector(
   [
     selectTenantMap,
     (state: TenantRecsRootState) => state.cart?.cartItems,
-    selectEntityMap,
+    selectMenuSellableEntityMap,
     selectOutOfStockItems,
     selectFilters,
     selectComboUpsell,
@@ -228,7 +228,7 @@ export function useTenantRailItems(): RecommendedEntity[] {
 const selectTenantItemSuggestions = createSelector(
   [
     selectTenantMap,
-    selectEntityMap,
+    selectMenuSellableEntityMap,
     selectOutOfStockItems,
     selectFilters,
     selectComboUpsell,

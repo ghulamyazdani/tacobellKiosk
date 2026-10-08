@@ -24,7 +24,9 @@ import i18n from "../../../i18n";
 
 // The suggested rail's source: one plain (add-intent) item, so the rail
 // renders whenever a minBill offer tops the locked rows.
-vi.mock("../../../hooks/menuHooks/useCartUpsell", () => ({
+// importOriginal: RewardsSheet also reads selectMenuSellableEntityMap (UB6).
+vi.mock("../../../hooks/menuHooks/useCartUpsell", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   default: () => ({
     items: [{ id: "nachos", name: "Nachos", price: 20 }],
     shouldShowUpsell: true,

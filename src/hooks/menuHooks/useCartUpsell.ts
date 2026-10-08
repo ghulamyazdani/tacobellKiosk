@@ -1,6 +1,6 @@
 import { createSelector } from "@reduxjs/toolkit";
 import { useSelector } from "react-redux";
-import { selectEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectEntityMap, selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectOutOfStockItems } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
 import {
@@ -10,9 +10,11 @@ import {
   type CartUpsellBreakdown,
 } from "./cartUpsellUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
-import type {
-  EntityMap,
-  OutOfStockMap,
+import {
+  toMenuSellableEntity,
+  type EntityMap,
+  type ModifierGroupMap,
+  type OutOfStockMap,
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 
 /*
@@ -44,12 +46,31 @@ const selectComboUpsellEnabled = (state: CartUpsellRootState) =>
   state.appSettings?.kiosk_settings?.enable_combo_upsell;
 
 /**
+ * The entityMap as the menu sells it (toMenuSellableEntity). EVERY suggestion
+ * surface reads this, never selectEntityMap: from the raw map a dead-group
+ * item opened the PDP from the bag (UB6 crash) and a dead pack sold empty.
+ * Recomputed only when a menu loads.
+ */
+export const selectMenuSellableEntityMap = createSelector(
+  [selectEntityMap, selectModifierMap],
+  (entityMap: EntityMap, modifierMap: ModifierGroupMap): EntityMap => {
+    if (!entityMap) return entityMap;
+    const sellable: Record<string, RecommendedEntity> = {};
+    for (const [id, entity] of Object.entries(entityMap)) {
+      const shaped = toMenuSellableEntity(entity, modifierMap);
+      if (shaped) sellable[id] = shaped;
+    }
+    return sellable;
+  },
+);
+
+/**
  * Memoized so the scan runs only when the menu, the stock map, or the active
  * tag filters actually change — not on every render of the bag that reads it.
  */
 const selectCartUpsellItems = createSelector(
   [
-    selectEntityMap,
+    selectMenuSellableEntityMap,
     selectOutOfStockItems,
     selectFilters,
     selectComboUpsellEnabled,
@@ -59,7 +80,7 @@ const selectCartUpsellItems = createSelector(
 
 const selectCartUpsellBreakdown = createSelector(
   [
-    selectEntityMap,
+    selectMenuSellableEntityMap,
     selectOutOfStockItems,
     selectFilters,
     selectComboUpsellEnabled,
