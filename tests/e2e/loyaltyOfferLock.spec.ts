@@ -43,9 +43,8 @@ import {
  *   → £7.00; with flat £3: −£20.00, VAT 0.75 → 5.75 → £6.00.
  * Offer minimums count paid rows only, so the burger + reward bag is £8 to
  * an offer (MIN_25 below is £17.00 short).
- * The bag renders U+2212 MINUS SIGN (MINUS below). After page.reload() the
- * currency symbol waits for get_data (bag.spec), so post-reload money is
- * matched without "£".
+ * The bag renders U+2212 MINUS SIGN (MINUS below). After page.reload() money
+ * keeps the persisted "£" (bag.spec header).
  */
 
 const LOGIN_OK = {
@@ -591,7 +590,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await page.getByTestId("rewards-close").click();
     await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
     await expectNothingAppliedOverWindow(page);
-    await expect(page.getByTestId("bag-discounts")).toContainText("17.00");
-    await expect(page.getByTestId("bag-total")).toContainText("9.00");
+    await expect(page.getByTestId("bag-discounts")).toContainText("£17.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 });

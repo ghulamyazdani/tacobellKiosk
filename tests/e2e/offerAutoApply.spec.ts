@@ -30,9 +30,8 @@ import { fileURLToPath } from "node:url";
  * round-off): flat £2 on the £8 burger → Sub £8.00, Discounts −£2.00,
  * Total £7.00; burger alone → £9.00; burger + Greek Salad, no offer →
  * round(25 × 1.15 = 28.75) = £29.00; with the flat £2 → round(23 × 1.15 =
- * 26.45) = £26.00 (E7, E8). After page.reload() the currency symbol
- * is gone until get_data is refetched (bag.spec.ts), so post-reload money is
- * matched without "£".
+ * 26.45) = £26.00 (E7, E8). After page.reload() money keeps the persisted
+ * "£" (bag.spec.ts header).
  */
 
 const LOGIN_OK = {
@@ -564,9 +563,9 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await expect(page.getByTestId("bag-rewards-applied")).toContainText("£2 off your order");
     await expect(page.getByTestId("bag-rewards-applied-for-you")).toHaveCount(0);
     await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
-    // Post-reload money without "£" (the currency symbol waits for get_data).
-    await expect(page.getByTestId("bag-discounts")).toContainText("2.00");
-    await expect(page.getByTestId("bag-total")).toContainText("7.00");
+    // Post-reload money keeps the persisted "£" (bag.spec.ts header).
+    await expect(page.getByTestId("bag-discounts")).toContainText("£2.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£7.00");
     await expect(page).toHaveURL(/\/cart$/);
   });
 });

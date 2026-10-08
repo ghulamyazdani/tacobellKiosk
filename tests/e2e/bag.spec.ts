@@ -24,8 +24,8 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  *   MIN_CART_UPSELL_ITEMS = 1.
  * - Greek Salad has no recommendedItems, so a plain add opens NO added
  *   modal (resolveAddItemPresentation) — direct cta assertions instead.
- * - get_data mock carries currencySettings.symbol "£" and empty deployment
- *   charges — but every fixture item carries VAT@15% (percentage), which the
+ * - get_data mock carries currencySettings {currency: "GBP", text: "£"} and
+ *   empty deployment charges — but every fixture item carries VAT@15% (percentage), which the
  *   bill engine treats as EXCLUSIVE, and getNetAmount() rounds to 0 decimals
  *   (Math.round — no disable_roundoff/round_off_near_5 settings mocked). So
  *   Total = round(SubTotal * 1.15): £8 → £9, £16 → £18, £17 → £20,
@@ -35,9 +35,11 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  * After page.reload() the SPA re-boots with the token cookie intact:
  * ProtectedRoute keeps the /menu URL (no registration bounce), the menu
  * redux is empty until a re-driven boot refetches it, and AppRoutes'
- * one-shot syncCartOnReLoad() rehydrates the cart from Dexie — but the
- * currency symbol is gone until get_data is refetched, so post-reload money
- * assertions match /d+\.dd/ without "£".
+ * one-shot syncCartOnReLoad() rehydrates the cart from Dexie. The currency
+ * survives too: currencySettings is persisted (store.ts, the appSettings
+ * whitelist) and a reload never refetches get_data (only /second and the
+ * order-type switch call it), so post-reload money keeps its "£" — ₹ there
+ * would be the UB1 fallback, i.e. a lost currency.
  */
 
 const LOGIN_OK = {
@@ -569,16 +571,16 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-total")).toContainText("£33.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
 
-    // Crash-reload: both rows come back from Dexie (money without "£" — header).
+    // Crash-reload: both rows come back from Dexie, in the persisted "£" (header).
     await expect.poll(() => dexieCartQuantities(page)).toEqual([1, 2]);
     await page.reload();
     await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
     await expect(bagRows(page)).toHaveCount(2);
     await expect(bagRows(page).nth(0)).not.toContainText("Add Cheese");
-    await expect(bagRows(page).nth(0)).toContainText("9.00");
+    await expect(bagRows(page).nth(0)).toContainText("£9.00");
     await expect(bagRows(page).nth(1)).toContainText("Add Cheese");
-    await expect(bagRows(page).nth(1)).toContainText("20.00");
-    await expect(page.getByTestId("bag-subtotal")).toContainText("29.00");
+    await expect(bagRows(page).nth(1)).toContainText("£20.00");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£29.00");
   });
 
   test("SPLIT EDIT, BACK: leaving the split PDP with BACK writes nothing — the single ×3 row stays; X on the numpad cancels too", async ({
@@ -722,12 +724,11 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("cta-total")).toContainText("£0.00");
 
     // Reload: the Dexie rehydrate must find NOTHING (clearIndexedDbCart ran
-    // in the reset) — the bag stays empty. Post-reload the currency symbol
-    // is gone until get_data refetches, so match the bare amount.
+    // in the reset) — the bag stays empty; the persisted "£" stays (header).
     await page.reload();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("0.00");
+    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
   });
 
   test("CRASH RECOVERY: a reload rehydrates the cart from Dexie — count/total restored on /menu and the bag renders the row", async ({
@@ -746,16 +747,16 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await page.reload();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    // Currency symbol lives in redux (get_data) and is not refetched on this
-    // path — assert the restored amount, not the "£".
-    await expect(page.getByTestId("cta-total")).toContainText("17.00");
+    // The currency survives with the cart: currencySettings is persisted and
+    // this path never refetches get_data (header) — ₹ here = a lost currency.
+    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
 
     // The bag renders the restored row.
     await openBag(page);
     await expect(bagRows(page)).toHaveCount(1);
     await expect(bagRows(page).first()).toContainText("Greek Salad");
     // round(17 * 1.15) = £20 — exclusive VAT survives the rehydrate too.
-    await expect(page.getByTestId("bag-total")).toContainText("20.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£20.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (1)");
   });
 

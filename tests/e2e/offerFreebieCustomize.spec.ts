@@ -881,7 +881,6 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
 
     // The guest starts again: nothing stale in the slot, so SAVE works.
-    // (Post-reload money is matched without "£" — offerAutoApply.spec E9.)
     const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
     await burger.scrollIntoViewIfNeeded();
     await burger.click();
