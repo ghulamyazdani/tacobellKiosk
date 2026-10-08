@@ -23,7 +23,7 @@ import useLoyalty from "../loyalty/useLoyalty";
 import useCartHook from "../menuHooks/useCartHook";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import useMenuConverters from "../menuHooks/useMenuConverters";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import useAppSettings from "../utils/useAppSettings";
 import useGlobalTriggerServices from "../globals/useGlobalTriggerServices";
 import AutoScroll from "../../utils/autoScroll";
@@ -96,6 +96,7 @@ const useCustomization = ({
   selectedCustomizations,
   SelectedEntity,
   addTier2CustomizationToMIAMCart,
+  planSplitEditCommit,
 }: any) => {
   // const makeItMealRdx = useSelector(modalMakeItAMeal);
   const navigate = useNavigate();
@@ -307,24 +308,14 @@ const useCustomization = ({
   // the LIVE cart and DP session at commit time.
   const store = useStore();
   // The split-edit planner rides in the bag's lazy chunk (D7 boot budget).
+  // The PDP hands it in (`planSplitEditCommit`, from its mount-time
+  // loadPdpLazyParts) — this hook must not import that chunk itself: the
+  // tier-2 page that also uses it lives IN the chunk (a dependency cycle).
   // A split edit only starts from that chunk's numpad, so the chunk is
-  // already loaded when the PDP opens with the marker: this just takes a
-  // synchronous handle for the commit. No handle = the commit refuses.
-  const splitEditMarker = isOpenBottomSheet?.splitEdit;
-  const splitPlanner = useRef<((input: SplitEditInput) => SplitEditPlan) | null>(null);
-  useEffect(() => {
-    if (!splitEditMarker || splitPlanner.current) return;
-    let live = true;
-    void (async () => {
-      try {
-        const { planSplitEditCommit } = await import("../../components/cart/bagLazyParts");
-        if (live) splitPlanner.current = planSplitEditCommit;
-      } catch {
-        // No planner: the split commit writes nothing; BACK still works.
-      }
-    })();
-    return () => void (live = false);
-  }, [splitEditMarker]);
+  // already loaded when the PDP opens with the marker. No handle = the
+  // commit refuses.
+  const splitPlanner: ((input: SplitEditInput) => SplitEditPlan) | undefined =
+    planSplitEditCommit;
 
   /*
     Edit commit (item 20). Without the bag's split marker this is exactly
@@ -344,7 +335,7 @@ const useCustomization = ({
       return true;
     }
     const state = store.getState();
-    const plan = splitPlanner.current?.({
+    const plan = splitPlanner?.({
       cartItems: selectCart(state)?.cartItems,
       sourceItemId: splitEdit.sourceItemId,
       editQuantity: splitEdit.editQuantity,
@@ -1070,12 +1061,17 @@ const useCustomization = ({
 
       if (!verdict.allPassed) {
         handleErroredModifier(verdict.errorModifierId);
-        dispatch(
-          setShowErrorModalGlobal({
-            showErrorModal: true,
-            errorMessage: t("toast.selectAllCustomizations"),
-          }),
-        );
+        // G1: only the quick-customization auto-commit (an explicit map)
+        // raises the global error. The PDP's ADD TO BAG (no argument) is
+        // answered by its completion warning alone — never two modals.
+        if (customization) {
+          dispatch(
+            setShowErrorModalGlobal({
+              showErrorModal: true,
+              errorMessage: t("toast.selectAllCustomizations"),
+            }),
+          );
+        }
         return false;
       }
 
@@ -1151,12 +1147,16 @@ const useCustomization = ({
       );
 
       if (!allCheckPassed) {
-        dispatch(
-          setShowErrorModalGlobal({
-            showErrorModal: true,
-            errorMessage: t("toast.fillCustomizationFields"),
-          }),
-        );
+        // G1: as above — the PDP button path is answered by the completion
+        // warning; only the quick-customization auto-commit raises this.
+        if (customization) {
+          dispatch(
+            setShowErrorModalGlobal({
+              showErrorModal: true,
+              errorMessage: t("toast.fillCustomizationFields"),
+            }),
+          );
+        }
         return false;
       }
 
@@ -1461,7 +1461,7 @@ const useCustomization = ({
         dispatch(
           setShowErrorModalGlobal({
             showErrorModal: true,
-            errorMessage: `Maximum selection  limit reached`,
+            errorMessage: t("toast.alreadyReachedMaximumLimit"),
           }),
         );
 

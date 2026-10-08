@@ -3,11 +3,12 @@
  *
  * The app code-splits one lazy UI chunk (bagLazyParts: BagSheet's
  * `React.lazy` rail, offers sheets and celebration, the order-type switch,
- * its notice and the edit-how-many numpad; the PDP's completion warning and
- * split-edit planner; and the operator Activity
- * Center) plus three runtime chunks (fcmRuntime, posthogRuntime,
- * paytmRuntime — exempt below), so code can be fetched from the network at
- * the moment a customer taps. On a kiosk the dangerous case is a deploy: the
+ * its notice and the edit-how-many numpad; the PDP's completion warning,
+ * split-edit planner and tier-2 CUSTOMIZE page; the menu's Xeno rewards
+ * sheet; and the operator Activity Center) plus three runtime chunks
+ * (fcmRuntime, posthogRuntime, paytmRuntime — exempt below), so code can be
+ * fetched from the network at the moment a customer taps. On a kiosk the
+ * dangerous case is a deploy: the
  * device has been running for hours against an old index.html, the origin now
  * serves re-hashed chunk files, and the next tap requests a filename that no
  * longer exists. `React.lazy` rejects, React 19
@@ -22,9 +23,17 @@
  * mount effect in `src/routes/AppRoutes.tsx` (P7a, contract E), so the customer
  * keeps their items; the never-persisted menu is refetched by /menu's own
  * mount (P9b). The Activity Center opens only on the splash and the boot
- * screen, where no order is in progress. A reload on the PDP (its completion
- * warning) drops the customisation in progress — the PDP's no-session guard
- * leaves it — never the cart.
+ * screen, where no order is in progress. The PDP loads its parts (completion
+ * warning, split-edit planner, tier-2 page) at MOUNT, never at a tap
+ * (loadPdpLazyParts), so a reload there lands before the guest has picked
+ * anything — the PDP's no-session guard leaves it — never the cart.
+ *
+ * Inside the no-reload window (below) nothing reloads; the failed part
+ * degrades behind its local boundary or scrim, and the HEALER the app
+ * registers once its store exists (setChunkFailureHealer, main.tsx: the
+ * whole-app update the splash applies at its next dwell, between guests)
+ * heals the page. This module imports nothing — it installs first, before
+ * the store exists.
  */
 
 /**
@@ -88,6 +97,21 @@ export const holdReloadsUntil = (work: Promise<unknown>): void => {
   reloadHold = hold;
 };
 
+/** Registered by main.tsx right after install; null until then. */
+let chunkFailureHealer: (() => void) | null = null;
+
+/**
+ * Latched once the loop guard has held back a reload in this page: the chunk
+ * is dead for the page's life (Chromium keeps the failed module), so every
+ * later failure — the PDP re-imports at each mount, a first bag open — heals
+ * at the splash too, never reloads mid-order once the page is past 60 s.
+ */
+let healing = false;
+
+export const setChunkFailureHealer = (heal: () => void): void => {
+  chunkFailureHealer = heal;
+};
+
 /** `reload` now, or once the held work has settled. */
 const reloadWhenFree = (reload: () => void): void => {
   if (reloadHold) void reloadHold.then(reload);
@@ -117,14 +141,21 @@ export const installChunkErrorRecovery = (): void => {
     // and PaytmPaymentRoute shows its staff panel.
     if (/fcmRuntime|posthogRuntime|paytmRuntime/.test(String(event.payload?.message))) return;
 
-    if (isRetryOfAReload()) {
-      // Reloading again would cycle. Let the rejection surface instead: the
-      // ErrorBoundary then retries no faster than once a minute
-      // (planCrashRecovery), and a slow cycle beats a fast one.
+    if (healing || isRetryOfAReload()) {
+      healing = true;
+      // Reloading again would cycle. The import resolves empty instead: the
+      // part's local boundary degrades it (an unguarded one falls to the app
+      // ErrorBoundary, once a minute at most — planCrashRecovery), and the
+      // healer flags the reload for the splash's next dwell, between guests.
       console.error(
         "[chunkRecovery] chunk preload failed again after a reload — not retrying",
         event.payload,
       );
+      try {
+        chunkFailureHealer?.();
+      } catch {
+        // Never throw out of the listener; the next failure retries the healer.
+      }
       return;
     }
 

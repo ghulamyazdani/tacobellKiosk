@@ -11,6 +11,7 @@ import { store } from "../../../redux/app/store";
 import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import useTenantRecommendations, {
   tenantRecommendationsUrl,
+  useTenantItemSuggestions,
   useTenantRailItems,
 } from "../useTenantRecommendations";
 
@@ -451,5 +452,116 @@ describe("useTenantRailItems", () => {
     const { result } = renderHook(() => useTenantRailItems(), { wrapper });
 
     expect(result.current.map((e) => [e.id, e.isDirectlyAddable])).toEqual([["fries", false]]);
+  });
+});
+
+/*
+  Lane figma-polish R1 — the PDP "You Might Like" list: the tenant map entry
+  of THIS item (keyed by baseItem_id), ranked by occurrences against the live
+  menu with the bag rail's eligibility rules and D7 flag. The item itself is
+  skipped; items already in the bag stay; no isCartRecommended fallback (that
+  list is global). EMPTY is one shared array, and the selector is memoised per
+  (state, id).
+*/
+describe("useTenantItemSuggestions (R1)", () => {
+  const ENTITY_MAP = {
+    burger: { id: "burger", name: "Cheese Burger", price: 8, isActive: true },
+    fries: { id: "fries", name: "Large Fries", price: 2.5, isActive: true, tags: ["veg"] },
+    pepsi: { id: "pepsi", name: "Pepsi", price: 3, isActive: true, tags: ["veg"] },
+    wrap: { id: "wrap", name: "Wrap", price: 6, isActive: true },
+    sleepy: { id: "sleepy", name: "Retired", price: 1, isActive: false },
+    soldout: { id: "soldout", name: "Sold Out", price: 1, isActive: true, outOfStock: true },
+    taco: { id: "taco", name: "Taco", price: 2, isActive: true },
+  };
+  const ITEM_MAP = {
+    burger: {
+      baseItem_id: "burger",
+      refers: [
+        { refer_baseItem_id: "fries", occurrences: 1 },
+        { refer_baseItem_id: "pepsi", occurrences: 9 },
+        { refer_baseItem_id: "wrap", occurrences: 5 },
+        { refer_baseItem_id: "burger", occurrences: 99 },
+        { refer_baseItem_id: "sleepy", occurrences: 8 },
+        { refer_baseItem_id: "soldout", occurrences: 7 },
+        { refer_baseItem_id: "ghost", occurrences: 6 },
+      ],
+    },
+    // Another item's entry must never leak into the burger's list.
+    taco: { baseItem_id: "taco", refers: [{ refer_baseItem_id: "wrap", occurrences: 50 }, { refer_baseItem_id: "taco", occurrences: 3 }] },
+  };
+
+  const seed = () => {
+    store.dispatch(setEntityMap({ entityMap: ENTITY_MAP }));
+    store.dispatch(setReccomendationCategoryMap(ITEM_MAP));
+  };
+  const suggestions = (id: string | undefined) => renderHook(() => useTenantItemSuggestions(id), { wrapper });
+  const ids = (list: Array<{ id: string }>) => list.map((entity) => entity.id);
+
+  it("ranks THIS item's refers by occurrences, skipping the item itself, unknown, inactive and out-of-stock ids", () => {
+    seed();
+    const { result } = suggestions("burger");
+
+    expect(ids(result.current)).toEqual(["pepsi", "wrap", "fries"]);
+    expect(result.current[0]).toMatchObject({ id: "pepsi", price: 3, isDirectlyAddable: true });
+  });
+
+  it("another item gets its own entry only (the taco's wrap, never the burger's list)", () => {
+    seed();
+
+    expect(ids(suggestions("taco").result.current)).toEqual(["wrap"]);
+  });
+
+  it("an item already in the bag stays a suggestion (only THIS item is the 'cart')", () => {
+    seed();
+    store.dispatch(setCartItems([{ id: "pepsi", itemId: "p-1", name: "Pepsi", quantity: 3, type: "ITEM", total_price: 9 }]));
+
+    expect(ids(suggestions("burger").result.current)).toEqual(["pepsi", "wrap", "fries"]);
+  });
+
+  it("drops what the store's live out-of-stock map marks inStock:false, and what the active tag filter hides", () => {
+    seed();
+    store.dispatch(setOutOfStockItems({ wrap: { inStock: false } }));
+    expect(ids(suggestions("burger").result.current)).toEqual(["pepsi", "fries"]);
+
+    store.dispatch(setOutOfStockItems({}));
+    store.dispatch(setFilters(["veg"]));
+    expect(ids(suggestions("burger").result.current)).toEqual(["pepsi", "fries"]);
+  });
+
+  it("EMPTY — one shared array — with no id, no map entry, nothing eligible, or the D7 flag off", () => {
+    seed();
+    const none = suggestions(undefined).result.current;
+    const noEntry = suggestions("fries").result.current;
+
+    expect(none).toEqual([]);
+    expect(noEntry).toBe(none);
+
+    store.dispatch(setReccomendationCategoryMap({ fries: { baseItem_id: "fries", refers: [{ refer_baseItem_id: "ghost", occurrences: 1 }] } }));
+    expect(suggestions("fries").result.current).toBe(none);
+
+    seed();
+    store.dispatch(setKioskSettings({ enable_cart_upsell_screen: false }));
+    expect(suggestions("burger").result.current).toBe(none);
+  });
+
+  it("memoised per (state, id): an unrelated dispatch keeps the same array; the result follows the id", () => {
+    seed();
+    let id = "burger";
+    const { result, rerender } = renderHook(() => useTenantItemSuggestions(id), { wrapper });
+    const first = result.current;
+
+    act(() => {
+      store.dispatch(setKioskSettings({ pipeline_text_primary: "HAPPY HOUR" }));
+    });
+    rerender();
+    expect(result.current).toBe(first);
+
+    id = "taco";
+    rerender();
+    expect(ids(result.current)).toEqual(["wrap"]);
+
+    id = "burger";
+    rerender();
+    expect(ids(result.current)).toEqual(["pepsi", "wrap", "fries"]);
   });
 });

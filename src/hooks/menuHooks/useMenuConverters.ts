@@ -170,8 +170,14 @@ function useMenuConverters() {
     if (!charges) {
       return [];
     }
-    // The staged switch passes the TARGET's tab type; the default path keeps
-    // the render-time getter (stale on /second — handoff, see contract §1.6).
+    // MONEY: the tab type of the pipeline being fetched (fetchMenu passes
+    // `pipeline?.tab_type`). /second dispatches setTabType and calls fetchMenu
+    // in the same tick, so the render-time getter still held the PREVIOUS
+    // session's type — only "table" changes the result, so a guest after a
+    // table session lost the menu charges (and the reverse applied them).
+    // The getter remains the fallback for a caller without a pipeline row
+    // (BagSheet's fetchMenu(tab, true, false, true)). Diverges from the fork,
+    // which keeps the stale closure.
     const tabType = tabTypeOverride ?? getTabType();
     if (tabType === "table") {
       return [];
@@ -529,7 +535,7 @@ function useMenuConverters() {
         menu.charges,
         taxesMap,
         pipeline,
-        opts ? pipeline?.tab_type : undefined,
+        pipeline?.tab_type,
       );
       const allCharges = [...deploymentCharges, ...menuCharges];
 

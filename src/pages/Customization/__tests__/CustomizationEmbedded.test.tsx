@@ -3,10 +3,10 @@
  * OfferTierHost for an offer freebie (isGetItem) or a buy-stage item
  * (isBuyStageItem) tier session (lane "offers", item 32). It must never
  * navigate (hazard H1), render no footer strip / CANCEL ORDER / language
- * sheet, and a freebie's CTA makes no price claim.
+ * sheet / "You Might Like" rail, and a freebie's CTA makes no price claim.
  */
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -16,7 +16,8 @@ import {
   openComboConstutientCustomizations,
   setTier1BottomSheetAndSelectedEntity,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
-import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendation.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
@@ -139,6 +140,36 @@ describe("Customization embedded (in-bag PDP for offer tier sessions)", () => {
     expect(screen.getByTestId("customization-screen")).not.toHaveAttribute("data-embedded");
     expect(screen.getByTestId("footer-cancel")).toBeInTheDocument();
     expect(screen.getByTestId("footer-language")).toBeInTheDocument();
+  });
+
+  /** The burger's tenant suggestion (R1): one-tap Large Fries. */
+  const seedSuggestion = () => {
+    store.dispatch(setEntityMap({ entityMap: { fries: { id: "fries", name: "Large Fries", price: 2, isActive: true } } }));
+    store.dispatch(
+      setReccomendationCategoryMap({
+        [BURGER.id]: { baseItem_id: BURGER.id, refers: [{ refer_baseItem_id: "fries", occurrences: 3 }] },
+      })
+    );
+  };
+
+  it("never the 'You Might Like' rail (R1) — a tap would start a second tier-1 add over the bag's session", () => {
+    seedSuggestion();
+    seedTier(BUY_STAGE_BURGER);
+    renderPdp(true, "/cart");
+    expect(screen.getByTestId("customization-screen")).toHaveAttribute("data-embedded", "true");
+    expect(screen.queryByTestId("pdp-rail")).not.toBeInTheDocument();
+  });
+
+  it("control: the route PDP shows the same suggestion on its rail, inside the scroller after the groups", () => {
+    seedSuggestion();
+    seedTier(BURGER);
+    renderPdp(false, "/customization");
+    const rail = screen.getByTestId("pdp-rail");
+    expect(within(rail).getByTestId("pdp-rail-item-fries")).toBeInTheDocument();
+    expect(document.getElementById("scrollCustomizableItem")).toContainElement(rail);
+    expect(screen.getByTestId("pdp-group-pickle_group").compareDocumentPosition(rail)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 
   it("a freebie has no qty stepper and its CTA makes no price claim ('ADD TO REWARD', no '£')", () => {

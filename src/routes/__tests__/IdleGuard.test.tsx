@@ -4,7 +4,11 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { createMocks } from "react-idle-timer";
-import { setIdealTimeout } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  selectShowErrorModalGlobal,
+  setIdealTimeout,
+  setShowErrorModalGlobal,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../redux/app/store";
 import { useIdleHold } from "../../hooks/utils/useIdleTimeout";
@@ -431,6 +435,80 @@ describe("IdleGuard — the in-session idle timeout (P9a)", () => {
       expect(prompt()).not.toBeInTheDocument();
       advance(1);
       expect(prompt()).toBeInTheDocument();
+    });
+  });
+
+  /*
+    Lane figma-polish G1: the guard hosts GlobalErrorHost — exactly the
+    in-session subtree. Its layer (z-[95]) paints above any page overlay
+    (≤ 80, e.g. ErrorModal / BagSheet's children) and below the idle prompt
+    (z-[100], later in the DOM). It is gone with the guard on /start, so a
+    stale flag can never flash over the splash before /start's reset.
+  */
+  describe("the global error (G1)", () => {
+    /** The z-index of a stacking layer's own class (z-40 / z-[95]). */
+    const zOf = (element: Element | null | undefined) =>
+      Number(/(?:^|\s)z-\[?(\d+)\]?(?:\s|$)/.exec(element?.getAttribute("class") ?? "")?.[1] ?? NaN);
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    const mountWithOverlay = () =>
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/cart"]}>
+            <Routes>
+              <Route path="/start" element={<div data-testid="splash" />} />
+              <Route element={<IdleGuard />}>
+                <Route
+                  path="/cart"
+                  element={
+                    <div data-testid="page-cart">
+                      <div data-testid="page-overlay" className="absolute inset-0 z-[80]" />
+                    </div>
+                  }
+                />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </Provider>
+      );
+
+    const raise = () =>
+      act(() => {
+        store.dispatch(setShowErrorModalGlobal({ showErrorModal: true, errorMessage: "Boom" }));
+      });
+
+    it("renders inside the guard beside the page: above a page overlay (95 > 80), below the idle prompt (100)", () => {
+      mountWithOverlay();
+      expect(screen.queryByTestId("global-error")).not.toBeInTheDocument();
+      raise();
+
+      const layer = screen.getByTestId("global-error").parentElement as HTMLElement;
+      const overlay = screen.getByTestId("page-overlay");
+      expect(layer.parentElement).toBe(screen.getByTestId("page-cart").parentElement);
+      expect(zOf(layer)).toBe(95);
+      expect(zOf(layer)).toBeGreaterThan(zOf(overlay));
+      expect(follows(overlay, layer)).toBe(true);
+
+      advance(100_000);
+      const idle = screen.getByTestId("idle-modal");
+      expect(zOf(idle)).toBe(100);
+      expect(zOf(idle)).toBeGreaterThan(zOf(layer));
+      expect(follows(layer, idle)).toBe(true);
+      // No idle hold: the error stays up under the prompt, and still times out.
+      expect(screen.getByTestId("global-error")).toBeInTheDocument();
+    });
+
+    it("after the timeout lands on /start nothing renders — the flag itself is /start's reset to clear", () => {
+      mountWithOverlay();
+      raise();
+
+      advance(120_000);
+
+      expect(splash()).toBeInTheDocument();
+      expect(screen.queryByTestId("global-error")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
     });
   });
 });

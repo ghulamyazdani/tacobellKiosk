@@ -28,6 +28,8 @@ const AR = (value: string) => [{ value, name: "Arabic", code: "ar", dir: "rtl" }
 const AR_NUGGETS = "ناجتس";
 const AR_DRINKS = "مشروبات";
 
+// Two options per slot: since item 42 (D5) a ONE-option slot is pre-selected
+// (an included item), so it could never be left incomplete.
 const slot = (id: string, name: string, order: number, extra: Record<string, unknown> = {}) => ({
   _id: id,
   name,
@@ -39,7 +41,10 @@ const slot = (id: string, name: string, order: number, extra: Record<string, unk
   multiplePunchMaxItem: 1,
   order,
   isActive: true,
-  constituentItems: [{ id: `${id}-a`, name: `${name} A`, price: 0, isActive: true }],
+  constituentItems: [
+    { id: `${id}-a`, name: `${name} A`, price: 0, isActive: true },
+    { id: `${id}-b`, name: `${name} B`, price: 0, isActive: true },
+  ],
   ...extra,
 });
 

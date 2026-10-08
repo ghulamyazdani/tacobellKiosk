@@ -32,6 +32,16 @@ import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 export type { AddIntent, AddEntityOptions };
 
 /**
+ * TB-local (the SDK type is fork-shared): `preselectedVariantId` = the size
+ * the guest already chose in Select-a-Size. Variant intent only; it rides
+ * the tier-1 `bottomSheet` (makeItAMealTier1BottomSheet(state)
+ * .preselectedVariantId) and the PDP opens with that size confirmed.
+ */
+export type TbAddEntityOptions = AddEntityOptions & {
+  preselectedVariantId?: string;
+};
+
+/**
  * Only the slices this hook reads. The store itself is untyped, so declaring
  * the narrow shape here keeps the selectors honest without pulling in a
  * repo-wide RootState that does not exist yet.
@@ -103,10 +113,15 @@ const useAddEntityToCart = () => {
    * the cart; every other branch hands the customer off to another screen.
    */
   const addEntity = useCallback(
-    (entity: RecommendedEntity, options: AddEntityOptions = {}): boolean => {
+    (entity: RecommendedEntity, options: TbAddEntityOptions = {}): boolean => {
       const intent = getAddIntent(entity);
-      const { onBeforeLeave, suppressAddedModal, returnTo, returnPath } =
-        options;
+      const {
+        onBeforeLeave,
+        suppressAddedModal,
+        returnTo,
+        returnPath,
+        preselectedVariantId,
+      } = options;
       const navigationState = buildReturnNavigationState(returnTo, returnPath);
 
       if (intent === "unavailable") return false;
@@ -157,8 +172,16 @@ const useAddEntityToCart = () => {
       dispatch(closeMakeItAMealModal());
       dispatch(setSelectedEntity(buildVariantSelectionEntity(entity)));
       dispatch(openComboConstutientCustomizations());
+      const payload = buildVariantTierPayload(entity);
       dispatch(
-        setTier1BottomSheetAndSelectedEntity(buildVariantTierPayload(entity)),
+        setTier1BottomSheetAndSelectedEntity(
+          preselectedVariantId
+            ? {
+                ...payload,
+                bottomSheet: { ...payload.bottomSheet, preselectedVariantId },
+              }
+            : payload,
+        ),
       );
       navigate(
         "/customization",

@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { mockCheckoutBackend } from "./fixtures/checkout";
@@ -66,6 +66,12 @@ const LOGIN_OK = {
 const slimMenu = JSON.parse(
   readFileSync(
     fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
+    "utf-8"
+  )
+);
+const en = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
     "utf-8"
   )
 );
@@ -962,5 +968,35 @@ test.describe("P9c ADA reach-zone view", () => {
     await expect(drainBar).toHaveCount(0);
     await page.clock.runFor(REWARDS_AUTO_DISMISS_MS + 5_000);
     await expect(sheet).toBeVisible();
+  });
+
+  test("GLOBAL ERROR (G1) in the view: the global error card (a failed PAY preflight over the 765 px bag) sits inside the 798–1920 reach zone with GOT IT reachable, and GOT IT hands back a usable bag", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await footerAda(page).click();
+    await expectAdaLayout(page);
+    await addGreekSaladOneTap(page, "(1)");
+    await openBag(page);
+
+    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
+    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    await page.getByTestId("bag-pay").click();
+    const dialog = page.getByTestId("global-error");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(en.bag.checkoutFailed);
+    await expectCardInZone(dialog);
+    await expectReachable(page, dialog);
+    await expectAdaLayout(page);
+
+    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
+    await page.getByTestId("global-error-ok").click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await expect(page.getByTestId("bag-pay")).toBeEnabled();
+    await expectReachable(page, page.getByTestId("bag-sheet"));
+    await expectAdaLayout(page);
   });
 });

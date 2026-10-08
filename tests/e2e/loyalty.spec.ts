@@ -510,12 +510,12 @@ test.describe("P7c XENO loyalty", () => {
 
     // One reward per order (contract branch table).
     await page.getByTestId("menu-rewards-link").click();
-    const errorDialog = page.getByTestId("loyalty-error");
+    const errorDialog = page.getByTestId("global-error"); // G1: the app-wide GlobalErrorHost
     await expect(errorDialog).toBeVisible();
     await expect(errorDialog).toContainText("Loyalty Item already availed");
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
 
-    await page.getByTestId("loyalty-error-retry").click();
+    await page.getByTestId("global-error-ok").click();
     await expect(errorDialog).toHaveCount(0);
     // Refused, not reverted: the redeemed row is untouched.
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
@@ -536,14 +536,14 @@ test.describe("P7c XENO loyalty", () => {
     await expect(page.getByTestId("menu-rewards-link")).toHaveText("Rewards");
 
     await page.getByTestId("menu-rewards-link").click();
-    const errorDialog = page.getByTestId("loyalty-error");
+    const errorDialog = page.getByTestId("global-error"); // G1: the app-wide GlobalErrorHost
     await expect(errorDialog).toBeVisible();
     await expect(errorDialog).toContainText(
       "No coupons available for you at the moment"
     );
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
 
-    await page.getByTestId("loyalty-error-retry").click();
+    await page.getByTestId("global-error-ok").click();
     await expect(errorDialog).toHaveCount(0);
   });
 

@@ -175,6 +175,15 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
     }
   }, []);
 
+  // The guest's first touch stops the countdown AND takes its bar down.
+  // Never inside cancelTimer: that is also the effect cleanup, and
+  // StrictMode's mount → cleanup → mount would hide the bar on open.
+  const [touched, setTouched] = useState(false);
+  const handleTouch = () => {
+    cancelTimer();
+    setTouched(true);
+  };
+
   // Auto-dismiss (fork: only on the post-lookup auto-open, isTimerOn:true).
   // Rule 5 — one interval, cleared on unmount and on the first interaction;
   // the fork re-created it on every tick, which leaked on fast unmounts.
@@ -518,13 +527,13 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         role="dialog"
         aria-labelledby="loyalty-rewards-title"
         style={{ animation: "tbLoyaltySheetEnter 0.2s ease-out both" }}
-        onPointerDownCapture={cancelTimer}
-        onScrollCapture={cancelTimer}
+        onPointerDownCapture={handleTouch}
+        onScrollCapture={handleTouch}
         className="absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         {/* Auto-dismiss progress — purely decorative; disappears the moment
             the customer touches the sheet. */}
-        {timed && remaining > 0 && (
+        {timed && !touched && remaining > 0 && (
           <span
             aria-hidden="true"
             className="absolute left-0 top-0 h-[6px] bg-tb-pink"

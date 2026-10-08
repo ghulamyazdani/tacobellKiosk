@@ -68,7 +68,7 @@ function PaymentChrome({ ada }: { ada: boolean }) {
         <img
           alt="Taco Bell"
           src={tbBell}
-          className="absolute left-1/2 top-[135px] h-[89px] w-[100px] -translate-x-1/2"
+          className="absolute left-1/2 top-[128px] h-[89px] w-[100px] -translate-x-1/2"
         />
       )}
     </>
@@ -94,11 +94,14 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  * Rule 1: /payment → /receipt for Paytm reuses the existing COD edge; no
  * transition is added or removed on this screen.
  *
- * Layout (D9, design language, flagged): one tile keeps the Figma 412×412;
- * n ≥ 2 tiles are (848 − 24(n−1))/n wide. Labels and the TOTAL bar are the
- * frame's CTA/Compressed Large (Cm Bd 48/44 → .tb-compressed) at every n; at
- * n = 3 only the side padding narrows to 16 px — measured in Archivo
- * 62 %/700: "RESTAURANT" is 222.4 px, inside the 234.67 px label box.
+ * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
+ * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
+ * are (856 − 24(n−1))/n wide (n = 2 → the frame's 416). Labels and the TOTAL
+ * bar are the frame's CTA/Compressed Large (Cm Bd 48/44 → .tb-compressed) at
+ * every n; at n = 3 only the side padding narrows to 16 px — measured in
+ * Archivo 62 %/700: "RESTAURANT" is 222.4 px, inside the 237.33 px label box.
+ * The headline is Title/H2 (Exp Bl 64/54.4, −3) in the frame's 856 px block
+ * at 572; an Arabic title wraps to ≤ 3 lines (163 px), clear of the bar at 744.
  *
  * COD gating uses `checkIfCODAvailable` from
  * `@cx-sdk/payments/gateways/paymentOptions`.
@@ -126,8 +129,8 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * ADA (P9c, design-language, flagged — 1:3364 has no ADA variant): both
  * roots render into the 1122px reach zone with the bell dropped. Selection:
- * title 120–232 · total 302–426 · tiles 482–894 · BACK TO MENU keeps its
- * 18px bottom distance (1012–1104). Unavailable: title 120–232 · body
+ * title 120–229 (3 lines: 283) · total 302–426 · tiles 482–898 · BACK TO MENU
+ * keeps its 18px bottom distance (1012–1104). Unavailable: title 120–229 · body
  * 344–424 · the same BACK. The buffer dialog is centred on the page, so it
  * follows the page height.
  */
@@ -204,7 +207,7 @@ export default function PaymentSelection() {
       : []),
   ];
   const tileWidth =
-    tiles.length === 1 ? 412 : (848 - 24 * (tiles.length - 1)) / tiles.length;
+    tiles.length === 1 ? 416 : (856 - 24 * (tiles.length - 1)) / tiles.length;
   const narrow = tiles.length === 3;
 
   useEffect(() => {
@@ -304,7 +307,7 @@ export default function PaymentSelection() {
       >
         <PaymentChrome ada={ada} />
         <h1
-          className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[566px]"} w-[880px] -translate-x-1/2 text-center text-[58px] leading-[56px] tracking-[-1.5px] text-tb-surface`}
+          className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[572px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
         >
           {t("payment.unavailable")}
         </h1>
@@ -333,7 +336,7 @@ export default function PaymentSelection() {
       <PaymentChrome ada={ada} />
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[566px]"} w-[880px] -translate-x-1/2 text-center text-[58px] leading-[56px] tracking-[-1.5px] text-tb-surface`}
+        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[572px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
       >
         {t("payment.title")}
       </h1>
@@ -342,7 +345,7 @@ export default function PaymentSelection() {
           (cart.netAmount, written by BagSheet's setAmount(getCheckoutNetAmount)). */}
       <div
         data-testid="payment-total"
-        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[750px]"} flex w-[848px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
+        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[744px]"} flex w-[856px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
       >
         <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {t("payment.total")}
@@ -354,7 +357,7 @@ export default function PaymentSelection() {
       </div>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[482px]" : "top-[930px]"} flex -translate-x-1/2 gap-[24px]`}
+        className={`absolute left-1/2 ${ada ? "top-[482px]" : "top-[932px]"} flex -translate-x-1/2 gap-[24px]`}
       >
         {tiles.map((tile) => (
           <button
@@ -363,7 +366,7 @@ export default function PaymentSelection() {
             data-testid={tile.testId}
             onClick={() => handleMethod(tile.type)}
             style={{ width: tileWidth }}
-            className={`flex h-[412px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
+            className={`flex h-[416px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
           >
             <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
               {tile.label}

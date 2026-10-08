@@ -2,13 +2,15 @@
  * Entities/groups flow untyped from the legacy converters + makeItAMeal
  * slice; typed in later domain passes. Do not add NEW anys.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
+  closeTier2Modal,
   makeItAMealIsSessionOpen,
   makeItAMealTier1BottomSheet,
+  MIAMTier2Open,
   openTier2EditModal,
   setTeir2SelectedEntity,
   tier1CustomizationSelectedEntity,
@@ -17,11 +19,22 @@ import {
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { buildTier2NewEntity } from "@cx-sdk/ordering/customization/nestedCardLogic";
+import {
+  applySinglePunchSelection,
+  getEffectiveMax,
+} from "@cx-sdk/ordering/customization/selectionRules";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import PackSlotCard from "../../components/customization/PackSlotCard";
 import SlotSelectionSheet from "../../components/customization/SlotSelectionSheet";
-import Tier2CustomizationSheet from "../../components/customization/Tier2CustomizationSheet";
+import OptionCard, {
+  Counter,
+  CtaBar,
+  formatOptionMeta,
+  GroupHeader,
+  OptionRow,
+} from "../../components/customization/OptionCard";
+import YouMightLikeRail from "../../components/customization/YouMightLikeRail";
 import FooterBar from "../../components/chrome/FooterBar";
 import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
@@ -31,21 +44,27 @@ import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
 import { ErrorBoundary } from "../../ErrorBoundary";
-import backspaceIcon from "../../assets/icons/key-backspace.svg";
+import { loadedPdpParts, loadPdpLazyParts } from "./loadPdpLazyParts";
 
-// Item 23's completion warning — lazy, through the bag's ONE dynamic entry
-// (D7). `await import()`, never `.then`: in a build a failed chunk reaches
-// chunkRecovery, which reloads (the customisation in progress is lost, the
-// cart is kept); only on a page under 60 s old, or on the dev server, does it
-// reach the boundary below, which leaves the ringed PDP as it is.
-const PdpIncompleteWarning = lazy(async () => ({
-  default: (await import("../../components/cart/bagLazyParts")).PdpIncompleteWarning,
-}));
+// ---- Pack presentation (P6c brief): `_combo` groups with min===1 &&
+// max===1 render as slot cards + one SELECT sheet; every other group
+// (addons, BYO-shaped combos) keeps the generic renderGroup path. Module
+// scope: the init effect seeds one-option slots (D5) before render reaches
+// the consts below the early return. ----
+const isSlotGroup = (group: any) =>
+  String(group?._id ?? "").includes("_combo") &&
+  Number(group?.min) === 1 &&
+  Number(group?.max) === 1;
+
+/** Σ quantities picked in a group (the "count of max" label, 1:4911). */
+const pickedCount = (selection: ReadonlyArray<{ quantity?: unknown } | null>) =>
+  selection.reduce((sum, s) => sum + Number(s?.quantity ?? 0), 0);
 
 /**
- * PDP / customization — Figma "PDP - Single Product" (1:2614) + "PDP -
- * Builder" (1:2856 family), bound to the ported useCustomization the way
- * posistKiosk's CustomizationTier1 binds it (the hook's only real driver):
+ * PDP / customization — Figma "PDP - Single Product" (1:2614 / 1:5823) +
+ * "PDP - Builder" (1:2856 family) + "Order a Pack" (1:4895), bound to the
+ * ported useCustomization the way posistKiosk's CustomizationTier1 binds it
+ * (the hook's only real driver):
  *   args {cartRef, isOpenBottomSheet, SelectedEntity, selectedCustomizations
  *   (Redux tier1SelectedCustomization), setSelectedCustomizations (the slice
  *   ACTION CREATOR — the hook dispatches it)}.
@@ -61,6 +80,10 @@ const PdpIncompleteWarning = lazy(async () => ({
  * Commit = addCustomizationToCart() (validates min/max, adds VARIANT/
  * CUSTOMIZABLE row, closeModalStates() navigates the return path).
  *
+ * Item 42 shell: the grey Hero band (1:598), contents at x 24 (w 1032), the
+ * Counter (1:615), the What's Included / option grids on Menu-Item_Medium
+ * cards, Cards/Item/Old stepper rows, and the 148 px CTA bar (1:589).
+ *
  * P9c: the Figma "Footer bottom" strip (CANCEL ORDER · ADA DISPLAY ·
  * language) sits under the ADD TO BAG bar, as on the menu — 1:2614 / 1:2920
  * / 1:5413 draw it in BOTH modes, and without it an ADA guest on the PDP
@@ -70,8 +93,9 @@ const PdpIncompleteWarning = lazy(async () => ({
  * OfferTierHost for an offer freebie (isGetItem) or buy-stage (isBuyStageItem)
  * tier session. It never navigates (the no-session guard is off;
  * closeModalStates is exempt for both markers) and renders no footer strip,
- * language sheet or CANCEL ORDER — the bag owns those (hazard H1). A freebie
- * hides the qty stepper (one per pick) and its CTA carries no price claim.
+ * language sheet, CANCEL ORDER or suggestion rail — the bag owns those
+ * (hazard H1). A freebie hides the qty stepper (one per pick) and its CTA
+ * carries no price claim.
  */
 export default function Customization({
   embedded = false,
@@ -89,8 +113,25 @@ export default function Customization({
   const isOpenBottomSheet = useSelector(makeItAMealTier1BottomSheet);
   const SelectedEntity = useSelector(tier1CustomizationSelectedEntity);
   const selectedCustomizations = useSelector(tier1SelectedCustomization);
+  const tier2Open = Boolean(useSelector(MIAMTier2Open));
   const currencySettings = useSelector(selectCurrency) as any;
   const currency = currencySettings?.symbol ?? "";
+
+  // ---- The lazy parts (the completion warning, the tier-2 page, the
+  // split-edit planner): warmed at MOUNT, never at a tap (G2c) — without
+  // them the PDP still completes (the ring alone; a closing scrim for
+  // tier-2; a split edit refuses). See loadPdpLazyParts. ----
+  const [lazyParts, setLazyParts] = useState(() => loadedPdpParts());
+  useEffect(() => {
+    if (lazyParts) return;
+    let live = true;
+    const load = async () => {
+      const parts = await loadPdpLazyParts();
+      if (live && parts) setLazyParts(parts);
+    };
+    void load();
+    return () => { live = false; };
+  }, [lazyParts]);
 
   const {
     fetchedModifierGroups,
@@ -116,12 +157,14 @@ export default function Customization({
     setConfirmedVariant,
     increaseQuantity1,
     decreaseQuantity1,
+    isAllowMultiplePunch,
   } = useCustomization({
     cartRef,
     isOpenBottomSheet,
     SelectedEntity,
     selectedCustomizations,
     setSelectedCustomizations: setTier1SelectedCustomization,
+    planSplitEditCommit: lazyParts?.planSplitEditCommit,
   });
 
   const {
@@ -183,11 +226,70 @@ export default function Customization({
     if (isVariantFlow) {
       setFetchModifierGroups([]);
       getVariantProperties(SelectedEntity);
+      // S1: the Select-a-Size fast lane already chose this size — open the
+      // builder on it (the edit branch's trio). Unknown, inactive or
+      // offer-capped id → the size picker, as before.
+      const preselectedId = isOpenBottomSheet?.preselectedVariantId;
+      const preselected = preselectedId
+        ? (Array.isArray(SelectedEntity.variants) ? SelectedEntity.variants : []).find(
+            (v: { id?: string; isActive?: boolean; isGetVariantDisabled?: boolean } | null) =>
+              v?.id === preselectedId && v?.isActive !== false && !v?.isGetVariantDisabled
+          )
+        : undefined;
+      if (preselected) {
+        setSelectedVariant(preselected);
+        fetchAddonsForSelectedVariant(preselected);
+        setConfirmedVariant(true);
+      }
       return;
     }
+
+    /*
+      D5: a one-option slot (the fork literal `constituentItems.length === 1`)
+      is an INCLUDED item — Figma draws it picked and radio-less (1:2930). The
+      entry comes from the SAME SDK rule a sheet pick runs (handleSlotSave →
+      addCustomizations → handleSinglePunch → applySinglePunchSelection), so
+      the committed row and the bill are byte-identical to a pick. It stays
+      empty (a CHOICE slot) when the option needs tier-2 — required nested
+      groups, handleSlotSave's rule.
+      DELIBERATE FORK DIVERGENCE: the fork's classic path seeds these
+      (utilities/ItemCustomizationCard.tsx:83-95); its MIAM tier-1 path, the
+      one TB mirrors, has it commented out (ItemCustomizationContainerMIAM.tsx
+      :427-445).
+      ponytail: not in the variant flow (its groups arrive later, from
+      fetchAddonsForSelectedVariant — seed there if a sized pack ever needs it)
+      and not in edit (the row's own picks are restored).
+    */
+    const seedOneOptionSlot = (group: {
+      _id: string;
+      constituentItems?: unknown[];
+    }): unknown[] => {
+      if (!isSlotGroup(group) || group?.constituentItems?.length !== 1) return [];
+      const option = (renderAppropriateConstituentItems(group.constituentItems) ?? []).find(
+        (i: { isActive?: boolean } | null) => i?.isActive !== false
+      );
+      if (!option || option.outOfStock === true) return [];
+      try {
+        if (findAppropriateVariantForSelectedItem(option)?.isAllModifersOptional === false) {
+          return [];
+        }
+      } catch {
+        return []; // a malformed menu map: the sheet path decides (Rule 2)
+      }
+      return (
+        applySinglePunchSelection({
+          customizations: { [group._id]: [] },
+          modifier: group,
+          item: { ...option, quantity: 1 },
+          allowMultiplePunch: isAllowMultiplePunch(),
+          selectionConfirmed: false,
+        }).customizations[group._id] ?? []
+      );
+    };
+
     // customizableItem / new: seed every active group; defaults pre-selected
     // (fork seeds [] then auto-selects isDefault in the group view — same
-    // outcome, done in one dispatch here).
+    // outcome, done in one dispatch here), then the one-option slots (D5).
     const groups = fetchModifierProperties(SelectedEntity.modifiers) ?? [];
     const seed: Record<string, any[]> = {};
     for (const group of groups) {
@@ -197,7 +299,7 @@ export default function Customization({
         .filter((i: any) => i?.isDefault && i?.isActive !== false)
         .slice(0, max > 0 ? max : undefined)
         .map((i: any) => ({ ...i, quantity: 1 }));
-      seed[group._id] = defaults;
+      seed[group._id] = defaults.length > 0 ? defaults : seedOneOptionSlot(group);
     }
     dispatch(setTier1SelectedCustomization(seed));
     setFetchModifierGroups(groups);
@@ -277,14 +379,6 @@ export default function Customization({
     selectionFor(group).some((s: any) => s?.id === item?.id);
   const quantityOf = (group: any, item: any) =>
     selectionFor(group).find((s: any) => s?.id === item?.id)?.quantity ?? 0;
-
-  // ---- Pack presentation (P6c brief): `_combo` groups with min===1 &&
-  // max===1 render as slot cards + one SELECT sheet; every other group
-  // (addons, BYO-shaped combos) keeps the generic renderGroup path. ----
-  const isSlotGroup = (group: any) =>
-    String(group?._id ?? "").includes("_combo") &&
-    Number(group?.min) === 1 &&
-    Number(group?.max) === 1;
 
   const slotOptionsFor = (group: any): any[] =>
     (renderAppropriateConstituentItems(group?.constituentItems ?? []) ?? []).filter(
@@ -366,7 +460,13 @@ export default function Customization({
 
   const openSlotGroup =
     (sortedModifiers ?? []).find((g: any) => g?._id === openSlotGroupId) ?? null;
+  const slotGroups = (sortedModifiers ?? []).filter(
+    (g: { isActive?: boolean } | null) => isSlotGroup(g) && g?.isActive !== false
+  );
 
+  // Option cards (radio) for one-per-tap groups, Cards/Item/Old stepper rows
+  // for multi-punch ones. CHOOSE / SWAP only on `_combo` (BYO) cards — the
+  // same toggle as the card (D9); add-on cards carry none.
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
     const items: any[] = (group?.constituentItems ?? []).filter(
@@ -376,101 +476,76 @@ export default function Customization({
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
     const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1;
     const errored = (erroredSection as any)?.id === group?._id;
-    const min = Number(group?.min ?? 0);
+    const isByo = String(group?._id ?? "").includes("_combo");
 
     return (
       <section
         key={group._id}
         id={group._id}
         data-testid={`pdp-group-${group._id}`}
-        className={`mb-[40px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
       >
-        <div className="mb-[16px] flex items-baseline gap-4">
-          <h3 className="text-[24px] font-bold text-black">{name(group)}</h3>
-          {min > 0 && (
-            <span className={`text-[16px] ${errored ? "text-red-600 font-bold" : "text-tb-ink-purple/60"}`}>
-              {t("pdp.required")}
-            </span>
-          )}
-        </div>
+        <GroupHeader
+          name={name(group)}
+          count={pickedCount(selectionFor(group))}
+          max={Number(getEffectiveMax(group, isAllowMultiplePunch()))}
+          required={Number(group?.min ?? 0) > 0}
+          errored={errored}
+        />
         {stepper ? (
-          <div className="flex flex-col divide-y divide-tb-grey-4 rounded-[8px] bg-tb-grey-6">
+          <div className="flex flex-col gap-[24px]">
             {items.map((item: any) => {
               const qty = quantityOf(group, item);
-              const imageUrl = resolveEntityImage(item);
               return (
-                <div key={item.id} className="flex items-center gap-[16px] p-[16px]">
-                  {imageUrl && (
-                    <img alt="" src={imageUrl} className="h-[72px] w-[72px] object-contain" />
-                  )}
-                  <div className="flex-1">
-                    <p className="text-[20px] font-medium capitalize text-black">{name(item)}</p>
-                    <p className="text-[16px] text-tb-ink-purple/70">
-                      {Number(item.price) > 0 ? `+${currency}${Number(item.price).toFixed(2)}` : t("pack.cal", { value: 0 })}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-[12px]">
-                    <button
-                      type="button"
-                      aria-label={`${t("pdp.decrease")} ${name(item)}`}
-                      onClick={() => decreaseCustomization(group, item)}
-                      className="h-[44px] w-[44px] rounded-full border-2 border-tb-purple text-[24px] font-bold text-tb-purple"
-                    >
-                      –
-                    </button>
-                    <span className="w-[36px] text-center text-[22px] font-bold">{qty}</span>
-                    <button
-                      type="button"
-                      aria-label={`${t("pdp.increase")} ${name(item)}`}
-                      onClick={() =>
-                        qty === 0
-                          ? addCustomizations(group, { ...item, quantity: 1 }, null, nextGroup, false)
-                          : increaseCustomization(group, item, null, nextGroup)
-                      }
-                      className="h-[44px] w-[44px] rounded-full bg-tb-purple text-[24px] font-bold text-tb-surface"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                <OptionRow
+                  key={item.id}
+                  testId={`pdp-option-${item.id}`}
+                  image={resolveEntityImage(item)}
+                  name={name(item)}
+                  meta={formatOptionMeta(item, currency, t)}
+                  qty={qty}
+                  onDecrease={() => decreaseCustomization(group, item)}
+                  onIncrease={() =>
+                    qty === 0
+                      ? addCustomizations(group, { ...item, quantity: 1 }, null, nextGroup, false)
+                      : increaseCustomization(group, item, null, nextGroup)
+                  }
+                  decreaseLabel={`${t("pdp.decrease")} ${name(item)}`}
+                  increaseLabel={`${t("pdp.increase")} ${name(item)}`}
+                />
               );
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-[16px]">
+          // minmax: an errored section's 16 px padding must not push the
+          // third 328 px card out of the ring.
+          <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
             {items.map((item: any) => {
               const selected = isSelected(group, item);
-              const imageUrl = resolveEntityImage(item);
+              const select = () => addCustomizations(group, item, null, nextGroup, false);
               return (
-                // No photo: the name sits on the radio's row, so px-[44px]
-                // keeps it centred and 8 px clear of the 26 px radio (right-10).
-                <button
+                <OptionCard
                   key={item.id}
-                  type="button"
-                  data-testid={`pdp-option-${item.id}`}
-                  onClick={() => addCustomizations(group, item, null, nextGroup, false)}
-                  className={`relative flex flex-col items-center rounded-[8px] border-2 bg-tb-grey-6 p-[16px] pb-[20px] min-h-[44px] ${
-                    imageUrl ? "" : "px-[44px]"
-                  } ${selected ? "border-tb-purple" : "border-transparent"}`}
-                >
-                  {imageUrl && (
-                    <img alt="" src={imageUrl} className="mb-2 h-[96px] w-full object-contain" />
-                  )}
-                  <p className="text-[18px] font-medium capitalize leading-[22px] text-black">
-                    {name(item)}
-                  </p>
-                  {Number(item.price) > 0 && (
-                    <p className="text-[15px] text-tb-ink-purple/70">
-                      +{currency}
-                      {Number(item.price).toFixed(2)}
-                    </p>
-                  )}
-                  <span
-                    className={`absolute right-[10px] top-[10px] h-[26px] w-[26px] rounded-full border-2 ${
-                      selected ? "border-tb-purple bg-tb-purple" : "border-tb-purple/40 bg-tb-surface"
-                    }`}
-                  />
-                </button>
+                  testId={`pdp-option-${item.id}`}
+                  image={resolveEntityImage(item)}
+                  name={name(item)}
+                  meta={formatOptionMeta(item, currency, t)}
+                  radio={selected ? "on" : "off"}
+                  onSelect={select}
+                  selectLabel={isByo ? name(item) : undefined}
+                  cta={
+                    isByo
+                      ? {
+                          // A tap on a selected card REMOVES it (these
+                          // groups take several picks — never a one-for-one
+                          // swap; the min 1/max 1 slots are PackSlotCards).
+                          label: selected ? t("pack.remove") : t("pack.choose"),
+                          onClick: select,
+                          testId: `pdp-option-cta-${item.id}`,
+                        }
+                      : undefined
+                  }
+                />
               );
             })}
           </div>
@@ -478,6 +553,16 @@ export default function Customization({
       </section>
     );
   };
+
+  const tier2Scrim = (
+    <button
+      type="button"
+      data-testid="tier2-loading"
+      aria-label={t("language.close")}
+      onClick={() => dispatch(closeTier2Modal())}
+      className="absolute inset-0 z-[60] h-full w-full bg-tb-purple/80"
+    />
+  );
 
   return (
     // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
@@ -487,42 +572,32 @@ export default function Customization({
       data-embedded={embedded ? "true" : undefined}
       className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
     >
-      <div ref={pdpScrollRef} id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[96px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {heroImage && (
-          <img alt="" src={heroImage} className="mx-auto mt-[24px] h-[420px] object-contain" />
-        )}
-        <div className="mt-[16px] flex items-start justify-between gap-6">
-          <h1 className="tb-display max-w-[700px] text-[48px] leading-[44px] tracking-[-1px] text-tb-ink-purple">
+      {/* Contents at x 24 / w 1032 (every PDP frame). pb-[72px] = the old
+          220 minus the 148 px CTA bar below, so the scroll end is unchanged. */}
+      <div ref={pdpScrollRef} id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[72px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Hero (1:598): the band always renders; imageless items show it bare. */}
+        <div className="-mx-[24px] flex h-[450px] w-[1080px] items-center justify-center bg-tb-grey-6">
+          {heroImage && (
+            <img alt="" src={heroImage} className="h-[354px] w-[680px] object-contain" />
+          )}
+        </div>
+        <div className="mt-[24px] flex items-start justify-between gap-[24px]">
+          <h1 className="tb-display max-w-[592px] text-[48px] leading-[44px] tracking-[-1px] text-tb-ink-purple">
             {name(SelectedEntity)}
           </h1>
           {/* One freebie per pick: no stepper (the offer sets the quantity). */}
           {!isFreebie && (
-            <div className="flex items-center gap-[16px] pt-2">
-              <button
-                type="button"
-                data-testid="pdp-qty-decrease"
-                aria-label={t("pdp.decrease")}
-                onClick={() => (quantity <= 1 ? closeModalStates() : decreaseQuantity1())}
-                className="h-[52px] w-[52px] rounded-full border-2 border-tb-purple text-[26px] font-bold text-tb-purple"
-              >
-                –
-              </button>
-              <span data-testid="pdp-qty" className="w-[40px] text-center text-[28px] font-bold">
-                {quantity}
-              </span>
-              <button
-                type="button"
-                data-testid="pdp-qty-increase"
-                aria-label={t("pdp.increase")}
-                onClick={() => increaseQuantity1()}
-                className="h-[52px] w-[52px] rounded-full bg-tb-purple text-[26px] font-bold text-tb-surface"
-              >
-                +
-              </button>
-            </div>
+            <Counter
+              testId="pdp-qty"
+              value={quantity}
+              onDecrease={() => (quantity <= 1 ? closeModalStates() : decreaseQuantity1())}
+              onIncrease={() => increaseQuantity1()}
+              decreaseLabel={t("pdp.decrease")}
+              increaseLabel={t("pdp.increase")}
+            />
           )}
         </div>
-        <p className="mt-[8px] text-[20px] text-tb-ink-purple">
+        <p className="mt-[16px] text-[28px] leading-[32px] text-tb-ink-purple">
           {currency}
           {basePrice.toFixed(2)}
           {calLabel}
@@ -530,17 +605,17 @@ export default function Customization({
         {pdpDescription && (
           <>
             {/* w-fit (P9f S2): a single Arabic line keeps the layout's left
-                edge; only a wrapped one fills 860 px and right-aligns. */}
-            <p dir="auto" className={`mt-[12px] w-fit max-w-[860px] text-start text-[18px] leading-[24px] text-tb-ink-purple/80 ${showFullDescription ? "" : "line-clamp-2"}`}>
+                edge; only a wrapped one fills 682 px and right-aligns. */}
+            <p dir="auto" className={`mt-[55px] w-fit max-w-[682px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-black ${showFullDescription ? "" : "line-clamp-2"}`}>
               {pdpDescription}
             </p>
-            {/* Outside the clamp: inside it, a long description hid the
-                toggle in the clipped overflow. 44 px tall touch target. */}
+            {/* CTA/Show more (1:1687). Outside the clamp: inside it, a long
+                description hid the toggle in the clipped overflow. 44 px tall. */}
             <button
               type="button"
               data-testid="pdp-show-more"
               onClick={() => setShowFullDescription((v) => !v)}
-              className="inline-flex min-h-[44px] items-center text-[18px] font-bold leading-[24px] text-tb-ink-purple/80 underline"
+              className="tb-display inline-flex min-h-[44px] items-center text-[16px] font-bold normal-case leading-[24px] tracking-[-0.08px] text-tb-purple underline"
             >
               {showFullDescription ? t("pdp.showLess") : t("pdp.showMore")}
             </button>
@@ -588,39 +663,55 @@ export default function Customization({
                 {name(selectedVariant)} · {t("pdp.change")}
               </button>
             )}
-            <div className="mt-[40px]">
-              {(sortedModifiers ?? []).some(isSlotGroup) && (
-                <div
-                  data-testid="pack-slot-grid"
-                  className="mb-[40px] grid grid-cols-3 gap-[16px]"
-                >
-                  {(sortedModifiers ?? []).map((group: any) => {
-                    if (!isSlotGroup(group) || group?.isActive === false) {
-                      return null;
-                    }
-                    const options = slotOptionsFor(group);
-                    if (options.length === 0) return null;
-                    return (
-                      /* id={group._id} — the hook's error AutoScroll targets
-                         it inside #scrollCustomizableItem (tier-1 contract) */
-                      <section key={group._id} id={group._id}>
-                        <PackSlotCard
-                          group={group}
-                          selection={selectionFor(group)}
-                          previewItem={options[0]}
-                          currency={currency}
-                          errored={(erroredSection as any)?.id === group?._id}
-                          onOpen={() => setOpenSlotGroupId(group._id)}
-                        />
-                      </section>
-                    );
-                  })}
+            <div className="mt-[55px] flex flex-col gap-[64px]">
+              {slotGroups.length > 0 && (
+                <div className="flex flex-col gap-[16px]">
+                  {/* "Included" (1:4903; 1:2929 says "What's Included"). */}
+                  <GroupHeader name={t("pack.included")} />
+                  <div
+                    data-testid="pack-slot-grid"
+                    className="grid grid-cols-[repeat(3,328px)] gap-[16px]"
+                  >
+                    {slotGroups.map((group: any) => {
+                      const options = slotOptionsFor(group);
+                      if (options.length === 0) return null;
+                      const pick = selectionFor(group)[0];
+                      return (
+                        /* id={group._id} — the hook's error AutoScroll targets
+                           it inside #scrollCustomizableItem (tier-1 contract) */
+                        <section key={group._id} id={group._id}>
+                          <PackSlotCard
+                            group={group}
+                            selection={selectionFor(group)}
+                            previewItem={options[0]}
+                            currency={currency}
+                            errored={(erroredSection as any)?.id === group?._id}
+                            fixed={options.length === 1}
+                            onCustomize={
+                              pick && canCustomize(pick)
+                                ? () => handleSlotCustomize(group, pick)
+                                : undefined
+                            }
+                            onOpen={() => setOpenSlotGroupId(group._id)}
+                          />
+                        </section>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               {(sortedModifiers ?? []).map((group: any, i: number) =>
                 isSlotGroup(group) ? null : renderGroup(group, i)
               )}
             </div>
+            {/* "You Might Like" (1:2657 / 1:5867) — after the groups; hidden
+                when there is nothing to suggest, in the bag and under the
+                size picker. */}
+            {!embedded && (
+              <ErrorBoundary fallback={null}>
+                <YouMightLikeRail entityId={SelectedEntity?.id} />
+              </ErrorBoundary>
+            )}
           </>
         )}
       </div>
@@ -634,39 +725,30 @@ export default function Customization({
         />
       </ErrorBoundary>
 
-      {/* ADD TO BAG bar — Figma CTA_Sheet pattern. In flow (Menu's pattern)
-          so the scroller ends at its top edge: pb-[96px] above is the old
-          220 minus this 124px bar, so the scroll end is unchanged. */}
-      <div className="flex w-full shrink-0 items-center justify-between bg-tb-purple p-[40px]">
-        <button
-          type="button"
-          data-testid="pdp-back"
-          onClick={() => closeModalStates()}
-          className="flex min-h-[44px] items-center gap-3"
-        >
-          <img alt="" src={backspaceIcon} className="h-[28px] w-[28px] brightness-0 invert" />
-          <span className="tb-display text-[22px] text-tb-surface">{t("pdp.back")}</span>
-        </button>
-        <button
-          type="button"
-          data-testid="pdp-add-to-bag"
-          disabled={needsVariantPick}
-          onClick={handleAddToBag}
-          className={`tb-display flex min-h-[44px] items-center gap-4 text-[24px] ${needsVariantPick ? "text-tb-surface/50" : "text-tb-surface"}`}
-        >
-          {/* A freebie's price is the offer's call (redeemGetItem at CONFIRM),
-              so its CTA makes no price claim — not even "free": a 50% grant
-              or a paid add-on still charges (fork "Add to offer" parity). */}
-          {isFreebie ? (
+      {/* CTA/Bottom screen (1:589) — in flow (Menu's pattern) so the
+          scroller ends at its top edge. D7-A: the live price stays in the
+          label (the guest's only pre-commit total). A freebie's price is the
+          offer's call (redeemGetItem at CONFIRM), so its CTA makes no price
+          claim — not even "free": a 50% grant or a paid add-on still charges
+          (fork "Add to offer" parity). */}
+      <CtaBar
+        backTestId="pdp-back"
+        backLabel={t("pdp.back")}
+        onBack={() => closeModalStates()}
+        actionTestId="pdp-add-to-bag"
+        actionDisabled={needsVariantPick}
+        onAction={handleAddToBag}
+        action={
+          isFreebie ? (
             t("offers.picker.addFreebie")
           ) : (
             <>
               {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
               {total.toFixed(2)}
             </>
-          )}
-        </button>
-      </div>
+          )
+        }
+      />
       {!embedded && (
         <div className="relative h-[56px] w-full shrink-0">
           <FooterBar
@@ -694,25 +776,34 @@ export default function Customization({
         onClose={() => setOpenSlotGroupId(null)}
       />
 
-      <Tier2CustomizationSheet />
+      {/* Tier-2 CUSTOMIZE page (lazy, z-60): mounted only while open, so each
+          open snapshots the tier-1 session afresh. Until its code is here —
+          or if it failed — a named scrim that closes tier-2 (the tier-1
+          picks stay). */}
+      {tier2Open &&
+        (lazyParts ? (
+          <ErrorBoundary fallback={tier2Scrim}>
+            <lazyParts.Tier2CustomizationSheet />
+          </ErrorBoundary>
+        ) : (
+          tier2Scrim
+        ))}
 
       {/* Completion warning — Figma Modal 1:945 (no icon, one full-width
           GOT IT); z-80 over the PDP, embedded hosts included. Closing it is
-          the only action: the guest finishes the ringed groups. Lazy: while
-          the chunk loads, or if it failed, nothing shows over the ringed PDP. */}
-      {incompleteTap > 0 && (
+          the only action: the guest finishes the ringed groups. Without its
+          code nothing shows over the ringed PDP (the picks stay). */}
+      {incompleteTap > 0 && lazyParts && (
         <ErrorBoundary fallback={null}>
-          <Suspense fallback={null}>
-            <PdpIncompleteWarning
-              key={incompleteTap}
-              entity={SelectedEntity}
-              selectedVariant={selectedVariant}
-              customizations={selectedCustomizations}
-              fetchModifierProperties={fetchModifierProperties}
-              isBox={isSlotGroup}
-              onClose={() => setIncompleteTap(0)}
-            />
-          </Suspense>
+          <lazyParts.PdpIncompleteWarning
+            key={incompleteTap}
+            entity={SelectedEntity}
+            selectedVariant={selectedVariant}
+            customizations={selectedCustomizations}
+            fetchModifierProperties={fetchModifierProperties}
+            isBox={isSlotGroup}
+            onClose={() => setIncompleteTap(0)}
+          />
         </ErrorBoundary>
       )}
 

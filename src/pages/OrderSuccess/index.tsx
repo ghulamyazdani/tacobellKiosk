@@ -245,19 +245,30 @@ export default function OrderSuccess() {
         <img
           alt="Taco Bell"
           src={tbBell}
-          className="absolute left-1/2 top-[101px] h-[89px] w-[100px] -translate-x-1/2"
+          className="absolute left-1/2 top-[128px] h-[89px] w-[100px] -translate-x-1/2"
         />
       )}
 
+      {/* Text block of 1:5932 / 1:3778, top 345. Guest: the thank-you is
+          Title/H3 (48/44, −1) in the frame's 569 px box (2 lines), 24 above
+          the Title/H1 number. Loyalty: "ORDER" and the number are ONE H1
+          block (both 116/98, −3.27). The wrapper stays 920 wide so a wide
+          number never clips (only the guest h1 takes the 569 box). */}
       <div
-        className={`absolute left-1/2 ${ada ? "bottom-[570px]" : "top-[300px]"} w-[920px] -translate-x-1/2 text-center`}
+        className={`absolute left-1/2 ${ada ? "bottom-[570px]" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
       >
-        <h1 className="tb-display text-[76px] leading-[0.92] tracking-[-2.5px] text-tb-surface">
+        <h1
+          className={`tb-display text-tb-surface ${
+            isLoggedIn
+              ? "text-[116px] leading-[98px] tracking-[-3.27px]"
+              : "mx-auto w-[569px] text-[48px] leading-[44px] tracking-[-1px]"
+          }`}
+        >
           {isLoggedIn ? t("success.orderHeading") : t("success.thankYou")}
         </h1>
         <p
           data-testid="order-number"
-          className="tb-display mt-[16px] text-[112px] leading-[0.92] tracking-[-4px] text-tb-surface"
+          className={`tb-display ${isLoggedIn ? "mt-0" : "mt-[24px]"} text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface`}
         >
           {orderNumber ? `#${orderNumber}` : ""}
         </p>

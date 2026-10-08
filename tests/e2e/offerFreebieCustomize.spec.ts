@@ -1030,3 +1030,53 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     });
   });
 });
+
+/**
+ * Lane figma-polish R1: the PDP "You Might Like" rail never renders on the
+ * EMBEDDED PDP (the bag owns that surface, hazard H1). The tenant map comes
+ * through the DEV-only URL seam and a fake S3 (bag-recommendations.spec): the
+ * Cheese Burger's own suggestion is Tortilla Sauce.
+ */
+const RECS_URL = "https://recommendations.e2e.test/data.json";
+const RECS_BODY = {
+  data: [
+    {
+      baseItem_id: CHEESE_BURGER,
+      refers: [{ refer_baseItem_id: TORTILLA_SAUCE, occurrences: 3 }],
+    },
+  ],
+};
+
+test.describe("figma-polish R1 — no suggestion rail on the embedded PDP", () => {
+  test("EMBEDDED: the menu's Cheese Burger PDP offers its tenant suggestion, the same burger as an in-bag freebie PDP offers none", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.addInitScript((url) => {
+      (window as unknown as { __TB_RECS_URL__?: string }).__TB_RECS_URL__ = url;
+    }, RECS_URL);
+    await mockKioskBackend(page);
+    await page.route(RECS_URL, (r) =>
+      r.fulfill({ json: RECS_BODY, headers: { "Access-Control-Allow-Origin": "*" } })
+    );
+    await routeOffers(page, [FREE_BURGER]);
+    await bootRegisteredToMenu(page);
+
+    // Control: the menu PDP shows the rail (the tenant map is loaded).
+    const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
+    await burger.scrollIntoViewIfNeeded();
+    await burger.click();
+    await expect(page.getByTestId(`pdp-rail-item-${TORTILLA_SAUCE}`)).toBeVisible();
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId("added-continue").click();
+
+    await openBag(page);
+    await saveOfferToPicker(page, FREE_BURGER._id);
+    await page.getByTestId(`freebie-option-${CHEESE_BURGER}`).click();
+    const host = await expectEmbeddedFreebiePdp(page);
+    await expect(host.locator('[data-testid^="pdp-group-"]').first()).toBeVisible();
+    await expect(page.getByTestId("pdp-rail")).toHaveCount(0);
+    await expect(page.locator('[data-testid^="pdp-rail-item-"]')).toHaveCount(0);
+  });
+});

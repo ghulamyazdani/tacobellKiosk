@@ -467,7 +467,8 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       await startOrder(page, mode);
       await openPackPdp(page);
 
-      // Item 23: ADD TO BAG with every slot empty names all four groups.
+      // Item 23: ADD TO BAG with the CHOICE slot empty names it (the
+      // one-option slots are pre-selected since item 42, D5).
       await page.getByTestId("pdp-add-to-bag").click();
       const warning = page.getByTestId("pdp-incomplete");
       await expect(warning).toBeVisible();
@@ -486,18 +487,19 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       await page.getByTestId("slot-sheet-close").click();
       await expect(sheet).toHaveCount(0);
 
-      // The Customize link row, then item 24's flow (pack.spec helpers).
-      await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-      await expect(page.getByTestId(`slot-customize-${LARGE_FRIES}`)).toBeVisible();
-      await capture(page, `bagpdp-${mode}-11-slot-sheet-sides`);
-      await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+      // The FIXED Sides card — its one option (Large Fries) pre-selected (D5)
+      // — and its CUSTOMIZE, then item 24's flow (pack.spec helpers).
+      const sidesCustomize = page.getByTestId(`pack-slot-customize-${G_SIDES}`);
+      await sidesCustomize.scrollIntoViewIfNeeded();
+      await expect(page.getByTestId(`pack-slot-${G_SIDES}`)).toContainText(NAMES[LARGE_FRIES][mode === "ar" ? 1 : 0]);
+      await capture(page, `bagpdp-${mode}-11-pack-fixed-sides`);
+      await sidesCustomize.click();
       const tier2 = page.getByTestId("tier2-sheet");
       await expect(tier2).toBeVisible();
       await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
       await page.getByTestId("tier2-sheet-save").click();
       await expect(tier2).not.toBeVisible();
-      await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-      await page.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+      await sidesCustomize.click();
       await expect(tier2).toBeVisible();
       await expect(page.getByTestId("tier2-qty")).toHaveText("1");
       await page.getByTestId("tier2-qty-decrease").click();

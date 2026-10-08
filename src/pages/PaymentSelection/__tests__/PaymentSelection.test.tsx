@@ -11,6 +11,7 @@ import {
   setDeploymentInfo,
   setKioskSettings,
   setPaymentSettings,
+  toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
@@ -386,9 +387,9 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     });
 
     it.each([
-      ["one tile: the Figma 412", [], [412], "px-[32px]"],
-      ["two tiles: 2 × 412", ["EDC"], [412, 412], "px-[32px]"],
-      ["three tiles: 3 × 266.67, the narrow padding", ["EDC", "DQR"], [266.67, 266.67, 266.67], "px-[16px]"],
+      ["one tile: the Figma 416", [], [416], "px-[32px]"],
+      ["two tiles: 2 × 416", ["EDC"], [416, 416], "px-[32px]"],
+      ["three tiles: 3 × 269.33, the narrow padding", ["EDC", "DQR"], [269.33, 269.33, 269.33], "px-[16px]"],
     ] as const)("%s, labels in the frame's Cm Bd 48/44", (_label, configured, widths, padding) => {
       store.dispatch(setPaymentSettings(configured.map((kind) => (kind === "EDC" ? EDC : DQR))));
       mount();
@@ -397,7 +398,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
         widths.map((width) => expect.closeTo(width, 2)),
       );
       for (const tile of tiles()) {
-        expect(tile).toHaveClass(padding);
+        expect(tile).toHaveClass(padding, "h-[416px]");
         expect(tile.querySelector("span")).toHaveClass("tb-compressed", "text-[48px]", "leading-[44px]");
       }
     });
@@ -592,6 +593,65 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       mount();
 
       expect(mockNavigate).toHaveBeenCalledWith("/menu", { replace: true });
+    });
+  });
+
+  /*
+    Lane figma-polish S4 #1/#2/#4 (1:3364 / 1:3375 / 1:3376): the headline is
+    Title/H2 (Exp Bl 64/54.4, −3) in the frame's 856 px block at 572, the TOTAL
+    bar 856 wide at 744, the CTA Cards 416 × 416 in the 856 row at 932, the
+    bell at 128. ADA keeps its P9c tops (title 120 · total 302 · tiles 482).
+  */
+  describe("the Figma geometry (S4)", () => {
+    const headline = () => screen.getByRole("heading", { level: 1 });
+    const tileRow = () => screen.getByTestId("payment-counter").parentElement as HTMLElement;
+    const H2 = ["text-[64px]", "leading-[54.4px]", "tracking-[-3px]", "w-[856px]"];
+
+    it("the headline is Title/H2 in the 856 px block at top 572; the bell sits at 128", () => {
+      mount();
+
+      expect(headline()).toHaveTextContent(i18n.t("payment.title"));
+      expect(headline()).toHaveClass(...H2, "top-[572px]");
+      expect(headline().className).not.toMatch(/text-\[58px\]|w-\[880px\]|top-\[566px\]/);
+      expect(screen.getByAltText("Taco Bell")).toHaveClass("top-[128px]");
+    });
+
+    it("the TOTAL bar is 856 wide at 744; the tile row sits at 932 and every tile is 416 tall", () => {
+      store.dispatch(setPaymentSettings([]));
+      mount();
+
+      expect(screen.getByTestId("payment-total")).toHaveClass("w-[856px]", "top-[744px]");
+      expect(tileRow()).toHaveClass("top-[932px]", "gap-[24px]");
+      expect(screen.getByTestId("payment-counter")).toHaveClass("h-[416px]");
+      expect(screen.getByTestId("payment-counter").style.width).toBe("416px");
+    });
+
+    it("the unavailable headline is the same Title/H2 at 572", () => {
+      store.dispatch(setDeploymentInfo(disableCodFor("table")));
+      mount();
+
+      expect(screen.getByTestId("payment-unavailable")).toBeInTheDocument();
+      expect(headline()).toHaveTextContent(i18n.t("payment.unavailable"));
+      expect(headline()).toHaveClass(...H2, "top-[572px]");
+    });
+
+    it("ADA keeps its tops: title 120, TOTAL 302, tiles 482 — no bell", () => {
+      store.dispatch(toggleAccessibilityMode());
+      mount();
+
+      expect(headline()).toHaveClass(...H2, "top-[120px]");
+      expect(screen.getByTestId("payment-total")).toHaveClass("w-[856px]", "top-[302px]");
+      expect(tileRow()).toHaveClass("top-[482px]");
+      expect(screen.getByTestId("payment-counter")).toHaveClass("h-[416px]");
+      expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
+    });
+
+    it("ADA unavailable: the title stays at 120", () => {
+      store.dispatch(toggleAccessibilityMode());
+      store.dispatch(setDeploymentInfo(disableCodFor("table")));
+      mount();
+
+      expect(headline()).toHaveClass(...H2, "top-[120px]");
     });
   });
 });

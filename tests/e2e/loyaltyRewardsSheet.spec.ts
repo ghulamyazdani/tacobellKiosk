@@ -64,6 +64,8 @@ const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b";
 const SALAD_REWARD = LOYALTY_REWARDS.greekSalad;
 /** The ONE lazy UI chunk as the dev server serves it. */
 const LAZY_CHUNK = "**/src/components/cart/bagLazyParts.ts*";
+/** LoyaltyRewardsSheet's AUTO_DISMISS_SECONDS, in ms (ada.spec LOYALTY). */
+const REWARDS_AUTO_DISMISS_MS = 25_000;
 
 /** D6b operator copy, set in the PRIMARY slot (E8, E8b). */
 const OPERATOR = {
@@ -365,6 +367,37 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     await expect(page).toHaveURL(/\/menu$/);
     await expect(page.getByTestId("menu-screen")).toBeVisible();
     await expect(page.getByTestId("app-error")).toHaveCount(0);
+  });
+
+  test("G3 drain bar: the post-lookup auto-open shows the countdown bar; the guest's first touch takes the bar DOWN (the element, not a frozen width) and the sheet stays open past the 25 s dismissal", async ({
+    page,
+  }) => {
+    test.slow();
+    // Before the first goto: the 1 Hz countdown runs on the fake clock.
+    await page.clock.install();
+    await mockKioskBackend(page);
+    await mockXenoLoyalty(page);
+    await registerToStart(page);
+    await startOrderToPhone(page);
+    await identifyToMenu(page);
+
+    const sheet = page.getByTestId("loyalty-rewards-sheet");
+    // The decorative countdown bar (no testid): the sheet's 6 px pink strip.
+    const drainBar = sheet.locator("span.h-\\[6px\\]");
+    await expect(sheet).toBeVisible();
+    await expect(drainBar).toHaveCount(1);
+    await expect(drainBar).toBeVisible();
+
+    // A touch on the heading — no control under it, so the touch is all
+    // that happens. Before G3 the bar stayed painted at its frozen width.
+    await sheet.locator("#loyalty-rewards-title").click();
+    await expect(drainBar).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+    // The countdown is gone with it: well past 25 s the sheet is still up.
+    await page.clock.runFor(REWARDS_AUTO_DISMISS_MS + 5_000);
+    await expect(sheet).toBeVisible();
+    await expect(drainBar).toHaveCount(0);
+    await expect(page).toHaveURL(/\/menu$/);
   });
 
   test("E8 D6b: the operator's reward title, subtitle and points alias show on the sheet but never reach the order push (pay at counter)", async ({

@@ -628,13 +628,14 @@ test.describe("lane fonts — offers / menu-data captures", () => {
 
       await prompt.getByTestId(`miam-combo-${DREAM_BOX}`).click();
       await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
-      await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
-      const sheet = page.getByTestId("slot-sheet");
-      await expect(sheet.getByTestId(`slot-option-${LARGE_FRIES}`)).toBeVisible();
-      await capture(page, `offers-${mode}-10-slot-sheet-sides`);
-      await page.getByTestId("slot-sheet-close").click();
-      await expect(sheet).toHaveCount(0);
+      // Sides has one option: pre-selected and FIXED since item 42 (D5) — no
+      // sheet opens, so the card (with its CUSTOMIZE) is captured instead.
+      const sidesCustomize = page.getByTestId(`pack-slot-customize-${G_SIDES}`);
+      await sidesCustomize.scrollIntoViewIfNeeded();
+      await expect(sidesCustomize).toBeVisible();
+      await capture(page, `offers-${mode}-10-pack-fixed-sides`);
 
+      const sheet = page.getByTestId("slot-sheet");
       await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
       await sheet.getByTestId(`slot-option-${DIET_PEPSI}`).click();
       await capture(page, `offers-${mode}-11-slot-sheet-drinks`);

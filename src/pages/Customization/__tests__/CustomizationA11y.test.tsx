@@ -30,7 +30,7 @@ const EXTRAS = {
   order: 1,
   isActive: true,
   constituentItems: [
-    { id: "pickles", name: "Extra Pickles", price: 0, isActive: true },
+    { id: "pickles", name: "Extra Pickles", price: 0, calorieCount: 5, isActive: true },
     { id: "jalapenos", name: "Jalapenos", price: 0.6, isActive: true },
   ],
 };
@@ -89,11 +89,13 @@ describe("PDP copy and controls (P9f)", () => {
     });
   });
 
-  it("EN is unchanged: '£8.00 | 740 Cal', the free row reads '0 Cal'", () => {
+  // Item 42: the rows' meta is formatOptionMeta — calories only when the
+  // item carries them (the old row claimed "0 Cal" for every free option).
+  it("EN is unchanged: '£8.00 | 740 Cal', the free row reads '5 Cal'", () => {
     renderPdp();
 
     expect(screen.getByText("£8.00 | 740 Cal")).toBeInTheDocument();
-    expect(screen.getByText("0 Cal")).toBeInTheDocument();
+    expect(screen.getByText("5 Cal")).toBeInTheDocument();
     expect(screen.getByText("+£0.60")).toBeInTheDocument();
   });
 
@@ -107,7 +109,7 @@ describe("PDP copy and controls (P9f)", () => {
     });
 
     const priceLine = screen.getByText(`£8.00 | ${i18n.t("pack.cal", { value: 740 })}`);
-    const freeRow = screen.getByText(i18n.t("pack.cal", { value: 0 }));
+    const freeRow = screen.getByText(i18n.t("pack.cal", { value: 5 }));
     expect(priceLine).not.toHaveTextContent("Cal");
     expect(freeRow).not.toHaveTextContent("Cal");
   });
@@ -147,5 +149,138 @@ describe("PDP copy and controls (P9f)", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAccessibleName(i18n.t("pdp.showMore"));
     expect(description).toHaveClass("line-clamp-2");
+  });
+});
+
+/*
+  Lane figma-polish item 42 / S4 #9 on the PDP: "Show more" is the
+  CTA/Show more component (1:1687 — Exp Bd 16/24, −0.08, purple, underlined)
+  and keeps its 44 px target; the Counter (1:615) buttons are named
+  t('pdp.decrease' / 'pdp.increase'); every option card is named — a plain
+  card by its own text, a BYO card's overlay by the item (its CTA by its
+  verb), a pack slot's overlay by its CTA label.
+*/
+describe("PDP names and the Show more style (item 42)", () => {
+  const BYO = {
+    _id: "a11y_6_combo",
+    name: "Snacks",
+    min: 0,
+    max: 2,
+    multiplePunchMin: 0,
+    multiplePunchMax: 2,
+    multiplePunchMaxItem: 1,
+    order: 1,
+    isActive: true,
+    constituentItems: [{ id: "churros", name: "Churros", price: 0, isActive: true }],
+  };
+  const SAUCE = {
+    _id: "a11y_addons",
+    name: "Sauce",
+    min: 0,
+    max: 1,
+    multiplePunchMin: 0,
+    multiplePunchMax: 1,
+    multiplePunchMaxItem: 1,
+    order: 2,
+    isActive: true,
+    constituentItems: [{ id: "salsa", name: "Salsa", price: 0.5, isActive: true }],
+  };
+  const DRINK = {
+    _id: "a11y_2_combo",
+    name: "Drink",
+    min: 1,
+    max: 1,
+    multiplePunchMin: 1,
+    multiplePunchMax: 1,
+    multiplePunchMaxItem: 1,
+    order: 3,
+    isActive: true,
+    constituentItems: [
+      { id: "cola", name: "Cola", price: 0, isActive: true },
+      { id: "lemonade", name: "Lemonade", price: 0, isActive: true },
+    ],
+  };
+
+  /** A fresh tier-1 session on `entity`, its groups in the modifier map. */
+  const openSession = (entity: Record<string, unknown>, groups: Array<{ _id: string }>) => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: Object.fromEntries(groups.map((group) => [group._id, group])) }));
+    store.dispatch(openMakeItAMealSession());
+    store.dispatch(
+      setTier1BottomSheetAndSelectedEntity({
+        bottomSheet: { isOpen: true, status: "", type: "customizableItem", openType: "new", editCustomizationContent: {} },
+        selectedEntity: entity,
+      })
+    );
+  };
+  const openBox = () =>
+    openSession({ id: "box", name: "Snack Box", price: 6, modifiers: [BYO._id, SAUCE._id, DRINK._id] }, [BYO, SAUCE, DRINK]);
+
+  beforeEach(() => {
+    openSession(BURGER, [EXTRAS]);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("Show more = CTA/Show more (Exp Bd 16/24, −0.08, purple, underlined), still a ≥ 44 px inline-flex target", () => {
+    renderPdp();
+
+    expect(screen.getByTestId("pdp-show-more")).toHaveClass(
+      "tb-display",
+      "font-bold",
+      "normal-case",
+      "text-[16px]",
+      "leading-[24px]",
+      "tracking-[-0.08px]",
+      "text-tb-purple",
+      "underline",
+      "inline-flex",
+      "min-h-[44px]",
+      "items-center"
+    );
+  });
+
+  it.each(["en", "ar"])("%s: the Counter's buttons are named t('pdp.decrease' / 'pdp.increase'); '+' counts up", async (lng) => {
+    await act(async () => {
+      await i18n.changeLanguage(lng);
+    });
+    renderPdp();
+
+    const increase = screen.getByTestId("pdp-qty-increase");
+    expect(screen.getByTestId("pdp-qty-decrease")).toHaveAccessibleName(i18n.t("pdp.decrease"));
+    expect(increase).toHaveAccessibleName(i18n.t("pdp.increase"));
+    expect(increase).toHaveClass("h-[64px]", "w-[64px]");
+    expect(screen.getByTestId("pdp-qty")).toHaveTextContent("1");
+
+    fireEvent.click(increase);
+    expect(screen.getByTestId("pdp-qty")).toHaveTextContent("2");
+  });
+
+  it("a plain option card is ONE button named by its text; a BYO card's overlay is named by the item, its CTA by the verb; a slot's overlay by its CTA", () => {
+    openBox();
+    renderPdp();
+
+    // Add-on (no CTA): the card itself.
+    const salsa = screen.getByTestId("pdp-option-salsa");
+    expect(salsa.tagName).toBe("BUTTON");
+    expect(salsa).toHaveAccessibleName(/Salsa/);
+    expect(salsa).toHaveAttribute("aria-pressed", "false");
+
+    // BYO (`_combo`, several picks): the overlay LAST, named by the item; the CTA by its verb.
+    const churros = screen.getByTestId("pdp-option-churros");
+    const overlay = churros.lastElementChild as HTMLElement;
+    expect(overlay).toHaveAccessibleName("Churros");
+    expect(overlay).toHaveClass("absolute", "inset-0");
+    expect(screen.getByTestId("pdp-option-cta-churros")).toHaveAccessibleName(i18n.t("pack.choose"));
+
+    // Pack slot (min 1 / max 1): the overlay is named by its CTA label.
+    expect(screen.getByTestId(`pack-slot-open-${DRINK._id}`)).toHaveAccessibleName(
+      i18n.t("pack.selectGroup", { name: "Drink" })
+    );
   });
 });

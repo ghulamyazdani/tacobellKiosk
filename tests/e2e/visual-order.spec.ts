@@ -74,10 +74,28 @@ const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1 addon
 const DREAM_BOX = "68dd79409030ed3064aee28c"; // pack, £25
 const G_SIDES = `${DREAM_BOX}_2_combo`;
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
+const G_SNACKS = `${DREAM_BOX}_6_combo`; // min 0 / max 2: the "0 of 2" counter
+const FRIES_ADDON_GROUP = `${LARGE_FRIES}_1573980470_addons`;
 const WITHOUT_SALT = "5dff2ea756bc05b83f9e34cd";
 const EXTRA_MUSTARD = "5dd2f69029446a316cf7cf0b"; // imageless PDP addon
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
 const OFFER_FLAT = "offer-flat-2";
+/** The PDP "You Might Like" rail's source (bag-recommendations.spec): the
+ * tenant file through the DEV-only URL seam, served by a fake S3 host. */
+const RECS_HOST = "https://recommendations.e2e.test";
+const RECS_URL = `${RECS_HOST}/data.json`;
+const RECS_BODY = {
+  data: [
+    {
+      baseItem_id: CHEESE_BURGER,
+      refers: [
+        { refer_baseItem_id: TORTILLA_SAUCE, occurrences: 3 },
+        { refer_baseItem_id: LARGE_FRIES, occurrences: 5 },
+        { refer_baseItem_id: GREEK_SALAD, occurrences: 2 },
+      ],
+    },
+  ],
+};
 const OFFER_FREE_SAUCE = "offer-free-sauce-choice";
 
 /** Real-length names (header): two TB India item names — 53 characters, and
@@ -299,6 +317,51 @@ async function capture(page: Page, name: string) {
   expect.soft(await clippedText(page), `${name}: text the layout cuts off`).toEqual([]);
 }
 
+type Mode = "en" | "ar" | "ada";
+const MODES: Mode[] = ["en", "ar", "ada"];
+
+/** The tenant recommendations for the PDP rail (bag-recommendations.spec). */
+async function mockTenantRecommendations(page: Page) {
+  await page.addInitScript((url) => {
+    (window as unknown as { __TB_RECS_URL__?: string }).__TB_RECS_URL__ = url;
+  }, RECS_URL);
+  await page.route(`${RECS_HOST}/**`, (r) =>
+    r.fulfill({ json: RECS_BODY, headers: { "Access-Control-Allow-Origin": "*" } })
+  );
+}
+
+/** Register → /second (Arabic when asked) → Dine In → /menu (→ the ADA view). */
+async function startOrder(page: Page, mode: Mode) {
+  await registerToStart(page);
+  await page.getByTestId("start-screen").click();
+  await expect(page.getByTestId("second-screen")).toBeVisible();
+  if (mode === "ar") {
+    await page.getByTestId("footer-language").click();
+    await page.getByTestId("language-ar").click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  }
+  await page.getByTestId("pipeline-p1").click();
+  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  if (mode === "ada") {
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+  }
+}
+
+/** The tenant map is in memory (the rail reads it at render). */
+const tenantMapLoaded = (page: Page) =>
+  page.evaluate(() =>
+    Object.keys(
+      (
+        window as unknown as {
+          __kioskStore: {
+            getState: () => { recommendation: { recommendCategoryMap?: Record<string, unknown> } };
+          };
+        }
+      ).__kioskStore.getState().recommendation.recommendCategoryMap ?? {}
+    )
+  );
+
 
 test.describe("visual capture — ordering screens", () => {
   test("MENU + PDP SINGLE: /menu top and grid, the single PDP, the added modal, the repeat sheet", async ({
@@ -370,12 +433,18 @@ test.describe("visual capture — ordering screens", () => {
     await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
     await capture(page, "order-08-pdp-pack");
 
-    await page.getByTestId(`pack-slot-open-${G_SIDES}`).click();
+    // Drinks: the one CHOICE slot (one-option slots are pre-selected and
+    // FIXED since item 42, D5).
+    await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
     const sheet = page.getByTestId("slot-sheet");
-    await expect(sheet.getByTestId(`slot-option-${LARGE_FRIES}`)).toBeVisible();
+    await expect(sheet.getByTestId(`slot-option-${PEPSI_SMALL}`)).toBeVisible();
     await capture(page, "order-09-slot-sheet");
+    await sheet.getByTestId(`slot-option-${PEPSI_SMALL}`).click();
+    await page.getByTestId("slot-sheet-save").click();
+    await expect(sheet).toHaveCount(0);
 
-    await sheet.getByTestId(`slot-customize-${LARGE_FRIES}`).click();
+    // The FIXED Sides card's CUSTOMIZE → the full-screen tier-2 page (D4).
+    await page.getByTestId(`pack-slot-customize-${G_SIDES}`).click();
     const tier2 = page.getByTestId("tier2-sheet");
     await expect(tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`)).toBeVisible();
     await capture(page, "order-10-tier2-sheet");
@@ -383,24 +452,23 @@ test.describe("visual capture — ordering screens", () => {
     await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
     await page.getByTestId("tier2-sheet-save").click();
     await expect(tier2).toHaveCount(0);
-    await page.getByTestId(`pack-slot-open-${G_DRINKS}`).click();
-    await expect(sheet).toBeVisible();
-    await sheet.getByTestId(`slot-option-${PEPSI_SMALL}`).click();
-    await page.getByTestId("slot-sheet-save").click();
-    await expect(sheet).toHaveCount(0);
     await expect(page.getByTestId(`pack-slot-${G_DRINKS}`)).toContainText("Pepsi Small");
     await page.getByTestId("pack-slot-grid").scrollIntoViewIfNeeded();
     await capture(page, "order-11-pdp-pack-picked");
     // The 2-line pick + info line makes its card the tallest: the row's other
-    // cards still fill the row, so its CTAs (mt-auto) line up.
+    // cards still fill the row, so their CTAs (justify-between) line up.
     const rows = await page
-      .locator('[data-testid^="pack-slot-open-"]')
-      .evaluateAll((opens) => {
+      .getByTestId("pack-slot-grid")
+      .locator(':scope > section > [data-testid^="pack-slot-"]')
+      .evaluateAll((cards) => {
         const feet = new Map<number, number[]>();
-        for (const open of opens) {
-          const top = Math.round((open.parentElement ?? open).getBoundingClientRect().top);
-          const cta = open.lastElementChild?.getBoundingClientRect().bottom ?? 0;
-          feet.set(top, [...(feet.get(top) ?? []), Math.round(cta)]);
+        for (const card of cards) {
+          const cta = card.querySelector(
+            '[data-testid^="pack-slot-cta-"], [data-testid^="pack-slot-customize-"]'
+          );
+          if (!cta) continue; // a FIXED slot that cannot be customized has none
+          const top = Math.round(card.getBoundingClientRect().top);
+          feet.set(top, [...(feet.get(top) ?? []), Math.round(cta.getBoundingClientRect().bottom)]);
         }
         return [...feet.values()];
       });
@@ -516,4 +584,61 @@ test.describe("visual capture — ordering screens", () => {
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();
     await capture(page, "order-25-ar-rewards-sheet");
   });
+
+  for (const mode of MODES) {
+    test(`FIGMA-POLISH (${mode}): the pack builder (FIXED + CHOICE slots, the '0 of 2' counter), the full-screen CUSTOMIZE page, the PDP 'You Might Like' rail and the global error over the bag (a failed PAY)`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockTenantRecommendations(page);
+      await mockKioskBackend(page, { arabic: mode === "ar" });
+      await startOrder(page, mode);
+      await expect.poll(() => tenantMapLoaded(page)).toEqual([CHEESE_BURGER]);
+
+      // The builder (1:2920 / 1:4895): FIXED Sides with CUSTOMIZE beside the
+      // CHOICE Drinks slot, then the Snacks group's "0 of 2".
+      const box = page.getByTestId(`item-${DREAM_BOX}`);
+      await box.scrollIntoViewIfNeeded();
+      await box.click();
+      await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
+      await expect(page.getByTestId(`pack-slot-customize-${G_SIDES}`)).toBeVisible();
+      await expect(page.getByTestId(`pack-slot-open-${G_DRINKS}`)).toBeVisible();
+      await page.getByTestId("pack-slot-grid").scrollIntoViewIfNeeded();
+      await capture(page, `order-26-pdp-builder-${mode}`);
+      const snacks = page.getByTestId(`pdp-group-${G_SNACKS}`);
+      await snacks.scrollIntoViewIfNeeded();
+      // The header's count (pdp.groupCount; Arabic isolates its numbers).
+      await expect(snacks.locator("h3 ~ span")).toHaveText(/^\D*0\D+2\D*$/);
+      await capture(page, `order-27-pdp-builder-counter-${mode}`);
+
+      // The full-screen CUSTOMIZE page (D4; 1:2984 / 1:5051).
+      await page.getByTestId(`pack-slot-customize-${G_SIDES}`).click();
+      const tier2 = page.getByTestId("tier2-sheet");
+      await expect(tier2.getByTestId(`tier2-group-${FRIES_ADDON_GROUP}`)).toBeVisible();
+      await capture(page, `order-28-tier2-page-${mode}`);
+      await page.getByTestId("tier2-sheet-close").click();
+      await expect(tier2).toHaveCount(0);
+      await page.getByTestId("pdp-back").click();
+      await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+
+      // The PDP rail (ProductSuggestion 1:1825 / card 1:1829).
+      const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
+      await burger.scrollIntoViewIfNeeded();
+      await burger.click();
+      const rail = page.getByTestId("pdp-rail");
+      await expect(rail.getByTestId(`pdp-rail-item-${TORTILLA_SAUCE}`)).toBeVisible();
+      await rail.scrollIntoViewIfNeeded();
+      await capture(page, `order-29-pdp-rail-${mode}`);
+      await page.getByTestId("pdp-add-to-bag").click();
+      await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+      await dismissAddedModal(page);
+
+      // G1: a PAY whose preflight fails raises the global error over the bag.
+      await openBag(page);
+      await page.route("**/api/tenants/getServerTime", (r) => r.fulfill({ status: 500, json: {} }));
+      await page.getByTestId("bag-pay").click();
+      await expect(page.getByTestId("global-error")).toBeVisible();
+      await capture(page, `order-30-global-error-${mode}`);
+    });
+  }
 });

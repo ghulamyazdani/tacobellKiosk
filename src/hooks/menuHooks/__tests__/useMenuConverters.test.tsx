@@ -11,7 +11,7 @@ import {
   setIsDynamicPricingEnabled,
 } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { pushCharges } from "@cx-sdk/ordering/state/cart.slice";
+import { pushCharges, setMenuCharges } from "@cx-sdk/ordering/state/cart.slice";
 import { setOffersFetchFailed } from "@cx-sdk/ordering/state/offer.slice";
 import { store } from "../../../redux/app/store";
 import useMenuConverters from "../useMenuConverters";
@@ -522,5 +522,104 @@ describe("fetchMenu — lane bag-pdp pins (real offer + dynamic-pricing hooks)",
     // The default path keeps its fork-parity fallback to the stored map.
     const unstaged = await record((fetchMenu) => fetchMenu("t2", false, false, PIPELINE));
     expect(priceIn(unstaged.actions)).toBe(3);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane figma-polish S3 (MONEY) — the menu charges follow the tab type of
+ * the pipeline being FETCHED. /second dispatches setTabType and calls
+ * fetchMenu in the same tick, so the render-time getter still held the
+ * PREVIOUS session's type: a guest after a "table" session got no menu
+ * charges, and the reverse applied charges a table order must not carry.
+ * Only a caller with no pipeline row (BagSheet's fetchMenu(tab, true,
+ * false, true)) still falls back to the stored tab type.
+ * ------------------------------------------------------------------ */
+
+describe("fetchMenu — menu charges follow the FETCHED pipeline's tab_type (S3 MONEY)", () => {
+  const PACKING = { id: "mc-pack", name: "Packing", value: 10, type: "fixed" };
+  const TAKE_AWAY = { _id: "p-take", tab_id: "t2", tab_type: "take_away" };
+  const TABLE = { _id: "p-table", tab_id: "t1", tab_type: "table" };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    window.localStorage.clear();
+    net.realHooks = false;
+    net.serverTime = () => Promise.resolve({ serverTime: "2026-10-07T12:00:00.000Z" });
+    net.menu = () =>
+      Promise.resolve({ ...(fixture("slim-menu.json") as object), charges: [MENU_CHARGE] });
+    net.outOfStock = () => Promise.resolve([]);
+    net.mockCapture.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** One fetch with `stored` as the store's (previous session's) tab type. */
+  const chargesAfter = async (
+    stored: string,
+    run: (fetchMenu: ReturnType<typeof useMenuConverters>["fetchMenu"]) => Promise<unknown>,
+  ) => {
+    store.dispatch(setTabType(stored));
+    const dispatch = vi.spyOn(store, "dispatch");
+    const { result } = renderHook(() => useMenuConverters(), { wrapper });
+    dispatch.mockClear();
+    let menu: unknown;
+    await act(async () => {
+      menu = await run(result.current.fetchMenu);
+    });
+    const actions = dispatch.mock.calls.map(([action]) => action as UnknownAction);
+    return {
+      menu: menu as { categories?: unknown[] },
+      menuCharges: (actions.find(setMenuCharges.match)?.payload as { menuCharges?: unknown } | undefined)
+        ?.menuCharges,
+      pushed: actions.find(pushCharges.match)?.payload,
+    };
+  };
+
+  it("store still 'table' (the previous session), /second fetches a take_away pipeline → the menu charges are applied", async () => {
+    const { menu, menuCharges, pushed } = await chargesAfter("table", (fetchMenu) =>
+      fetchMenu("t2", false, false, TAKE_AWAY),
+    );
+
+    expect(menu.categories?.length).toBeGreaterThan(0);
+    expect(menuCharges).toEqual([PACKING]);
+    expect(pushed).toEqual([PACKING]);
+    expect(window.localStorage.getItem("menuCharges")).toBe(JSON.stringify([PACKING]));
+  });
+
+  it("store 'take_away' (the previous session), a 'table' pipeline fetched → NO menu charges", async () => {
+    const { menu, menuCharges, pushed } = await chargesAfter("take_away", (fetchMenu) =>
+      fetchMenu("t1", false, false, TABLE),
+    );
+
+    expect(menu.categories?.length).toBeGreaterThan(0);
+    expect(menuCharges).toEqual([]);
+    expect(pushed).toEqual([]);
+  });
+
+  it.each([
+    ["table", []],
+    ["take_away", [PACKING]],
+  ])("BagSheet's fetchMenu(tab, true, false, true) — no pipeline row — still uses the STORED tab type (%s)", async (stored, expected) => {
+    const { menuCharges } = await chargesAfter(stored, (fetchMenu) => fetchMenu("t2", true, false, true));
+
+    expect(menuCharges).toEqual(expected);
+  });
+
+  it("the staged (opts) path is unchanged: the TARGET's 'table' wins over a stored take_away, and nothing reaches the store", async () => {
+    const staged: UnknownAction[] = [];
+    const { menuCharges, pushed } = await chargesAfter("take_away", (fetchMenu) =>
+      fetchMenu("t1", false, false, TABLE, {
+        apply: (action) => staged.push(action),
+        mirror: () => {},
+        deploymentCharges: [],
+      }),
+    );
+
+    expect(menuCharges).toBeUndefined();
+    expect(pushed).toBeUndefined();
+    expect((staged.find(setMenuCharges.match)?.payload as { menuCharges?: unknown }).menuCharges).toEqual([]);
+    expect(staged.find(pushCharges.match)?.payload).toEqual([]);
   });
 });

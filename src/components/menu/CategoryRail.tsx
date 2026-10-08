@@ -13,7 +13,8 @@ interface CategoryRailProps {
 
 /**
  * Left category rail — Figma "Menu-Categories" (264px, white, bell on top,
- * compressed-bold rows, selected = vibrant purple pill).
+ * compressed-bold rows, selected = vibrant purple pill). Rows pad 24 / 12:
+ * "CRAVINGS MENU" (174.3 px) needs the 179 px box; labels stay left-aligned.
  */
 export default function CategoryRail({
   categories,
@@ -35,7 +36,7 @@ export default function CategoryRail({
               type="button"
               data-testid={`rail-${category.id}`}
               onClick={() => onSelect(category.id)}
-              className={`tb-compressed h-[64px] w-full shrink-0 rounded-[8px] px-[24px] text-left text-[30px] leading-[24px] min-h-[44px] ${
+              className={`tb-compressed h-[64px] w-full shrink-0 rounded-[8px] pl-[24px] pr-[12px] text-left text-[30px] leading-[24px] min-h-[44px] ${
                 selected ? "bg-tb-purple-vibrant text-tb-surface" : "text-tb-purple"
               }`}
             >

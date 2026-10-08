@@ -129,14 +129,17 @@ describe("Customization edit-from-bag branch (contract B1)", () => {
     renderEditPdp();
     expect(screen.getByTestId("customization-screen")).toBeInTheDocument();
     expect(screen.getByTestId("pdp-group-sauce_group")).toHaveTextContent("Sauces");
-    // The row's own selection is pre-applied…
-    expect(screen.getByTestId("pdp-option-onions").className).toContain(
-      "border-tb-purple"
+    // The row's own selection is pre-applied (item 42: the card's radio is
+    // on — the card button is pressed)…
+    expect(screen.getByTestId("pdp-option-onions")).toHaveAttribute(
+      "aria-pressed",
+      "true"
     );
     // …and the group's isDefault option was NOT seeded on top (edit branch
     // must never reseed defaults — contract B1).
-    expect(screen.getByTestId("pdp-option-cheese").className).not.toContain(
-      "border-tb-purple"
+    expect(screen.getByTestId("pdp-option-cheese")).toHaveAttribute(
+      "aria-pressed",
+      "false"
     );
   });
 

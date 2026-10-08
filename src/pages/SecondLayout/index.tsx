@@ -38,6 +38,7 @@ interface Pipeline {
   secondary_name?: string;
   name?: string;
   deployments?: string[];
+  order?: number;
 }
 
 const iconForPipeline = (pipeline: Pipeline) =>
@@ -68,9 +69,7 @@ export default function SecondLayout() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const ada = useAdaActive();
-  const pipelines = (useSelector(selectPipelines) ?? []) as Pipeline[];
-  const scrollRow = pipelines.length > (ada ? 2 : 4);
-  const twoRows = !scrollRow && pipelines.length > 2;
+  const allPipelines = (useSelector(selectPipelines) ?? []) as Pipeline[];
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const secondaryLanguage = useSelector(selectSecondaryLanguage);
   const { isSecondary, pipelineName, text } = useLocalized();
@@ -97,7 +96,18 @@ export default function SecondLayout() {
   // selector alone would send the guest to /phone on a deployment whose
   // settings have loyalty switched off but whose partner blob is still in
   // persisted state — both must agree.
-  const { getChargesCountryDataApi, getIsLoyaltyOn } = useAppSettings();
+  const { getChargesCountryDataApi, getIsLoyaltyOn, getDeactivatedPipelines } =
+    useAppSettings();
+  // Fork parity (SecondLayout.tsx:86-91, 247): pipelines deactivated for this
+  // device are never shown, the rest in their configured `order` (missing =
+  // 0; the sort is stable, so ties keep the server order). A copy — never
+  // sort the selector's array in place.
+  const deactivated = getDeactivatedPipelines();
+  const pipelines = allPipelines
+    .filter((p) => !deactivated.includes(p._id))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const scrollRow = pipelines.length > (ada ? 2 : 4);
+  const twoRows = !scrollRow && pipelines.length > 2;
   const [languageOpen, setLanguageOpen] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   // The pipeline whose menu failed to load — drives the error dialog.
@@ -244,47 +254,59 @@ export default function SecondLayout() {
         <h1 className="tb-display mb-[64px] text-center text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface">
           {t("second.title")}
         </h1>
-        {/* scrollRow: -mx-[112px] widens the row to the full 1080 stage so the
+        {/* Every pipeline deactivated for this device (D13, design language,
+            no frame): one line instead of the cards — never a blank screen;
+            the footer's CANCEL still exits (Rule 1).
+            scrollRow: -mx-[112px] widens the row to the full 1080 stage so the
             cards swipe edge to edge; px-[112px] keeps card 1 on the block's
             left edge. Cards are shrink-0 or the nowrap row would squeeze them. */}
-        <div
-          className={
-            scrollRow
-              ? "-mx-[112px] flex gap-[24px] overflow-x-auto px-[112px] [scrollbar-width:none]"
-              : "flex flex-wrap justify-center gap-[24px]"
-          }
-        >
-          {pipelines.map((pipeline) => {
-            const openState = checkPipelineClosedFromRedux(pipeline._id);
-            const closed = openState.status === false;
-            return (
-              <button
-                key={pipeline._id}
-                type="button"
-                data-testid={`pipeline-${pipeline._id}`}
-                disabled={closed}
-                onClick={() => handleSelectPipeline(pipeline)}
-                className={`relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
-                  closed ? "opacity-50" : "active:scale-[0.98]"
-                }${scrollRow ? " shrink-0" : ""}`}
-              >
-                <img
-                  alt=""
-                  src={iconForPipeline(pipeline)}
-                  className="h-[128px] w-[128px]"
-                />
-                <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
-                  {pipelineName(pipeline)}
-                </span>
-                {closed && (
-                  <span className="tb-display absolute bottom-[24px] rounded-full bg-tb-ink-purple px-6 py-2 text-[18px] text-tb-surface">
-                    {t("second.closed")}
+        {pipelines.length === 0 ? (
+          <p
+            data-testid="second-no-pipelines"
+            className="text-center text-[32px] font-medium leading-[36px] tracking-[-1px] text-tb-surface"
+          >
+            {t("second.noPipelines")}
+          </p>
+        ) : (
+          <div
+            className={
+              scrollRow
+                ? "-mx-[112px] flex gap-[24px] overflow-x-auto px-[112px] [scrollbar-width:none]"
+                : "flex flex-wrap justify-center gap-[24px]"
+            }
+          >
+            {pipelines.map((pipeline) => {
+              const openState = checkPipelineClosedFromRedux(pipeline._id);
+              const closed = openState.status === false;
+              return (
+                <button
+                  key={pipeline._id}
+                  type="button"
+                  data-testid={`pipeline-${pipeline._id}`}
+                  disabled={closed}
+                  onClick={() => handleSelectPipeline(pipeline)}
+                  className={`relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
+                    closed ? "opacity-50" : "active:scale-[0.98]"
+                  }${scrollRow ? " shrink-0" : ""}`}
+                >
+                  <img
+                    alt=""
+                    src={iconForPipeline(pipeline)}
+                    className="h-[128px] w-[128px]"
+                  />
+                  <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+                    {pipelineName(pipeline)}
                   </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                  {closed && (
+                    <span className="tb-display absolute bottom-[24px] rounded-full bg-tb-ink-purple px-6 py-2 text-[18px] text-tb-surface">
+                      {t("second.closed")}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {isFetching && (

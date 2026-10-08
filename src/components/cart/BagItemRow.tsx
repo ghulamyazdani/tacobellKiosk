@@ -204,12 +204,14 @@ export default function BagItemRow({
             ])}
           </div>
         )}
+        {/* CTA/Show more (verified 1:3193): Exp Bd 16/24, −0.08, #501098,
+            underline — font-bold wins over .tb-display's 900 (@layer). */}
         {canEdit && (
           <button
             type="button"
             data-testid={`bag-edit-${row?.itemId}`}
             onClick={() => onEdit(row)}
-            className="-ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold tracking-[-0.08px] text-tb-purple underline"
+            className="tb-display -ml-[8px] inline-flex min-h-[44px] min-w-[44px] items-center px-[8px] text-[16px] font-bold normal-case leading-[24px] tracking-[-0.08px] text-tb-purple underline"
           >
             {t("bag.edit")}
           </button>

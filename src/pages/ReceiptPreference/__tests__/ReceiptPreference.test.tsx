@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import ReceiptPreferenceScreen from "../index";
 import i18n from "../../../i18n";
@@ -162,5 +163,49 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
     const title = i18n.t("orderError.uncertainTitle");
     expect(title).toMatch(/\p{Script=Arabic}/u);
     expect(screen.getByRole("alertdialog", { name: title })).toBe(panel());
+  });
+});
+
+/*
+  Lane figma-polish S4 #3/#4 (1:3377 / 1:3382): the headline is Title/H2
+  (Exp Bl 64/54.4, −3) in the 856 px block (top 666 unchanged), the two CTA
+  Cards are the frame's 416 × 416, and the bell sits at 128. ADA keeps its
+  P9c tops (title 120, tiles 292) and drops the bell.
+*/
+describe("/receipt — the Figma geometry (S4)", () => {
+  const headline = () => screen.getByRole("heading", { level: 1 });
+  const H2 = ["text-[64px]", "leading-[54.4px]", "tracking-[-3px]", "w-[856px]"];
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(
+      setCartItems([
+        { id: "cw", itemId: "cw-1", name: "Crunchwrap", quantity: 1, type: "ITEM", total_price: 5 },
+      ])
+    );
+    store.dispatch(setAmount(5));
+  });
+
+  it("the headline is Title/H2 in the 856 px block at 666; both tiles are 416 × 416 at 838; the bell at 128", () => {
+    mount();
+
+    expect(headline()).toHaveTextContent(i18n.t("receipt.title"));
+    expect(headline()).toHaveClass(...H2, "top-[666px]");
+    expect(headline().className).not.toMatch(/text-\[58px\]|w-\[880px\]/);
+    for (const id of ["receipt-print", "receipt-email"]) {
+      expect(screen.getByTestId(id)).toHaveClass("h-[416px]", "w-[416px]");
+    }
+    expect(screen.getByTestId("receipt-print").parentElement).toHaveClass("top-[838px]", "gap-[24px]");
+    expect(screen.getByAltText("Taco Bell")).toHaveClass("top-[128px]");
+  });
+
+  it("ADA keeps its tops (title 120, tiles 292) with the same 416 tiles, and drops the bell", () => {
+    store.dispatch(toggleAccessibilityMode());
+    mount();
+
+    expect(headline()).toHaveClass(...H2, "top-[120px]");
+    expect(screen.getByTestId("receipt-print").parentElement).toHaveClass("top-[292px]");
+    expect(screen.getByTestId("receipt-print")).toHaveClass("h-[416px]", "w-[416px]");
+    expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
   });
 });

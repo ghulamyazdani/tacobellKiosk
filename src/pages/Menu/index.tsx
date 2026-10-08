@@ -10,8 +10,6 @@ import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
 import {
   selectCurrency,
-  selectErrorMessageGlobal,
-  selectShowErrorModalGlobal,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
@@ -50,7 +48,6 @@ import CancelOrderModal from "../../components/common/CancelOrderModal";
 import ErrorModal from "../../components/common/ErrorModal";
 import LoyaltyLoginModal from "../../components/loyalty/LoyaltyLoginModal";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
-import LoyaltyErrorModal from "../../components/loyalty/LoyaltyErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { ErrorBoundary } from "../../ErrorBoundary";
 
@@ -97,9 +94,10 @@ function LoyaltyRewardsFallback() {
  * Card interactions land in P6 (PDP/customization) and P7 (cart).
  *
  * P7c makes this page the host of the XENO loyalty surfaces — the rewards
- * sheet, the login modal, the redemption celebration and the guard dialog are
- * all mounted here, so both entry points (the CTA-bar link per locked
- * decision 5a and the bag's LOG-IN & GET REWARDS per 5b) open the same
+ * sheet, the login modal and the redemption celebration are all mounted
+ * here (the entry-guard errors go to the global GlobalErrorHost), so both
+ * entry points (the CTA-bar link per locked decision 5a and the bag's
+ * LOG-IN & GET REWARDS per 5b) open the same
  * instances. It also owns the two loyalty ordering constraints that live on
  * this screen: the entry-tap branch table, and the revoke that must fire
  * before the cancel-order session reset.
@@ -124,8 +122,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   // (written by /phone, or by the login modal when the guest skipped it).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
   const customerPhone = useSelector(selectPhoneNumber) as any;
-  const globalErrorOpen = useSelector(selectShowErrorModalGlobal) as any;
-  const globalErrorMessage = useSelector(selectErrorMessageGlobal) as any;
   /**
    * P7d pre-cart upsell gate — UNITS, not ROWS.
    *
@@ -269,8 +265,10 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     setSizeEntity(null);
     if (!parent) return;
     if (variant?.modifiers?.length) {
-      // Size chosen but the variant carries modifier groups → P6b builder.
-      navigate("/customization");
+      // Size chosen but the variant carries modifier groups → the PDP, through
+      // the card tap's own tier-1 variant session (a bare navigate had none,
+      // so the PDP bounced back), with the chosen size already confirmed.
+      addEntity(parent, { preselectedVariantId: variant.id });
       return;
     }
     // Engine-native variant row: dp/id/name read from selectedVariant; the
@@ -299,28 +297,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   /**
    * Both loyalty guard branches dispatch the fork's GLOBAL error action —
    * that is what BagSheet's rewards entry already does, and keeping one code
-   * path means the bag CTA and the menu link fail identically.
-   *
-   * BRIDGE, FLAGGED FOR FOLLOW-UP: tacobell-kiosk has no renderer for that
-   * flag yet (the fork shows it as an auto-dismissing top banner, ErrorCard
-   * mounted in AppRoutes), so a global dispatch is invisible today. Until
-   * that banner lands at the app shell this page renders the two loyalty
-   * guard messages itself, matched BY VALUE so that no unrelated global error
-   * (dp-max-quantity, checkout failure, customization limits) is promoted
-   * into a blocking modal by this bridge.
+   * path means the bag CTA and the menu link fail identically. The app-wide
+   * GlobalErrorHost (IdleGuard, z-[95]) renders it; never render it here.
    */
-  const loyaltyGuardMessages = useMemo(
-    () => [t("loyalty.alreadyAvailed"), t("loyalty.noCoupons")],
-    [t]
-  );
-  const loyaltyGuardError =
-    globalErrorOpen && loyaltyGuardMessages.includes(String(globalErrorMessage))
-      ? String(globalErrorMessage)
-      : null;
-  const dismissLoyaltyGuardError = () =>
-    dispatch(
-      setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" })
-    );
   const raiseLoyaltyGuardError = (errorMessage: string) =>
     dispatch(setShowErrorModalGlobal({ showErrorModal: true, errorMessage }));
 
@@ -554,9 +533,10 @@ export default function Menu({ bagOpen = false }: MenuProps) {
 
       {/* P7c XENO loyalty overlays — z-stack above the bag (z-40):
           LoyaltyRewardsSheet z-50, LoyaltyLoginModal z-[60],
-          LoyaltySuccessModal z-[70], LoyaltyErrorModal z-[80] (an error must
-          never be occluded). The rewards sheet takes NO open prop: /phone and
-          the login modal both open it by dispatching
+          LoyaltySuccessModal z-[70]; the two entry-guard errors render in
+          the app-wide GlobalErrorHost (z-[95], IdleGuard) above all of
+          them (an error must never be occluded). The rewards sheet takes NO
+          open prop: /phone and the login modal both open it by dispatching
           openLoyaltyItemsModal({isTimerOn:true}), and it reads that slice
           state itself — which is also how the post-lookup auto-open lands
           when the guest arrives here from /phone. It is lazy (D9) and
@@ -574,13 +554,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         onClose={() => setLoyaltyLoginOpen(false)}
       />
       <LoyaltySuccessModal />
-      <LoyaltyErrorModal
-        open={loyaltyGuardError !== null}
-        message={loyaltyGuardError ?? ""}
-        onRetry={dismissLoyaltyGuardError}
-      />
-      {/* P9b menu-load failure (z-80, last in the DOM so it wins the tie with
-          LoyaltyErrorModal). START OVER only navigates: /start's mount owns
+      {/* P9b menu-load failure (z-80, last in the DOM so it wins any z-80
+          tie). START OVER only navigates: /start's mount owns
           the revoke + reset (hazard H1) — and the restored cart may belong to
           a pipeline this session can no longer switch away from. */}
       {isEmpty && menuLoadFailed && (

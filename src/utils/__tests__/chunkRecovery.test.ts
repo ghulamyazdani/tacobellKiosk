@@ -4,6 +4,7 @@ import {
   installChunkErrorRecovery,
   planCrashRecovery,
   reloadTo,
+  setChunkFailureHealer,
 } from "../chunkRecovery";
 
 /*
@@ -130,17 +131,6 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("a failure on a page that IS a fresh reload does not reload again (loop guard, unchanged)", () => {
-    vi.spyOn(performance, "getEntriesByType").mockReturnValue([
-      { type: "reload" } as unknown as PerformanceEntry,
-    ]);
-    vi.spyOn(performance, "now").mockReturnValue(1_000);
-
-    preloadError(new Error("Failed to fetch dynamically imported module: /assets/Menu-x.js"));
-
-    expect(reload).not.toHaveBeenCalled();
-  });
-
   /*
     P8b-12 — the splash's Paytm session release (one status read, maybe one
     EDC void, never retried; the session is already wiped from disk) holds
@@ -182,5 +172,27 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
       expect(replace).toHaveBeenCalledTimes(1);
       expect(replace).toHaveBeenCalledWith("/start");
     });
+  });
+
+  // LAST in this file: the loop guard latches the module for the page's life.
+  it("a failure on a fresh reload heals instead of reloading — and so does every later failure in that page, even past 60 s (G2a latch)", () => {
+    const heal = vi.fn();
+    setChunkFailureHealer(heal);
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([
+      { type: "reload" } as unknown as PerformanceEntry,
+    ]);
+    const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+    const bagLazyParts = new Error(
+      "Failed to fetch dynamically imported module: https://kiosk.example/assets/bagLazyParts-x.js"
+    );
+
+    preloadError(bagLazyParts); // /menu entry, inside the window
+    expect(reload).not.toHaveBeenCalled();
+    expect(heal).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(70_000); // a PDP mount re-imports a minute later, mid-order
+    preloadError(bagLazyParts);
+    expect(reload).not.toHaveBeenCalled();
+    expect(heal).toHaveBeenCalledTimes(2);
   });
 });

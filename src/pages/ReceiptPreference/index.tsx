@@ -36,8 +36,10 @@ import tbBell from "../../assets/brand/tb-bell.svg";
  * contract before it is enabled.
  *
  * ADA (P9c, design-language, flagged — 1:3377 has no ADA variant): the
- * 1122px reach zone with the bell dropped. BACK stays at 40; title 120–232 ·
- * tiles 292–704 · NO THANKS keeps its 18px bottom distance (1012–1104). The
+ * 1122px reach zone with the bell dropped. BACK stays at 40; title 120–229
+ * (3 Arabic lines: 283) · tiles 292–708 · NO THANKS keeps its 18px bottom
+ * distance (1012–1104). The headline is Title/H2 (Exp Bl 64/54.4, −3, 856
+ * wide) and the tiles the frame's 416×416 CTA Cards (1:3382). The
  * buffer and order-error surfaces are page-relative, so they follow along.
  *
  * P8b PAYTM: when /payment armed a Paytm type, the choice starts the Paytm
@@ -149,12 +151,12 @@ export default function ReceiptPreferenceScreen() {
         <img
           alt="Taco Bell"
           src={tbBell}
-          className="absolute left-1/2 top-[135px] h-[89px] w-[100px] -translate-x-1/2"
+          className="absolute left-1/2 top-[128px] h-[89px] w-[100px] -translate-x-1/2"
         />
       )}
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[666px]"} w-[880px] -translate-x-1/2 text-center text-[58px] leading-[56px] tracking-[-1.5px] text-tb-surface`}
+        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[666px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
       >
         {t("receipt.title")}
       </h1>
@@ -166,7 +168,7 @@ export default function ReceiptPreferenceScreen() {
           type="button"
           data-testid="receipt-print"
           onClick={() => choose("print")}
-          className="flex h-[412px] w-[412px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
+          className="flex h-[416px] w-[416px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
         >
           <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.print")}
@@ -178,7 +180,7 @@ export default function ReceiptPreferenceScreen() {
         <div
           data-testid="receipt-email"
           aria-disabled="true"
-          className="flex h-[412px] w-[412px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
+          className="flex h-[416px] w-[416px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
         >
           <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
             {t("receipt.email")}
