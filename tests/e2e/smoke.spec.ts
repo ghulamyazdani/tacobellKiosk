@@ -1,7 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/kiosk";
+import { mockKioskBackend } from "./fixtures/backend";
 import { APP_ORIGIN } from "./fixtures/origin";
 
 test.describe("boot flow smoke (registration-first, posistKiosk parity)", () => {
+  // A registered device reports its build version (useAutoUpdate → update_cx_software): the mock
+  // answers it, never a real backend (unmocked, it reached VITE_API_ENDPOINT).
+  test.beforeEach(({ page }) => mockKioskBackend(page));
+
   test("unregistered device: / shows Registration; /start redirects back", async ({
     page,
   }) => {

@@ -6,12 +6,12 @@
  * returns a live handle the spec asserts on.
  *
  * ── HOUSE MOCK ORDER ────────────────────────────────────────────────────
- * Playwright matches routes NEWEST-FIRST. bag.spec.ts:73-126 registers the
- * catch-all `**\/api/**` FIRST and every specific mock after it, so this
- * helper MUST be called AFTER `mockKioskBackend(page)` or the catch-all `{}`
- * swallows placeOrder, getKisokDeviceData and friends. Inside this file the
- * same rule applies top-to-bottom: the broad FORBIDDEN matcher is registered
- * first and every allowed, specific endpoint after it.
+ * Playwright matches routes NEWEST-FIRST. `mockKioskBackend` (fixtures/
+ * backend.ts, or a spec's local copy) registers its `/api/` catch-all FIRST
+ * and every specific mock after it, so this helper MUST be called AFTER it or
+ * the catch-all `{}` swallows placeOrder, getKisokDeviceData and friends.
+ * Inside this file the same rule applies top-to-bottom: the broad FORBIDDEN
+ * matcher is registered first and every allowed, specific endpoint after it.
  *
  * ── WHY THE 500 GUARDS EXIST (brief §SAFETY) ────────────────────────────
  * The `**\/api/**` catch-all answers `{}` with HTTP 200. That makes a
@@ -26,7 +26,7 @@
  * posistKiosk-cx-sdk/packages (see the per-route comments for the file and
  * line). Corrections to the brief are called out inline with "BRIEF NOTE".
  */
-import type { Page, Route } from "@playwright/test";
+import { expect, type Page, type Route } from "@playwright/test";
 
 export type JsonBody = Record<string, unknown>;
 
@@ -63,20 +63,23 @@ export const DEPLOYMENT_SETTINGS_URL = "**/api/cx/kiosk/getDeploymentSettings";
 export const PIPELINES_URL = "**/api/cx/kiosk/getPipelines";
 
 /**
- * The local print agent. DIFFERENT ORIGIN — `**\/api/**` does NOT cover it,
- * and an unrouted cross-origin request hangs. @cx-sdk/devices/printer/
- * ticketFormat.ts:17,28 and packages/devices/README.md:17 both name
- * `https://localhost:65505/api/printer`.
+ * The local print agent, @cx-sdk/devices/printer/ticketFormat.ts:17,28 and
+ * packages/devices/README.md:17: `https://localhost:65505/api/printer`.
+ * A different origin, yet a `**\/api/**` glob DOES match it (its leading
+ * `**` spans any origin — Playwright 1.63): the route below wins only by
+ * being newer than a spec's catch-all. Under the P9f harness
+ * (fixtures/kiosk.ts) an unrouted print call is denied and fails the test,
+ * naming the URL.
  */
 export const PRINT_AGENT_ORIGIN = "https://localhost:65505/**";
 
 /**
- * Terminal-socket origins the three peripheral services use (geidea
+ * Terminal origins the three peripheral services use in the fork (geidea
  * ws://localhost:5000, neoLeap ws://localhost:7000, mashreq
- * https://localhost:5000/EFTTransact). None of them is ported into TB — these
- * guards exist so that if one ever is, the spec says so out loud. `page.route`
- * cannot intercept a raw WebSocket handshake, so this only catches the
- * https/fetch flavours (Mashreq). Documented, not silently relied upon.
+ * https://localhost:5000/EFTTransact). TB ports none of them and opens no
+ * socket at all (peripheral-free by construction, PROGRESS); these guards
+ * keep the https/fetch flavour (Mashreq) loud if one is ever ported. A ws://
+ * terminal would need page.routeWebSocket — there is none to guard.
  */
 export const TERMINAL_ORIGINS = [
   "https://localhost:5000/**",
@@ -349,9 +352,9 @@ export async function mockCheckoutBackend(
   // branch). Distinct path from PLACE_ORDER_URL, so no shadowing.
   await page.route(BACKEND_ORDERING_URL, denyLoudly);
 
-  // Mashreq's https bridge and the terminal origins. Cross-origin, so the
-  // `**/api/**` catch-all never saw them. (Raw ws:// handshakes are outside
-  // page.route's reach — see TERMINAL_ORIGINS.)
+  // Mashreq's https bridge and the terminal origins: not under /api/, so no
+  // backend catch-all answers them (the harness would deny them; this names
+  // them). Raw ws:// handshakes — see TERMINAL_ORIGINS.
   for (const origin of TERMINAL_ORIGINS) {
     await page.route(origin, denyLoudly);
   }
@@ -431,3 +434,27 @@ export async function mockCheckoutBackend(
 
   return handle;
 }
+
+/**
+ * ⛔ The standing safety assertion (checkout.spec) — every checkout test ends with it.
+ *
+ * `forbiddenUrls` / `printAgentUrls` are folded into the assertion so a
+ * failure names the exact URL that was reached instead of just "expected
+ * false, got true".
+ */
+export function expectNothingDangerousWasContacted(handle: CheckoutMockHandle) {
+  expect(
+    handle.forbiddenUrls,
+    "a gateway / terminal / backend-ordering endpoint was contacted"
+  ).toEqual([]);
+  expect(handle.forbiddenHit).toBe(false);
+  expect(
+    handle.printAgentUrls,
+    "the local print agent was contacted"
+  ).toEqual([]);
+  expect(handle.printAgentContacted).toBe(false);
+}
+
+/** A placeOrder body's order id (recovery.spec): the ladder's attempts share one. */
+export const orderIdOf = (body: unknown): string =>
+  String((body as { source?: { order_id?: unknown } })?.source?.order_id ?? "");
