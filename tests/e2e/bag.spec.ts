@@ -1268,6 +1268,9 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
       "opacity",
       "0.5"
     );
+    // Like a sold-out item: no "+" and no Edit — only − / remove.
+    await expect(page.getByTestId(`bag-inc-${rowId}`)).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByTestId(`bag-edit-${rowId}`)).toHaveCount(0);
   });
 
   test("COOKING INSTRUCTIONS REACH THE ORDER: typed on the kiosk keyboard, kept across a reload on /cart, sent as special_instructions, gone for the next guest", async ({

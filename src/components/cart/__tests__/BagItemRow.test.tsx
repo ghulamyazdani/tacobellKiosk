@@ -322,16 +322,32 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
     const art = (itemId: string) =>
       screen.getByTestId(`bag-row-${itemId}`).firstElementChild as HTMLElement;
 
-    it.each([
+    const UNAVAILABLE_FLAGS: [string, object][] = [
       ["outOfStock", { outOfStock: true }],
       ["its size out of stock", { selectedVariant: { id: "pepsi-l", name: "Large", outOfStock: true } }],
       ["outside its schedule (isAvailable false)", { isAvailable: false }],
-    ])("%s → the art at 50 % and 'Unavailable'", (_label, flags) => {
+    ];
+
+    it.each(UNAVAILABLE_FLAGS)("%s → the art at 50 % and 'Unavailable'", (_label, flags) => {
       renderRow({ ...DRINK_ROW, ...flags });
       expect(screen.getByTestId("bag-unavailable-pep-1")).toHaveTextContent("Unavailable");
       expect(art("pep-1")).toHaveClass("opacity-50");
       expect(screen.queryByTestId("bag-changed-pep-1")).not.toBeInTheDocument();
       expect(isRowUnavailable({ ...DRINK_ROW, ...flags })).toBe(true);
+    });
+
+    // The affordances read the look's predicate: a row that says
+    // "Unavailable" never takes a "+" or offers Edit (a sold-out SIZE
+    // included — PAY's sweep flags selectedVariant, not the row).
+    it.each(UNAVAILABLE_FLAGS)("%s → '+' is inert and Edit is gone", async (_label, flags) => {
+      const row = { ...DRINK_ROW, ...flags };
+      store.dispatch(setCartItems([row]));
+      renderRow(row);
+      const inc = screen.getByTestId("bag-inc-pep-1");
+      expect(inc).toHaveAttribute("aria-disabled", "true");
+      await userEvent.click(inc);
+      expect(cartItems()[0].quantity).toBe(2);
+      expect(screen.queryByTestId("bag-edit-pep-1")).not.toBeInTheDocument();
     });
 
     it("a row with a photo: the photo itself dims (and only while unavailable)", () => {

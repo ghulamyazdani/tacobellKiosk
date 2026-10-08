@@ -158,12 +158,10 @@ export default function BagItemRow({
   // (Rule 1). Everything else is reversed by the bag's auto-reversal effect.
   const canRemoveLoyalty = isLoyaltyRow && (unavailable || flaggedByPay);
 
-  const canIncrease = !(row?.outOfStock || row?.isAvailable === false);
-  const canEdit =
-    isPaidRow &&
-    !row?.outOfStock &&
-    row?.isAvailable !== false &&
-    row?.type !== "ITEM";
+  // The affordances follow the look: an Unavailable row (a sold-out size
+  // included) takes no "+" and offers no Edit — only − / remove.
+  const canIncrease = !unavailable;
+  const canEdit = isPaidRow && !unavailable && row?.type !== "ITEM";
 
   const handleIncrease = () => {
     if (!canIncrease) return;
