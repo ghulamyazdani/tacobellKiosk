@@ -16,10 +16,13 @@
  *   (`POST /api/partners/execute_event?deployment_id=…&event_name=…`), so the
  *   handler branches on the `event_name` QUERY PARAM, not on the path.
  * - trap 6: the revoke is a raw cross-origin `fetch` to
- *   `https://xeno.in:2223/...` — the `**\/api/**` catch-all does NOT cover it
- *   and an unrouted request hangs forever (no timeout in the hook). It gets
- *   its own origin-scoped route here, plus a counter so specs can assert it
- *   fired (and fired BEFORE the session reset).
+ *   `https://xeno.in:2223/api/xeno/...` (10 s AbortSignal budget in
+ *   useLoyalty). A `**\/api/**` glob DOES match it (its leading `**` spans
+ *   any origin — Playwright 1.63), so a spec's catch-all answered it a
+ *   silent 200 `{}`. It gets its own origin-scoped route here, plus a
+ *   counter so specs can assert it fired (and fired BEFORE the session
+ *   reset). Under the P9f harness (fixtures/kiosk.ts) only this route may
+ *   answer it: an unrouted revoke is denied and fails the test.
  *
  * FAILURE BODIES ARE HTTP 200. The loyalty proxy wraps the real outcome in the
  * body (`{status_code: 400, response: {message}}`) — see
@@ -420,8 +423,8 @@ export async function mockXenoLoyalty(
     return route.fulfill({ json: opts.customerNameRows ?? CUSTOMER_NAME_ROWS });
   });
 
-  // TRAP 6: cross-origin revoke — outside the `**/api/**` catch-all. Without
-  // this route the raw fetch in checkAndRevokeLoyaltyReward never settles.
+  // TRAP 6: the cross-origin revoke. Origin-scoped and counted: a `**/api/**`
+  // glob would answer it too (any origin), the harness denies it unrouted.
   await page.route("https://xeno.in:2223/**", (route) => {
     handle.revokeCount += 1;
     handle.revokeUrls.push(route.request().url());

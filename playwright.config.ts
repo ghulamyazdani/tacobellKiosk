@@ -7,7 +7,7 @@ import { E2E_PORT } from "./tests/e2e/fixtures/origin";
 // for a parallel worktree lane only (never 5173/5273).
 const PORT = E2E_PORT;
 
-export default defineConfig({
+const config = defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   timeout: 30_000,
@@ -56,3 +56,34 @@ export default defineConfig({
     timeout: 60_000,
   },
 });
+
+/**
+ * TB_E2E_PREVIEW=1 — the PRODUCTION bundle, as its own invocation on the same port:
+ *   TB_E2E_PREVIEW=1 TB_E2E_PORT=<port> yarn playwright test
+ * runs ONLY the "preview" project (tests/e2e/*.preview.ts, which no project above matches) against
+ * `vite build` + `vite preview`. Service workers are blocked so page routes see every request;
+ * a server already on the port is an error, never reused (it would be the dev server).
+ * fixtures/backend.ts reads the same flag (its backend origin comes from .env.production then).
+ */
+export default process.env.TB_E2E_PREVIEW === "1"
+  ? defineConfig({
+      ...config,
+      projects: [
+        {
+          name: "preview",
+          testMatch: "**/*.preview.ts",
+          use: {
+            ...devices["Desktop Chrome"],
+            viewport: { width: 1080, height: 1920 },
+            serviceWorkers: "block",
+          },
+        },
+      ],
+      webServer: {
+        command: `yarn vite build && yarn vite preview --port ${PORT} --strictPort`,
+        url: `http://localhost:${PORT}`,
+        reuseExistingServer: false,
+        timeout: 180_000,
+      },
+    })
+  : config;

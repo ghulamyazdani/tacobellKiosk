@@ -1,65 +1,20 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures/kiosk";
 import { APP_ORIGIN } from "./fixtures/origin";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { LOGIN_OK, mockKioskBackend } from "./fixtures/backend";
 
 /**
  * Boot/auth flows with a MOCKED backend — the posistKiosk-parity behavior:
  * registration issues the token; any 401 during boot logs the device out.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-async function mockBootEndpoints(page: Page) {
-  // Catch-all FIRST (later routes win in Playwright): background calls the
-  // shell fires (e.g. PWAUpdateHandler's version report) must not leak to a
-  // real backend, 401, and log the mocked session out.
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({ json: [{ _id: "p1", name: "Dine In" }] })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-      },
-    })
-  );
-}
+/**
+ * The boot surface (fixtures/backend.ts) with this file's own pipeline row ({_id, name}) and a
+ * malformed `{}` menu — what the "order type" case's menu-error needs; the menu tests route theirs.
+ */
+const mockBootEndpoints = (page: Page) =>
+  mockKioskBackend(page, { pipelines: [{ _id: "p1", name: "Dine In" }], menu: {} });
 
 test.describe("registration + boot (mocked backend)", () => {
   test("license code registers the device and boots to the splash", async ({

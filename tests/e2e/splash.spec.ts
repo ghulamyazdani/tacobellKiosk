@@ -1,6 +1,8 @@
-import { test, expect, type Page, type Request } from "@playwright/test";
+import { test, expect, PNG_1X1 as PNG, type Page, type Request } from "./fixtures/kiosk";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { locale, mockKioskBackend } from "./fixtures/backend";
+import { registerToStart } from "./pages/boot";
 
 /**
  * P9d — splash (attract) media, end to end: boot fetches `getMedia`, stores
@@ -12,7 +14,7 @@ import { fileURLToPath } from "node:url";
  * (post-P9 44, D9: SPLASH_RETRY_MS); one with no picture (no_video) never.
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (registration.spec.ts): the `**\/api/**` catch-all FIRST, every
+ * House order: the shared backend mock (fixtures/backend.ts) FIRST, every
  * specific mock after it (Playwright matches newest-first). getMedia is
  * device-persisted media read once per splash visit, so it is mocked BEFORE
  * registration: the boot (/LoadingResources) is what stores it. The slides
@@ -36,31 +38,12 @@ import { fileURLToPath } from "node:url";
  * dwells and wide "not yet" margins (10 s; the retry's is 1 min).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
 const readFixture = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)));
 
-const en = JSON.parse(
-  readFixture("../../src/i18n/locales/en/translation.json").toString("utf-8")
-);
+const en = locale("en");
 const WEBM = readFixture("./fixtures/splash.webm");
 const AUDIO_ONLY_WEBM = readFixture("./fixtures/splash-audio-only.webm");
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-  "base64"
-);
 
 /** SDK kioskInfoApi `getKioskMedia`: POST /api/cx/kiosk/getMedia. */
 const GET_MEDIA_URL = "**/api/cx/kiosk/getMedia";
@@ -70,42 +53,9 @@ const SLIDE_B = `${MEDIA_ORIGIN}/slide-b.png`;
 const VIDEO = `${MEDIA_ORIGIN}/promo.webm`;
 const AUDIO_ONLY = `${MEDIA_ORIGIN}/audio-only.webm`;
 
-async function mockBootEndpoints(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({ json: [{ _id: "p1", name: "Dine In" }] })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: { start_order_text_primary: "START ORDER", ideal_time: "180" },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/** The boot surface with this file's own pipeline row ({_id, name}); getMedia stays the catch-all's `{}`. */
+const mockBootEndpoints = (page: Page) =>
+  mockKioskBackend(page, { pipelines: [{ _id: "p1", name: "Dine In" }] });
 
 type MediaEntry = Record<string, unknown>;
 
@@ -146,18 +96,6 @@ async function serveMediaHost(page: Page, missing: string[] = []) {
       : route.fulfill({ body: PNG, contentType: "image/png" });
   });
   return requested;
-}
-
-/** Register on the on-screen keyboard; the boot (getMedia included) lands on /start. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
 }
 
 const splashOf = (page: Page) => page.getByTestId("start-screen");
