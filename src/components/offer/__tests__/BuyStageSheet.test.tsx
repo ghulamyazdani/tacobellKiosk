@@ -179,7 +179,7 @@ const sauceRows = () => state().cart.cartItems.filter((row) => row.id === SAUCE.
 
 beforeEach(() => {
   store.dispatch({ type: "RESET_STATE" });
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setEntityMap({ entityMap: ENTITY_MAP }));
   store.dispatch(setCartItems([{ ...BURGER_ROW }]));
 });
@@ -363,6 +363,11 @@ describe("BuyStageSheet — tiles and modes", () => {
     });
     renderStage(LARGE_FRIES_BOGO, view);
     expect(screen.getByTestId("buy-stage-tile-fries")).toHaveTextContent("Fries (Large)");
+  });
+
+  it("a tile's price line carries the deployment's symbol (UB1 — never a bare amount)", () => {
+    renderStage(BOGO);
+    expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent("£2 | 50 Cal");
   });
 
   it("every control is a ≥44 px target (64 px ADD / stepper, 48 px X with a 44 px floor, 84 px BACK / CONTINUE)", () => {

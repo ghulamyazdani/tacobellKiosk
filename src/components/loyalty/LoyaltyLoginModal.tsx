@@ -18,9 +18,12 @@ import {
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../keyboard/KioskNumpad";
+import CountryPicker from "../phone/CountryPicker";
 import LoyaltyErrorModal from "./LoyaltyErrorModal";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import closeIcon from "../../assets/icons/close.svg";
+import chevronUp from "../../assets/icons/chevron-up.svg";
 
 export interface LoyaltyLoginModalProps {
   open: boolean;
@@ -56,10 +59,20 @@ function LoginBody({ onClose }: LoginBodyProps) {
   const [scanPressed, setScanPressed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [countryOpen, setCountryOpen] = useState(false);
 
   const comingSoonTimer = useRef<number | null>(null);
 
   const maxDigits = Number(countryCode?.max ?? 0) || FALLBACK_MAX_DIGITS;
+  const dialCode: string = countryCode?.dialCode ?? "";
+
+  /** UB5: the same picker as /phone; a pick moves the cap and the check. */
+  const openCountryPicker = () => {
+    captureKioskEvent(KioskEventName.CountryCodeSelectionClicked, {
+      current_country_code: countryCode?.dialCode,
+    });
+    setCountryOpen(true);
+  };
 
   /**
    * Privacy mask (fork CustomerPhone): the newest digit is revealed at the
@@ -286,26 +299,48 @@ function LoginBody({ onClose }: LoginBodyProps) {
           {t("loyalty.phonePrompt")}
         </p>
 
-        {/* Masked entry display — Figma's dot row, extended to a phone-length
-            entry: one cell per digit (minimum four), newest digit legible for
-            two seconds, dial code shown read-only (the country picker stays
-            on the /phone screen). */}
-        <div
-          data-testid="loyalty-phone-display"
-          role="textbox"
-          aria-readonly="true"
-          aria-label={t("loyalty.phonePrompt")}
-          dir="ltr"
-          className="mx-auto mt-[20px] flex h-[88px] w-[392px] items-center gap-[16px] overflow-hidden rounded-[12px] border-2 border-tb-pink px-[20px]"
-        >
-          {countryCode?.dialCode && (
-            <span className="shrink-0 text-[24px] font-medium leading-none text-tb-ink-purple/60">
-              {countryCode.dialCode}
+        {/* The country chip (UB5 — the same picker as /phone, design
+            language) + the masked entry display: Figma's dot row, extended to
+            a phone-length entry — one cell per digit (minimum four), newest
+            digit legible for two seconds. */}
+        <div className="mt-[20px] flex items-center justify-center gap-[12px]">
+          <button
+            type="button"
+            data-testid="loyalty-country-code"
+            aria-haspopup="dialog"
+            aria-label={t("phone.changeCountry", { dialCode })}
+            onClick={openCountryPicker}
+            className="flex h-[88px] min-h-[44px] min-w-[120px] shrink-0 items-center justify-center gap-[8px] rounded-[12px] border-2 border-tb-pink px-[16px] text-[24px] font-medium leading-none text-tb-ink-purple"
+          >
+            <span dir="ltr">{dialCode}</span>
+            {/* chevron-up.svg is white — painted through a mask, turned 180°. */}
+            <span
+              aria-hidden="true"
+              className="h-[20px] w-[20px] shrink-0 rotate-180 bg-tb-purple"
+              style={{
+                WebkitMaskImage: `url("${chevronUp}")`,
+                maskImage: `url("${chevronUp}")`,
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                // The span IS the icon box (and "contain" is the bell
+                // masks' signature in the visual checks).
+                WebkitMaskSize: "100% 100%",
+                maskSize: "100% 100%",
+              }}
+            />
+          </button>
+          <div
+            data-testid="loyalty-phone-display"
+            role="textbox"
+            aria-readonly="true"
+            aria-label={t("loyalty.phonePrompt")}
+            dir="ltr"
+            className="flex h-[88px] w-[392px] items-center gap-[16px] overflow-hidden rounded-[12px] border-2 border-tb-pink px-[20px]"
+          >
+            <span className="flex flex-1 items-center justify-center gap-[12px]">
+              {cells}
             </span>
-          )}
-          <span className="flex flex-1 items-center justify-center gap-[12px]">
-            {cells}
-          </span>
+          </div>
         </div>
 
         <div className="mt-[28px] flex justify-center" dir="ltr">
@@ -316,6 +351,7 @@ function LoginBody({ onClose }: LoginBodyProps) {
             value={digits}
             onChange={handleDigitsChange}
             maxLength={maxDigits}
+            noLeadingZero
           />
         </div>
 
@@ -332,6 +368,14 @@ function LoginBody({ onClose }: LoginBodyProps) {
           {t("loyalty.continue")}
         </button>
       </div>
+
+      {/* z-[70]: above this modal's card; below its error (z-80), the
+          GlobalErrorHost (z-95) and the idle modal at z-100. */}
+      <CountryPicker
+        open={countryOpen}
+        onClose={() => setCountryOpen(false)}
+        layerClass="z-[70]"
+      />
 
       <LoyaltyErrorModal
         open={error !== null}
@@ -356,7 +400,8 @@ function LoginBody({ onClose }: LoginBodyProps) {
  * itself, so no prop plumbing between the two).
  *
  * Body mounted only while open so the entry never re-opens pre-filled.
- * z-60: above BagSheet (z-40) and the rewards sheet (z-50).
+ * z-60: above BagSheet (z-40) and the rewards sheet (z-50); its country
+ * picker (UB5) opens at z-[70] inside it.
  */
 export default function LoyaltyLoginModal({
   open,

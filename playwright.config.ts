@@ -35,6 +35,14 @@ const config = defineConfig({
         ...devices["Desktop Chrome"],
         // Re-declare AFTER the device spread — Desktop Chrome would force 1280×720.
         viewport: { width: 1080, height: 1920 },
+        // window.screen = the kiosk panel. The fullscreen gate (audit-fixes U2)
+        // counts a window that fills its screen as locked; Desktop Chrome's
+        // screen is 1920×1080, which would trip it on every spec. The runner
+        // forwards `screen` only via contextOptions (a top-level `screen` is
+        // not a test option — today the page falls back to the viewport, the
+        // same 1080×1920). A spec that wants the gate sets a taller screen
+        // with test.use({ contextOptions: { screen } }).
+        contextOptions: { screen: { width: 1080, height: 1920 } },
       },
     },
     {
@@ -43,6 +51,8 @@ const config = defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1080, height: 1920 },
+        // See the smoke project: keeps the fullscreen gate (U2) quiet.
+        contextOptions: { screen: { width: 1080, height: 1920 } },
       },
     },
   ],
@@ -75,6 +85,8 @@ export default process.env.TB_E2E_PREVIEW === "1"
           use: {
             ...devices["Desktop Chrome"],
             viewport: { width: 1080, height: 1920 },
+            // See the smoke project: keeps the fullscreen gate (U2) quiet.
+            contextOptions: { screen: { width: 1080, height: 1920 } },
             serviceWorkers: "block",
           },
         },

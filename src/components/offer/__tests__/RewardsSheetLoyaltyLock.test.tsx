@@ -179,7 +179,7 @@ const dialog = () => screen.getByRole("dialog", { name: i18n.t("offers.title") }
 describe("RewardsSheet — D3: a XENO reward in the bag locks offers (lane loyalty-visual)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: { [SAUCE.id]: SAUCE } }));
     store.dispatch(setFilteredOffers([FLAT_OFFER, MIN_BILL_OFFER, GONE_OFFER, BOGO_OFFER]));
   });
@@ -304,7 +304,7 @@ describe("RewardsSheet — D3: a XENO reward in the bag locks offers (lane loyal
 describe("RewardsSheet — D2 geometry (Figma 1:3842, lane loyalty-visual)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(setFilteredOffers([FLAT_OFFER, MIN_BILL_OFFER]));
   });

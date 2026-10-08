@@ -8,6 +8,10 @@ import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import {
+  setMinMaxErroredBaseItems,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import BagItemRow from "../BagItemRow";
 import "../../../i18n";
@@ -159,6 +163,32 @@ describe("BagItemRow — XENO reward treatment (locked decision 6)", () => {
       expect(
         screen.getByTestId("bag-loyalty-remove-lr-1")
       ).toBeInTheDocument();
+    });
+
+    /*
+      audit-fixes fixer (F1): PAY's stock check flags a reward whose base
+      item is in stock — it lost a pick (updatedBaseItems; the fork's
+      CartItem.tsx:640-644 leg) or, on the next PAY, its group is short
+      (minMaxErroredBaseItems). A reward has no Edit and no stepper, so
+      without Remove every PAY stays blocked (Rule 1 dead end).
+    */
+    it.each([
+      ["lost a pick (updatedBaseItems)", setUpdatedBaseItems({ updatedBaseItems: ["lr-2"] })],
+      [
+        "a broken group (minMaxErroredBaseItems)",
+        setMinMaxErroredBaseItems({ minMaxErroredBaseItems: ["lr-2"] }),
+      ],
+    ])("PAY found it %s: Remove beside the red line", (_label, flag) => {
+      store.dispatch(flag);
+      renderRow(HALF_BURGER_ROW);
+      expect(screen.getByTestId("bag-loyalty-remove-lr-2")).toBeInTheDocument();
+      expect(screen.getByTestId("bag-changed-lr-2")).toBeInTheDocument();
+      expect(screen.queryByTestId("bag-edit-lr-2")).not.toBeInTheDocument();
+    });
+
+    it("its size out of stock (selectedVariant.outOfStock) reveals Remove", () => {
+      renderRow({ ...HALF_BURGER_ROW, selectedVariant: { id: "v", outOfStock: true } });
+      expect(screen.getByTestId("bag-loyalty-remove-lr-2")).toBeInTheDocument();
     });
 
     it("an unavailable PAID row never gets the loyalty Remove", () => {

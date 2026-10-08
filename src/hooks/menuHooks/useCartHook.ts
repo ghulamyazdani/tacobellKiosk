@@ -303,7 +303,7 @@ function useCartHook() {
       dispatch(setCartItems(cartItems));
       dispatch(syncSubTotalOnCart(cartItems)); // Sync with Redux store
     } catch (error) {
-      console.error("Error syncing cart from Dexie:", error);
+      // AppRoutes, the one caller, reports it (ErrorOccurred dexie/rehydrate).
       throw new Error("Error syncing cart from Dexie", { cause: error });
     }
   };

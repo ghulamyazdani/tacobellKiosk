@@ -20,6 +20,11 @@ interface KioskKeyboardProps {
   maxLength?: number;
   /** GO key — omitted when the screen provides its own primary CTA. */
   onSubmit?: () => void;
+  /**
+   * Opt-in space bar between 123 and GO (audit-fixes U3, cooking
+   * instructions — design language). Off: the bottom row is unchanged.
+   */
+  space?: boolean;
 }
 
 /**
@@ -33,6 +38,7 @@ export default function KioskKeyboard({
   onChange,
   maxLength = 64,
   onSubmit,
+  space = false,
 }: KioskKeyboardProps) {
   const { t } = useTranslation();
   const [shift, setShift] = useState(false);
@@ -100,7 +106,9 @@ export default function KioskKeyboard({
           <img alt="" src={backspaceIcon} className="h-[54px] w-[54px]" />
         </button>
       </div>
-      <div className="flex w-[844px] items-center justify-between">
+      <div
+        className={`flex w-[844px] items-center ${space ? "gap-[16px]" : "justify-between"}`}
+      >
         <button
           type="button"
           aria-label={t("keyboard.layerToggle")}
@@ -111,6 +119,19 @@ export default function KioskKeyboard({
             {digits ? "abc" : "123"}
           </span>
         </button>
+        {space && (
+          <button
+            type="button"
+            data-testid="keyboard-space"
+            aria-label={t("keyboard.space")}
+            onClick={() => press(" ")}
+            className={`${specialKey} min-w-0 flex-1`}
+          >
+            <span className="text-[40px] font-bold uppercase leading-none text-black">
+              {t("keyboard.space")}
+            </span>
+          </button>
+        )}
         {onSubmit && (
           <button
             type="button"

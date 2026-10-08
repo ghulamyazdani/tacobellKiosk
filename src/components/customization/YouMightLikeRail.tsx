@@ -1,12 +1,11 @@
 import type { JSX } from "react";
-import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { useTenantItemSuggestions } from "../../hooks/recommendation/useTenantRecommendations";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { CART_UPSELL_GRID_GAP_PX } from "../../hooks/menuHooks/cartUpsellUtils";
 import ForYouCard from "../cart/ForYouCard";
 
@@ -34,16 +33,11 @@ export default function YouMightLikeRail({
   const suggestions = useTenantItemSuggestions(entityId);
   const { getAddIntent, addEntity } = useAddEntityToCart();
   const { doesItemExistInCart } = useCartHook();
-  const currencySettings = useSelector(selectCurrency) as
-    | { symbol?: string; currency_symbol?: string }
-    | null
-    | undefined;
+  const currency = useCurrencySymbol();
 
   const items = suggestions.filter((entity) => getAddIntent(entity) === "add");
   if (items.length === 0) return null;
 
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
   // Every card here adds, so it is named with the add verb on both paths:
   // ForYouCard picks its label from isDirectlyAddable (isOneTapAddable), which
   // says "customize" for an upsell item the classifier still adds directly.

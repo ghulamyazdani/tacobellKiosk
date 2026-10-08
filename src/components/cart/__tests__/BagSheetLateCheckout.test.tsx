@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { pushCharges, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
@@ -16,9 +16,11 @@ import "../../../i18n";
   (redux, hence next-customer) global error.
 
   Seams: fetchMenu (answered by hand), the server-time trigger and the
-  scheduler sweep (whose Dexie mirror has no IndexedDB in jsdom). The
-  scheduler module is spread from the original so its dayjs plugin
-  registration still runs. useNavigate is a spy.
+  scheduler sweep (whose Dexie mirror has no IndexedDB in jsdom; like the
+  real one it hands back COPIES of the rows). The scheduler module is spread
+  from the original so its dayjs plugin registration still runs. useNavigate
+  is a spy. audit-fixes A1: PAY's stock re-check answers an empty feed
+  (in stock), so these paths reach the checkout as before.
 */
 
 const mockNavigate = vi.fn();
@@ -32,7 +34,14 @@ vi.mock("react-router-dom", async (importOriginal) => ({
 vi.mock("../../../hooks/menuHooks/useMenuConverters", () => ({
   default: () => ({
     fetchMenu: (...args: unknown[]) => mockFetchMenu(...args),
+    isAllowMultiplePunch: () => false,
+    fetchModifierProperties: () => [],
   }),
+}));
+
+vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@cx-sdk/catalog/services/outOfStockApi")>()),
+  useGetOutOfStockMutation: () => [() => ({ unwrap: () => Promise.resolve([]) })],
 }));
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
@@ -48,8 +57,8 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
   >()),
   default: () => ({
     isValidAsPerSchedulers: () => true,
-    updateCartItemsByMenu: async () => ({
-      updatedCart: [],
+    updateCartItemsByMenu: async (rows: unknown[]) => ({
+      updatedCart: structuredClone(rows),
       invalidSchedulerItemIds: [],
     }),
   }),
@@ -115,7 +124,7 @@ const payWithRevalidationInFlight = () => {
 describe("BagSheet PAY — a late checkout result is dropped (P9a)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     mockNavigate.mockReset();
     mockFetchMenu.mockReset();
@@ -127,7 +136,8 @@ describe("BagSheet PAY — a late checkout result is dropped (P9a)", () => {
 
     await pay.answer();
 
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    // The stock re-check loads the lazy chunk first.
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.stringMatching(/^\/(tent|payment|customerName|phone)$/),
       { state: { checkoutRoute: expect.any(String) } }
@@ -180,7 +190,7 @@ describe("BagSheet PAY — a non-empty charge", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(pushCharges([{ name: "Bag fee", type: "fixed", value: 2 }]));
     mockNavigate.mockReset();
@@ -195,7 +205,7 @@ describe("BagSheet PAY — a non-empty charge", () => {
 
     await pay.answer();
 
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("bag-pay")).toHaveTextContent("£11.00");
     expect(appliedCharges()).toEqual([
       expect.objectContaining({ name: "Bag fee", type: "fixed", amount: 2 }),

@@ -263,7 +263,7 @@ const getItemRows = () =>
 describe("useOfferApply (P7b apply/remove core — contract recipes)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("atomic swap: commits via swapCartOffer and sweeps the previous offer's freebies (staged + committed)", async () => {
@@ -669,7 +669,7 @@ const typesDispatchedDuring = async (fn: () => Promise<unknown>): Promise<string
 describe("useOfferApply — lane offers (routing, sameOrLess, celebration, auto-apply latch)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     resetAppliedBarCelebration();
     mockCapture.mockClear();
   });
@@ -904,7 +904,7 @@ const rewardRows = () => cartState().cartItems.filter((row: any) => row?.isLoyal
 describe("useOfferApply — D3: a XENO reward in the bag locks offers (lane loyalty-visual)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     resetAppliedBarCelebration();
     mockCapture.mockClear();
   });

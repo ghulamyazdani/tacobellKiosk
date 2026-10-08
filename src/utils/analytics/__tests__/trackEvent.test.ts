@@ -22,6 +22,7 @@ const fakePostHog = ({ loads = true, initThrows = false } = {}) => {
     },
     capture: (...args: unknown[]) => calls.push(["capture", ...args]),
     identify: (...args: unknown[]) => calls.push(["identify", ...args]),
+    reset: (...args: unknown[]) => calls.push(["reset", ...args]),
   };
   return posthog;
 };
@@ -59,8 +60,10 @@ describe("analytics adapter — kill switch OFF (every non-production build)", (
 
     a.captureKioskEvent(KioskEventName.SignInStarted, { x: 1 });
     a.identifyKiosk("tenant-1", {});
+    a.resetAnalyticsSession();
     await expect(a.startAnalytics()).resolves.toBeUndefined();
     a.captureKioskEvent(KioskEventName.SignInFinished);
+    expect(() => a.resetAnalyticsSession()).not.toThrow();
 
     expect(runtimeLoaded).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
@@ -184,4 +187,94 @@ describe("analytics adapter — kill switch ON", () => {
       ]);
     }
   );
+});
+
+/*
+  audit-fixes B3 — a new PostHog session per guest (the splash tap and Place
+  New Order): reset(), then the kiosk's identity again with the SAME six
+  fields identifyKiosk sent (PROGRESS: identify payload kept as is), through
+  the same queue and kill switch.
+*/
+describe("resetAnalyticsSession — a new session per guest (audit-fixes B3)", () => {
+  /** App.tsx's six licence fields. */
+  const SIX = {
+    login_code: "mock-device-token",
+    license_key: "lic-1",
+    deployment_id: "dep1",
+    type: "kiosk",
+    expiry_date: "2099-01-01T00:00:00.000Z",
+    tenant_id: "tenant1",
+  };
+
+  it("after load: reset, then identify with the same id and the same six fields", async () => {
+    const a = await loadAdapter(true);
+    a.identifyKiosk("tenant1", SIX);
+    await a.startAnalytics();
+    calls.length = 0; // init + the boot identify
+
+    a.resetAnalyticsSession();
+
+    expect(calls).toEqual([["reset"], ["identify", "tenant1", SIX]]);
+  });
+
+  it("before load: queued in place — capture → reset → identify → capture replay in order", async () => {
+    const a = await loadAdapter(true);
+    a.identifyKiosk("tenant1", SIX);
+    a.captureKioskEvent(KioskEventName.HomeLoaded);
+    a.resetAnalyticsSession();
+    a.captureKioskEvent(KioskEventName.LanguageChanged, { selected_language_code: "ar" });
+
+    await a.startAnalytics();
+
+    expect(calls.filter(([kind]) => kind !== "init")).toEqual([
+      ["identify", "tenant1", SIX],
+      ["capture", KioskEventName.HomeLoaded, undefined],
+      ["reset"],
+      ["identify", "tenant1", SIX],
+      ["capture", KioskEventName.LanguageChanged, { selected_language_code: "ar" }],
+    ]);
+  });
+
+  it("no identify yet (an unregistered kiosk): reset only", async () => {
+    const a = await loadAdapter(true);
+    await a.startAnalytics();
+    calls.length = 0;
+
+    a.resetAnalyticsSession();
+
+    expect(calls).toEqual([["reset"]]);
+  });
+
+  it("re-sends the LATEST identity (a re-registration replaced it)", async () => {
+    const a = await loadAdapter(true);
+    await a.startAnalytics();
+    a.identifyKiosk("tenant1", SIX);
+    a.identifyKiosk("tenant2", { ...SIX, tenant_id: "tenant2" });
+    calls.length = 0;
+
+    a.resetAnalyticsSession();
+
+    expect(calls).toEqual([["reset"], ["identify", "tenant2", { ...SIX, tenant_id: "tenant2" }]]);
+  });
+
+  it("a reset that throws is swallowed, and the next calls still go through", async () => {
+    const posthog = fakePostHog();
+    let throwOnce = true;
+    posthog.reset = () => {
+      if (throwOnce) {
+        throwOnce = false;
+        throw new Error("reset blew up");
+      }
+      return calls.push(["reset"]);
+    };
+    const a = await loadAdapter(true, () => ({ default: posthog }));
+    await a.startAnalytics();
+    calls.length = 0;
+
+    expect(() => a.resetAnalyticsSession()).not.toThrow();
+    a.resetAnalyticsSession();
+    a.captureKioskEvent(KioskEventName.HomeLoaded);
+
+    expect(calls).toEqual([["reset"], ["capture", KioskEventName.HomeLoaded, undefined]]);
+  });
 });

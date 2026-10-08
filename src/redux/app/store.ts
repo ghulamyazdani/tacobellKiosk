@@ -9,11 +9,8 @@ import {
   cartSlice,
   paymentSlice,
   offerSlice,
-  paymentInfoSlice,
   orderSlice,
   customerInfo,
-  appImageSlice,
-  tableSummarySlice,
   pipelineSlice,
   themeSlice,
   multiLanguageSlice,
@@ -23,7 +20,6 @@ import {
   makeItAMealSlice,
   dynamicPricingSlice,
   autoUpdateSlice,
-  messageModalsSlice,
   recommendationSlice,
   kioskOpenStatusSlice,
   filterSlice,
@@ -43,10 +39,20 @@ import appSettingsSlice from "@cx-sdk/catalog/state/appSettings.slice";
  * slices, same fields, same order — so behavior is identical by construction.
  * As slices migrate into @cx-sdk packages, their entries move with them.
  *
- * KNOWN LEAK (preserved, do not fix silently): paymentInfo, messageModals and
- * kioskOpenStatus have no entry and are not blacklisted, so redux-persist
- * persists them IN FULL — flagged for a maintainer decision alongside
- * PlutusTransactionReferenceID/dojoSessionInfo.
+ * A slice with no entry here and no neverPersist listing is persisted IN
+ * FULL — so every registered slice must have one or the other.
+ *
+ * The old KNOWN LEAK, resolved 2026-10-07 (audit-fixes C3): paymentInfo,
+ * messageModals, appImage and tableSummary are no longer registered in TB's
+ * store (0 dispatchers, 0 readers; the SDK paymentInfo.slice stays for the
+ * fork); kioskOpenStatus persists through an explicit manifest
+ * (pipelinesStatuses — the bag's order-type switch reads it after a
+ * crash-reload); the dead whitelist fields auth.userNumber / selectedTabId and
+ * payment.PlutusTransactionReferenceID / paymentInfo / paymentSetting /
+ * paytmMid / parkedOrderId / paymentLinkId / isMashReqConnected /
+ * dojoSessionInfo are no longer persisted — TB ports no Pine Labs, Dojo,
+ * Razorpay or Mashreq gateway, so none carries crash-recovery semantics here.
+ * The fork's store is untouched; its P3e deferral stands for the fork.
  */
 const persistence: PersistencePolicy = {
   neverPersist: ["api", "errorInfo", "menu", "menuSelections"],
@@ -57,12 +63,12 @@ const persistence: PersistencePolicy = {
       scope: "device",
       whitelist: [
         "token",
+        // The guest's country pick (UB5) lasts one guest — the session reset
+        // restores IN/+91 — but survives a crash-reload mid-order.
         "selectedCountryCode",
         "tab_id",
-        "userNumber",
         "deploymentDetails",
         "licenseDetails",
-        "selectedTabId",
       ],
     },
     {
@@ -163,24 +169,13 @@ const persistence: PersistencePolicy = {
       slice: "payment",
       scope: "customer",
       whitelist: [
+        // The Paytm resume set (readOpenPaytmSession): a reload mid-payment
+        // settles by status with the SAME ids. "paytmSecretKey" is
+        // deliberately NOT persisted (P3, Rule 3): a merchant credential.
         "posBillNo",
         "posBillTime",
-        "PlutusTransactionReferenceID",
-        "paymentInfo",
-        "paymentSetting",
         "paymentType",
         "paytmQrCode",
-        "paytmMid",
-        // "paytmSecretKey" is deliberately NOT persisted (P3): it is a
-        // merchant credential that was sitting in plaintext localStorage
-        // (Rule 3). It is re-fetched with payment settings each session.
-        // PlutusTransactionReferenceID and dojoSessionInfo stay persisted
-        // pending maintainer sign-off — they may carry crash-recovery
-        // semantics for in-flight terminal transactions.
-        "parkedOrderId",
-        "paymentLinkId",
-        "isMashReqConnected",
-        "dojoSessionInfo",
       ],
     },
     {
@@ -192,14 +187,12 @@ const persistence: PersistencePolicy = {
         "currentSession",
       ],
     },
-    { slice: "tableSummary", whitelist: ["netAmount"] },
     {
       slice: "multiLanguage",
       whitelist: ["primary_language", "secondary_language", "selectedLanguage"],
     },
     { slice: "offer", whitelist: ["offers"] },
     { slice: "order", whitelist: ["orderId", "orderStatus", "appliedCharges"] },
-    { slice: "appImage", whitelist: ["appImages"] },
     {
       slice: "pipeline",
       whitelist: ["pipelines", "selectedPipeline", "tabType"],
@@ -236,6 +229,14 @@ const persistence: PersistencePolicy = {
       ],
     },
     { slice: "recommendation", whitelist: [] },
+    // Per-pipeline open/closed statuses, its only field (same bytes on disk
+    // as before C3). Read after a crash-reload: the bag's order-type switch
+    // offers a target pipeline by them, and only /second re-fetches them.
+    {
+      slice: "kioskOpenStatus",
+      scope: "customer",
+      whitelist: ["pipelinesStatuses"],
+    },
   ],
 };
 
@@ -249,10 +250,7 @@ const handle = createKioskStore({
     appSettings: appSettingsSlice,
     order: orderSlice,
     menuSelections: menuSelections,
-    paymentInfo: paymentInfoSlice,
     customerInfo: customerInfo,
-    appImage: appImageSlice,
-    tableSummary: tableSummarySlice,
     pipeline: pipelineSlice,
     theme: themeSlice,
     multiLanguage: multiLanguageSlice,
@@ -261,7 +259,6 @@ const handle = createKioskStore({
     errorInfo: errorSlice,
     loyalty: loyaltySlice,
     dynamicPricing: dynamicPricingSlice,
-    messageModals: messageModalsSlice,
     autoUpdate: autoUpdateSlice,
     recommendation: recommendationSlice,
     kioskOpenStatus: kioskOpenStatusSlice,
@@ -279,7 +276,8 @@ const handle = createKioskStore({
     prepend: [storageSideEffects.middleware],
     concat: [apiSlice.middleware],
   },
-  devTools: true,
+  // The SDK leaves this to the shell: never in production (CX-23).
+  devTools: import.meta.env.DEV,
 });
 
 export const store = handle.store;

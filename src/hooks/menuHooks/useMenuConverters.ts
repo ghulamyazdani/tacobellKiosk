@@ -10,7 +10,7 @@
  * exported API, same observable behavior.
  */
 import { useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   selectMenu,
@@ -61,8 +61,10 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   pushCharges,
+  selectDeploymentCharges,
   setMenuCharges,
 } from "@cx-sdk/ordering/state/cart.slice";
+import { composeBillCharges } from "@cx-sdk/catalog/menu/billCharges";
 import useAppSettings from "../utils/useAppSettings";
 import { selectSelectedLanguage } from "../../redux/features/multiLanguage/multiLanguage.slice";
 import { kiosSettingsRdx } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -81,7 +83,6 @@ import useDynamicPricing from "../dynamicPricingHooks/useDynamicPricing";
 import useAllowMultiplePunch from "../customization/useAllowMultiplePunch";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import {
-  addOutOfStockField as legacyAddOutOfStockField,
   buildLegacyCategoryMaps,
   buildLegacyMenuWithChecks,
   buildLegacyModifierMap,
@@ -102,9 +103,14 @@ import {
 
 function useMenuConverters() {
   const dispatch = useDispatch();
+  // Store handle, not a subscription: fetchMenu reads the deployment charges
+  // back after its awaits (C1b).
+  const store = useStore();
   const selectFiltersRdx = useSelector(selectFilters);
   const isDynamicPricingEnabled = useSelector(selectIsDynamicPricingEnabled);
-  const selectTabIdRdx = useSelector(selectTabId);
+  // Verbatim parity: the original bound `selectTabIdRdx` (read only by the
+  // deleted dead fetchOutOfStock). The bare call keeps the subscription.
+  useSelector(selectTabId);
   const kiosSettings = useSelector(kiosSettingsRdx);
   useSelector(selectVariantEntityMap);
   const { fetchDpSessions, fetchDpItems } = useDynamicPricing();
@@ -297,8 +303,8 @@ function useMenuConverters() {
             storedMenuFull = storedMenuRecord;
             storedMenuId = storedMenuRecord.menuId || "";
           }
-        } catch (error) {
-          console.error("Error fetching menu from DB", error);
+        } catch {
+          // Best effort: no cached menu id → a full download (C5: no log).
         }
 
         [menu, outOfStock, serverTimeData, offers, validDpSessions] =
@@ -338,8 +344,8 @@ function useMenuConverters() {
                 menuId: menu.MENU_ID,
                 menu: menu,
               });
-            } catch (error) {
-              console.error("Error saving menu to DB", error);
+            } catch {
+              // Best effort: the next fetch downloads it again (C5: no log).
             }
           }
         }
@@ -524,12 +530,11 @@ function useMenuConverters() {
         );
       }
 
-      const deploymentCharges: any =
-        opts?.deploymentCharges ??
-        (window.localStorage.getItem("deploymentCharges") &&
-        window.localStorage.getItem("deploymentCharges") !== "undefined"
-          ? JSON.parse(window.localStorage.getItem("deploymentCharges") || "{}")
-          : []);
+      // C1b: the deployment charges come from opts (staged) or back from
+      // redux (setDeploymentCharges is dispatched beside its localStorage
+      // mirror), never from raw localStorage. Deployment FIRST here.
+      const deploymentCharges =
+        opts?.deploymentCharges ?? selectDeploymentCharges(store.getState());
 
       const menuCharges = convertMenuCharges(
         menu.charges,
@@ -537,7 +542,7 @@ function useMenuConverters() {
         pipeline,
         pipeline?.tab_type,
       );
-      const allCharges = [...deploymentCharges, ...menuCharges];
+      const allCharges = composeBillCharges(deploymentCharges, menuCharges);
 
       apply(pushCharges(allCharges));
       apply(setMenuCharges({ menuCharges: menuCharges }));
@@ -575,28 +580,6 @@ function useMenuConverters() {
       });
       setFetchLoading(false);
       return {};
-    }
-  };
-
-  //fetching the out of stock data
-  const fetchOutOfStock = async (convertedMenu: any) => {
-    try {
-      const tabId = selectTabIdRdx;
-      const licenceDetails = licenseDetails;
-      const parsedLicenceDetails = JSON.parse(licenceDetails);
-      const outOfStock = await getOutOfStock({
-        deployment_id: parsedLicenceDetails.deployment_id,
-        tab_id: tabId,
-      }).unwrap();
-
-      const updatedMenu = legacyAddOutOfStockField(
-        convertedMenu,
-        outOfStock,
-        deepClone,
-      );
-      return updatedMenu;
-    } catch (error) {
-      console.error(error);
     }
   };
 
@@ -701,10 +684,9 @@ function useMenuConverters() {
       apply(setMediaDataConverted(deepCopyParsedMedia));
 
       return newMenuItems;
-    } catch (err) {
+    } catch {
       // Returns undefined; fetchMenu's next read of the result then throws
-      // into its catch (analytics + {} → the menu-error dialog).
-      console.error("convertMenuData failed", err);
+      // into its catch (analytics + {} → the menu-error dialog). C5: no log.
     }
   };
 
@@ -749,7 +731,6 @@ function useMenuConverters() {
     isMenuLoading: isLoading || fetchLoading,
     isCheckBoxRequiredFunction,
     fetchModifierProperties,
-    fetchOutOfStock,
     mapItemToCombos,
     isAllowMultiplePunch,
     filterByTags,

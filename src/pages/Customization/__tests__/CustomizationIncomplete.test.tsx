@@ -87,7 +87,7 @@ const COLA = {
 };
 
 const seed = (entity: Record<string, unknown>, type = "customizableItem") => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: MODIFIERS }));
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
@@ -219,7 +219,7 @@ describe("PDP completion warning (item 23)", () => {
   });
 
   it("embedded in the bag (OfferTierHost, a buy-stage pack): the warning opens over the in-place PDP; GOT IT keeps the host", async () => {
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: MODIFIERS }));
     store.dispatch(openComboConstutientCustomizations());
     store.dispatch(

@@ -87,6 +87,8 @@ const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json, offers.json) ----
 const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8 on t1, £9 on t2
 const GREEK_SALAD = "5dd1093829754a432f2c32e2"; // £17, one-tap
+/** Cheese Burger's optional "Choose From Extra" group (0 / 3). */
+const BURGER_EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
 const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2, one-tap
 /** Kiddie Meal Beef Burger, re-shaped by withSizes() into a sized item (`sized` option). */
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
@@ -195,6 +197,8 @@ interface SwitchMockOptions {
   loyalty?: boolean;
   /** SIZED_ITEM sold in sizes on both tabs: Regular £5 / Large £7 on t1, £6 / £9 on t2. */
   sized?: boolean;
+  /** A modifier group the take-away menu REQUIRES (min 1); dine-in keeps it optional. */
+  requiredOnT2?: string;
 }
 
 interface SwitchNet {
@@ -221,6 +225,7 @@ async function mockKioskBackend(
     pipelineStatuses,
     loyalty = false,
     sized = false,
+    requiredOnT2,
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
@@ -229,6 +234,13 @@ async function mockKioskBackend(
   const net: SwitchNet = { t2Menu: "ok", t2Charges: "ok", held: [], calls: [], checkout };
   const t1Menu = sized ? withSizes(slimMenu, 5, 7) : slimMenu;
   const t2Menu = sized ? withSizes(takeAwayMenu(removedOnT2), 6, 9) : takeAwayMenu(removedOnT2);
+  if (requiredOnT2) {
+    const group = (t2Menu as { modifiers?: { _id: string; min?: number }[] }).modifiers?.find(
+      (modifier) => modifier._id === requiredOnT2
+    );
+    if (!group) throw new Error(`fixture: no group ${requiredOnT2}`);
+    group.min = 1;
+  }
   const log = (endpoint: string, route: Route) => {
     const body = bodyOf(route);
     net.calls.push({ endpoint, body });
@@ -313,7 +325,7 @@ async function mockKioskBackend(
     return route.fulfill({
       json: {
         charges: body.tab_id === TAKE_OUT.tab_id ? [T2_CHARGE] : [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     });
   });
@@ -699,6 +711,34 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
       tabType: "take_away",
       rows: [{ id: CHEESE_BURGER, price: 9, quantity: 1 }],
     });
+  });
+
+  test("SWITCH, THEN A REQUIRED CHOICE (audit-fixes A1): the take-away menu requires a pick the dine-in burger never made — PAY stays on /cart with 'some items need changes' and the row's red line, Edit still offered; nothing is placed", async ({
+    page,
+  }) => {
+    test.slow();
+    const net = await mockKioskBackend(page, { requiredOnT2: BURGER_EXTRA_GROUP });
+    await bootToBagWithBurgerAndSalad(page);
+    await confirmTakeOut(page);
+    await expect(page.getByTestId("bag-ordertype-notice")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("bag-ordertype-notice-gotit").click();
+    // The switch re-prices the burger and keeps it (it checks items, not group bounds).
+    await expect(bagRows(page)).toHaveCount(1);
+    const burgerId = ((await bagRows(page).first().getAttribute("data-testid")) ?? "").replace(
+      "bag-row-",
+      ""
+    );
+
+    // PAY's check finds the empty required group: blocked, out loud.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: en.bag.someNeedChanges })).toBeVisible();
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page.getByTestId(`bag-changed-${burgerId}`)).toHaveText(en.bag.choicesUnavailable);
+    await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`bag-edit-${burgerId}`)).toBeVisible();
+    expect(net.checkout.placeOrderCount).toBe(0);
   });
 
   test("SUCCESS → PAY: after the switch every PAY request carries tab t2, and the pushed order is take_away at £9 with the bag fee", async ({

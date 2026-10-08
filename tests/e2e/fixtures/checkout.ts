@@ -179,7 +179,7 @@ export interface CheckoutMockOptions {
    * Add the "disable COD" deployment-settings entity, so
    * `checkIfCODAvailable` returns false and `/payment` renders
    * `payment-unavailable` (P8a has zero gateways by construction).
-   * Carries BOTH key spellings — see DISABLE_COD_DIVERGENCE below.
+   * Carries BOTH key spellings — see disableCodEntity below.
    */
   codDisabled?: boolean;
   /**
@@ -242,22 +242,18 @@ export interface CheckoutMockHandle {
 }
 
 /**
- * ⚠️ `checkIfCODAvailable` DIVERGENCE — the fixture carries BOTH spellings on
- * purpose (brief §payment).
+ * The "disable COD" entity. Since audit-fixes A2 the SDK's
+ * `checkIfCODAvailable` IS the fork's live rule (ORIG
+ * src/pages/PaymentSelection.tsx:66-92): the row by `entity.name ===
+ * "disable_cod_kiosk"` OR `entity.label === "Disable COD for Kiosk"`, the tab
+ * by `tabs[].tabType` (the take-out spellings as one family), and only a tab
+ * with `selected === true` disables COD. `tabLabel` is no longer read.
  *
- *  - SDK (@cx-sdk/payments/gateways/paymentOptions.ts:117-137 — the
- *    maintained surface P8a uses) matches `entity.label === "Disable COD for
- *    Kiosk"` and `tabs[].tabLabel`, and disables COD as soon as the current
- *    tab appears in `tabs`.
- *  - Page-local (ORIG src/pages/PaymentSelection.tsx:66-92 — what actually
- *    ships in the fork) matches `entity.name === "disable_cod_kiosk"` and
- *    `tabs[].tabType`, AND additionally requires `tabSetting.selected === true`
- *    before it disables COD. It also folds "take_out"/"takeout" together.
- *
- * So the entity below sets `name` + `label`, each tab row sets `tabType` +
- * `tabLabel` + `selected: true`, and take-out rows are emitted under both
- * spellings. Result: the fixture disables COD under EITHER implementation, so
- * a later swap between them cannot silently change what the spec proves.
+ * The entity still sets `name` + `label` and each tab row `tabType` +
+ * `tabLabel` + `selected: true` (take-out rows under both spellings), the
+ * shape it carried when the two implementations diverged; under the one rule
+ * it disables COD for exactly the ticked tab. The Cockpit default row (every
+ * tab unticked) keeps COD on — checkout.spec's COCKPIT DEFAULT ROW.
  */
 const disableCodEntity = (tabType: string): JsonBody => {
   const raw = tabType.toLowerCase();
@@ -266,14 +262,13 @@ const disableCodEntity = (tabType: string): JsonBody => {
 
   return {
     _id: "disable_cod_kiosk_1",
-    // page-local key spelling ↓
+    // either key finds the row ↓
     name: "disable_cod_kiosk",
-    // SDK key spelling ↓
     label: "Disable COD for Kiosk",
     tabs: tabValues.map((value) => ({
-      tabType: value, // page-local
-      tabLabel: value, // SDK
-      selected: true, // page-local only; SDK ignores it
+      tabType: value, // matched (case-insensitive)
+      tabLabel: value, // no longer read (A2)
+      selected: true, // the tick that disables COD
     })),
   };
 };
@@ -405,8 +400,8 @@ export async function mockCheckoutBackend(
   });
 
   // Deployment ordering settings. Default: NO disable_cod_kiosk entity, so
-  // checkIfCODAvailable returns true (both implementations return true when
-  // the setting is absent) and the PAY AT COUNTER tile renders.
+  // checkIfCODAvailable returns true (no row → COD on) and the PAY AT
+  // COUNTER tile renders.
   await page.route(DEPLOYMENT_SETTINGS_URL, (route) => {
     handle.deploymentSettingsCount += 1;
     const settings: JsonBody[] =

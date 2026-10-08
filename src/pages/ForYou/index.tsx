@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   cartQuantity,
   markCartUpsellSeen,
@@ -15,6 +14,7 @@ import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { STAGE_HEIGHT, STAGE_WIDTH } from "../../components/stage/KioskStage";
 import {
   cartUpsellGridCapacity,
@@ -28,10 +28,6 @@ import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 /** Only the slices this screen reads. */
 interface CartLike {
   cartItems?: { id?: string; quantity?: number }[];
-}
-interface CurrencyLike {
-  symbol?: string;
-  currency_symbol?: string;
 }
 
 /**
@@ -74,10 +70,7 @@ export default function ForYou() {
   const { name } = useLocalized();
 
   const cart = useSelector(selectCart) as CartLike | null | undefined;
-  const currencySettings = useSelector(selectCurrency) as
-    | CurrencyLike
-    | null
-    | undefined;
+  const currency = useCurrencySymbol();
   /**
    * UNITS, not ROWS. `cartQuantity` is `state.cart.totalQuantity` — the same
    * read the gate in Menu makes. A cart holding two of one item is ONE row and
@@ -156,9 +149,6 @@ export default function ForYou() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design: these are entry conditions, not live invariants (re-running would redirect mid-visit as the cart moves).
   }, []);
-
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
 
   /** One pass over the cart instead of a lookup per card. */
   const cartItems = cart?.cartItems;

@@ -7,6 +7,9 @@ Taco Bell self-service kiosk (1080×1920 portrait), built on the shared
 - Node ≥ 22.12 LTS (`.nvmrc`; Node 20 is EOL and dependency-cruiser needs ≥ 22), yarn 1.22
 - The sibling repo checked out at `../posistKiosk-cx-sdk` (the `link:`
   dependencies resolve into its `packages/` — raw TS source, no build step)
+- Run `yarn install` in `../posistKiosk-cx-sdk` first: `tsc -b` type-checks
+  its packages against that checkout's `node_modules` (the bundle itself
+  resolves the shared libraries from this repo — `resolve.dedupe`)
 - `.env.development` created from `.env.example`
 
 ## Commands

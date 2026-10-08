@@ -45,7 +45,7 @@ export interface ForYouCardProps {
    * never appear on a suggestion card.
    */
   price?: number | string;
-  /** Currency symbol, resolved by the consumer from `selectCurrency`. */
+  /** Currency symbol, resolved by the consumer via useCurrencySymbol(). */
   currency: string;
   /** Live quantity of this product in the cart; > 0 renders the count pill. */
   quantity: number;

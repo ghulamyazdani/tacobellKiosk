@@ -6,6 +6,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { selectSelectedLanguage } from "../../redux/features/multiLanguage/multiLanguage.slice";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import adaIcon from "../../assets/icons/ada.svg";
 import chevronUp from "../../assets/icons/chevron-up.svg";
 import gbFlag from "../../assets/flags/gb.svg";
@@ -38,7 +39,12 @@ export default function FooterBar({
         <button
           type="button"
           data-testid="footer-cancel"
-          onClick={onCancelOrder}
+          onClick={() => {
+            captureKioskEvent(KioskEventName.StartOverClickedFromFooter, {
+              route_path: window.location.pathname,
+            });
+            onCancelOrder();
+          }}
           className="flex h-full min-h-[44px] min-w-[44px] items-center rounded-[8px] px-[24px]"
         >
           <span className="tb-display text-[16px] leading-[16px] font-medium text-tb-surface">

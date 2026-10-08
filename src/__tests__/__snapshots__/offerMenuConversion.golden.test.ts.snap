@@ -1,0 +1,1608 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > CUSTOMIZABLE (only active groups seed customizations) and a VARIANT entity 1`] = `
+{
+  "order": "af58e13e",
+  "payload": [
+    {
+      "_id": "customizable",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "wrap",
+            "discountType": "percent",
+            "entities": {
+              "baseItem": {
+                "id": "wrap",
+                "modifiers": [
+                  "g-sauce",
+                  "g-retired",
+                ],
+                "name": "Wrap",
+                "price": 8,
+              },
+              "baseItemPrice": 8,
+              "customizations": {
+                "g-sauce": [],
+              },
+              "discountType": "percent",
+              "discountValue": 25,
+              "id": "wrap",
+              "isGetItem": true,
+              "modifiers": [
+                "g-sauce",
+                "g-retired",
+              ],
+              "name": "Wrap",
+              "price": 8,
+              "type": "CUSTOMIZABLE",
+            },
+            "value": 25,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "customizable",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "variant-entity",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "taco",
+            "discountType": "amount",
+            "entities": {
+              "discountType": "amount",
+              "discountValue": 1,
+              "discounted_total_price": 4,
+              "hasVariant": true,
+              "id": "taco",
+              "isGetItem": true,
+              "modifiers": [
+                "g-taco",
+              ],
+              "name": "Taco",
+              "price": 5,
+              "type": "VARIANT",
+              "undiscounted_total_price": 5,
+              "variants": [
+                {
+                  "id": "taco-s",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                  ],
+                  "name": "Small",
+                  "price": 5,
+                },
+                {
+                  "id": "taco-l",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                    "g-retired",
+                  ],
+                  "name": "Large",
+                  "price": 7,
+                },
+                {
+                  "id": "taco-x",
+                  "isActive": true,
+                  "modifiers": [],
+                  "name": "XL",
+                  "outOfStock": true,
+                  "price": 9,
+                },
+              ],
+            },
+            "value": 1,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "variant-entity",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > ITEM: percent / amount / amount over the price / value 0 / no type; baseItemId wins over _id 1`] = `
+{
+  "order": "93903496",
+  "payload": [
+    {
+      "_id": "item-mix",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 50,
+              "discounted_total_price": 5,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 50,
+          },
+          {
+            "_id": "not-in-menu",
+            "baseItemId": "burger",
+            "discountType": "amount",
+            "entities": {
+              "discountType": "amount",
+              "discountValue": 3,
+              "discounted_total_price": 7,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 3,
+          },
+          {
+            "_id": "burger",
+            "discountType": "amount",
+            "entities": {
+              "discountType": "amount",
+              "discountValue": 15,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 15,
+          },
+          {
+            "_id": "side",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 0,
+              "discounted_total_price": 6,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "value": 0,
+          },
+          {
+            "_id": "side",
+            "entities": {
+              "discountType": undefined,
+              "discountValue": 2,
+              "discounted_total_price": 6,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "value": 2,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "item-mix",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > a non-item offer type and an item offer without getItems pass through (rawItems still resolved) 1`] = `
+{
+  "order": "058bd362",
+  "payload": [
+    {
+      "_id": "bill-offer",
+      "applicable": {
+        "rawItems": [
+          {
+            "isRawItemAvailable": true,
+            "item": {
+              "baseItemId": "burger",
+            },
+            "relation": "and",
+          },
+        ],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "value": 10,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": true,
+      "type": {
+        "name": "bill",
+      },
+    },
+    {
+      "_id": "no-get-items",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {},
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > an out-of-stock entity converts to entities {} 1`] = `
+{
+  "order": "cadcde19",
+  "payload": [
+    {
+      "_id": "oos",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "fries",
+            "discountType": "percent",
+            "entities": {},
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "oos",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > categories: sized entities (active size / none / cheapest priced 0), customizable, item, OOS, empty, map miss 1`] = `
+{
+  "order": "fe5d24ed",
+  "payload": [
+    {
+      "_id": "categories",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "categories": [
+          {
+            "_id": "c-variants",
+            "discountType": "percent",
+            "entities": [
+              {
+                "baseItem": {
+                  "hasVariant": true,
+                  "id": "taco",
+                  "isGetItem": true,
+                  "isGetItemCustomized": false,
+                  "modifiers": [
+                    "g-taco",
+                  ],
+                  "name": "Taco",
+                  "price": 5,
+                  "variants": [
+                    {
+                      "id": "taco-s",
+                      "isActive": true,
+                      "modifiers": [
+                        "g-cheese",
+                      ],
+                      "name": "Small",
+                      "price": 5,
+                    },
+                    {
+                      "id": "taco-l",
+                      "isActive": true,
+                      "modifiers": [
+                        "g-cheese",
+                        "g-retired",
+                      ],
+                      "name": "Large",
+                      "price": 7,
+                    },
+                    {
+                      "id": "taco-x",
+                      "isActive": true,
+                      "modifiers": [],
+                      "name": "XL",
+                      "outOfStock": true,
+                      "price": 9,
+                    },
+                  ],
+                },
+                "baseItemPrice": 5,
+                "discountType": "percent",
+                "discountValue": 20,
+                "hasVariant": true,
+                "id": "taco",
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-taco",
+                ],
+                "name": "Taco",
+                "price": 5,
+                "type": "VARIANT",
+                "variants": [
+                  {
+                    "id": "taco-s",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                    ],
+                    "name": "Small",
+                    "price": 5,
+                  },
+                  {
+                    "id": "taco-l",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                      "g-retired",
+                    ],
+                    "name": "Large",
+                    "price": 7,
+                  },
+                  {
+                    "id": "taco-x",
+                    "isActive": true,
+                    "modifiers": [],
+                    "name": "XL",
+                    "outOfStock": true,
+                    "price": 9,
+                  },
+                ],
+              },
+            ],
+            "value": 20,
+          },
+          {
+            "_id": "c-mixed",
+            "discountType": "amount",
+            "entities": [
+              {
+                "baseItem": {
+                  "id": "wrap",
+                  "modifiers": [
+                    "g-sauce",
+                    "g-retired",
+                  ],
+                  "name": "Wrap",
+                  "price": 8,
+                },
+                "baseItemPrice": 8,
+                "customizations": {
+                  "g-sauce": [],
+                },
+                "discountType": "amount",
+                "discountValue": 3,
+                "id": "wrap",
+                "isGetItem": true,
+                "modifiers": [
+                  "g-sauce",
+                  "g-retired",
+                ],
+                "name": "Wrap",
+                "price": 8,
+                "type": "CUSTOMIZABLE",
+              },
+              {
+                "discountType": "amount",
+                "discountValue": 3,
+                "discounted_total_price": 7,
+                "id": "burger",
+                "isGetItem": true,
+                "name": "Burger",
+                "price": 10,
+                "type": "ITEM",
+                "undiscounted_total_price": 10,
+              },
+              {
+                "discountType": "amount",
+                "discountValue": 3,
+                "discounted_total_price": 3,
+                "id": "side",
+                "isGetItem": true,
+                "modifiers": [],
+                "name": "Side",
+                "price": 6,
+                "type": "ITEM",
+                "undiscounted_total_price": 6,
+              },
+            ],
+            "value": 3,
+          },
+          {
+            "_id": "c-empty",
+            "discountType": "amount",
+            "entities": [],
+            "value": 3,
+          },
+          {
+            "_id": "c-all-oos",
+            "discountType": "amount",
+            "entities": [],
+            "value": 3,
+          },
+          {
+            "_id": "c-missing",
+            "discountType": "percent",
+            "entities": [],
+            "value": 50,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "categories",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > deep-frozen inputs (redux-held offers and menu rows) convert without a throw — the inputs are never mutated 1`] = `
+{
+  "order": "9dff0b89",
+  "payload": [
+    {
+      "_id": "frozen-items",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "wrap",
+            "discountType": "percent",
+            "entities": {
+              "baseItem": {
+                "id": "wrap",
+                "modifiers": [
+                  "g-sauce",
+                  "g-retired",
+                ],
+                "name": "Wrap",
+                "price": 8,
+              },
+              "baseItemPrice": 8,
+              "customizations": {
+                "g-sauce": [],
+              },
+              "discountType": "percent",
+              "discountValue": 25,
+              "id": "wrap",
+              "isGetItem": true,
+              "modifiers": [
+                "g-sauce",
+                "g-retired",
+              ],
+              "name": "Wrap",
+              "price": 8,
+              "type": "CUSTOMIZABLE",
+            },
+            "value": 25,
+          },
+          {
+            "_id": "taco-l",
+            "discountType": "amount",
+            "entities": {
+              "baseItem": {
+                "hasVariant": true,
+                "id": "taco",
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-taco",
+                ],
+                "name": "Taco",
+                "price": 5,
+                "variants": [
+                  {
+                    "id": "taco-s",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                    ],
+                    "name": "Small",
+                    "price": 5,
+                  },
+                  {
+                    "id": "taco-l",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                      "g-retired",
+                    ],
+                    "name": "Large",
+                    "price": 7,
+                  },
+                  {
+                    "id": "taco-x",
+                    "isActive": true,
+                    "modifiers": [],
+                    "name": "XL",
+                    "outOfStock": true,
+                    "price": 9,
+                  },
+                ],
+              },
+              "baseItemPrice": 5,
+              "customizations": {
+                "g-cheese": [],
+              },
+              "discountType": "amount",
+              "discountValue": 1,
+              "discounted_total_price": 6,
+              "hasVariant": true,
+              "id": "taco",
+              "isGetItem": true,
+              "isGetItemCustomized": false,
+              "isVariantSelected": true,
+              "modifiers": [
+                "g-taco",
+              ],
+              "name": "Taco",
+              "price": 5,
+              "selectedVariant": {
+                "discounted_total_price": 6,
+                "id": "taco-l",
+                "isActive": true,
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-cheese",
+                  "g-retired",
+                ],
+                "name": "Large",
+                "price": 7,
+              },
+              "selectedVariantId": "taco-l",
+              "selectedVariantModifiers": [
+                "g-cheese",
+                "g-retired",
+              ],
+              "type": "VARIANT",
+              "undiscounted_total_price": 7,
+              "variantPrice": 7,
+              "variants": [
+                {
+                  "id": "taco-s",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                  ],
+                  "name": "Small",
+                  "price": 5,
+                },
+                {
+                  "id": "taco-l",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                    "g-retired",
+                  ],
+                  "name": "Large",
+                  "price": 7,
+                },
+                {
+                  "id": "taco-x",
+                  "isActive": true,
+                  "modifiers": [],
+                  "name": "XL",
+                  "outOfStock": true,
+                  "price": 9,
+                },
+              ],
+            },
+            "value": 1,
+          },
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 50,
+              "discounted_total_price": 5,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 50,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "frozen-items",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "frozen-categories",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "categories": [
+          {
+            "_id": "c-variants",
+            "discountType": "percent",
+            "entities": [
+              {
+                "baseItem": {
+                  "hasVariant": true,
+                  "id": "taco",
+                  "isGetItem": true,
+                  "isGetItemCustomized": false,
+                  "modifiers": [
+                    "g-taco",
+                  ],
+                  "name": "Taco",
+                  "price": 5,
+                  "variants": [
+                    {
+                      "id": "taco-s",
+                      "isActive": true,
+                      "modifiers": [
+                        "g-cheese",
+                      ],
+                      "name": "Small",
+                      "price": 5,
+                    },
+                    {
+                      "id": "taco-l",
+                      "isActive": true,
+                      "modifiers": [
+                        "g-cheese",
+                        "g-retired",
+                      ],
+                      "name": "Large",
+                      "price": 7,
+                    },
+                    {
+                      "id": "taco-x",
+                      "isActive": true,
+                      "modifiers": [],
+                      "name": "XL",
+                      "outOfStock": true,
+                      "price": 9,
+                    },
+                  ],
+                },
+                "baseItemPrice": 5,
+                "discountType": "percent",
+                "discountValue": 20,
+                "hasVariant": true,
+                "id": "taco",
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-taco",
+                ],
+                "name": "Taco",
+                "price": 5,
+                "type": "VARIANT",
+                "variants": [
+                  {
+                    "id": "taco-s",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                    ],
+                    "name": "Small",
+                    "price": 5,
+                  },
+                  {
+                    "id": "taco-l",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                      "g-retired",
+                    ],
+                    "name": "Large",
+                    "price": 7,
+                  },
+                  {
+                    "id": "taco-x",
+                    "isActive": true,
+                    "modifiers": [],
+                    "name": "XL",
+                    "outOfStock": true,
+                    "price": 9,
+                  },
+                ],
+              },
+            ],
+            "value": 20,
+          },
+          {
+            "_id": "c-mixed",
+            "discountType": "amount",
+            "entities": [
+              {
+                "baseItem": {
+                  "id": "wrap",
+                  "modifiers": [
+                    "g-sauce",
+                    "g-retired",
+                  ],
+                  "name": "Wrap",
+                  "price": 8,
+                },
+                "baseItemPrice": 8,
+                "customizations": {
+                  "g-sauce": [],
+                },
+                "discountType": "amount",
+                "discountValue": 3,
+                "id": "wrap",
+                "isGetItem": true,
+                "modifiers": [
+                  "g-sauce",
+                  "g-retired",
+                ],
+                "name": "Wrap",
+                "price": 8,
+                "type": "CUSTOMIZABLE",
+              },
+              {
+                "discountType": "amount",
+                "discountValue": 3,
+                "discounted_total_price": 7,
+                "id": "burger",
+                "isGetItem": true,
+                "name": "Burger",
+                "price": 10,
+                "type": "ITEM",
+                "undiscounted_total_price": 10,
+              },
+              {
+                "discountType": "amount",
+                "discountValue": 3,
+                "discounted_total_price": 3,
+                "id": "side",
+                "isGetItem": true,
+                "modifiers": [],
+                "name": "Side",
+                "price": 6,
+                "type": "ITEM",
+                "undiscounted_total_price": 6,
+              },
+            ],
+            "value": 3,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "frozen-categories",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > group-wise discount normalisation: value '10' / 5 / missing (NaN) / missing type 1`] = `
+{
+  "order": "4625d63a",
+  "payload": [
+    {
+      "_id": "gw-string",
+      "applicable": {
+        "rawItems": [],
+      },
+      "buygetGroupWiseOffer": true,
+      "buygetGroupWiseOfferValues": {
+        "discountType": "percent",
+        "value": "10",
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 10,
+              "discounted_total_price": 9,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "quantity": 1,
+            "value": 10,
+          },
+          {
+            "_id": "side",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 10,
+              "discounted_total_price": 5.4,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "relation": "and",
+            "value": 10,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "gw-string",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "gw-number",
+      "applicable": {
+        "rawItems": [],
+      },
+      "buygetGroupWiseOffer": true,
+      "buygetGroupWiseOfferValues": {
+        "discountType": "amount",
+        "value": 5,
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "amount",
+            "entities": {
+              "discountType": "amount",
+              "discountValue": 5,
+              "discounted_total_price": 5,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "quantity": 1,
+            "value": 5,
+          },
+          {
+            "_id": "side",
+            "discountType": "amount",
+            "entities": {
+              "discountType": "amount",
+              "discountValue": 5,
+              "discounted_total_price": 1,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "relation": "and",
+            "value": 5,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "gw-number",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "gw-no-value",
+      "applicable": {
+        "rawItems": [],
+      },
+      "buygetGroupWiseOffer": true,
+      "buygetGroupWiseOfferValues": {
+        "discountType": "percent",
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": NaN,
+              "discounted_total_price": 10,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "quantity": 1,
+            "value": NaN,
+          },
+          {
+            "_id": "side",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": NaN,
+              "discounted_total_price": 6,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "relation": "and",
+            "value": NaN,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "gw-no-value",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "gw-no-type",
+      "applicable": {
+        "rawItems": [],
+      },
+      "buygetGroupWiseOffer": true,
+      "buygetGroupWiseOfferValues": {
+        "value": 5,
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": undefined,
+            "entities": {
+              "discountType": undefined,
+              "discountValue": 5,
+              "discounted_total_price": 10,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "quantity": 1,
+            "value": 5,
+          },
+          {
+            "_id": "side",
+            "discountType": undefined,
+            "entities": {
+              "discountType": undefined,
+              "discountValue": 5,
+              "discounted_total_price": 6,
+              "id": "side",
+              "isGetItem": true,
+              "modifiers": [],
+              "name": "Side",
+              "price": 6,
+              "type": "ITEM",
+              "undiscounted_total_price": 6,
+            },
+            "relation": "and",
+            "value": 5,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "gw-no-type",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > passedOffers null → the stored offers (selectOffers) 1`] = `
+{
+  "order": "a789e879",
+  "payload": [
+    {
+      "_id": "stored",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 30,
+              "discounted_total_price": 7,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 30,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "stored",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > rawItems availability + isBuyAndOffer 1`] = `
+{
+  "order": "e6df4a24",
+  "payload": [
+    {
+      "_id": "raw-and",
+      "applicable": {
+        "minimumQuantity": 1,
+        "rawItems": [
+          {
+            "isRawItemAvailable": true,
+            "item": {
+              "baseItemId": "burger",
+            },
+            "relation": "and",
+          },
+          {
+            "isRawItemAvailable": false,
+            "item": {
+              "baseItemId": "fries",
+            },
+            "relation": "or",
+          },
+          {
+            "isRawItemAvailable": true,
+            "item": {
+              "baseItemId": "taco-l",
+            },
+          },
+          {
+            "isRawItemAvailable": false,
+            "item": {
+              "baseItemId": "pita-m",
+            },
+          },
+          {
+            "category": {
+              "_id": "c-mixed",
+            },
+            "isRawItemAvailable": true,
+          },
+          {
+            "category": {
+              "_id": "c-all-oos",
+            },
+            "isRawItemAvailable": false,
+          },
+          {
+            "category": {
+              "_id": "c-missing",
+            },
+            "isRawItemAvailable": false,
+          },
+          {
+            "category": {},
+            "isRawItemAvailable": false,
+            "item": {},
+          },
+        ],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 100,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": true,
+      "name": "raw-and",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "raw-or",
+      "applicable": {
+        "minimumQuantity": 1,
+        "rawItems": [
+          {
+            "isRawItemAvailable": true,
+            "item": {
+              "baseItemId": "burger",
+            },
+            "relation": "or",
+          },
+          {
+            "category": {
+              "_id": "c-empty",
+            },
+            "isRawItemAvailable": false,
+            "relation": "or",
+          },
+        ],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 100,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "raw-or",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "raw-empty",
+      "applicable": {
+        "minimumQuantity": 1,
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 100,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "raw-empty",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > relation 'or' clears isAndOffer (items and categories) 1`] = `
+{
+  "order": "d9696550",
+  "payload": [
+    {
+      "_id": "or-item",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 100,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "relation": "or",
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": false,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "or-item",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "or-category",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "categories": [
+          {
+            "_id": "c-mixed",
+            "discountType": "percent",
+            "entities": [
+              {
+                "baseItem": {
+                  "id": "wrap",
+                  "modifiers": [
+                    "g-sauce",
+                    "g-retired",
+                  ],
+                  "name": "Wrap",
+                  "price": 8,
+                },
+                "baseItemPrice": 8,
+                "customizations": {
+                  "g-sauce": [],
+                },
+                "discountType": "percent",
+                "discountValue": 100,
+                "id": "wrap",
+                "isGetItem": true,
+                "modifiers": [
+                  "g-sauce",
+                  "g-retired",
+                ],
+                "name": "Wrap",
+                "price": 8,
+                "type": "CUSTOMIZABLE",
+              },
+              {
+                "discountType": "percent",
+                "discountValue": 100,
+                "discounted_total_price": 0,
+                "id": "burger",
+                "isGetItem": true,
+                "name": "Burger",
+                "price": 10,
+                "type": "ITEM",
+                "undiscounted_total_price": 10,
+              },
+              {
+                "discountType": "percent",
+                "discountValue": 100,
+                "discounted_total_price": 0,
+                "id": "side",
+                "isGetItem": true,
+                "modifiers": [],
+                "name": "Side",
+                "price": 6,
+                "type": "ITEM",
+                "undiscounted_total_price": 6,
+              },
+            ],
+            "relation": "or",
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": false,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "or-category",
+      "type": {
+        "name": "item",
+      },
+    },
+    {
+      "_id": "and-item",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "burger",
+            "discountType": "percent",
+            "entities": {
+              "discountType": "percent",
+              "discountValue": 100,
+              "discounted_total_price": 0,
+              "id": "burger",
+              "isGetItem": true,
+              "name": "Burger",
+              "price": 10,
+              "type": "ITEM",
+              "undiscounted_total_price": 10,
+            },
+            "relation": "and",
+            "value": 100,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "and-item",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;
+
+exports[`offer → menu conversion goldens (C1a; recorded on the unchanged hook) > variant ids: a hit, an out-of-stock size, no available base 1`] = `
+{
+  "order": "32069be2",
+  "payload": [
+    {
+      "_id": "variant-ids",
+      "applicable": {
+        "rawItems": [],
+      },
+      "getItems": {
+        "items": [
+          {
+            "_id": "taco-l",
+            "discountType": "percent",
+            "entities": {
+              "baseItem": {
+                "hasVariant": true,
+                "id": "taco",
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-taco",
+                ],
+                "name": "Taco",
+                "price": 5,
+                "variants": [
+                  {
+                    "id": "taco-s",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                    ],
+                    "name": "Small",
+                    "price": 5,
+                  },
+                  {
+                    "id": "taco-l",
+                    "isActive": true,
+                    "modifiers": [
+                      "g-cheese",
+                      "g-retired",
+                    ],
+                    "name": "Large",
+                    "price": 7,
+                  },
+                  {
+                    "id": "taco-x",
+                    "isActive": true,
+                    "modifiers": [],
+                    "name": "XL",
+                    "outOfStock": true,
+                    "price": 9,
+                  },
+                ],
+              },
+              "baseItemPrice": 5,
+              "customizations": {
+                "g-cheese": [],
+              },
+              "discountType": "percent",
+              "discountValue": 10,
+              "discounted_total_price": 6.3,
+              "hasVariant": true,
+              "id": "taco",
+              "isGetItem": true,
+              "isGetItemCustomized": false,
+              "isVariantSelected": true,
+              "modifiers": [
+                "g-taco",
+              ],
+              "name": "Taco",
+              "price": 5,
+              "selectedVariant": {
+                "discounted_total_price": 6.3,
+                "id": "taco-l",
+                "isActive": true,
+                "isGetItem": true,
+                "isGetItemCustomized": false,
+                "modifiers": [
+                  "g-cheese",
+                  "g-retired",
+                ],
+                "name": "Large",
+                "price": 7,
+              },
+              "selectedVariantId": "taco-l",
+              "selectedVariantModifiers": [
+                "g-cheese",
+                "g-retired",
+              ],
+              "type": "VARIANT",
+              "undiscounted_total_price": 7,
+              "variantPrice": 7,
+              "variants": [
+                {
+                  "id": "taco-s",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                  ],
+                  "name": "Small",
+                  "price": 5,
+                },
+                {
+                  "id": "taco-l",
+                  "isActive": true,
+                  "modifiers": [
+                    "g-cheese",
+                    "g-retired",
+                  ],
+                  "name": "Large",
+                  "price": 7,
+                },
+                {
+                  "id": "taco-x",
+                  "isActive": true,
+                  "modifiers": [],
+                  "name": "XL",
+                  "outOfStock": true,
+                  "price": 9,
+                },
+              ],
+            },
+            "value": 10,
+          },
+          {
+            "_id": "taco-x",
+            "discountType": "percent",
+            "entities": {},
+            "value": 10,
+          },
+          {
+            "_id": "pita-m",
+            "discountType": "amount",
+            "entities": {},
+            "value": 2,
+          },
+          {
+            "_id": "nowhere",
+            "discountType": "amount",
+            "entities": {},
+            "value": 2,
+          },
+        ],
+      },
+      "isAndOffer": true,
+      "isAvailable": true,
+      "isBuyAndOffer": false,
+      "name": "variant-ids",
+      "type": {
+        "name": "item",
+      },
+    },
+  ],
+}
+`;

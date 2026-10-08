@@ -17,11 +17,11 @@ import {
   tier1SelectedCustomization,
   setTier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { buildTier2NewEntity } from "@cx-sdk/ordering/customization/nestedCardLogic";
 import {
   applySinglePunchSelection,
   getEffectiveMax,
+  getEffectiveMin,
 } from "@cx-sdk/ordering/customization/selectionRules";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
@@ -35,6 +35,7 @@ import OptionCard, {
   OptionRow,
 } from "../../components/customization/OptionCard";
 import YouMightLikeRail from "../../components/customization/YouMightLikeRail";
+import VegMark from "../../components/menu/VegMark";
 import FooterBar from "../../components/chrome/FooterBar";
 import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
@@ -43,6 +44,7 @@ import { resolveCustomizationReturnPath } from "../../utils/customizationReturn"
 import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import { loadedPdpParts, loadPdpLazyParts } from "./loadPdpLazyParts";
 
@@ -114,8 +116,7 @@ export default function Customization({
   const SelectedEntity = useSelector(tier1CustomizationSelectedEntity);
   const selectedCustomizations = useSelector(tier1SelectedCustomization);
   const tier2Open = Boolean(useSelector(MIAMTier2Open));
-  const currencySettings = useSelector(selectCurrency) as any;
-  const currency = currencySettings?.symbol ?? "";
+  const currency = useCurrencySymbol();
 
   // ---- The lazy parts (the completion warning, the tier-2 page, the
   // split-edit planner): warmed at MOUNT, never at a tap (G2c) — without
@@ -368,8 +369,14 @@ export default function Customization({
 
   // ---- Completion warning (item 23, Figma 1:2855): a failed ADD TO BAG
   // names every incomplete group. The ring + AutoScroll already ran inside
-  // the commit; a success navigated / closed, so it never opens then. ----
+  // the commit; a success navigated / closed, so it never opens then.
+  // UB2: before a size is picked the button is live too — the warning names
+  // the size and nothing is committed (the size grid is the only section). ----
   const handleAddToBag = () => {
+    if (needsVariantPick) {
+      setIncompleteTap((tap) => tap + 1);
+      return;
+    }
     if (addCustomizationToCart(undefined) === false) setIncompleteTap((tap) => tap + 1);
   };
 
@@ -474,7 +481,16 @@ export default function Customization({
     );
     if (items.length === 0) return null;
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
-    const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1;
+    // UB2: the EFFECTIVE bounds (multi-punch ones when the menu turns it on)
+    // decide the presentation, as the fork's group header does: an
+    // effective 1/1 group is always radio cards (a second tap swaps), never
+    // steppers, and "Required" says what the commit enforces. Identical with
+    // multi-punch off except a 1/1 group whose item cap is > 1.
+    const amp = isAllowMultiplePunch();
+    const minPicks = Number(getEffectiveMin(group, amp));
+    const maxPicks = Number(getEffectiveMax(group, amp));
+    const oneOfOne = minPicks === 1 && maxPicks === 1;
+    const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
     const isByo = String(group?._id ?? "").includes("_combo");
 
@@ -488,8 +504,8 @@ export default function Customization({
         <GroupHeader
           name={name(group)}
           count={pickedCount(selectionFor(group))}
-          max={Number(getEffectiveMax(group, isAllowMultiplePunch()))}
-          required={Number(group?.min ?? 0) > 0}
+          max={maxPicks}
+          required={minPicks > 0}
           errored={errored}
         />
         {stepper ? (
@@ -597,10 +613,18 @@ export default function Customization({
             />
           )}
         </div>
-        <p className="mt-[16px] text-[28px] leading-[32px] text-tb-ink-purple">
-          {currency}
-          {basePrice.toFixed(2)}
-          {calLabel}
+        {/* U1: the diet mark leads the price line (design language). The
+            text stays in ONE span: bare runs in a flex <p> each take the gap.
+            ponytail: the mark reads the item's own tags — every reference
+            size carries its parent's diet tag (66 / 66); pass the picked
+            size if a menu ever differs. */}
+        <p className="mt-[16px] flex items-center gap-[12px] text-[28px] leading-[32px] text-tb-ink-purple">
+          <VegMark entity={SelectedEntity} size={24} />
+          <span>
+            {currency}
+            {basePrice.toFixed(2)}
+            {calLabel}
+          </span>
         </p>
         {pdpDescription && (
           <>
@@ -736,7 +760,6 @@ export default function Customization({
         backLabel={t("pdp.back")}
         onBack={() => closeModalStates()}
         actionTestId="pdp-add-to-bag"
-        actionDisabled={needsVariantPick}
         onAction={handleAddToBag}
         action={
           isFreebie ? (
@@ -802,6 +825,7 @@ export default function Customization({
             customizations={selectedCustomizations}
             fetchModifierProperties={fetchModifierProperties}
             isBox={isSlotGroup}
+            sizeMissing={needsVariantPick}
             onClose={() => setIncompleteTap(0)}
           />
         </ErrorBoundary>

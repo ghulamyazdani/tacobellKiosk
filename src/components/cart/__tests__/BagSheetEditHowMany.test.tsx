@@ -170,7 +170,7 @@ describe("BagSheet — Edit asks how many on a multi-unit row (item 20)", () => 
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     mocks.navigate.mockReset();
     mocks.capture.mockReset();
     mocks.autoApply.mockReset();

@@ -68,7 +68,7 @@ const cartState = () => (store.getState() as any).cart;
 describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("renders nothing while the slice sheet is closed", () => {

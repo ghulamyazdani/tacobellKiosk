@@ -84,6 +84,27 @@ describe("ErrorModal variants (lane bag-pdp, I3)", () => {
     expect(screen.getByTestId("x").querySelector("img")).not.toBeNull(); // the mark is its own switch
   });
 
+  it("danger (audit-fixes C4a, Remove item 1:4551): ONLY the primary's fill turns tb-red; omitted / false = the base markup", () => {
+    const base = renderModal({ secondary: { label: "Back", testId: "x-secondary", onClick: vi.fn() } });
+    const html = base.container.innerHTML;
+    base.unmount();
+    const explicit = renderModal({
+      secondary: { label: "Back", testId: "x-secondary", onClick: vi.fn() },
+      primary: { label: "Got it", testId: "x-primary", onClick: vi.fn(), danger: false },
+    });
+    expect(explicit.container.innerHTML).toBe(html);
+    explicit.unmount();
+
+    renderModal({
+      secondary: { label: "Back", testId: "x-secondary", onClick: vi.fn() },
+      primary: { label: "Got it", testId: "x-primary", onClick: vi.fn(), danger: true },
+    });
+    expect(screen.getByTestId("x-primary").getAttribute("class")).toBe(
+      BASE.primary.replace("bg-tb-purple", "bg-tb-red"),
+    );
+    expect(screen.getByTestId("x-secondary").getAttribute("class")).toBe(BASE.secondary);
+  });
+
   it("icon={false} wide — the plain Modal 1:945: an alertdialog named and described by its copy, focus on the one CTA", () => {
     renderModal({ icon: false, wide: true });
     const dialog = screen.getByRole("alertdialog");

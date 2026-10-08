@@ -82,6 +82,20 @@ describe("tb-* text pairs meet WCAG AA 4.5:1 (P9f)", () => {
   });
 });
 
+/*
+  audit-fixes U1: the veg / non-veg marks (VegMark) are non-text graphics on
+  the mark's white square — WCAG 1.4.11 asks 3:1.
+*/
+describe("veg / non-veg mark tokens on white ≥ 3:1 (audit-fixes U1)", () => {
+  it.each([
+    ["tb-veg", 4.95],
+    ["tb-non-veg", 5.64],
+  ])("%s ≈ %s:1", (token, ratio) => {
+    expect(contrast(token, "white")).toBeGreaterThanOrEqual(3);
+    expect(contrast(token, "white")).toBeCloseTo(ratio, 1);
+  });
+});
+
 describe("contrast regressions stay fixed (static)", () => {
   const sources = readdirSync(SRC, { recursive: true, encoding: "utf8" })
     .filter((file) => /\.tsx?$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))

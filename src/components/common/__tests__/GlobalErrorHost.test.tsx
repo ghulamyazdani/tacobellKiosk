@@ -123,7 +123,7 @@ describe("GlobalErrorHost (G1 — Figma Icon Modal 1:6288 for the global error f
 
     // Unrelated store churn re-renders nothing that matters…
     act(() => {
-      store.dispatch(setCurrency({ symbol: "£" }));
+      store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     });
     // …and the same message raised again is the same open.
     raise("First");

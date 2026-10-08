@@ -85,7 +85,7 @@ const PAID_BURGER = {
 };
 
 const seedAddSession = (entity: any, type = "customizableItem") => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: { lr_sauce: SAUCE_GROUP } }));
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
@@ -168,8 +168,12 @@ describe("Customization commit — loyalty reward branches (P7c decision 10)", (
     renderPdp();
 
     expect(screen.getByTestId("pdp-variant-picker")).toBeInTheDocument();
-    // The CTA is inert until a size is confirmed (kiosk flow guard).
-    expect(screen.getByTestId("pdp-add-to-bag")).toBeDisabled();
+    // UB2: the CTA is live before a size is confirmed, but a tap commits
+    // nothing (the completion warning names the size).
+    expect(screen.getByTestId("pdp-add-to-bag")).toBeEnabled();
+    await userEvent.click(screen.getByTestId("pdp-add-to-bag"));
+    expect(cartItems()).toHaveLength(0);
+    expect(screen.getByTestId("pdp-variant-picker")).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("pdp-variant-pepsi-l"));
     await userEvent.click(screen.getByTestId("pdp-add-to-bag"));

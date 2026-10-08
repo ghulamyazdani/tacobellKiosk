@@ -8,8 +8,13 @@ import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setMinMaxErroredBaseItems,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
-import BagItemRow from "../BagItemRow";
+import BagItemRow, { isRowUnavailable } from "../BagItemRow";
 import "../../../i18n";
 
 /** Plain ITEM row — no customizations, no variant, no Edit link (contract B1). */
@@ -258,6 +263,123 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
       // Row untouched until the modal confirms.
       expect(cartItems()).toHaveLength(1);
       expect(cartItems()[0].quantity).toBe(1);
+    });
+  });
+
+  /*
+    audit-fixes U1 — the diet mark (the foundation's VegMark) leads the
+    name: tri-state, a VARIANT row reads its size's tags, and the operator's
+    hide_veg_non_veg hides it. Fixer UI-1: mark and name share a line that
+    never wraps (in the chips' flex-wrap row a long name dropped below the
+    mark and left it alone on its line — geometry in visual-bagpdp BAG
+    EXTRAS); the mark sits 6 px down, centred on the name's 36 px first line.
+  */
+  describe("the veg / non-veg mark (U1)", () => {
+    it("a veg row: the 24 px veg mark leads the name on a non-wrapping line, labelled for screen readers", () => {
+      renderRow({ ...BURGER_ROW, tags: ["veg"] });
+      const mark = screen.getByTestId("veg-mark-veg");
+      const nameLine = screen.getByText("Cheese Burger").parentElement as HTMLElement;
+      expect(nameLine.firstElementChild).toBe(mark);
+      expect(nameLine).toHaveClass("flex", "items-start");
+      expect(nameLine).not.toHaveClass("flex-wrap");
+      expect(mark).toHaveClass("mt-[6px]");
+      expect(mark).toHaveAccessibleName("Veg");
+      expect(mark).toHaveStyle({ width: "24px", height: "24px" });
+      expect(screen.getByTestId("bag-row-cb-1")).toHaveTextContent("Cheese Burger");
+    });
+
+    it("a non-veg row: the non-veg mark; an untagged row: none", () => {
+      const { unmount } = renderRow({ ...ITEM_ROW, tags: ["non-veg"] });
+      expect(screen.getByTestId("veg-mark-non-veg")).toHaveAccessibleName("Non-veg");
+      unmount();
+      renderRow(ITEM_ROW);
+      expect(screen.queryByTestId("veg-mark-veg")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("veg-mark-non-veg")).not.toBeInTheDocument();
+    });
+
+    it("a VARIANT row reads its size's tags (selectedVariant.tags) over the row's own", () => {
+      renderRow({ ...DRINK_ROW, tags: ["veg"], selectedVariant: { ...DRINK_ROW.selectedVariant, tags: ["non-veg"] } });
+      expect(screen.getByTestId("veg-mark-non-veg")).toBeInTheDocument();
+      expect(screen.queryByTestId("veg-mark-veg")).not.toBeInTheDocument();
+    });
+
+    it("hidden under kiosk_settings.hide_veg_non_veg", () => {
+      store.dispatch(setKioskSettings({ hide_veg_non_veg: true }));
+      renderRow({ ...BURGER_ROW, tags: ["veg"] });
+      expect(screen.queryByTestId("veg-mark-veg")).not.toBeInTheDocument();
+    });
+  });
+
+  /*
+    audit-fixes A1 — the looks PAY's stock re-check leaves on a row (design
+    language, sign-off): unavailable = art at 50 % + "Unavailable" (out of
+    stock, its size out of stock, or outside its schedule); needs changes =
+    a red "Some choices are no longer available" line from Menu.slice's PAY
+    lists, Edit kept. Neither testid starts "bag-row-" (the specs count
+    rows by that prefix).
+  */
+  describe("the stock looks (A1)", () => {
+    const art = (itemId: string) =>
+      screen.getByTestId(`bag-row-${itemId}`).firstElementChild as HTMLElement;
+
+    it.each([
+      ["outOfStock", { outOfStock: true }],
+      ["its size out of stock", { selectedVariant: { id: "pepsi-l", name: "Large", outOfStock: true } }],
+      ["outside its schedule (isAvailable false)", { isAvailable: false }],
+    ])("%s → the art at 50 % and 'Unavailable'", (_label, flags) => {
+      renderRow({ ...DRINK_ROW, ...flags });
+      expect(screen.getByTestId("bag-unavailable-pep-1")).toHaveTextContent("Unavailable");
+      expect(art("pep-1")).toHaveClass("opacity-50");
+      expect(screen.queryByTestId("bag-changed-pep-1")).not.toBeInTheDocument();
+      expect(isRowUnavailable({ ...DRINK_ROW, ...flags })).toBe(true);
+    });
+
+    it("a row with a photo: the photo itself dims (and only while unavailable)", () => {
+      const photo = { ...BURGER_ROW, image_url: "https://items.e2e.test/burger.png" };
+      const { unmount } = renderRow({ ...photo, outOfStock: true });
+      expect(art("cb-1").tagName).toBe("IMG");
+      expect(art("cb-1")).toHaveClass("opacity-50", "object-contain");
+      unmount();
+      renderRow(photo);
+      expect(art("cb-1")).not.toHaveClass("opacity-50");
+    });
+
+    it("an available row: no line, full art (and the predicate agrees)", () => {
+      renderRow({ ...DRINK_ROW, outOfStock: false, isAvailable: true });
+      expect(screen.queryByTestId("bag-unavailable-pep-1")).not.toBeInTheDocument();
+      expect(art("pep-1")).not.toHaveClass("opacity-50");
+      expect(isRowUnavailable({ ...DRINK_ROW, outOfStock: false, isAvailable: true })).toBe(false);
+      expect(isRowUnavailable(null)).toBe(false);
+    });
+
+    it.each([
+      ["lost a choice (updatedBaseItems)", () => store.dispatch(setUpdatedBaseItems({ updatedBaseItems: ["cb-1"] }))],
+      ["broke a min / max (minMaxErroredBaseItems)", () => store.dispatch(setMinMaxErroredBaseItems({ minMaxErroredBaseItems: ["cb-1"] }))],
+    ])("a row that %s: the red line, Edit kept to fix it", (_label, arrange) => {
+      arrange();
+      renderRow(BURGER_ROW);
+      const line = screen.getByTestId("bag-changed-cb-1");
+      expect(line).toHaveTextContent("Some choices are no longer available");
+      expect(line).toHaveClass("text-tb-red", "text-[24px]", "leading-[24px]");
+      expect(screen.getByTestId("bag-edit-cb-1")).toBeInTheDocument();
+      expect(screen.queryByTestId("bag-unavailable-cb-1")).not.toBeInTheDocument();
+    });
+
+    it("unavailable wins over needs-changes; another row's id changes nothing", () => {
+      store.dispatch(setUpdatedBaseItems({ updatedBaseItems: ["cb-1", "other-1"] }));
+      const { unmount } = renderRow({ ...BURGER_ROW, outOfStock: true });
+      expect(screen.getByTestId("bag-unavailable-cb-1")).toBeInTheDocument();
+      expect(screen.queryByTestId("bag-changed-cb-1")).not.toBeInTheDocument();
+      unmount();
+      renderRow(DRINK_ROW);
+      expect(screen.queryByTestId("bag-changed-pep-1")).not.toBeInTheDocument();
+    });
+
+    it("the lines never share the row counters' bag-row- prefix", () => {
+      store.dispatch(setUpdatedBaseItems({ updatedBaseItems: ["pep-1"] }));
+      renderRow(DRINK_ROW);
+      renderRow({ ...BURGER_ROW, outOfStock: true });
+      expect(document.querySelectorAll('[data-testid^="bag-row-"]')).toHaveLength(2);
     });
   });
 });

@@ -133,7 +133,7 @@ const renderSheet = (
 describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     // The revoke is a RAW cross-origin fetch in the ported hook (a documented
     // Rule-2 carry-over) — stub it so it can never reach the network.
     fetchMock = vi

@@ -96,7 +96,7 @@ const DRINK = {
 };
 
 const seedPdp = (entity: object, type = "customizableItem") => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: { [EXTRAS._id]: EXTRAS, [SAUCE._id]: SAUCE } }));
   store.dispatch(openMakeItAMealSession());
   store.dispatch(

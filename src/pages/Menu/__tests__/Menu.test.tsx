@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -6,12 +6,18 @@ import {
   emptyMenuData,
   setEntityMap,
   setMenuData,
+  setTags,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
+  setCurrency,
   setEnableAccessibilityMode,
+  setHideFilter,
+  setKioskSettings,
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setFilters } from "@cx-sdk/catalog/state/filter.slice";
+import { setCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import {
   setSelectedPipeline,
   setTabType,
@@ -23,9 +29,10 @@ import { mutateAddToCartModal } from "../../../redux/features/menuSelections/men
 import Menu from "../index";
 import i18n from "../../../i18n";
 
-const { mockFetchMenu, mockNavigate } = vi.hoisted(() => ({
+const { mockFetchMenu, mockNavigate, mockCapture } = vi.hoisted(() => ({
   mockFetchMenu: vi.fn(),
   mockNavigate: vi.fn(),
+  mockCapture: vi.fn(),
 }));
 
 // The REAL hook (BagSheet and the loyalty sheet use the rest of it) with
@@ -45,6 +52,12 @@ vi.mock("../../../hooks/menuHooks/useMenuConverters", async (importOriginal) => 
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
   useNavigate: () => mockNavigate,
+}));
+
+// Analytics are asserted per event (never by the total call count).
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
 }));
 
 /** Converted-shape fixture (mirrors legacyMenuConverters output fields the UI reads). */
@@ -88,14 +101,14 @@ const CONVERTED_MENU = {
   ],
 };
 
-const renderMenu = (options: { reactStrictMode?: boolean } = {}) =>
+const renderMenu = (options: { reactStrictMode?: boolean; bagOpen?: boolean } = {}) =>
   render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={["/menu"]}>
-        <Menu />
+      <MemoryRouter initialEntries={[options.bagOpen ? "/cart" : "/menu"]}>
+        <Menu bagOpen={options.bagOpen} />
       </MemoryRouter>
     </Provider>,
-    options
+    { reactStrictMode: options.reactStrictMode }
   );
 
 describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
@@ -513,3 +526,470 @@ describe("Menu — names in the guest's language (post-P9 28)", () => {
     );
   });
 });
+
+/*
+  audit-fixes U1 (PAR-05) — the VEG / NON-VEG chips sit in the rail under
+  the bell; their selection (state.filter.filters) narrows the rail AND the
+  sections through the SDK's convertCategoryData. Emptiness (the P9b
+  refetch, the menu-error dialog) stays a property of the UNFILTERED menu.
+*/
+describe("Menu — the diet filter and the card marks (U1)", () => {
+  const TAGGED_MENU = {
+    categories: [
+      {
+        id: "c-mains",
+        name: "Mains",
+        subCategories: [
+          {
+            id: "s-tacos",
+            name: "Tacos",
+            entities: [
+              { id: "e-bean", name: "Bean Taco", price: 3, tags: ["veg"], outOfStock: false },
+              { id: "e-chicken", name: "Chicken Taco", price: 4, tags: ["non-veg"], outOfStock: false },
+            ],
+          },
+          {
+            id: "s-bowls",
+            name: "Bowls",
+            entities: [{ id: "e-veg-bowl", name: "Veggie Bowl", price: 6, tags: ["veg"], outOfStock: false }],
+          },
+        ],
+      },
+      {
+        id: "c-drinks",
+        name: "Drinks",
+        subCategories: [
+          {
+            id: "s-drinks",
+            name: "Drinks",
+            entities: [{ id: "e-cola", name: "Cola", price: 2, tags: ["veg"], outOfStock: false }],
+          },
+        ],
+      },
+      {
+        id: "c-meat",
+        name: "Meat Lovers",
+        subCategories: [
+          {
+            id: "s-meat",
+            name: "Meat",
+            entities: [{ id: "e-steak", name: "Steak Bowl", price: 9, tags: ["non-veg"], outOfStock: false }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const railIds = () =>
+    Array.from(screen.getByTestId("category-rail").querySelectorAll('[data-testid^="rail-"]')).map(
+      (row) => row.getAttribute("data-testid")
+    );
+  const itemIds = () =>
+    screen.queryAllByTestId(/^item-/).map((card) => card.getAttribute("data-testid"));
+  const sectionIds = () =>
+    screen.queryAllByTestId(/^section-/).map((section) => section.getAttribute("data-testid"));
+  const filters = () =>
+    (store.getState() as unknown as { filter: { filters: string[] } }).filter.filters;
+
+  beforeAll(() => {
+    // jsdom has no Element.scrollTo; the rail tap's smooth scroll calls it.
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    mockCapture.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setMenuData({ menu: TAGGED_MENU }));
+    store.dispatch(setTags({ tags: ["veg", "non-veg"] }));
+  });
+
+  it("the chips sit in the rail between the bell and the category list", () => {
+    renderMenu();
+    const rail = screen.getByTestId("category-rail");
+    const group = within(rail).getByRole("group", { name: i18n.t("menu.filters") });
+
+    expect(group).toContainElement(screen.getByTestId("menu-filter-veg"));
+    expect(group).toContainElement(screen.getByTestId("menu-filter-non-veg"));
+    expect(rail.firstElementChild?.tagName).toBe("IMG");
+    expect(group.compareDocumentPosition(screen.getByTestId("rail-c-mains")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(rail).getAllByRole("button")[0]).toBe(screen.getByTestId("menu-filter-veg"));
+  });
+
+  it("NON-VEG narrows the rail AND the sections; VEG swaps; a re-tap restores the whole menu", () => {
+    renderMenu();
+    expect(railIds()).toEqual(["rail-c-mains", "rail-c-drinks", "rail-c-meat"]);
+
+    fireEvent.click(screen.getByTestId("menu-filter-non-veg"));
+    expect(filters()).toEqual(["non-veg"]);
+    expect(railIds()).toEqual(["rail-c-mains", "rail-c-meat"]);
+    expect(sectionIds()).toEqual(["section-c-mains", "section-c-meat"]);
+    expect(itemIds()).toEqual(["item-e-chicken", "item-e-steak"]);
+    // Bowls emptied → dropped; Mains is left with one sub-category (no H3).
+    expect(within(screen.getByTestId("section-c-mains")).queryByRole("heading", { level: 3 })).toBeNull();
+
+    fireEvent.click(screen.getByTestId("menu-filter-veg"));
+    expect(filters()).toEqual(["veg"]);
+    expect(railIds()).toEqual(["rail-c-mains", "rail-c-drinks"]);
+    expect(itemIds()).toEqual(["item-e-bean", "item-e-veg-bowl", "item-e-cola"]);
+
+    fireEvent.click(screen.getByTestId("menu-filter-veg"));
+    expect(filters()).toEqual([]);
+    expect(railIds()).toEqual(["rail-c-mains", "rail-c-drinks", "rail-c-meat"]);
+    expect(itemIds()).toEqual(["item-e-bean", "item-e-chicken", "item-e-veg-bowl", "item-e-cola", "item-e-steak"]);
+  });
+
+  it("the selected category filtered away → the first rail row stands in", () => {
+    renderMenu();
+    fireEvent.click(screen.getByTestId("rail-c-drinks"));
+    expect(screen.getByTestId("rail-c-drinks")).toHaveClass("bg-tb-purple-vibrant");
+
+    // Not through a chip: the fallback alone (a filter can arrive with a reload).
+    act(() => {
+      store.dispatch(setFilters(["non-veg"]));
+    });
+    expect(screen.queryByTestId("rail-c-drinks")).toBeNull();
+    expect(screen.getByTestId("rail-c-mains")).toHaveClass("bg-tb-purple-vibrant");
+  });
+
+  it("a chip tap returns the pane to its top and the rail to its first row", () => {
+    renderMenu();
+    // The item pane (the rail's list scrolls too, and comes first).
+    const pane = screen.getByTestId("item-e-bean").closest(".overflow-y-auto") as HTMLElement;
+    fireEvent.click(screen.getByTestId("rail-c-meat"));
+    pane.scrollTop = 640;
+
+    fireEvent.click(screen.getByTestId("menu-filter-non-veg"));
+
+    expect(pane.scrollTop).toBe(0);
+    expect(screen.getByTestId("rail-c-mains")).toHaveClass("bg-tb-purple-vibrant");
+    expect(screen.getByTestId("rail-c-meat")).not.toHaveClass("bg-tb-purple-vibrant");
+  });
+
+  it("a filter that empties the grid is not an empty menu: no refetch, no menu-error, no loading copy — the chips stay to undo it", async () => {
+    // A stale tag list: VEG is offered, but nothing on this menu is veg.
+    store.dispatch(
+      setMenuData({
+        menu: {
+          categories: [TAGGED_MENU.categories[2]],
+        },
+      })
+    );
+    renderMenu();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("menu-filter-veg"));
+    });
+
+    expect(itemIds()).toEqual([]);
+    expect(railIds()).toEqual([]);
+    expect(mockFetchMenu).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("menu-error")).toBeNull();
+    expect(screen.queryByText(i18n.t("menu.empty"))).toBeNull();
+
+    fireEvent.click(screen.getByTestId("menu-filter-veg"));
+    expect(itemIds()).toEqual(["item-e-steak"]);
+  });
+
+  it("hide_filter → no chips; the menu shows unfiltered", () => {
+    store.dispatch(setHideFilter(true));
+    renderMenu();
+
+    expect(screen.queryByTestId("menu-filter-veg")).toBeNull();
+    expect(screen.queryByRole("group", { name: i18n.t("menu.filters") })).toBeNull();
+    expect(itemIds()).toHaveLength(5);
+  });
+
+  it("each card's price line leads with its diet mark; hide_veg_non_veg removes the marks and the chips", () => {
+    const { unmount } = renderMenu();
+
+    const bean = screen.getByTestId("item-e-bean");
+    const mark = within(bean).getByTestId("veg-mark-veg");
+    expect(mark).toHaveAccessibleName(i18n.t("menu.veg"));
+    expect(mark.parentElement?.textContent).toBe("£3");
+    expect(within(screen.getByTestId("item-e-steak")).getByTestId("veg-mark-non-veg")).toBeInTheDocument();
+    unmount();
+
+    store.dispatch(setKioskSettings({ hide_veg_non_veg: true }));
+    renderMenu();
+    expect(screen.queryAllByTestId(/^veg-mark-/)).toHaveLength(0);
+    expect(screen.queryByTestId("menu-filter-veg")).toBeNull();
+    expect(screen.queryByTestId("menu-filter-non-veg")).toBeNull();
+  });
+});
+
+/*
+  audit-fixes B3 (PAR-07) steps 5–7 — the /menu funnel events, fork ItemCard
+  parity: raw primary-language fields (names resolve only at render).
+*/
+describe("Menu — the funnel events (B3)", () => {
+  const SIDES = "s-sides";
+  const PLAIN = { id: "e-fries", name: "Large Fries", price: 2.5, subCategoryId: SIDES, outOfStock: false };
+  const DP_ITEM = { id: "e-dp", name: "Lunch Taco", price: 3, subCategoryId: SIDES, isDpItem: true, outOfStock: false };
+  const CUSTOM = {
+    id: "e-burger",
+    name: "Cheese Burger",
+    price: 8,
+    subCategoryId: SIDES,
+    modifiers: ["g-extras"],
+    outOfStock: false,
+  };
+  const SIZED = {
+    id: "e-taco",
+    name: "Crunchy Taco",
+    price: 0,
+    subCategoryId: SIDES,
+    hasVariant: true,
+    isVariant: false,
+    variants: [{ id: "v-regular", name: "Regular", price: 4 }],
+    outOfStock: false,
+  };
+  const COMBO = {
+    id: "e-salad",
+    name: "Greek Salad",
+    price: 17,
+    subCategoryId: SIDES,
+    // Converted combos are entities (filterEntitiesByTags drops bare ids).
+    upsellItems: [{ id: "combo-1", name: "Salad Meal", tags: ["veg"] }],
+    recommendedItems: [],
+    outOfStock: false,
+  };
+  const SOLD_OUT = { id: "e-oos", name: "Nachos", price: 3, subCategoryId: SIDES, outOfStock: true };
+  const EVENT_MENU = {
+    categories: [
+      {
+        id: "c1",
+        name: "Side Orders",
+        subCategories: [{ id: SIDES, name: "Sides", entities: [PLAIN, DP_ITEM, CUSTOM, SIZED, COMBO] }],
+      },
+      {
+        id: "c2",
+        name: "More",
+        subCategories: [
+          { id: "s-more", name: "More", entities: [SOLD_OUT] },
+          { id: "s-empty", name: "Empty", entities: [] },
+        ],
+      },
+    ],
+  };
+
+  const eventCalls = (event: string) => mockCapture.mock.calls.filter(([name]) => name === event);
+  const cartRows = () =>
+    (store.getState() as unknown as { cart: { cartItems: { id: string; quantity: number }[] } }).cart.cartItems;
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    mockNavigate.mockReset();
+    mockCapture.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setMenuData({ menu: EVENT_MENU }));
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("MenuViewed once per mount (StrictMode re-runs effects) with the category and item counts", () => {
+    renderMenu({ reactStrictMode: true });
+
+    expect(eventCalls("menu_viewed")).toEqual([["menu_viewed", { category_count: 2, total_items: 6 }]]);
+  });
+
+  it("MenuViewed waits for the menu: nothing while it refetches, once when it arrives", () => {
+    store.dispatch({ type: "RESET_STATE" });
+    renderMenu();
+    expect(eventCalls("menu_viewed")).toHaveLength(0);
+
+    act(() => {
+      store.dispatch(setMenuData({ menu: EVENT_MENU }));
+    });
+    expect(eventCalls("menu_viewed")).toEqual([["menu_viewed", { category_count: 2, total_items: 6 }]]);
+
+    act(() => {
+      store.dispatch(setMenuData({ menu: { categories: [EVENT_MENU.categories[0]] } }));
+    });
+    expect(eventCalls("menu_viewed")).toHaveLength(1);
+  });
+
+  it("no MenuViewed under the bag (/cart is its own mount of this page)", () => {
+    renderMenu({ bagOpen: true });
+
+    expect(eventCalls("menu_viewed")).toHaveLength(0);
+  });
+
+  it("a card tap: ItemClicked (raw name, price, sub-category), then ItemAddedToCart once it landed", () => {
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Large Fries" }));
+
+    expect(mockCapture).toHaveBeenCalledWith("item_clicked", {
+      item_id: "e-fries",
+      item_name: "Large Fries",
+      item_price: 2.5,
+      category: SIDES,
+    });
+    expect(mockCapture).toHaveBeenCalledWith("item_added_to_cart", {
+      item_id: "e-fries",
+      item_name: "Large Fries",
+      item_price: 2.5,
+      quantity: 1,
+      item_type: undefined,
+    });
+    expect(cartRows()).toHaveLength(1);
+  });
+
+  it("the '+' quick add: ItemAddedToCart without ItemClicked; a second '+' bumps the row and reports again", () => {
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId("quick-add-e-fries"));
+    fireEvent.click(screen.getByTestId("quick-add-e-fries"));
+
+    expect(eventCalls("item_clicked")).toHaveLength(0);
+    expect(eventCalls("item_added_to_cart")).toHaveLength(2);
+    expect(cartRows()).toEqual([expect.objectContaining({ id: "e-fries", quantity: 2 })]);
+  });
+
+  it("a quick add the DP session cap rejects sends no ItemAddedToCart (and adds nothing)", () => {
+    store.dispatch(setCurrentSession({ _id: "dp-lunch", sessionName: "Lunch", _extras: { maxQtyItem: "1" } }));
+    store.dispatch(
+      setCartItems([
+        { id: "e-held", itemId: "h-1", name: "Held Taco", quantity: 1, type: "ITEM", isDpItem: true, price: 3, total_price: 3 },
+      ])
+    );
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId("quick-add-e-dp"));
+
+    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
+    expect(cartRows()).toHaveLength(1);
+  });
+
+  it("an unavailable card has no tap target, so it reports nothing", () => {
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId("item-e-oos"));
+
+    expect(eventCalls("item_clicked")).toHaveLength(0);
+  });
+
+  it("modifiers: CustomizationOpened {source:'menu'} from the card and from '+', on the way to the PDP", () => {
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cheese Burger" }));
+    fireEvent.click(screen.getByTestId("quick-add-e-burger"));
+
+    const opened = { item_id: "e-burger", item_name: "Cheese Burger", source: "menu" };
+    expect(eventCalls("customization_opened")).toEqual([
+      ["customization_opened", opened],
+      ["customization_opened", opened],
+    ]);
+    expect(eventCalls("item_clicked")).toHaveLength(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/customization", undefined);
+  });
+
+  it("a sized item: the card tap opens the PDP (CustomizationOpened); its '+' opens Select a Size (no event yet)", () => {
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId("quick-add-e-taco"));
+    expect(screen.getByTestId("select-size-modal")).toBeInTheDocument();
+    expect(eventCalls("customization_opened")).toHaveLength(0);
+    // Its X (the scrim is the first closer, the card's X the second).
+    fireEvent.click(
+      within(screen.getByTestId("select-size-modal")).getAllByRole("button", { name: i18n.t("language.close") })[1]
+    );
+    expect(screen.queryByTestId("select-size-modal")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Crunchy Taco" }));
+    expect(mockCapture).toHaveBeenCalledWith("customization_opened", {
+      item_id: "e-taco",
+      item_name: "Crunchy Taco",
+      source: "menu",
+    });
+  });
+
+  it("the combo upsell: MakeItAMealOpened {item_id, item_name}", () => {
+    store.dispatch(setKioskSettings({ enable_combo_upsell: true }));
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Greek Salad" }));
+
+    expect(mockCapture).toHaveBeenCalledWith("make_it_a_meal_clicked", {
+      item_id: "e-salad",
+      item_name: "Greek Salad",
+    });
+    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
+  });
+
+  it("the product-added '+' that lands reports ItemAddedToCart", () => {
+    store.dispatch(setEntityMap({ entityMap: { [PLAIN.id]: PLAIN } }));
+    renderMenu();
+    act(() => {
+      store.dispatch(mutateAddToCartModal({ isOpen: true, item: { id: "e-burger", recommendedItems: [PLAIN.id] } }));
+    });
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId(`added-rec-add-${PLAIN.id}`));
+
+    expect(mockCapture).toHaveBeenCalledWith("item_added_to_cart", {
+      item_id: "e-fries",
+      item_name: "Large Fries",
+      item_price: 2.5,
+      quantity: 1,
+      item_type: undefined,
+    });
+    expect(cartRows()).toEqual([expect.objectContaining({ id: "e-fries" })]);
+  });
+
+  it("Arabic session: the events still carry the PRIMARY-language name", async () => {
+    store.dispatch(
+      setMenuData({
+        menu: {
+          categories: [
+            {
+              id: "c1",
+              name: "Side Orders",
+              subCategories: [
+                {
+                  id: SIDES,
+                  name: "Sides",
+                  entities: [{ ...PLAIN, aliases: [{ value: "بطاطس كبيرة", name: "Arabic", code: "ar", dir: "rtl" }] }],
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+    store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderMenu();
+    mockCapture.mockClear();
+
+    fireEvent.click(screen.getByTestId("quick-add-e-fries"));
+
+    expect(mockCapture).toHaveBeenCalledWith(
+      "item_added_to_cart",
+      expect.objectContaining({ item_id: "e-fries", item_name: "Large Fries" })
+    );
+  });
+});
+

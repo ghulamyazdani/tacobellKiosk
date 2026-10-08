@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
-import { toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setCurrency, toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import SelectSizeModal from "../SelectSizeModal";
 import i18n from "../../../i18n";
@@ -35,6 +35,17 @@ describe("SelectSizeModal (Figma 1:5628)", () => {
     // Cheapest shows absolute price, not a delta.
     expect(screen.getByTestId("size-v-regular")).toHaveTextContent("5.59");
     expect(screen.getByTestId("size-v-regular")).not.toHaveTextContent("+5.59");
+  });
+
+  it("every price carries the deployment's symbol (UB1 — never a bare amount): '+£2.50' / '£5.59'", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    try {
+      renderModal();
+      expect(screen.getByTestId("size-v-large")).toHaveTextContent("+£2.50");
+      expect(screen.getByTestId("size-v-regular")).toHaveTextContent("£5.59");
+    } finally {
+      store.dispatch({ type: "RESET_STATE" });
+    }
   });
 
   it("CONTINUE stays disabled until a size is selected, then returns the variant", async () => {

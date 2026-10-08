@@ -212,7 +212,7 @@ describe("ForYou — the pre-cart upsell screen", () => {
     mockAddIntent = "add";
 
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     // Arrived through the gate in Menu: one unit in the bag, baseline seeded.
     setCartUnits(1);
     store.dispatch(setCartUpsellEntryQuantity(1));

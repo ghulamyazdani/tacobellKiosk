@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
+import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
-import MenuItemCard from "../MenuItemCard";
+import MenuItemCard, { formatMenuPriceLine } from "../MenuItemCard";
 import i18n from "../../../i18n";
 
 /*
@@ -21,6 +22,10 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 
 describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
   afterEach(async () => {
     await act(async () => {
       await i18n.changeLanguage("en");
@@ -89,5 +94,86 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
     const card = screen.getByTestId("item-cw");
     expect(card).toHaveTextContent(i18n.t("pack.cal", { value: 740 }));
     expect(card).not.toHaveTextContent("Cal");
+  });
+
+  /*
+    audit-fixes U1 — the diet mark leads the price line (pure CSS, no text
+    node: fonts.spec reads the price <p> as /^₹\d/). Under the full-card
+    overlay, so no dead tap zone.
+  */
+  it("U1: the price <p> is a centred flex row — the mark, then the price text", () => {
+    render(
+      <MenuItemCard entity={{ ...ENTITY, tags: ["non-veg"] }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      { wrapper }
+    );
+
+    const mark = screen.getByTestId("veg-mark-non-veg");
+    const price = mark.parentElement as HTMLElement;
+    expect(price.tagName).toBe("P");
+    expect(price).toHaveClass("flex", "items-center", "gap-[8px]");
+    if (large) expect(price).toHaveClass("justify-center");
+    expect(price.firstElementChild).toBe(mark);
+    expect(price.textContent).toBe("£5.99 | 740 Cal");
+    expect(mark).toHaveAccessibleName(i18n.t("menu.nonVeg"));
+    expect(mark).toHaveClass("pointer-events-none");
+  });
+
+  it("U1: no mark for an untagged item, nor under the operator's hide_veg_non_veg", () => {
+    const { unmount } = render(
+      <MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      { wrapper }
+    );
+    expect(screen.queryByTestId(/^veg-mark-/)).toBeNull();
+    unmount();
+
+    store.dispatch(setKioskSettings({ hide_veg_non_veg: true }));
+    render(
+      <MenuItemCard entity={{ ...ENTITY, tags: ["veg"] }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      { wrapper }
+    );
+    expect(screen.queryByTestId(/^veg-mark-/)).toBeNull();
+    expect(screen.getByTestId("item-cw")).toHaveTextContent("£5.99 | 740 Cal");
+  });
+
+  /*
+    UB4 — the name clamps (grid 2 / hero 3 lines) so the photo keeps its
+    Figma height; the full name stays the overlay's accessible name.
+  */
+  it("UB4: the name clamps at 2 (grid) / 3 (hero) lines; the overlay keeps the full name", () => {
+    const long = "2 Value Rice Bowl Non Veg+1 Small Fries+1 Cinnamon Twists+2 Pepsi Zero";
+    render(
+      <MenuItemCard entity={{ ...ENTITY, name: long }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      { wrapper }
+    );
+
+    const name = screen.getByText(long);
+    expect(name.tagName).toBe("P");
+    expect(name).toHaveClass(large ? "line-clamp-3" : "line-clamp-2");
+    expect(name).not.toHaveClass(large ? "line-clamp-2" : "line-clamp-3");
+    expect(screen.getByRole("button", { name: long })).toHaveClass("absolute", "inset-0");
+  });
+});
+
+/*
+  B4 / UB1 — the ONE price-line formatter, shared by the menu cards and the
+  product-added tiles (client question Q7: whole units as sent).
+*/
+describe("formatMenuPriceLine", () => {
+  const t = i18n.t.bind(i18n);
+
+  it.each([
+    [{ price: 5.59, calorieCount: 360 }, "£5.59 | 360 Cal"],
+    [{ price: 5.59, calorieCount: 0 }, "£5.59"],
+    [{ price: 17 }, "£17"],
+    [{ price: "8", calorieCount: "360" }, "£8 | 360 Cal"],
+    [{ price: 3, nutritionalInfo: { calorieCount: 120 } }, "£3 | 120 Cal"],
+    [{ price: 3, calorieCount: { value: 90 } }, "£3 | 90 Cal"],
+    [{ price: 3, calorieCount: { value: 0 } }, "£3"],
+    [{ price: 3, calorieCount: null }, "£3"],
+    [{ price: 3, calorieCount: -5 }, "£3"],
+    [{}, "£"],
+    [null, "£"],
+  ])("%j → %s", (entity, expected) => {
+    expect(formatMenuPriceLine(entity, "£", t)).toBe(expected);
   });
 });

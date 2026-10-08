@@ -14,13 +14,28 @@
     "editHowMany": {
       "title": "You have {{qty}} {{name}}",
       "body": "Choose how many you want to edit:"
+    },
+    "instructionsSheet": {
+      "placeholder": "e.g. No onions, extra sauce",
+      "counter": "{{count}}/{{max}}",
+      "save": "Save"
     }
   },
   "pdp": {
     "incomplete": {
       "titleBox": "Let's finish building your box first",
       "titleItem": "Let's finish your choices first",
-      "body": "Please choose your {{groups}} before adding to your bag"
+      "body": "Please choose your {{groups}} before adding to your bag",
+      "size": "size"
     }
+  },
+  "activity": {
+    "fullscreenOn": "Fullscreen is enforced. Guests cannot leave full screen.",
+    "fullscreenOff": "Fullscreen is optional. The browser controls can be reached."
+  },
+  "country": {
+    "title": "Select your country",
+    "search": "Search for a country",
+    "noResults": "No country matches \"{{query}}\""
   }
 }

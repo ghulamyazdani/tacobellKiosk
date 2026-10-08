@@ -15,13 +15,15 @@ import { selectLastBootAt } from "@cx-sdk/devices/updates/autoUpdate.slice";
 import {
   formatSoftwareVersion,
   getDeviceDisplayName,
-  getFullscreenModeDescription,
   getNotificationStatusDisplay,
   getPrinterStatusDisplay,
   type KioskNotificationPermissionState,
 } from "@cx-sdk/devices/diagnostics/activityLogic";
 import useAuthHook from "../../hooks/utils/useAuthHook";
 import useAppSettings from "../../hooks/utils/useAppSettings";
+import KioskKeyboard from "../keyboard/KioskKeyboard";
+// The fullscreen descriptions are lazy-only copy (this modal rides bagLazyParts).
+import "../../i18n/lazyCopy";
 
 /**
  * Operator Activity Center — diagnostics modal opened by the hidden 3s
@@ -32,6 +34,10 @@ import useAppSettings from "../../hooks/utils/useAppSettings";
  * passcode-gated), kiosk logout with confirmation. P9e: when the last
  * successful boot ran ("Data loaded") and, on the splash only, "Reload
  * resources" (a refresh-mode boot; design language, no frame — flagged).
+ * audit-fixes U2: the toggle drives FullscreenGate; the right passcode also
+ * leaves fullscreen (fork parity — the operator gets the browser back), and
+ * the passcode is typed on the on-screen keyboard (a touch-only kiosk has no
+ * other; inputMode none keeps the OS keyboard away, a USB one still types).
  *
  * SECURITY FLAG (inherited, byte-identical per the extraction's pending
  * decision): the fullscreen passcode is hardcoded. Replace with a
@@ -102,6 +108,11 @@ export default function ActivityModal({
   const handlePasscodeSubmit = useCallback(() => {
     if (passcode === FULLSCREEN_PASSCODE) {
       dispatch(setMandatoryFullscreen(false));
+      // Fork parity: the operator gets the browser back. A refusal only
+      // leaves the window as it is.
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
       setShowPasscodeInput(false);
       setPasscode("");
       setPasscodeError("");
@@ -181,8 +192,10 @@ export default function ActivityModal({
           <div
             // Centering lives ONLY in the tb-modal-enter keyframes: Tailwind 4's
             // -translate-* classes use the CSS `translate` property, which
-            // STACKS with the animation's `transform` (double shift).
-            className="tb-modal-enter absolute left-1/2 top-1/2 w-[820px] rounded-[16px] bg-tb-surface p-[48px]"
+            // STACKS with the animation's `transform` (double shift). While the
+            // passcode keyboard is docked (its top at 1401), the card centres
+            // on 700 instead — the free space above it.
+            className={`tb-modal-enter absolute left-1/2 ${showPasscodeInput ? "top-[700px]" : "top-1/2"} w-[820px] rounded-[16px] bg-tb-surface p-[48px]`}
           >
             <h2 className="tb-display mb-[32px] text-[40px] leading-[1] tracking-[-1px] text-tb-purple">
               {t("activity.title")}
@@ -205,7 +218,11 @@ export default function ActivityModal({
                     {t("activity.fullscreen")}
                   </span>
                   <p className="mt-1 max-w-[520px] text-[16px] text-tb-ink-purple/70">
-                    {getFullscreenModeDescription(Boolean(mandatoryFullscreen))}
+                    {t(
+                      mandatoryFullscreen
+                        ? "activity.fullscreenOn"
+                        : "activity.fullscreenOff"
+                    )}
                   </p>
                 </div>
                 <button
@@ -231,6 +248,7 @@ export default function ActivityModal({
                 </p>
                 <input
                   type="password"
+                  inputMode="none"
                   value={passcode}
                   data-testid="activity-passcode-input"
                   aria-label={t("activity.passcodePrompt")}
@@ -323,6 +341,18 @@ export default function ActivityModal({
               </div>
             )}
           </div>
+          {showPasscodeInput && (
+            // Docked like Registration's: a sibling of the card (844 wide,
+            // the card body 724), above the scrim.
+            <div className="absolute bottom-[90px] left-0 w-full px-[40px]">
+              <KioskKeyboard
+                value={passcode}
+                onChange={setPasscode}
+                maxLength={32}
+                onSubmit={handlePasscodeSubmit}
+              />
+            </div>
+          )}
     </div>
   );
 }

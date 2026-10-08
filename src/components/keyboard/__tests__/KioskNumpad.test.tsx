@@ -15,7 +15,7 @@ import "../../../i18n";
  */
 const renderPad = (
   value: string,
-  overrides: { maxLength?: number; onSubmit?: () => void } = {}
+  overrides: { maxLength?: number; onSubmit?: () => void; noLeadingZero?: boolean } = {}
 ) => {
   const onChange = vi.fn();
   const utils = render(
@@ -85,6 +85,31 @@ describe("KioskNumpad (Figma 1:4174 — loyalty numeric keypad)", () => {
     expect(go).toBeInTheDocument();
     await userEvent.click(go);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  describe("noLeadingZero (UB5 phone keypads; fork NumberKeyboard parity)", () => {
+    it("ignores a FIRST 0", async () => {
+      const { onChange } = renderPad("", { noLeadingZero: true });
+      await userEvent.click(screen.getByTestId("numpad-key-0"));
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("keeps every later 0 and every other first digit", async () => {
+      const { onChange, unmount } = renderPad("5", { noLeadingZero: true });
+      await userEvent.click(screen.getByTestId("numpad-key-0"));
+      expect(onChange).toHaveBeenCalledWith("50");
+      unmount();
+
+      const first = renderPad("", { noLeadingZero: true });
+      await userEvent.click(screen.getByTestId("numpad-key-5"));
+      expect(first.onChange).toHaveBeenCalledWith("5");
+    });
+
+    it("is OFF by default: the tent / edit-how-many keypads still take a first 0", async () => {
+      const { onChange } = renderPad("");
+      await userEvent.click(screen.getByTestId("numpad-key-0"));
+      expect(onChange).toHaveBeenCalledWith("0");
+    });
   });
 
   it("every key carries the 44px kiosk touch-target floor (Rule 4)", () => {

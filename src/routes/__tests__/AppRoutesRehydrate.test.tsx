@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
+import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../redux/app/store";
 import { AppRoutes } from "../AppRoutes";
 
@@ -22,6 +23,20 @@ const { syncCartOnReLoad } = vi.hoisted(() => ({
 vi.mock("../../hooks/menuHooks/useCartHook", () => ({
   default: () => ({ syncCartOnReLoad }),
 }));
+
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+
+vi.mock("../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
+
+const rehydrateReports = () =>
+  mockCapture.mock.calls.filter(
+    ([event, props]) =>
+      event === KioskEventName.ErrorOccurred &&
+      (props as { error_source?: string })?.error_source === "dexie"
+  );
 
 // An unregistered device renders Registration at "/": probe the signal there.
 vi.mock("../../pages/Registration", async () => {
@@ -47,6 +62,7 @@ const signal = () => screen.getByTestId("cart-rehydrated");
 describe("AppRoutes — the cart-rehydrated signal (crash-reload on /cart)", () => {
   beforeEach(() => {
     syncCartOnReLoad.mockReset();
+    mockCapture.mockReset();
   });
 
   it("stays false while the Dexie rehydrate is in flight, turns true once it lands, and the rehydrate runs once", async () => {
@@ -68,13 +84,38 @@ describe("AppRoutes — the cart-rehydrated signal (crash-reload on /cart)", () 
     });
     expect(signal()).toHaveTextContent("true");
     expect(syncCartOnReLoad).toHaveBeenCalledTimes(1);
+    expect(rehydrateReports()).toEqual([]);
   });
 
-  it("settles true when the rehydrate FAILS (Dexie unavailable): the empty-cart exit is never left waiting", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("settles true when the rehydrate FAILS (Dexie unavailable): the empty-cart exit is never left waiting — and the loss is reported once (audit-fixes C5)", async () => {
     syncCartOnReLoad.mockRejectedValueOnce(new Error("dexie unavailable"));
     renderRoutes();
     await waitFor(() => expect(signal()).toHaveTextContent("true"));
-    consoleError.mockRestore();
+    expect(rehydrateReports()).toEqual([
+      [
+        KioskEventName.ErrorOccurred,
+        { error_source: "dexie", stage: "rehydrate", error_message: "dexie unavailable" },
+      ],
+    ]);
+  });
+
+  it("reports the ROOT cause syncCartOnReLoad wraps (its own console line is gone)", async () => {
+    syncCartOnReLoad.mockRejectedValueOnce(
+      new Error("Error syncing cart from Dexie", {
+        cause: new Error("DatabaseClosedError: Database has been closed"),
+      })
+    );
+    renderRoutes();
+    await waitFor(() => expect(signal()).toHaveTextContent("true"));
+    expect(rehydrateReports()).toEqual([
+      [
+        KioskEventName.ErrorOccurred,
+        {
+          error_source: "dexie",
+          stage: "rehydrate",
+          error_message: "DatabaseClosedError: Database has been closed",
+        },
+      ],
+    ]);
   });
 });

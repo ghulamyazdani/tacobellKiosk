@@ -21,7 +21,9 @@ import { clippedText } from "./fixtures/clippedText";
  * overlay, its failure dialog and its removal notice (design language, no
  * frame), the PDP completion warning (1:2855), the slot selection sheet
  * (1:2814: Included + Upgrades, the Customize link) and the tier-2 removal
- * confirm.
+ * confirm. Lane audit-fixes adds (design language, sign-off): the
+ * cooking-instructions sheet with a real-length note (U3, 13) and the bill
+ * block's Taxes & charges / Round off rows under the 2-line note (U4, 14).
  *
  * Content is real-length (TB India item names, Arabic aliases of the same
  * length): the bag row the numpad names, the two rows the switch removes
@@ -256,7 +258,7 @@ async function mockKioskBackend(page: Page): Promise<Net> {
     route.fulfill({
       json: {
         charges: tabOf(route) === "t2" ? [T2_CHARGE] : [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -376,6 +378,42 @@ async function capture(page: Page, name: string) {
   expect.soft(await clippedText(page), `${name}: text the layout cuts off`).toEqual([]);
 }
 
+/** Where a box's rendered text starts (its glyph runs, not the box). */
+const textLeft = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return Math.min(...Array.from(range.getClientRects(), (rect) => rect.left));
+  });
+
+/**
+ * Fixer UI-1: the bag rows whose diet mark is NOT on its name's first line
+ * box (in the chips' flex-wrap row a long name dropped below the mark and
+ * left it alone on its own line). Every walk row is tagged — all 3 checked.
+ */
+async function marksOffTheFirstLine(page: Page) {
+  const probe = await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('[data-testid^="bag-row-"]'));
+    const off = rows.flatMap((row) => {
+      const mark = row.querySelector('[data-testid^="veg-mark-"]');
+      const name = mark?.nextElementSibling;
+      if (!(mark instanceof HTMLElement) || !(name instanceof HTMLElement)) {
+        return [`${row.getAttribute("data-testid")}: no mark beside a name`];
+      }
+      const m = mark.getBoundingClientRect();
+      const n = name.getBoundingClientRect();
+      const line =
+        parseFloat(getComputedStyle(name).lineHeight) * (n.height / name.offsetHeight || 1);
+      return m.top >= n.top - 1 && m.bottom <= n.top + line + 1
+        ? []
+        : [`${row.getAttribute("data-testid")}: mark top ${m.top}, name top ${n.top}`];
+    });
+    return { rows: rows.length, off };
+  });
+  expect(probe.rows, "bag rows probed").toBe(3);
+  return probe.off;
+}
+
 /** An element's background alpha: rgba(), or a `/ a` colour (Tailwind's color-mix → oklab). */
 const backgroundAlpha = (locator: Locator) =>
   locator.evaluate((el) => {
@@ -457,6 +495,67 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       await capture(page, `bagpdp-${mode}-08-switch-confirm-back`);
       await page.getByTestId("bag-ordertype-confirm-no").click();
       await expect(confirm).toHaveCount(0);
+    });
+
+    test(`BAG EXTRAS (${mode}): the cooking-instructions sheet (U3) and the Taxes & charges / Round off rows (U4)`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page);
+      await startOrder(page, mode);
+      await openBagWithBurgerTimesThree(page);
+      await settle(page);
+      // Fixer UI-1: every row's real-length name wraps BESIDE its diet mark.
+      expect
+        .soft(await marksOffTheFirstLine(page), "bag rows whose diet mark is not on the name's first line")
+        .toEqual([]);
+      if (mode === "ar") {
+        // Fixer UI-2 (P9f S2): the one-line Arabic hint keeps its header's
+        // left edge (it sat ~800 px right, against the chevron).
+        const entry = page.getByTestId("bag-instructions-entry");
+        const header = await textLeft(entry.locator("xpath=preceding-sibling::*[1]"));
+        expect
+          .soft(Math.abs((await textLeft(page.getByTestId("bag-instructions-text"))) - header), "Arabic hint vs its header")
+          .toBeLessThanOrEqual(2);
+      }
+
+      // U3: the sheet over the bag, a real-length note typed on the kiosk
+      // keyboard (Latin in every language — the keyboard has no Arabic layer).
+      await page.getByTestId("bag-instructions-entry").click();
+      const sheet = page.getByTestId("instructions-sheet");
+      await expect(sheet).toBeVisible();
+      await settle(page);
+      if (mode === "ar") {
+        // Fixer UI-2: the Arabic placeholder starts at the box's content edge.
+        const field = sheet.getByTestId("instructions-input");
+        const contentLeft = await field.evaluate((box) => {
+          const style = getComputedStyle(box);
+          return (
+            box.getBoundingClientRect().left +
+            parseFloat(style.borderLeftWidth) +
+            parseFloat(style.paddingLeft)
+          );
+        });
+        expect
+          .soft(Math.abs((await textLeft(field)) - contentLeft), "Arabic placeholder vs the box's left edge")
+          .toBeLessThanOrEqual(2);
+      }
+      for (const char of "no onions and no tomato extra sauce on the side and well done please") {
+        if (char === " ") await sheet.getByTestId("keyboard-space").click();
+        else await sheet.getByRole("button", { name: char, exact: true }).click();
+      }
+      await expect(sheet.getByTestId("instructions-counter")).toHaveText(/68\D{0,4}\/\D{0,4}100/);
+      await capture(page, `bagpdp-${mode}-13-instructions`);
+      await sheet.getByTestId("instructions-save").click();
+      await expect(sheet).toHaveCount(0);
+
+      // U4: 3 × £8 + £17 + £2 = £43.00, VAT £6.45, rounded to £49 (−£0.45);
+      // the entry above shows the note on two clamped lines.
+      await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£6.45");
+      await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.45");
+      await expect(page.getByTestId("bag-total")).toHaveText("£49.00");
+      await page.getByTestId("bag-total").scrollIntoViewIfNeeded();
+      await capture(page, `bagpdp-${mode}-14-totals`);
     });
 
     test(`PDP (${mode}): the completion warning (1:2855), the slot sheets (1:2814), the tier-2 removal confirm`, async ({

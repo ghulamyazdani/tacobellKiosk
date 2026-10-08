@@ -3,8 +3,8 @@
  * domain header the component under test carries). Typed in a later loyalty
  * domain pass. Do not add NEW anys.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -14,10 +14,18 @@ import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import { setCustomerName } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import LoyaltyLoginModal from "../LoyaltyLoginModal";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Same RTK-layer seam as the rewards-sheet suite — see its header note. */
-const { executeEvent } = vi.hoisted(() => ({ executeEvent: vi.fn() }));
+const { executeEvent, mockCapture } = vi.hoisted(() => ({
+  executeEvent: vi.fn(),
+  mockCapture: vi.fn(),
+}));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
 
 vi.mock("@cx-sdk/ordering/services/loyaltyApi", () => ({
   useExecuteLoyaltyEventMutation: () => [
@@ -152,8 +160,13 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
     expect(screen.getByTestId("loyalty-login-submit")).toHaveTextContent(
       "Continue"
     );
-    // The dial code rides read-only next to the dots (picker stays on /phone).
-    expect(screen.getByTestId("loyalty-phone-display")).toHaveTextContent("+91");
+    // UB5: the dial code is a chip of its own that opens the country picker.
+    const chip = screen.getByTestId("loyalty-country-code");
+    expect(chip).toHaveTextContent("+91");
+    expect(chip).toHaveAccessibleName(i18n.t("phone.changeCountry", { dialCode: "+91" }));
+    expect(chip).toHaveAttribute("aria-haspopup", "dialog");
+    expect(chip.className).toContain("min-h-[44px]");
+    expect(screen.getByTestId("loyalty-phone-display")).not.toHaveTextContent("+91");
   });
 
   describe("SCAN APP is present but inert (locked decision 3)", () => {
@@ -319,6 +332,91 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
       );
       expect(loyaltyState().loyaltyItemsModal.isOpen).toBe(false);
       expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  /*
+    audit-fixes UB5: the same picker as /phone, opened from the dial-code chip
+    at z-[70] (above this z-60 modal, below its error z-80, the global error
+    z-95 and the idle prompt z-100). A pick moves the keypad cap and the
+    length check; the phone keypad ignores a leading 0.
+  */
+  describe("the country chip (UB5)", () => {
+    beforeAll(async () => {
+      // The ONE lazy chunk: the first transform outlasts findBy's 1 s.
+      await import("../../cart/bagLazyParts");
+    }, 30_000);
+
+    beforeEach(() => {
+      mockCapture.mockReset();
+    });
+
+    it("opens the picker over the modal at z-[70] and reports the tap", async () => {
+      seedDeployment();
+      renderModal();
+
+      await userEvent.click(screen.getByTestId("loyalty-country-code"));
+
+      const sheet = await screen.findByTestId("country-sheet");
+      expect(sheet.parentElement?.className).toContain("z-[70]");
+      expect(screen.getByTestId("loyalty-login")).toContainElement(sheet);
+      expect(mockCapture).toHaveBeenCalledWith("country_code_selection_clicked", {
+        current_country_code: "+91",
+      });
+    });
+
+    it("a pick moves the cap: the UAE takes 9 digits, and the lookup carries +971", async () => {
+      seedDeployment();
+      renderModal();
+
+      await userEvent.click(screen.getByTestId("loyalty-country-code"));
+      const sheet = await screen.findByTestId("country-sheet");
+      const keyboard = within(within(sheet).getByTestId("kiosk-keyboard"));
+      for (const key of "emir") {
+        await userEvent.click(keyboard.getByRole("button", { name: key }));
+      }
+      await userEvent.click(within(sheet).getByTestId("country-AE"));
+
+      expect(screen.queryByTestId("country-sheet")).toBeNull();
+      expect(screen.getByTestId("loyalty-country-code")).toHaveTextContent("+971");
+      expect((store.getState() as any).auth.selectedCountryCode).toEqual({
+        code: "AE",
+        dialCode: "+971",
+        min: 9,
+        max: 9,
+        picked: true,
+      });
+
+      // Ten taps, nine digits land (the UAE cap), and they pass the check.
+      await typeDigits("5012345678");
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+
+      await waitFor(() => expect(executeEvent).toHaveBeenCalledTimes(1));
+      expect(customerState().customerInfo.customerPhone).toBe("501234567");
+      expect(JSON.stringify(executeEvent.mock.calls[0][0].data)).toContain("+971");
+    });
+
+    it("the scrim closes the picker and keeps +91", async () => {
+      seedDeployment();
+      renderModal();
+
+      await userEvent.click(screen.getByTestId("loyalty-country-code"));
+      await userEvent.click(await screen.findByTestId("country-sheet-scrim"));
+
+      expect(screen.queryByTestId("country-sheet")).toBeNull();
+      expect(screen.getByTestId("loyalty-login")).toBeInTheDocument();
+      expect(screen.getByTestId("loyalty-country-code")).toHaveTextContent("+91");
+    });
+
+    it("the phone keypad ignores a leading 0", async () => {
+      seedDeployment();
+      renderModal();
+
+      await typeDigits(`0${PHONE}`);
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+
+      await waitFor(() => expect(executeEvent).toHaveBeenCalledTimes(1));
+      expect(customerState().customerInfo.customerPhone).toBe(PHONE);
     });
   });
 

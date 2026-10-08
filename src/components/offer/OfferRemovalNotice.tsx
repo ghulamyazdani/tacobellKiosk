@@ -11,10 +11,10 @@ import {
   offerRemovalModal,
   selectCart,
 } from "@cx-sdk/ordering/state/cart.slice";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import type { OfferGap, OfferLockReason } from "@cx-sdk/core/types/offer";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOrderHook from "../../hooks/menuHooks/useOrderHook";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 
 interface OfferRemovalNoticeProps {
   /**
@@ -42,14 +42,12 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
   const dispatch = useDispatch();
   const removalModal = useSelector(offerRemovalModal) as any;
   const cartRdx = useSelector(selectCart) as any;
-  const currencySettings = useSelector(selectCurrency) as any;
+  const currency = useCurrencySymbol();
   const { gapFor } = useOfferSavings();
   const { getCalculatedBill } = useOrderHook();
 
   const isOpen = Boolean(removalModal?.isOpen);
   const removedOffer = removalModal?.data;
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
 
   // New total: caller's bill when provided, else a local recompute on the
   // live cart. An empty cart is an honest 0.00 (the bag may already be

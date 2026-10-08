@@ -121,6 +121,46 @@ describe("entity image source (regression pin: no S3 placeholder on any card)", 
     });
   });
 
+  /*
+    UB4 — the reported "item image full width, product visible": the kiosk
+    photos are squares, and `object-contain` drew them as a centred square at
+    65–72 % of the card. The photo fills the card width at the Figma box
+    heights (1:2609 172 / 1:2597 326) with `object-cover` (fork ItemImage
+    parity), its white background multiplied into the card grey. min-h-0
+    lets a wrapped price line take height; the unavailable look stays.
+  */
+  describe("MenuItemCard — the photo fills the card (UB4)", () => {
+    const photo = (large: boolean, entity: Record<string, unknown> = ENTITY) => {
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/menu"]}>
+            <MenuItemCard entity={entity} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />
+          </MemoryRouter>
+        </Provider>
+      );
+      const img = Array.from(screen.getByTestId("item-crunchwrap").querySelectorAll("img")).find(
+        (el) => el.getAttribute("src") === KIOSK_PNG
+      );
+      if (!img) throw new Error("no entity photo");
+      return img;
+    };
+
+    it.each([
+      [false, "h-[172px]"],
+      [true, "h-[326px]"],
+    ])("large=%s: full width, %s, object-cover + mix-blend-multiply — never object-contain", (large, height) => {
+      const img = photo(large);
+      expect(img).toHaveClass(height, "min-h-0", "w-full", "object-cover", "mix-blend-multiply");
+      expect(img).not.toHaveClass("object-contain");
+      expect(img).not.toHaveClass("grayscale");
+    });
+
+    it.each([false, true])("large=%s: unavailable keeps the dimmed grayscale photo", (large) => {
+      const img = photo(large, { ...ENTITY, outOfStock: true });
+      expect(img).toHaveClass("object-cover", "opacity-40", "grayscale");
+    });
+  });
+
   describe("BagItemRow — the cart half of the same sweep", () => {
     it("row thumb renders the kiosk aggregator image, never the placeholder image_url", () => {
       render(

@@ -174,7 +174,7 @@ async function mockKioskBackend(page: Page): Promise<KioskBackend> {
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -826,9 +826,11 @@ test.describe("P9e updates apply only at the splash", () => {
         },
       ],
       [
-        "get_kiosk_settings lacks the start text (B2)",
+        // audit-fixes B6: a missing start text no longer blocks a boot; a
+        // body that is not a settings object still fails as "unavailable".
+        "get_kiosk_settings answers a non-object body (B2 + B6)",
         (backend) => {
-          backend.settings = ok({ ideal_time: "180" });
+          backend.settings = ok([]);
         },
       ],
     ];

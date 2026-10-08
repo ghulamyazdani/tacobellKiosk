@@ -54,7 +54,7 @@ const COLA = {
 };
 
 const seed = (preselectedVariantId?: string) => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: { [EXTRAS._id]: EXTRAS } }));
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
@@ -117,7 +117,9 @@ describe("PDP opens on the preselected size (S1)", () => {
     expect(picker).toBeInTheDocument();
     expect(screen.queryByTestId("pdp-change-size")).not.toBeInTheDocument();
     expect(screen.queryByTestId(`pdp-group-${EXTRAS._id}`)).not.toBeInTheDocument();
-    expect(screen.getByTestId("pdp-add-to-bag")).toBeDisabled();
+    // UB2: the CTA is live before a size (a tap names the size in the
+    // completion warning — CustomizationLimits.test).
+    expect(screen.getByTestId("pdp-add-to-bag")).toBeEnabled();
     // The picker still filters what the guest may choose.
     expect(screen.getByTestId("pdp-variant-cola-s")).toBeInTheDocument();
     expect(screen.queryByTestId("pdp-variant-cola-x")).not.toBeInTheDocument();

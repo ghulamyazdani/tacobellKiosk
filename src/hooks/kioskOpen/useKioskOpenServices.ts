@@ -43,8 +43,8 @@ const useKioskOpenServices = () => {
         }).unwrap();
         dispatch(setPipelineStatuses(results));
         return results;
-      } catch (error) {
-        console.error("Error checking pipelines:", error);
+      } catch {
+        // false = unknown; the stored statuses stay as they were.
         return false;
       }
     },

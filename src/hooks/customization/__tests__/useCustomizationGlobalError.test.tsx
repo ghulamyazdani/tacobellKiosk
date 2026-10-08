@@ -16,11 +16,21 @@ import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   selectErrorMessageGlobal,
   selectShowErrorModalGlobal,
+  setAllowMultiplePunch,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import useCustomization from "../useCustomization";
-import i18n from "../../../i18n";
+import i18n, { isolate } from "../../../i18n";
+import { KioskEventName } from "../../../utils/analytics";
+
+const net = vi.hoisted(() => ({ capture: vi.fn() }));
+
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => net.capture(...args),
+}));
 
 /*
   Lane figma-polish G1 — the global error is visible now (GlobalErrorHost,
@@ -29,8 +39,16 @@ import i18n from "../../../i18n";
   path, addCustomizationToCart(undefined) — raises NO global error, in both
   the variant and the customizable flow (the ring + the warning answer it).
   The quick-customization auto-commit (an EXPLICIT map, no warning there)
-  still raises its translated copy, and the single-punch max limit raises
-  t("toast.alreadyReachedMaximumLimit"), never the old English literal.
+  still raises its translated copy, and a full group raises
+  t("pdp.groupMaxReached"), never the old English literal.
+
+  audit-fixes UB2 — the SDK group-max guard runs first in addCustomizations
+  (a tap) and increaseCustomization ("+"): it counts UNITS like the commit,
+  so a stepper group can no longer reach "3 of 2". A refused add writes
+  nothing (no selection dispatch, no ModifierSelected, no contradictory
+  mark) and raises exactly ONE global error "You can choose up to {{max}}
+  {{group}}". The 1/1 swap, a removal, "−" and the auto-select pass are
+  never refused; the per-ITEM cap keeps toast.alreadyReachedMaximumLimit.
 */
 
 const SAUCE = {
@@ -156,7 +174,7 @@ describe("useCustomization — the global error only where no completion warning
       ]);
     });
 
-    it("the single-punch max limit raises t('toast.alreadyReachedMaximumLimit'), never the English literal", () => {
+    it("a full flexible group refuses a third pick with t('pdp.groupMaxReached') (UB2), never the English literal", () => {
       store.dispatch(
         setTier1SelectedCustomization({
           [SAUCE._id]: [],
@@ -174,17 +192,15 @@ describe("useCustomization — the global error only where no completion warning
       });
 
       expect(globalErrors()).toEqual([
-        { showErrorModal: true, errorMessage: i18n.t("toast.alreadyReachedMaximumLimit") },
+        { showErrorModal: true, errorMessage: i18n.t("pdp.groupMaxReached", { max: 2, group: "Extras" }) },
       ]);
-      expect(selectErrorMessageGlobal(store.getState())).toBe(
-        "You've already reached the maximum for this option"
-      );
+      expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 2 Extras");
       expect(selectErrorMessageGlobal(store.getState())).not.toMatch(/Maximum selection\s+limit reached/);
       // The pick was refused: still two.
       expect(tier1SelectedCustomization(store.getState())[EXTRAS._id]).toHaveLength(2);
     });
 
-    it("Arabic: the max-limit copy is the Arabic translation", async () => {
+    it("Arabic: the group-max copy is the Arabic translation", async () => {
       await act(async () => {
         await i18n.changeLanguage("ar");
       });
@@ -204,15 +220,74 @@ describe("useCustomization — the global error only where no completion warning
           result.current.addCustomizations(EXTRAS, EXTRAS.constituentItems[2], null, {}, false);
         });
 
-        expect(selectErrorMessageGlobal(store.getState())).toBe(i18n.t("toast.alreadyReachedMaximumLimit"));
-        expect(selectErrorMessageGlobal(store.getState())).not.toBe(
-          "You've already reached the maximum for this option"
+        expect(selectErrorMessageGlobal(store.getState())).toBe(
+          i18n.t("pdp.groupMaxReached", { max: 2, group: "Extras" })
         );
+        expect(selectErrorMessageGlobal(store.getState())).toContain("يمكنك اختيار");
+        expect(selectErrorMessageGlobal(store.getState())).not.toBe("You can choose up to 2 Extras");
       } finally {
         await act(async () => {
           await i18n.changeLanguage("en");
         });
       }
+    });
+
+    it("Arabic session: the refusal names the group by its menu `ar` alias (useLocalized), never the English name", async () => {
+      store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+      try {
+        // Menu DATA (the group's alias), not translation copy.
+        const AR_EXTRAS = "إضافات";
+        const extrasAr = { ...EXTRAS, aliases: [{ value: AR_EXTRAS, name: "Arabic", code: "ar", dir: "rtl" }] };
+        store.dispatch(
+          setTier1SelectedCustomization({
+            [SAUCE._id]: [],
+            [EXTRAS._id]: [
+              { ...EXTRAS.constituentItems[0], quantity: 1 },
+              { ...EXTRAS.constituentItems[1], quantity: 1 },
+            ],
+          })
+        );
+        const { result } = mountHook();
+
+        act(() => {
+          result.current.addCustomizations(extrasAr, EXTRAS.constituentItems[2], null, {}, false);
+        });
+
+        const message = selectErrorMessageGlobal(store.getState());
+        // The rendered copy carries the isolates: compare through i18n.t().
+        expect(message).toBe(i18n.t("pdp.groupMaxReached", { max: 2, group: isolate(AR_EXTRAS) }));
+        expect(message).toContain(AR_EXTRAS);
+        expect(message).not.toContain("Extras");
+      } finally {
+        store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr", type: "primary_language" }));
+        await act(async () => {
+          await i18n.changeLanguage("en");
+        });
+      }
+    });
+
+    it("the engine's own max-limit answer (the auto-select pass, which the guard never sees) is the same group copy", () => {
+      const { result } = mountHook();
+      const working: Record<string, unknown[]> = {
+        [SAUCE._id]: [],
+        [EXTRAS._id]: [
+          { ...EXTRAS.constituentItems[0], quantity: 1 },
+          { ...EXTRAS.constituentItems[1], quantity: 1 },
+        ],
+      };
+      dispatched.mockClear();
+
+      act(() => {
+        result.current.addCustomizations(EXTRAS, EXTRAS.constituentItems[2], null, {}, false, true, working);
+      });
+
+      expect(globalErrors()).toEqual([
+        { showErrorModal: true, errorMessage: i18n.t("pdp.groupMaxReached", { max: 2, group: "Extras" }) },
+      ]);
+      expect(working[EXTRAS._id]).toHaveLength(2);
     });
   });
 
@@ -257,6 +332,205 @@ describe("useCustomization — the global error only where no completion warning
       expect(globalErrors()).toEqual([
         { showErrorModal: true, errorMessage: i18n.t("toast.selectAllCustomizations") },
       ]);
+    });
+  });
+
+  describe("UB2 — the group-max guard (tier-1, the PDP's multi-punch path)", () => {
+    /** The fixture's Dream box "Snacks" shape: 0 / 2, stepper rows (item cap 2). */
+    const SNACKS = {
+      _id: "snacks_combo",
+      name: "Snacks",
+      min: 0,
+      max: 2,
+      multiplePunchMin: 0,
+      multiplePunchMax: 4,
+      multiplePunchMaxItem: 2,
+      order: 3,
+      isActive: true,
+      constituentItems: [
+        { id: "nuggets", name: "Nuggets", price: 5, isActive: true },
+        { id: "donuts", name: "Donuts", price: 5, isActive: true, contradictoryItem: "no-donuts" },
+        { id: "wings", name: "Wings", price: 5, isActive: true },
+      ],
+    };
+    const [NUGGETS, DONUTS, WINGS] = SNACKS.constituentItems;
+    /** The same rows, a group cap above the item cap (4 units). */
+    const BIG_SNACKS = { ...SNACKS, _id: "big_combo", name: "Big snacks", max: 4 };
+    const BOX = { id: "box", name: "Box", price: 25, quantity: 1, modifiers: [SAUCE._id, SNACKS._id, BIG_SNACKS._id] };
+
+    const groupMax = (max: number, group: string) =>
+      i18n.t("pdp.groupMaxReached", { max, group });
+    const snacksIn = () => tier1SelectedCustomization(store.getState())[SNACKS._id];
+    const modifierSelected = () =>
+      net.capture.mock.calls.filter(([name]) => name === KioskEventName.ModifierSelected);
+
+    beforeEach(() => {
+      store.dispatch(setModifiersMap({ modifiersMap: { [SAUCE._id]: SAUCE, [SNACKS._id]: SNACKS, [BIG_SNACKS._id]: BIG_SNACKS } }));
+      openSession("customizableItem", BOX);
+      store.dispatch(
+        setTier1SelectedCustomization({ [SAUCE._id]: [], [SNACKS._id]: [], [BIG_SNACKS._id]: [] })
+      );
+      net.capture.mockReset();
+      dispatched.mockClear();
+    });
+
+    it("Snacks: Nuggets, '+' Nuggets, then Donuts → refused; the map is unchanged; exactly ONE global error with pdp.groupMaxReached", () => {
+      const { result } = mountHook();
+      act(() => {
+        result.current.addCustomizations(SNACKS, { ...NUGGETS, quantity: 1 }, null, {}, false);
+      });
+      act(() => {
+        result.current.increaseCustomization(SNACKS, NUGGETS, null, {});
+      });
+      expect(snacksIn()).toEqual([expect.objectContaining({ id: "nuggets", quantity: 2 })]);
+      expect(globalErrors()).toEqual([]);
+      expect(modifierSelected()).toHaveLength(1);
+      dispatched.mockClear();
+      net.capture.mockReset();
+
+      let returned: unknown;
+      act(() => {
+        returned = result.current.addCustomizations(SNACKS, { ...DONUTS, quantity: 1 }, null, {}, false);
+      });
+
+      // Nothing written but the error: no selection dispatch, no event, no contradictory mark.
+      expect((dispatched.mock.calls as Array<[UnknownAction]>).map(([action]) => action.type)).toEqual([
+        setShowErrorModalGlobal.type,
+      ]);
+      expect(globalErrors()).toEqual([{ showErrorModal: true, errorMessage: groupMax(2, "Snacks") }]);
+      expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 2 Snacks");
+      expect(modifierSelected()).toEqual([]);
+      expect(result.current.contradictoryItems).toEqual({});
+      expect(snacksIn()).toEqual([expect.objectContaining({ id: "nuggets", quantity: 2 })]);
+      expect(returned).toBe(tier1SelectedCustomization(store.getState()));
+    });
+
+    it("multi-punch ON: the refusal names the EFFECTIVE max — Snacks' multi-punch 4, not its single-punch 2", () => {
+      store.dispatch(setAllowMultiplePunch(true));
+      try {
+        store.dispatch(
+          setTier1SelectedCustomization({
+            [SAUCE._id]: [],
+            [SNACKS._id]: [
+              { ...NUGGETS, quantity: 2 },
+              { ...WINGS, quantity: 2 },
+            ],
+            [BIG_SNACKS._id]: [],
+          })
+        );
+        const { result } = mountHook();
+        dispatched.mockClear();
+
+        act(() => {
+          result.current.addCustomizations(SNACKS, { ...DONUTS, quantity: 1 }, null, {}, false);
+        });
+
+        expect(globalErrors()).toEqual([{ showErrorModal: true, errorMessage: groupMax(4, "Snacks") }]);
+        expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 4 Snacks");
+        expect(snacksIn().map((row: { id: string }) => row.id)).toEqual(["nuggets", "wings"]);
+      } finally {
+        store.dispatch(setAllowMultiplePunch(false));
+      }
+    });
+
+    it("'+' at the group max is refused (2 units in 2 rows, item cap not hit); '−' still works and raises nothing", () => {
+      store.dispatch(
+        setTier1SelectedCustomization({
+          [SAUCE._id]: [],
+          [SNACKS._id]: [
+            { ...NUGGETS, quantity: 1 },
+            { ...WINGS, quantity: 1 },
+          ],
+          [BIG_SNACKS._id]: [],
+        })
+      );
+      const { result } = mountHook();
+      dispatched.mockClear();
+
+      act(() => {
+        result.current.increaseCustomization(SNACKS, NUGGETS, null, {});
+      });
+      expect(globalErrors()).toEqual([{ showErrorModal: true, errorMessage: groupMax(2, "Snacks") }]);
+      expect(snacksIn().map((row: { id: string; quantity: number }) => [row.id, row.quantity])).toEqual([
+        ["nuggets", 1],
+        ["wings", 1],
+      ]);
+
+      dispatched.mockClear();
+      act(() => {
+        result.current.decreaseCustomization(SNACKS, NUGGETS);
+      });
+      expect(globalErrors()).toEqual([]);
+      expect(snacksIn().map((row: { id: string }) => row.id)).toEqual(["wings"]);
+    });
+
+    it("the per-ITEM cap keeps its own copy (toast.alreadyReachedMaximumLimit) when the group still has room", () => {
+      store.dispatch(
+        setTier1SelectedCustomization({
+          [SAUCE._id]: [],
+          [SNACKS._id]: [],
+          [BIG_SNACKS._id]: [{ ...NUGGETS, quantity: 2 }],
+        })
+      );
+      const { result } = mountHook();
+      dispatched.mockClear();
+
+      act(() => {
+        result.current.increaseCustomization(BIG_SNACKS, NUGGETS, null, {});
+      });
+      expect(globalErrors()).toEqual([
+        { showErrorModal: true, errorMessage: i18n.t("toast.alreadyReachedMaximumLimit") },
+      ]);
+    });
+
+    it("a second tap in a 1/1 group SWAPS the pick — no global error", () => {
+      const { result } = mountHook();
+      act(() => {
+        result.current.addCustomizations(SAUCE, SAUCE.constituentItems[0], null, {}, false);
+      });
+      act(() => {
+        result.current.addCustomizations(SAUCE, SAUCE.constituentItems[1], null, {}, false);
+      });
+
+      expect(globalErrors()).toEqual([]);
+      expect(tier1SelectedCustomization(store.getState())[SAUCE._id]).toEqual([
+        expect.objectContaining({ id: "hot", quantity: 1 }),
+      ]);
+    });
+
+    it("a tap on a pick at the max removes / decrements it (never refused)", () => {
+      store.dispatch(
+        setTier1SelectedCustomization({
+          [SAUCE._id]: [],
+          [SNACKS._id]: [{ ...NUGGETS, quantity: 2 }],
+          [BIG_SNACKS._id]: [],
+        })
+      );
+      const { result } = mountHook();
+      dispatched.mockClear();
+
+      act(() => {
+        result.current.addCustomizations(SNACKS, { ...NUGGETS, quantity: 1 }, null, {}, false);
+      });
+      expect(globalErrors()).toEqual([]);
+      expect(snacksIn()).toEqual([expect.objectContaining({ id: "nuggets", quantity: 1 })]);
+    });
+
+    it("the auto-select pass (handleMultiAutoSelect) is never refused", () => {
+      const { result } = mountHook();
+      const working: Record<string, unknown[]> = {
+        [SAUCE._id]: [],
+        [SNACKS._id]: [{ ...NUGGETS, quantity: 2 }],
+        [BIG_SNACKS._id]: [],
+      };
+      dispatched.mockClear();
+
+      act(() => {
+        result.current.addCustomizations(SNACKS, { ...DONUTS, quantity: 1 }, null, {}, false, true, working);
+      });
+
+      expect(globalErrors()).toEqual([]);
+      expect(working[SNACKS._id].map((row) => (row as { id: string }).id)).toEqual(["nuggets", "donuts"]);
     });
   });
 });

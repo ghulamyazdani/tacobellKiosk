@@ -66,7 +66,7 @@ describe("PDP copy and controls (P9f)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: { [EXTRAS._id]: EXTRAS } }));
     store.dispatch(openMakeItAMealSession());
     store.dispatch(
@@ -204,7 +204,7 @@ describe("PDP names and the Show more style (item 42)", () => {
   /** A fresh tier-1 session on `entity`, its groups in the modifier map. */
   const openSession = (entity: Record<string, unknown>, groups: Array<{ _id: string }>) => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: Object.fromEntries(groups.map((group) => [group._id, group])) }));
     store.dispatch(openMakeItAMealSession());
     store.dispatch(

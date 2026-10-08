@@ -60,6 +60,24 @@ const REUSED_KEYS = [
   "pack.cal",
 ];
 
+/**
+ * Lane audit-fixes (2026-10-08, foundation): the lazy-only copy it added —
+ * U3 the cooking-instructions sheet, U2 the Activity Center's fullscreen
+ * line, UB2 the size warning, UB5 the country picker. Parity, placeholders
+ * and no-boot-shadowing are src/__tests__/localeParity's.
+ */
+const AUDIT_FIXES_LAZY_KEYS = [
+  "bag.instructionsSheet.placeholder",
+  "bag.instructionsSheet.counter",
+  "bag.instructionsSheet.save",
+  "activity.fullscreenOn",
+  "activity.fullscreenOff",
+  "pdp.incomplete.size",
+  "country.title",
+  "country.search",
+  "country.noResults",
+];
+
 const EN_LAZY = new Map(flatten(enLazy));
 const AR_LAZY = new Map(flatten(arLazy));
 const EN_BOOT = new Map(flatten(en));
@@ -68,9 +86,10 @@ const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
 
 describe("lane bag-pdp copy (I8)", () => {
-  it("lazy.json holds exactly the 14 lane keys, in EN and in AR", () => {
-    expect([...EN_LAZY.keys()].sort()).toEqual([...LANE_KEYS].sort());
-    expect([...AR_LAZY.keys()].sort()).toEqual([...LANE_KEYS].sort());
+  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9), in EN and in AR", () => {
+    const expected = [...LANE_KEYS, ...AUDIT_FIXES_LAZY_KEYS].sort();
+    expect([...EN_LAZY.keys()].sort()).toEqual(expected);
+    expect([...AR_LAZY.keys()].sort()).toEqual(expected);
   });
 
   it("every AR value is a non-blank Arabic draft, never the English copy, with the same placeholders", () => {

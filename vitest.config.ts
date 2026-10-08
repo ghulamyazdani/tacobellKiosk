@@ -6,12 +6,17 @@ import { defineConfig } from "vitest/config";
 // posistKiosk is no longer needed; App.test.tsx renders JSX and proves it.)
 export default defineConfig({
   resolve: {
+    // Mirrors vite.config.ts: unit tests (incl. the SDK bill-engine goldens)
+    // run on the same single copy of each library the build ships.
     dedupe: [
       "react",
       "react-dom",
       "react-redux",
       "@reduxjs/toolkit",
       "redux-persist",
+      "dayjs",
+      "lodash",
+      "redux-persist-transform-filter",
     ],
   },
   test: {

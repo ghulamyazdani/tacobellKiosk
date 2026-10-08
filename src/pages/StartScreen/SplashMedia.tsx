@@ -9,7 +9,7 @@ import {
 import { safeVideoPlay } from "../../utils/safeVideoPlay";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import welcomePhoto from "../../assets/splash/fullbleed-halfmoon.jpg";
 import star1 from "../../assets/splash/star-1.svg";
 import star2 from "../../assets/splash/star-2.svg";
@@ -267,7 +267,7 @@ export default function SplashMedia() {
         aria-hidden
         draggable={false}
         src={plasticOverlay}
-        className="absolute inset-0 h-full w-full object-cover opacity-40 mix-blend-soft-light"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
       />
       <Bell className="top-[128px]" />
       <div key={`prev${prev}`} className={`${CARD} left-[-592px]`}>

@@ -4,10 +4,13 @@
  */
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectMenu, setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { buildVariantCommitPayload } from "@cx-sdk/ordering/customization/commitPayload";
+import { buildVariantTierPayload } from "@cx-sdk/ordering/cart/addIntent";
 import {
   setCurrency,
   setDeploymentInfo,
@@ -19,10 +22,11 @@ import {
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { store } from "../../../redux/app/store";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
+import useCartHook from "../../../hooks/menuHooks/useCartHook";
 import Menu from "../index";
 import "../../../i18n";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn(), capture: vi.fn() }));
 
 // Same seams as Menu.test: the mount's fetchMenu stays pending, navigation is
 // a spy.
@@ -44,6 +48,11 @@ vi.mock(
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
   useNavigate: () => mocks.navigate,
+}));
+// B3: analytics asserted per event.
+vi.mock("../../../utils/analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../utils/analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mocks.capture(...args),
 }));
 // S1: the REAL executor, its calls recorded.
 vi.mock("../../../hooks/menuHooks/useAddEntityToCart", async (importOriginal) => {
@@ -115,6 +124,9 @@ const MENU = {
   ],
 };
 
+/** The menu's own copy of TACO — the entity the card hands the fast lane. */
+const tacoInStore = () => selectMenu(store.getState()).categories[0].subCategories[0].entities[0];
+
 const wrapper = ({ children }: { children: ReactNode }) => (
   <Provider store={store}>
     <MemoryRouter initialEntries={["/menu"]}>{children}</MemoryRouter>
@@ -125,13 +137,14 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
     store.dispatch(setMenuData({ menu: MENU }));
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     // Keep the pence: no whole-unit round-off on the net amount.
     store.dispatch(
       setDeploymentInfo([{ name: "disable_roundoff", selected: true }]),
     );
     mocks.navigate.mockReset();
     mocks.addEntity.mockReset();
+    mocks.capture.mockReset();
   });
 
   it("the committed row carries the size's variantPrice, so the bill is the size price plus its tax (was NaN)", () => {
@@ -194,5 +207,117 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     expect(tier1CustomizationSelectedEntity(store.getState())).toMatchObject({ id: "e-box" });
     expect((store.getState() as any).cart.cartItems).toEqual([]);
     expect(screen.queryByTestId("select-size-modal")).not.toBeInTheDocument();
+    // B3: the PDP opens from the menu; nothing landed yet.
+    expect(mocks.capture).toHaveBeenCalledWith("customization_opened", {
+      item_id: "e-box",
+      item_name: "Cravings Box",
+      source: "menu",
+    });
+    expect(mocks.capture).not.toHaveBeenCalledWith("item_added_to_cart", expect.anything());
+  });
+
+  /*
+    B5 (CX-07): the size-only branch commits through the PDP's own builder —
+    buildVariantCommitPayload over buildVariantTierPayload(parent)
+    .selectedEntity, no modifiers — so the row carries baseItem (a bag Edit
+    reads it), baseItemPrice, variantPrice and empty customizations. MIAM
+    flags off (a plain paid row). One money shape: the bill and the order
+    item equal a PDP-built row's.
+  */
+  it("B5: the fast-lane row IS the PDP's commit payload (baseItem, prices, {} customizations, MIAM off)", () => {
+    render(<Menu />, { wrapper });
+
+    fireEvent.click(screen.getByTestId("quick-add-e-taco"));
+    fireEvent.click(screen.getByTestId("size-v-large"));
+    fireEvent.click(screen.getByTestId("size-continue"));
+
+    const row = (store.getState() as any).cart.cartItems[0];
+    expect(row).toMatchObject(
+      buildVariantCommitPayload({
+        selectedEntity: buildVariantTierPayload(tacoInStore()).selectedEntity,
+        selectedVariant: TACO.variants[1],
+        mergedCustomizations: {},
+        quantity: 1,
+        isMakeItAMealItem: false,
+        makeItAMealSelectedItem: {},
+      })
+    );
+    expect(row.baseItem).toMatchObject({
+      id: "e-taco",
+      selectedVariantId: "v-large",
+      selectedVariantName: "Large",
+    });
+    expect(row).toMatchObject({
+      type: "VARIANT",
+      baseItemPrice: 0,
+      variantPrice: 6,
+      customizations: {},
+      total_price: 6,
+      quantity: 1,
+      hasSecondTier: false,
+      isMakeItAMealItem: false,
+      makeItAMealSelectedItem: {},
+    });
+    expect(row.selectedVariant).toMatchObject({ id: "v-large", price: 6 });
+  });
+
+  it("B5 parity: the bill and the converted order item equal those of a PDP-built row of the same size", () => {
+    render(<Menu />, { wrapper });
+    fireEvent.click(screen.getByTestId("quick-add-e-taco"));
+    fireEvent.click(screen.getByTestId("size-v-large"));
+    fireEvent.click(screen.getByTestId("size-continue"));
+    const fastLane = structuredClone((store.getState() as any).cart);
+
+    // The PDP's commit for the same pick: the card tap's session latches the
+    // MIAM flags on (useCustomization) — the only difference, and neither the
+    // bill nor the order push reads them.
+    store.dispatch(setCartItems([]));
+    const cartHook = renderHook(() => useCartHook(), { wrapper });
+    act(() => {
+      cartHook.result.current.addItemToCart(
+        buildVariantCommitPayload({
+          selectedEntity: buildVariantTierPayload(tacoInStore()).selectedEntity,
+          selectedVariant: TACO.variants[1],
+          mergedCustomizations: {},
+          quantity: 1,
+          isMakeItAMealItem: true,
+          makeItAMealSelectedItem: TACO,
+        }),
+        "VARIANT"
+      );
+    });
+    const pdp = structuredClone((store.getState() as any).cart);
+    expect(pdp.cartItems).toHaveLength(1);
+
+    const { result } = renderHook(() => useOrderHook(), { wrapper });
+    const fastBill = result.current.getCalculatedBill(fastLane);
+    const pdpBill = result.current.getCalculatedBill(pdp);
+    expect(Number(fastBill.getSubtotal())).toBeCloseTo(6, 2);
+    expect(Number(fastBill.getNetAmount())).toBeCloseTo(6.9, 2);
+    expect(Number(fastBill.getSubtotal())).toBe(Number(pdpBill.getSubtotal()));
+    expect(Number(fastBill.getNetAmount())).toBe(Number(pdpBill.getNetAmount()));
+
+    const fastItems = result.current.convertCart(fastLane)._items;
+    expect(fastItems).toEqual(result.current.convertCart(pdp)._items);
+    expect(fastItems[0]).toMatchObject({ _id: "v-large", name: "Large", quantity: 1, rate: 6 });
+    expect(fastItems[0].taxes).toEqual([expect.objectContaining({ _id: "vat-15", value: 15 })]);
+  });
+
+  it("B3: a size-only add that landed reports ItemAddedToCart as a VARIANT at the size's price", () => {
+    render(<Menu />, { wrapper });
+
+    fireEvent.click(screen.getByTestId("quick-add-e-taco"));
+    fireEvent.click(screen.getByTestId("size-v-large"));
+    fireEvent.click(screen.getByTestId("size-continue"));
+
+    expect(mocks.capture).toHaveBeenCalledWith("item_added_to_cart", {
+      item_id: "e-taco",
+      item_name: "Crunchy Taco",
+      item_price: 6,
+      quantity: 1,
+      item_type: "VARIANT",
+    });
+    // The "+" is not a card tap.
+    expect(mocks.capture).not.toHaveBeenCalledWith("item_clicked", expect.anything());
   });
 });

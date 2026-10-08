@@ -52,7 +52,7 @@ export interface KioskBackendOptions {
   /** get_out_of_stock body. Default []. */
   outOfStock?: unknown[];
   /** get_data's deployment. Default GB/£ (fonts + visual-payment use IN/₹). charges are always []. */
-  deployment?: { countryCode: string; currencySettings: { symbol: string } };
+  deployment?: { countryCode: string; currencySettings: { currency: string; text: string } };
 }
 
 let origins: string[] | undefined;
@@ -109,7 +109,7 @@ export async function mockKioskBackend(page: Page, opts: KioskBackendOptions = {
   await json("cx/get_cx_valid_offers", opts.offers ?? []);
   await json("cx/kiosk/get_data", {
     charges: [],
-    deployment: opts.deployment ?? { countryCode: "GB", currencySettings: { symbol: "£" } },
+    deployment: opts.deployment ?? { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
   });
   await json("cx/kiosk/login", LOGIN_OK);
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { KioskEventName } from "@cx-sdk/core";
 import {
   holdReloadsUntil,
   installChunkErrorRecovery,
@@ -6,6 +7,21 @@ import {
   reloadTo,
   setChunkFailureHealer,
 } from "../chunkRecovery";
+
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+
+vi.mock("../analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../analytics")>()),
+  captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
+}));
+
+/** The ErrorOccurred reports chunk recovery sent (audit-fixes C5: no console). */
+const chunkReports = () =>
+  mockCapture.mock.calls.filter(
+    ([event, props]) =>
+      event === KioskEventName.ErrorOccurred &&
+      (props as { error_source?: string })?.error_source === "chunk_recovery"
+  );
 
 /*
   P9b R9 — where (and how soon) the app ErrorBoundary reloads to. Time-boxed
@@ -72,7 +88,7 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
     replace.mockReset();
     // jsdom's location.reload is unforgeable; swap the whole location.
     vi.stubGlobal("location", { reload, replace });
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    mockCapture.mockReset();
   });
 
   afterEach(() => {
@@ -112,7 +128,7 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
 
     expect(event.defaultPrevented).toBe(true);
     expect(reload).not.toHaveBeenCalled();
-    expect(console.error).not.toHaveBeenCalled();
+    expect(chunkReports()).toEqual([]);
   });
 
   it.each([
@@ -124,11 +140,21 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
     ],
     ["a stylesheet", new Error("Unable to preload CSS for /assets/index-Dx-ze_Wk.css")],
     ["a payload without a message", undefined],
-  ])("%s failing on a healthy page still reloads once to pick up the current build", (_label, payload) => {
+  ])("%s failing on a healthy page still reloads once to pick up the current build — reported first (stage reload)", (_label, payload) => {
     const event = preloadError(payload);
 
     expect(event.defaultPrevented).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(chunkReports()).toEqual([
+      [
+        KioskEventName.ErrorOccurred,
+        {
+          error_source: "chunk_recovery",
+          stage: "reload",
+          error_message: payload instanceof Error ? payload.message : "undefined",
+        },
+      ],
+    ]);
   });
 
   /*
@@ -194,5 +220,15 @@ describe("installChunkErrorRecovery — the FCM, PostHog and Paytm-screen chunks
     preloadError(bagLazyParts);
     expect(reload).not.toHaveBeenCalled();
     expect(heal).toHaveBeenCalledTimes(2);
+    // Each held-back reload is reported as such (audit-fixes C5).
+    const noRetry = {
+      error_source: "chunk_recovery",
+      stage: "no_retry",
+      error_message: bagLazyParts.message,
+    };
+    expect(chunkReports()).toEqual([
+      [KioskEventName.ErrorOccurred, noRetry],
+      [KioskEventName.ErrorOccurred, noRetry],
+    ]);
   });
 });

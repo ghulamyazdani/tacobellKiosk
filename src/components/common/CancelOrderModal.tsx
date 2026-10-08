@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 
 interface CancelOrderModalProps {
   open: boolean;
@@ -14,6 +15,9 @@ interface CancelOrderModalProps {
  * decision 4: no teardown without confirm).
  * Centered modal, so the shared `tb-modal-enter` keyframe (which ends at
  * translate(-50%,-50%)) is the correct entrance. CSS entrance only.
+ * Analytics (audit-fixes B3, fork StartOverConfirmationModal): YES sends
+ * StartOverAffirmFromFooter + KioskReset, NO and the backdrop
+ * StartOverCancelFromFooter + AccountSignoutCancel — before the callbacks.
  */
 export default function CancelOrderModal({
   open,
@@ -23,6 +27,21 @@ export default function CancelOrderModal({
   const { t } = useTranslation();
 
   if (!open) return null;
+
+  const confirm = () => {
+    const route_path = window.location.pathname;
+    captureKioskEvent(KioskEventName.StartOverAffirmFromFooter, { route_path });
+    captureKioskEvent(KioskEventName.KioskReset, {
+      reason: "user_start_over",
+      route_path,
+    });
+    onConfirm();
+  };
+  const keep = () => {
+    captureKioskEvent(KioskEventName.StartOverCancelFromFooter, {});
+    captureKioskEvent(KioskEventName.AccountSignoutCancel, {});
+    onCancel();
+  };
 
   return (
     <div
@@ -36,7 +55,7 @@ export default function CancelOrderModal({
       <button
         type="button"
         aria-label={t("cancelOrder.cancel")}
-        onClick={onCancel}
+        onClick={keep}
         className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
       />
       <div className="tb-modal-enter absolute left-1/2 top-1/2 w-[676px] rounded-[12px] bg-tb-surface px-[44px] pb-[44px] pt-[56px] text-center">
@@ -53,7 +72,7 @@ export default function CancelOrderModal({
           <button
             type="button"
             data-testid="cancel-order-cancel"
-            onClick={onCancel}
+            onClick={keep}
             className="min-h-[56px] min-w-[280px] rounded-[6px] border-2 border-tb-purple bg-tb-surface px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-purple"
           >
             {t("cancelOrder.cancel")}
@@ -61,7 +80,7 @@ export default function CancelOrderModal({
           <button
             type="button"
             data-testid="cancel-order-confirm"
-            onClick={onConfirm}
+            onClick={confirm}
             className="min-h-[56px] min-w-[280px] rounded-[6px] bg-tb-red px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-surface"
           >
             {t("cancelOrder.confirm")}

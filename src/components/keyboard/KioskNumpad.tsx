@@ -14,6 +14,13 @@ interface KioskNumpadProps {
   maxLength?: number;
   /** GO key — omitted when the screen provides its own primary CTA. */
   onSubmit?: () => void;
+  /**
+   * Phone keypads (UB5, fork NumberKeyboard parity): a FIRST "0" is ignored
+   * (a trunk prefix such as UAE's "05…" would fill the cap and pass the
+   * length check with a wrong number); later zeros are kept. Off by default
+   * — the tent number and the edit-how-many count take any digit.
+   */
+  noLeadingZero?: boolean;
 }
 
 /**
@@ -30,15 +37,17 @@ export default function KioskNumpad({
   onChange,
   maxLength = 16,
   onSubmit,
+  noLeadingZero = false,
 }: KioskNumpadProps) {
   const { t } = useTranslation();
 
   const press = useCallback(
     (key: string) => {
       if (value.length >= maxLength) return;
+      if (noLeadingZero && key === "0" && value.length === 0) return;
       onChange(value + key);
     },
-    [value, onChange, maxLength]
+    [value, onChange, maxLength, noLeadingZero]
   );
   const backspace = useCallback(
     () => onChange(value.slice(0, -1)),

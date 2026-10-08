@@ -37,8 +37,6 @@ const useMenuUtils = () => {
       str += " عناصر";
     }
 
-    // console.log("Arabic string", str);
-
     return str;
   }
 

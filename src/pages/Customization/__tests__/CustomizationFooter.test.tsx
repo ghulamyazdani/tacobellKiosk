@@ -65,7 +65,7 @@ const TACO_ROW = {
 };
 
 const seedPdp = () => {
-  store.dispatch(setCurrency({ symbol: "£" }));
+  store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: { pdp_sauce: SAUCE_GROUP } }));
   store.dispatch(setCartItems([{ ...TACO_ROW }]));
   store.dispatch(openMakeItAMealSession());

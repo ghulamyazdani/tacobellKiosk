@@ -17,6 +17,7 @@ import {
   setOffersFetchFailed,
 } from "@cx-sdk/ordering/state/offer.slice";
 import { planOrderTypeSwitchCommit } from "@cx-sdk/ordering/cart/orderTypeSwitch";
+import { composeBillCharges } from "@cx-sdk/catalog/menu/billCharges";
 import type { SwitchablePipeline } from "@cx-sdk/ordering/cart/orderTypeTarget";
 import useAppSettings from "../utils/useAppSettings";
 import { useIdleHold } from "../utils/useIdleTimeout";
@@ -184,10 +185,7 @@ export default function useOrderTypeSwitch(opts: {
       // "+" and edit paths all refuse one. Nothing is written.
       if (plan.dpMaxExceeded) return fail("dpMax");
       const menuCharges = stagedField(stagedMenu, setMenuCharges.match, "menuCharges");
-      const allCharges: unknown[] = [
-        ...charges.deploymentCharges,
-        ...(Array.isArray(menuCharges) ? menuCharges : []),
-      ];
+      const allCharges = composeBillCharges(charges.deploymentCharges, menuCharges);
 
       // COMMIT — one synchronous burst, nothing awaited from here on.
       stage = "commit";

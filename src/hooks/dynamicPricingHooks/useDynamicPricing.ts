@@ -21,6 +21,18 @@ import {
   filterValidDpSessions,
   pickActiveDpSession,
 } from "@cx-sdk/catalog/dynamicPricing/dynamicPricingEngine";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+
+/**
+ * A failed fetch still resolves undefined (callers carry on without dynamic
+ * prices), but it changes prices, so it is reported (audit-fixes C5).
+ */
+const reportDpFailure = (stage: "sessions" | "items", error: unknown) =>
+  captureKioskEvent(KioskEventName.ErrorOccurred, {
+    error_source: "dynamic_pricing",
+    stage,
+    error_message: error instanceof Error ? error.message : String(error),
+  });
 
 function useDynamicPricing() {
   const dispatch = useDispatch();
@@ -51,7 +63,7 @@ function useDynamicPricing() {
 
       return validSessions;
     } catch (error) {
-      console.error("Error fetching dynamic pricing sessions:", error);
+      reportDpFailure("sessions", error);
     }
   };
   const fetchDpItems = async (
@@ -78,7 +90,7 @@ function useDynamicPricing() {
 
       return convertDpItemsMap(response?.data, apply);
     } catch (error) {
-      console.error("Error fetching dynamic pricing items:", error);
+      reportDpFailure("items", error);
     }
   };
   const convertDpItemsMap = (

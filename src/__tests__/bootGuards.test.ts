@@ -75,14 +75,48 @@ describe("boot-bundle guards (P9f)", () => {
     expect(statements[1]).toBe("setChunkFailureHealer(() => store.dispatch(initiateWholeAppUpdate()));");
   });
 
-  it("chunkRecovery.ts imports nothing (no import statement, import() or require) — it runs before the store exists", () => {
+  /*
+    audit-fixes B3: pageRefreshed fires ONCE per page load, from main.tsx's
+    module body — right after startAnalytics (so it is queued behind the
+    load, in order) and before the first render; never from a component
+    (a remount would report another "refresh").
+  */
+  it("main.tsx: pageRefreshed is the statement right after startAnalytics, before createRoot — and nothing else sends it", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.tsx"), "utf8"));
+    const statements = main
+      .split("\n")
+      .filter((line) => /^\S/.test(line) && !/^(?:import\b|\}|\)|from\b)/.test(line));
+    const start = statements.findIndex((line) => /^(?:void\s+)?startAnalytics\(\)/.test(line));
+
+    expect(start).toBeGreaterThan(-1);
+    expect(statements[start + 1]).toBe("captureKioskEvent(KioskEventName.pageRefreshed, {");
+    expect(main.indexOf("KioskEventName.pageRefreshed")).toBeLessThan(main.search(/^createRoot\(/m));
+    const otherSenders = sources
+      .filter(({ file }) => file !== "main.tsx" && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
+      .filter(({ source }) => /KioskEventName\.pageRefreshed/.test(stripComments(source)))
+      .map(({ file }) => file);
+    expect(otherSenders).toEqual([]);
+  });
+
+  // audit-fixes C5: its failures go to ErrorOccurred (no console), so its ONE
+  // import is the analytics adapter — module state only, nothing lazy at
+  // evaluation (startAnalytics' import() runs when main.tsx calls it).
+  it("chunkRecovery.ts imports only the analytics adapter (no other import, no import() or require) — it runs before the store exists", () => {
     const recovery = stripComments(readFileSync(join(SRC, "utils/chunkRecovery.ts"), "utf8"));
 
-    expect(recovery).not.toMatch(/^\s*import\b/m);
+    expect(recovery.match(/^[ \t]*import\b.*$/gm)).toEqual([
+      'import { captureKioskEvent, KioskEventName } from "./analytics";',
+    ]);
     expect(recovery).not.toMatch(/\bimport\s*\(/);
     expect(recovery).not.toMatch(/\brequire\s*\(/);
     expect(recovery).not.toMatch(/^\s*export\b[^;]*\bfrom\b/m);
     expect(recovery).toMatch(/export const setChunkFailureHealer\b/);
+    // The adapter's barrel only re-exports; its import() lives in a function.
+    const barrel = stripComments(readFileSync(join(SRC, "utils/analytics/index.ts"), "utf8"));
+    expect(barrel.replace(/^\s*export\b[^;]*;\s*/gm, "").trim()).toBe("");
+    const adapter = stripComments(readFileSync(join(SRC, "utils/analytics/trackEvent.ts"), "utf8"));
+    expect(adapter.match(/\bimport\s*\(/g)).toHaveLength(1);
+    expect(adapter).toMatch(/export async function startAnalytics\(\)[\s\S]*\bimport\s*\(\s*"\.\/posthogRuntime"\s*\)/);
   });
 });
 

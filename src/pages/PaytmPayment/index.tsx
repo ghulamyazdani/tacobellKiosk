@@ -1,24 +1,17 @@
-import { useCallback, useMemo, useState } from "react";
-import { useSelector } from "react-redux";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { paytmSessionEffects } from "@cx-sdk/payments/settlement/paytmKioskSettlement";
 import usePaytmSettlement from "../../hooks/paymentsHooks/usePaytmSettlement";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import ErrorModal from "../../components/common/ErrorModal";
 import PleaseWait from "../../components/payment/PleaseWait";
 import PaytmQr from "../../components/payment/PaytmQr";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBellPurple from "../../assets/brand/tb-bell-purple.svg";
 import creditCard from "../../assets/payment/credit-card.svg";
 import downHereArrow from "../../assets/icons/down-here-arrow.svg";
-
-/** `currencySettings` may also be the number 1 — see setInitialAppSetting. */
-interface CurrencySettings {
-  symbol?: string;
-  currency_symbol?: string;
-}
 
 /**
  * /paymentPolling — the Paytm payment screen (P8b-06/07/08). The settlement
@@ -55,10 +48,7 @@ export default function PaytmPayment() {
   const { t } = useTranslation();
   const ada = useAdaActive();
   const { formatTime } = useAppSettings();
-  const currencySettings = useSelector(selectCurrency) as
-    | CurrencySettings
-    | number
-    | undefined;
+  const currency = useCurrencySymbol();
   const {
     session,
     kind,
@@ -74,11 +64,6 @@ export default function PaytmPayment() {
     backToBag,
   } = usePaytmSettlement();
   const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const currency = useMemo(() => {
-    if (!currencySettings || typeof currencySettings === "number") return "";
-    return currencySettings.symbol ?? currencySettings.currency_symbol ?? "";
-  }, [currencySettings]);
 
   const openConfirm = useCallback(() => setConfirmOpen(true), []);
   const keepPaying = useCallback(() => setConfirmOpen(false), []);
@@ -104,15 +89,15 @@ export default function PaytmPayment() {
       data-testid="paytm-screen"
       className="relative h-full w-[1080px] overflow-clip bg-tb-pink"
     >
-      {/* The frame's sheen: the landscape source turned −90° about the page
-          centre, 50 % soft-light — the same recipe as PleaseWait, which
-          overlays this screen. */}
+      {/* The frame's sheen: Figma's plastic_2 as the stage-sized alpha
+          bitmap (crop and −90° baked in, UB3) at 50 %, normal blend — the
+          same recipe as PleaseWait, which overlays this screen. */}
       <img
         aria-hidden
         alt=""
         draggable={false}
         src={plasticOverlay}
-        className="absolute left-1/2 top-1/2 h-[1080px] w-[1920px] max-w-none -translate-x-1/2 -translate-y-1/2 -rotate-90 object-cover opacity-50 mix-blend-soft-light"
+        className="absolute inset-0 h-full w-full object-cover opacity-50"
       />
       {!ada && (
         <img

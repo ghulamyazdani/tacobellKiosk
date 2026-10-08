@@ -30,7 +30,6 @@ import useOrderIndexDb from "../indexedDb/useOrderIndexDb";
 import { pushOrderInOngoingOrders } from "@cx-sdk/ordering/state/order.slice";
 import { useDispatch } from "react-redux";
 import { getImageUrlFromAggregator } from "@cx-sdk/catalog/menu/menuUtils";
-import { useGetOutOfStockMutation } from "@cx-sdk/catalog/services/outOfStockApi";
 import { removeOrderFromOngoingOrders } from "@cx-sdk/ordering/state/order.slice";
 import { selectLicenseDetails } from "@cx-sdk/core/auth/authentication.slice";
 
@@ -63,7 +62,6 @@ import { appliedCharges } from "@cx-sdk/ordering/state/order.slice";
 import { selectOngoingOrders } from "@cx-sdk/ordering/state/order.slice";
 import useAppSettings from "../utils/useAppSettings";
 
-import _ from "lodash";
 import { stopTimer } from "@cx-sdk/core/session/timer.slice";
 import { useNavigate } from "react-router-dom";
 import {
@@ -115,7 +113,6 @@ function useOrderHook() {
     useGetOrderByIdForQRMutation();
 
   const { addOrderToIndexedDb, deleteOrderIndexedDb } = useOrderIndexDb();
-  const [getOutOfStockApi] = useGetOutOfStockMutation();
 
   const selectGediaPaymentDoneRdx = useSelector(selectGeideaPaymentDone);
   const selectNeoLeapPaymentDoneRdx = useSelector(selectNeoLeapPaymentDone);
@@ -297,10 +294,6 @@ function useOrderHook() {
     deleteOrderIndexedDb(orderId);
   };
 
-  const getOosItems = async (_cartItems: any) => {
-    await getOutOfStockApi({}).unwrap();
-  };
-
   const isInclusiveTaxOn = () => {
     const checkTaxIncl = hasSetting("inclusive_tax", deploymentInfoRdx);
     return checkTaxIncl;
@@ -323,7 +316,6 @@ function useOrderHook() {
     generateQROrderId,
     getOrderDetailsByOrderId,
     isGetOrderByIdApiLoading,
-    getOosItems,
     isInclusiveTaxOn,
     getPushOrderData,
     pushOrderAfterPayment,

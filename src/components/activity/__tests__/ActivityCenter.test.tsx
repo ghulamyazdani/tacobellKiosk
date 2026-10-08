@@ -47,5 +47,7 @@ describe("ActivityCenter — lazy Activity Center", () => {
 
     view.rerender(ui(false, onClose));
     expect(view.container).toBeEmptyDOMElement();
-  });
+    // A COLD import of the whole lazy chunk: ~3.5 s alone, past vitest's
+    // default 5 s under a full-suite load (the chunk grew in audit-fixes).
+  }, 20_000);
 });

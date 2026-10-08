@@ -41,6 +41,7 @@ const readJson = (relative: string) =>
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
   );
 const en = readJson("../../src/i18n/locales/en/translation.json");
+const ar = readJson("../../src/i18n/locales/ar/translation.json");
 const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
 const arLazy = readJson("../../src/i18n/locales/ar/lazy.json");
 
@@ -147,7 +148,7 @@ async function mockKioskBackend(
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -236,6 +237,40 @@ const underTier2Page = (target: Locator) =>
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return Boolean(top?.closest('[data-testid="tier2-sheet"]'));
   });
+
+/** One group's picks as [id, units] — the PDP's tier-1 map, else the first bag row's (DEV-only window.__kioskStore). */
+function groupPicks(page: Page, groupId: string, from: "pdp" | "bag" = "pdp") {
+  return page.evaluate(
+    ({ groupId, from }) => {
+      const state = (
+        window as unknown as {
+          __kioskStore: {
+            getState: () => {
+              cart?: { cartItems?: { customizations?: Record<string, unknown[]> }[] };
+              makeItAMeal?: {
+                makeItAMealModal?: {
+                  tier1CustomizationModal?: {
+                    customizations?: { selectedCustomizations?: Record<string, unknown[]> };
+                  };
+                };
+              };
+            };
+          };
+        }
+      ).__kioskStore.getState();
+      const map =
+        from === "bag"
+          ? state.cart?.cartItems?.[0]?.customizations
+          : state.makeItAMeal?.makeItAMealModal?.tier1CustomizationModal?.customizations
+              ?.selectedCustomizations;
+      return ((map ?? {})[groupId] ?? []).map((row) => {
+        const { id, quantity } = row as { id?: unknown; quantity?: unknown };
+        return [id, quantity];
+      });
+    },
+    { groupId, from }
+  );
+}
 
 /** The PDP's tier-1 selection keys + the removal flag (DEV-only window.__kioskStore). */
 function tier1Selections(page: Page) {
@@ -332,6 +367,8 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     const friesGroup = tier2.getByTestId(`tier2-group-${FRIES_ADDON_GROUP}`);
     await expect(friesGroup).toBeVisible();
     await expect(friesGroup).toContainText("Choose From Without for Large Fries");
+    // UB1: its price line carries the deployment's symbol.
+    await expect(tier2.getByTestId("tier2-price-line")).toHaveText(/^£\d+\.\d{2}/);
     await tier2.getByTestId(`tier2-option-${WITHOUT_SALT}`).click();
     await page.getByTestId("tier2-sheet-save").click();
     await expect(tier2).not.toBeVisible();
@@ -866,9 +903,12 @@ test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE p
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
 
     await donutsCta.click();
-    await expect(
-      page.getByRole("alertdialog", { name: en.toast.alreadyReachedMaximumLimit })
-    ).toBeVisible();
+    // UB2: every GROUP-max refusal says which group and how many (the
+    // per-ITEM cap keeps toast.alreadyReachedMaximumLimit).
+    const groupMax = (en.pdp.groupMaxReached as string)
+      .replace("{{max}}", "1")
+      .replace("{{group}}", "Snacks");
+    await expect(page.getByRole("alertdialog", { name: groupMax })).toBeVisible();
     await expect(page.getByTestId("global-error")).toBeVisible();
     await expect(page.getByRole("alertdialog")).toHaveCount(1);
     await page.getByTestId("global-error-ok").click();
@@ -877,6 +917,131 @@ test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE p
     await expect(donutsCta).toHaveText(en.pack.choose);
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£30.00");
     await expect(page.getByTestId("customization-screen")).toBeVisible();
+  });
+
+  test("STEPPER GROUP MAX (UB2): '+' twice on Nuggets fills Snacks (2 of 2); '+' on Donuts is refused out loud — the group-max global error, Donuts stays out, the price holds; GOT IT, then ADD TO BAG lands Nuggets ×2 only", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await openDreamBoxPack(page);
+
+    // Snacks: min 0 / max 2, multiplePunchMaxItem 2 → stepper rows. Before
+    // UB2 the engines counted ROWS: this group reached "3 of 2".
+    const snacks = page.getByTestId(`pdp-group-${G_SNACKS}`);
+    const count = (picked: number) =>
+      en.pdp.groupCount.replace("{{count}}", String(picked)).replace("{{max}}", "2");
+    const plus = (itemId: string) =>
+      page.getByTestId(`pdp-option-${itemId}`).getByRole("button", { name: /^Increase quantity/ });
+
+    await plus(CHILI_NUGGETS).click();
+    await expect(snacks).toContainText(count(1));
+    await plus(CHILI_NUGGETS).click();
+    await expect(snacks).toContainText(count(2));
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£35.00");
+
+    await plus(SMOKY_DONUTS).click();
+    const groupMax = (en.pdp.groupMaxReached as string)
+      .replace("{{max}}", "2")
+      .replace("{{group}}", "Snacks");
+    expect(groupMax).toBe("You can choose up to 2 Snacks");
+    await expect(page.getByRole("alertdialog", { name: groupMax })).toBeVisible();
+    await expect(page.getByTestId("global-error")).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toHaveCount(1);
+    expect(await groupPicks(page, G_SNACKS)).toEqual([[CHILI_NUGGETS, 2]]);
+    await expect(snacks).toContainText(count(2));
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£35.00");
+
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(snacks).toContainText(count(2));
+
+    // The "+" on a pick obeys the same max: one Nugget out, one Donut in
+    // (2 of 2 over two rows), and "+" on the Nuggets is refused too — the
+    // per-item cap (2) alone would have let it reach 3 of 2.
+    const minus = (itemId: string) =>
+      page.getByTestId(`pdp-option-${itemId}`).getByRole("button", { name: /^Decrease quantity/ });
+    await minus(CHILI_NUGGETS).click();
+    await expect(snacks).toContainText(count(1));
+    await plus(SMOKY_DONUTS).click();
+    await expect(snacks).toContainText(count(2));
+    await plus(CHILI_NUGGETS).click();
+    await expect(page.getByRole("alertdialog", { name: groupMax })).toBeVisible();
+    expect(await groupPicks(page, G_SNACKS)).toEqual([
+      [CHILI_NUGGETS, 1],
+      [SMOKY_DONUTS, 1],
+    ]);
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(snacks).toContainText(count(2));
+    // Back to Nuggets ×2 for the rest of the walk.
+    await minus(SMOKY_DONUTS).click();
+    await plus(CHILI_NUGGETS).click();
+    await expect.poll(() => groupPicks(page, G_SNACKS)).toEqual([[CHILI_NUGGETS, 2]]);
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£35.00");
+
+    // Drinks is the one CHOICE slot left (D5): fill it, then commit.
+    await pickSlot(page, G_DRINKS, PEPSI_SMALL);
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-total")).toContainText("£35.00");
+    expect(await groupPicks(page, G_SNACKS, "bag")).toEqual([[CHILI_NUGGETS, 2]]);
+
+    // The bag row says the same: Nuggets ×2, no Donuts (the /forYou upsell
+    // may sit on the menu → bag edge — bag.spec openBag).
+    await page.getByTestId("cta-view-bag").click();
+    await page.waitForURL(/\/(forYou|cart)$/);
+    if (new URL(page.url()).pathname === "/forYou") {
+      await page.getByTestId("foryou-primary").click();
+    }
+    const row = page.locator('[data-testid^="bag-row-"]');
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(
+      `${(en.bag.lineQty as string).replace("{{qty}}", "2")} 3 pcs Chili Cheese Nuggets.`
+    );
+    await expect(row).not.toContainText(SMOKY_DONUTS_NAME);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£35.00");
+  });
+
+  test("STEPPER GROUP MAX, ARABIC (UB2): the refusal reads the Arabic copy with the group's Arabic name and the max", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { arabic: true });
+    await bootRegisteredToMenu(page, { arabic: true });
+    await openDreamBoxPack(page);
+
+    // The stepper's "+" is the row's second button (its name is Arabic here).
+    const plus = (itemId: string) =>
+      page.getByTestId(`pdp-option-${itemId}`).getByRole("button").nth(1);
+    await plus(CHILI_NUGGETS).click();
+    await plus(CHILI_NUGGETS).click();
+    await expect.poll(() => groupPicks(page, G_SNACKS)).toEqual([[CHILI_NUGGETS, 2]]);
+    await plus(SMOKY_DONUTS).click();
+
+    const error = page.getByTestId("global-error");
+    await expect(error).toBeVisible();
+    const alias =
+      (slimMenu.modifiers as { _id: string; aliases?: { code: string; value: string }[] }[])
+        .find((group) => group._id === G_SNACKS)
+        ?.aliases?.find((entry) => entry.code === "ar")?.value ?? "";
+    expect(alias).not.toBe("");
+    const expected = (ar.pdp.groupMaxReached as string)
+      .replace("{{max}}", "2")
+      .replace("{{group}}", alias);
+    // Isolates (FSI…PDI) wrap the copy and each value in RTL — compare without them.
+    const stripIsolates = (text: string | null) => (text ?? "").replace(/[\u2066-\u2069]/g, "");
+    await expect
+      .poll(async () => stripIsolates(await page.locator("#global-error-title").textContent()))
+      .toBe(expected);
+    await expect(error).not.toContainText("Snacks");
+    expect(await groupPicks(page, G_SNACKS)).toEqual([[CHILI_NUGGETS, 2]]);
+    await page.getByTestId("global-error-ok").click();
+    await expect(error).toHaveCount(0);
   });
 });
 

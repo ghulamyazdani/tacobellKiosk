@@ -92,7 +92,7 @@ const seedLoyaltyOn = () => {
 describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
   it("renders nothing while closed", () => {
@@ -207,9 +207,35 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       renderSheet();
       await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
       expect(screen.getByTestId("remove-item-modal")).toBeInTheDocument();
-      expect(screen.getByRole("dialog", { name: "Remove Item" })).toHaveAttribute("aria-modal", "true");
+      // C4a: ErrorModal's 680 shell (Figma 1:4551) — an alertdialog.
+      expect(screen.getByRole("alertdialog", { name: "Remove Item" })).toHaveAttribute("aria-modal", "true");
       expect(cartState().cartItems).toHaveLength(1);
       expect(cartState().cartItems[0].quantity).toBe(1);
+    });
+
+    it("C4a: the modal is ErrorModal's 680 shell (Figma 1:4551) — no mark, the body, NO, BACK TO CART left, the red YES, DELETE focused; the scrim is inert", async () => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+      renderSheet();
+      await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
+      const dialog = screen.getByRole("alertdialog", { name: "Remove Item" });
+      expect(dialog).toHaveAttribute("data-testid", "remove-item-modal");
+      expect(dialog).toHaveAccessibleDescription(
+        "You are about to delete this item, would you like to continue ?",
+      );
+      expect(dialog).toHaveClass("absolute", "inset-0", "z-[80]");
+      expect(dialog.querySelector("img")).toBeNull();
+      const [cancel, confirm] = dialog.querySelectorAll("button");
+      expect(cancel).toBe(screen.getByTestId("remove-item-cancel"));
+      expect(confirm).toBe(screen.getByTestId("remove-item-confirm"));
+      expect(cancel).toHaveTextContent("No, Back to Cart");
+      expect(confirm).toHaveTextContent("Yes, Delete");
+      expect(confirm).toHaveClass("bg-tb-red", "h-[60px]", "w-[280px]");
+      expect(cancel).toHaveClass("border-tb-purple", "h-[60px]", "w-[280px]");
+      expect(confirm).toHaveFocus();
+      // Inert scrim: tapping outside the card keeps the modal and the row.
+      await userEvent.click(dialog.querySelector('[aria-hidden="true"]') as HTMLElement);
+      expect(screen.getByTestId("remove-item-modal")).toBeInTheDocument();
+      expect(cartState().cartItems).toHaveLength(1);
     });
 
     it("cancel keeps the row and closes the modal", async () => {
@@ -284,7 +310,7 @@ describe("BagSheet in the ADA reach zone (P9c)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
   });
 

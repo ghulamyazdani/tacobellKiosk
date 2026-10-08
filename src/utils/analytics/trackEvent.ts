@@ -28,6 +28,8 @@ let client: PostHog | null = null;
 /** Non-null only while the chunk may still arrive; null = off, failed, or ready. */
 let pending: Call[] | null = ENABLED ? [] : null;
 let started = false;
+/** The last identity sent — resetAnalyticsSession re-sends exactly this. */
+let identity: { id: string; props: KioskEventProperties } | null = null;
 
 function run(call: Call): void {
   try {
@@ -87,5 +89,21 @@ export function identifyKiosk(
   distinctId: string,
   properties: KioskEventProperties,
 ): void {
+  identity = { id: distinctId, props: properties };
   run((c) => c.identify(distinctId, properties));
+}
+
+/**
+ * A new PostHog session for the next guest (audit-fixes B3): the splash tap
+ * and Place New Order. reset() drops the previous guest's session, then the
+ * kiosk re-identifies with the SAME six fields (PROGRESS: identify payload
+ * kept as is) — never an anonymous guest. Same queue and kill switch as every
+ * call here; never throws.
+ */
+export function resetAnalyticsSession(): void {
+  const who = identity;
+  run((c) => {
+    c.reset();
+    if (who) c.identify(who.id, who.props);
+  });
 }

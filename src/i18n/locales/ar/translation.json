@@ -81,7 +81,10 @@
     "unavailable": "غير متوفر",
     "quickAdd": "إضافة سريعة",
     "total": "الإجمالي",
-    "viewMyBag": "عرض حقيبتي"
+    "viewMyBag": "عرض حقيبتي",
+    "veg": "نباتي",
+    "nonVeg": "غير نباتي",
+    "filters": "عوامل التصفية"
   },
   "activity": {
     "title": "مركز النشاط",
@@ -125,7 +128,8 @@
     "backspace": "حذف",
     "layerToggle": "أرقام ورموز",
     "go": "انطلق",
-    "clear": "مسح"
+    "clear": "مسح",
+    "space": "مسافة"
   },
   "pdp": {
     "back": "رجوع",
@@ -143,7 +147,8 @@
     "discardBody": "سيتم فقدان تخصيصاتك",
     "discardKeep": "متابعة التعديل",
     "discardConfirm": "تجاهل",
-    "groupCount": "{{count}} من {{max}}"
+    "groupCount": "{{count}} من {{max}}",
+    "groupMaxReached": "يمكنك اختيار {{max}} من {{group}} كحد أقصى"
   },
   "pack": {
     "selectGroup": "اختر {{name}}",
@@ -187,7 +192,15 @@
     "itemUnavailable": "بعض الأصناف غير متوفرة حالياً",
     "checkoutFailed": "حدث خطأ ما — يرجى المحاولة مرة أخرى",
     "discounts": "الخصومات",
-    "orderAndPay": "اطلب وادفع"
+    "orderAndPay": "اطلب وادفع",
+    "someNeedChanges": "بعض العناصر في حقيبتك تحتاج إلى تعديل",
+    "choicesUnavailable": "بعض الخيارات لم تعد متوفرة",
+    "instructions": {
+      "title": "تعليمات الطهي",
+      "hint": "أضف ملاحظة للمطبخ"
+    },
+    "taxesAndCharges": "الضرائب والرسوم",
+    "roundOff": "تقريب المبلغ"
   },
   "offers": {
     "title": "المكافآت",
@@ -341,7 +354,8 @@
     "hide": "إخفاء",
     "invalidNumber": "يرجى إدخال رقم هاتف صالح",
     "exactDigits": "يجب أن يتكون رقم الهاتف من {{digits}} أرقام بالضبط",
-    "digitRange": "يجب أن يتكون رقم الهاتف من {{min}} إلى {{max}} رقمًا"
+    "digitRange": "يجب أن يتكون رقم الهاتف من {{min}} إلى {{max}} رقمًا",
+    "changeCountry": "رمز الدولة {{dialCode}}. اضغط للتغيير"
   },
   "customerName": {
     "title": "ما هو اسمك؟",
@@ -416,6 +430,10 @@
     "startAgain": "ابدأ من جديد",
     "continue": "متابعة الطلب",
     "countdownA11y": "سيتم البدء من جديد خلال {{seconds}} ثانية"
+  },
+  "fullscreen": {
+    "title": "انقر للمتابعة",
+    "body": "يعمل هذا الكشك بوضع ملء الشاشة. انقر في أي مكان للمتابعة."
   },
   "paytm": {
     "methodQr": "الدفع عبر رمز UPI",

@@ -188,7 +188,8 @@ describe("Menu — the lazy Xeno rewards sheet (lane loyalty-visual D9)", () => 
     vi.spyOn(console, "error").mockImplementation(() => {}); // React reports the caught error
     const gate = holdChunk();
     renderMenu();
-    expect(mockCapture).not.toHaveBeenCalled();
+    // Per event: the mount itself reports MenuViewed (audit-fixes B3).
+    expect(mockCapture).not.toHaveBeenCalledWith("error_occurred", expect.anything());
 
     await act(async () => gate.fail(new Error("Failed to fetch dynamically imported module")));
 

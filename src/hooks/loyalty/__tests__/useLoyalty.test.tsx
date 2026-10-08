@@ -9,6 +9,8 @@ import {
   setLoyaltyPartner,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
+import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import { IdleHoldContext } from "../../utils/useIdleTimeout";
 import useLoyalty from "../useLoyalty";
@@ -478,5 +480,122 @@ describe("useLoyalty.checkAndRevokeLoyaltyReward — bounded, never retried, nev
       expect(fetchMock).not.toHaveBeenCalled();
       expect(mockCapture).not.toHaveBeenCalled();
     });
+  });
+});
+
+/*
+  audit-fixes C5 — a Xeno call that THROWS (the engine or a dispatch blew up
+  around the transport) still resolves undefined — each caller's no-answer
+  path, unchanged — and is reported as ErrorOccurred with the method as its
+  stage, never as a console line. Nothing the guest typed rides along.
+*/
+describe("useLoyalty — a call that throws is reported, never logged (audit-fixes C5)", () => {
+  const ITEMS = [{ coupon_code: "static6562" }];
+  const BILL = { gross_amount: 10, net_amount: 10 };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setLoyaltyPartner(PARTNER));
+    store.dispatch(setMenuData({ menu: { categories: [] } }));
+    transport.executeEvent.mockReset();
+    transport.isLoading = false;
+    mockCapture.mockReset();
+  });
+
+  type Api = ReturnType<typeof useLoyalty>;
+  it.each([
+    ["executeLoyalty", (api: Api) => api.executeLoyalty({ phoneNumber: "9953833675", countryCode: "+91" })],
+    ["validateCoupon", (api: Api) => api.validateCoupon({ items: ITEMS, coupon_code: "static6562" })],
+    ["redeemLoyaltyPoints", (api: Api) => api.redeemLoyaltyPoints({ items: ITEMS, totalPoints: 3000 })],
+    [
+      "redeemLoyaltyPointsForReeloPoints",
+      (api: Api) => api.redeemLoyaltyPointsForReeloPoints({ points: 10, calculatedBill: BILL, tabType: "dine_in" }),
+    ],
+    [
+      "enterOtpAndRedeem",
+      (api: Api) => api.enterOtpAndRedeem({ points: 10, calculatedBill: BILL, tabType: "dine_in", otp: "1234" }),
+    ],
+  ])("%s: resolves undefined and reports ErrorOccurred {loyalty, %s}", async (stage, call) => {
+    transport.executeEvent.mockRejectedValue(new Error("xeno proxy blew up"));
+    const { result } = renderHook(() => useLoyalty(), { wrapper });
+
+    let answer: unknown = "unset";
+    await act(async () => {
+      answer = await call(result.current);
+    });
+
+    expect(answer).toBeUndefined();
+    expect(mockCapture).toHaveBeenCalledWith(KioskEventName.ErrorOccurred, {
+      error_source: "loyalty",
+      stage,
+      error_message: "xeno proxy blew up",
+    });
+    const sent = JSON.stringify(mockCapture.mock.calls);
+    expect(sent).not.toContain("9953833675");
+    expect(sent).not.toContain("1234");
+  });
+
+  it("an answered lookup reports nothing", async () => {
+    transport.executeEvent.mockResolvedValue(BALANCE);
+    const { result } = renderHook(() => useLoyalty(), { wrapper });
+
+    await act(async () => {
+      await result.current.executeLoyalty({ phoneNumber: "9953833675", countryCode: "+91" });
+    });
+
+    expect(
+      mockCapture.mock.calls.filter(([event]) => event === KioskEventName.ErrorOccurred)
+    ).toEqual([]);
+  });
+});
+
+/*
+  audit-fixes UB5 — the guest's PICKED country reaches every Xeno body:
+  check_loyalty_balance takes the dial code its caller passes (/phone and
+  the rewards login read the pick) under BOTH country_code and countrycode;
+  the redemption calls read the picked country from redux (its dialCode).
+*/
+describe("useLoyalty — the picked country reaches Xeno (audit-fixes UB5)", () => {
+  const UAE = { code: "AE", dialCode: "+971", min: 9, max: 9, picked: true };
+  const sent = (event: string) =>
+    (transport.executeEvent.mock.calls as Array<[{ event_name: string; data: unknown }]>)
+      .map(([body]) => body)
+      .find((body) => body.event_name === event)?.data;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setLoyaltyPartner(PARTNER));
+    store.dispatch(setMenuData({ menu: { categories: [] } }));
+    store.dispatch(setCountryCode(UAE));
+    transport.executeEvent.mockReset();
+    transport.executeEvent.mockResolvedValue(BALANCE);
+    transport.isLoading = false;
+  });
+
+  it("check_loyalty_balance carries '+971' as country_code AND countrycode", async () => {
+    const { result } = renderHook(() => useLoyalty(), { wrapper });
+
+    await act(async () => {
+      await result.current.executeLoyalty({ phoneNumber: "501234567", countryCode: "+971" });
+    });
+
+    expect(sent("check_loyalty_balance")).toMatchObject({
+      customer_mobile: "501234567",
+      country_code: "+971",
+      countrycode: "+971",
+    });
+  });
+
+  it("authenticate_redemption and redeem_coupon carry the picked dial code '+971', never the +91 default", async () => {
+    const { result } = renderHook(() => useLoyalty(), { wrapper });
+
+    await act(async () => {
+      await result.current.redeemLoyaltyPoints({ items: [{ coupon_code: "static6562" }], totalPoints: 3000 });
+      await result.current.finalLoyaltyRedemption("static6562", "1234");
+    });
+
+    expect(sent("authenticate_redemption")).toMatchObject({ country_code: "+971" });
+    expect(sent("redeem_coupon")).toMatchObject({ country_code: "+971" });
+    expect(JSON.stringify(transport.executeEvent.mock.calls)).not.toContain("+91\"");
   });
 });

@@ -6,7 +6,6 @@
 import { useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { selectCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { selectGetItems } from "@cx-sdk/ordering/state/cart.slice";
 import { isGroupWiseItemOffer } from "@cx-sdk/ordering/offer/groupWiseOfferUtils";
 import {
@@ -21,6 +20,7 @@ import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
+import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import closeIcon from "../../assets/icons/close.svg";
 
@@ -102,9 +102,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   const { openGetItemTierModal } = useMakeItAMeal();
   const { name } = useLocalized();
   const stagedRows: StagedRow[] = useSelector(selectGetItems) ?? [];
-  const currencySettings = useSelector(selectCurrency) as any;
-  const currency =
-    currencySettings?.symbol ?? currencySettings?.currency_symbol ?? "";
+  const currency = useCurrencySymbol();
 
   // Only entries the converter resolved to a live entity are offerable
   // (contract trap 1: unresolvable baseItemIds silently vanish).

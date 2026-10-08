@@ -99,7 +99,7 @@ describe("a failed lazy bag part leaves a working bag (lane bag-pdp)", () => {
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
-    store.dispatch(setCurrency({ symbol: "£" }));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setPipelines([P1, P2]));
     store.dispatch(setSelectedPipeline(P1));
     store.dispatch(setTabType("dine_in"));

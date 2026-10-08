@@ -16,7 +16,11 @@ import type {
   OrderSuccessLocationState,
   ReceiptPreference,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
-import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import {
+  captureKioskEvent,
+  KioskEventName,
+  resetAnalyticsSession,
+} from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
@@ -184,6 +188,10 @@ export default function OrderSuccess() {
       });
       resetSession(scope);
       navigate(to);
+      // Place New Order skips the splash tap, where a guest's analytics
+      // session normally starts (audit-fixes B3) — after this guest's
+      // closing events above. Start Over's next guest taps the splash.
+      if (scope === "nextCustomer") resetAnalyticsSession();
     },
     [navigate, netAmountRdx, orderIdRdx, printReceiptOnce, resetSession],
   );
@@ -226,8 +234,9 @@ export default function OrderSuccess() {
       data-testid="order-success"
       className="relative h-full w-[1080px] overflow-hidden"
       style={{
+        // Tailwind emits only the theme vars some utility uses — all four are used.
         backgroundImage:
-          "linear-gradient(180deg, #1B0726 0%, #501098 28%, #9A23F8 62%, #F07ADE 100%)",
+          "linear-gradient(180deg, var(--color-tb-ink-purple) 0%, var(--color-tb-purple) 28%, var(--color-tb-purple-vibrant) 62%, var(--color-tb-pink) 100%)",
       }}
     >
       {/* Same purple texture tile as Splash (1:2185) — one shared asset. */}

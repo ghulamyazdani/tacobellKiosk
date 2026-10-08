@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { mockCheckoutBackend } from "./fixtures/checkout";
 
 /**
  * P7a — My Bag (cart) vertical: BagSheet over the Menu on /cart, remove-item
@@ -28,7 +29,9 @@ import { fileURLToPath } from "node:url";
  *   bill engine treats as EXCLUSIVE, and getNetAmount() rounds to 0 decimals
  *   (Math.round — no disable_roundoff/round_off_near_5 settings mocked). So
  *   Total = round(SubTotal * 1.15): £8 → £9, £16 → £18, £17 → £20,
- *   £25 → £29 — the bag's Sub Total and Total lines legitimately differ.
+ *   £25 → £29 — the bag's Sub Total and Total lines legitimately differ;
+ *   since audit-fixes U4 the bag shows why: "Taxes & charges" (+£1.20 on
+ *   £8) and "Round off" (−£0.20), so the column adds up to the Total.
  * After page.reload() the SPA re-boots with the token cookie intact:
  * ProtectedRoute keeps the /menu URL (no registration bounce), the menu
  * redux is empty until a re-driven boot refetches it, and AppRoutes'
@@ -128,7 +131,14 @@ async function mockKioskBackend(
     comboUpsell = false,
     sized = false,
     sizeGroups = false,
-  }: { comboUpsell?: boolean; sized?: boolean; sizeGroups?: boolean | "required" } = {}
+    skipCRM = false,
+  }: {
+    comboUpsell?: boolean;
+    sized?: boolean;
+    sizeGroups?: boolean | "required";
+    /** PAY → /payment (checkout.spec's pay-at-counter walk) instead of /phone. */
+    skipCRM?: boolean;
+  } = {}
 ) {
   await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
   // The print agent is cross-origin: the catch-all above never sees it.
@@ -161,6 +171,7 @@ async function mockKioskBackend(
         start_order_text_primary: "START ORDER",
         ideal_time: "180",
         ...(comboUpsell ? { enable_combo_upsell: true } : {}),
+        ...(skipCRM ? { skip_crm_page: true, pay_at_counter: "pay_at_counter" } : {}),
       },
     })
   );
@@ -187,7 +198,7 @@ async function mockKioskBackend(
     r.fulfill({
       json: {
         charges: [],
-        deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
       },
     })
   );
@@ -342,8 +353,14 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     const row = bagRows(page).first();
     await expect(row).toContainText("Cheese Burger");
     await expect(row).toContainText("£8.00");
+    // U1: the Cheese Burger is tagged "veg" — its row leads with the mark.
+    await expect(row.getByTestId("veg-mark-veg")).toBeVisible();
+    await expect(row.getByTestId("veg-mark-non-veg")).toHaveCount(0);
     await expect(page.getByTestId("bag-subtotal")).toContainText("£8.00");
-    // Total = round(8 * 1.15) — exclusive VAT@15%, see header.
+    // Total = round(8 * 1.15) — exclusive VAT@15%, see header; U4 shows the
+    // tax and what the rounding took: 8.00 + 1.20 − 0.20 = 9.00.
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£1.20");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.20");
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
 
     // P9f (user decision 2026-10-05): loyalty is off here, so LOG-IN & GET
@@ -364,10 +381,23 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     const itemId = await firstBagRowItemId(page);
     await page.getByTestId(`bag-inc-${itemId}`).click();
     await expect(page.getByTestId("bag-subtotal")).toContainText("£16.00");
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£2.40");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.40");
     await expect(page.getByTestId("bag-total")).toContainText("£18.00");
     await expect(page.getByTestId("bag-pay")).toContainText("£18.00");
     await expect(page.getByTestId("cta-total")).toContainText("£16.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (2)");
+
+    // ×5: £40 × 1.15 is a whole £46 — nothing to round, so the Round off
+    // line is not drawn (U4 hides each extra line at zero); then back to ×2.
+    for (let tap = 0; tap < 3; tap++) await page.getByTestId(`bag-inc-${itemId}`).click();
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£40.00");
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£6.00");
+    await expect(page.getByTestId("bag-total")).toContainText("£46.00");
+    await expect(page.getByTestId("bag-round-off")).toHaveCount(0);
+    for (let tap = 0; tap < 3; tap++) await page.getByTestId(`bag-dec-${itemId}`).click();
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£16.00");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.40");
 
     // Decrease from qty 2 is a plain decrease — no confirm modal.
     await page.getByTestId(`bag-dec-${itemId}`).click();
@@ -456,7 +486,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(updatedRow).toContainText("Extra Pickles");
     await expect(updatedRow).toContainText("Add Cheese");
     await expect(page.getByTestId("bag-subtotal")).toContainText("£10.00");
-    // round(10 * 1.15) = round(11.5) = £12 (Math.round half-up).
+    // round(10 * 1.15) = round(11.5) = £12 (Math.round half-up): U4 shows
+    // 10.00 + 1.50 + 0.50 = 12.00.
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£1.50");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("+£0.50");
     await expect(page.getByTestId("bag-total")).toContainText("£12.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (1)");
   });
@@ -530,7 +563,9 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(edited).toContainText("Add Cheese");
     await expect(edited).toContainText("£20.00");
     await expect(page.getByTestId("bag-subtotal")).toContainText("£29.00");
-    // round(29 × 1.15 = 33.35) = £33.
+    // round(29 × 1.15 = 33.35) = £33: U4 shows 29.00 + 4.35 − 0.35 = 33.00.
+    await expect(page.getByTestId("bag-taxes-charges")).toHaveText("+£4.35");
+    await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.35");
     await expect(page.getByTestId("bag-total")).toContainText("£33.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (3)");
 
@@ -739,6 +774,9 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId(`bag-rail-item-${GREEK_SALAD}`)).toBeVisible();
     await expect(page.getByTestId(`bag-rail-item-${LARGE_FRIES}`)).toBeVisible();
     await expect(page.getByTestId(`bag-rail-item-${CHEESE_BURGER}`)).toHaveCount(0);
+    // UB1: the rail cards price in the deployment's symbol (raw menu prices).
+    await expect(page.getByTestId(`bag-rail-item-${GREEK_SALAD}`)).toContainText("£17");
+    await expect(page.getByTestId(`bag-rail-item-${LARGE_FRIES}`)).toContainText("£9");
 
     // Greek Salad is one-tap addable (no modifiers): the row appearing IS
     // the confirmation (added modal suppressed), totals move 8 → 25.
@@ -835,6 +873,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     const quickAdd = page.getByTestId(`quick-add-${SIZED_ITEM}`);
     await quickAdd.scrollIntoViewIfNeeded();
     await quickAdd.click();
+    // UB1: the size tiles price in the deployment's symbol — the cheapest
+    // whole, a bigger size as its step up.
+    await expect(page.getByTestId(`size-${SIZE_REGULAR}`)).toContainText("£5.00");
+    await expect(page.getByTestId(`size-${SIZE_LARGE}`)).toContainText("+£2.00");
     await page.getByTestId(`size-${SIZE_LARGE}`).click();
     await page.getByTestId("size-continue").click();
 
@@ -999,5 +1041,287 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+  });
+});
+
+/** The backend's out-of-stock feed: Kiosk partner rows (the PAY engine ignores any other partner). */
+const kioskOutOfStock = (itemId: string) => [
+  { item_id: itemId, type: "item", partners: { partner_name: "Kiosk", inStock: false } },
+];
+
+/** A cart row's itemId (runtime-generated "<stamp>_<entity id>") by its entity. */
+async function bagRowItemIdOf(page: Page, entityId: string): Promise<string> {
+  const row = page.locator(`[data-testid^="bag-row-"][data-testid$="_${entityId}"]`);
+  await expect(row).toBeVisible();
+  return ((await row.getAttribute("data-testid")) ?? "").replace("bag-row-", "");
+}
+
+test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instructions (U3)", () => {
+  test("PAY RE-CHECKS STOCK: the burger went out of stock after the menu loaded — PAY raises the existing notice, stays on /cart with the row Unavailable; removed, PAY proceeds", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await addGreekSaladOneTap(page, "(2)");
+    await openBag(page);
+    const burgerId = await bagRowItemIdOf(page, CHEESE_BURGER);
+
+    // The menu loaded with an empty feed; from here the burger is out
+    // (newest route wins). PAY's request carries the bag's ids.
+    const sweepBodies: { items_id: string[] }[] = [];
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) => {
+      const body = route.request().postDataJSON() as { items_id?: string[] } | null;
+      if (body?.items_id) sweepBodies.push({ items_id: body.items_id });
+      return route.fulfill({ json: kioskOutOfStock(CHEESE_BURGER) });
+    });
+    await page.getByTestId("bag-pay").click();
+
+    const dialog = page.getByRole("alertdialog", { name: en.bag.itemUnavailable });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("data-testid", "global-error");
+    expect(sweepBodies).toHaveLength(1);
+    expect(sweepBodies[0].items_id).toEqual(expect.arrayContaining([CHEESE_BURGER, GREEK_SALAD]));
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/cart$/);
+
+    // The row says so (art at 50 %), its Edit and "+" are gone / inert; the
+    // salad is untouched. The line never counts as a row.
+    await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toHaveText(en.menu.unavailable);
+    // The art (photo or its grey plate) is the row's first child.
+    await expect(page.getByTestId(`bag-row-${burgerId}`).locator(":scope > *").first()).toHaveCSS(
+      "opacity",
+      "0.5"
+    );
+    await expect(page.getByTestId(`bag-edit-${burgerId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`bag-inc-${burgerId}`)).toHaveAttribute("aria-disabled", "true");
+    await expect(bagRows(page)).toHaveCount(2);
+    const saladId = await bagRowItemIdOf(page, GREEK_SALAD);
+    await expect(page.getByTestId(`bag-unavailable-${saladId}`)).toHaveCount(0);
+
+    // The guest removes it: PAY checks the bag again and proceeds.
+    await page.getByTestId(`bag-dec-${burgerId}`).click();
+    await page.getByTestId("remove-item-confirm").click();
+    await expect(bagRows(page)).toHaveCount(1);
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    expect(sweepBodies).toHaveLength(2);
+    expect(sweepBodies[1].items_id).toEqual([GREEK_SALAD]);
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+  });
+
+  test("STOCK CHECK FAILURE NEVER BLOCKS PAY: the feed answers 500 — PAY still lands on the checkout (fail open), no error", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await openBag(page);
+
+    let sweeps = 0;
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) => {
+      sweeps += 1;
+      return route.fulfill({ status: 500, json: { message: "stock service down" } });
+    });
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    await expect(page.getByTestId("phone-screen")).toBeVisible();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    expect(sweeps).toBe(1);
+  });
+
+  test("MID-CHECK CHANGE: the guest taps + while PAY's stock check is out — its late answer never overwrites the bag (the burger stays ×2, nothing flagged, no message); the next PAY checks the bag as it is now", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await addGreekSaladOneTap(page, "(2)");
+    await openBag(page);
+    const burgerId = await bagRowItemIdOf(page, CHEESE_BURGER);
+    const saladId = await bagRowItemIdOf(page, GREEK_SALAD);
+
+    // The salad sold out, and PAY's answer is held until the guest has
+    // changed the bag (no busy overlay: the steppers stay live — D-A1-5).
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const asked: string[][] = [];
+    await page.route("**/api/cx/kiosk/get_out_of_stock", async (route) => {
+      const body = route.request().postDataJSON() as { items_id?: string[] } | null;
+      asked.push(body?.items_id ?? []);
+      if (asked.length === 1) await held;
+      return route.fulfill({ json: kioskOutOfStock(GREEK_SALAD) });
+    });
+    await page.getByTestId("bag-pay").click();
+    await expect.poll(() => asked.length).toBe(1);
+    await page.getByTestId(`bag-inc-${burgerId}`).click();
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£33.00");
+
+    // The answer lands on a bag that changed under it: no write (its swept
+    // rows would put the burger back to ×1), no flag, no message — sampled
+    // for a second after the answer arrived.
+    const answered = page.waitForResponse("**/api/cx/kiosk/get_out_of_stock");
+    release();
+    await answered;
+    const settledAt = Date.now() + 1_000;
+    await expect
+      .poll(
+        async () => ({
+          settled: Date.now() >= settledAt,
+          errors: await page.getByTestId("global-error").count(),
+          subtotal: await page.getByTestId("bag-subtotal").textContent(),
+          saladFlagged: await page.getByTestId(`bag-unavailable-${saladId}`).count(),
+          path: new URL(page.url()).pathname,
+        }),
+        { timeout: 6_000, intervals: [100] }
+      )
+      .toEqual({ settled: true, errors: 0, subtotal: "£33.00", saladFlagged: 0, path: "/cart" });
+
+    // The next PAY checks the bag as it is now: the salad blocks it, and the
+    // write-back keeps the guest's ×2.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    expect(asked).toHaveLength(2);
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId(`bag-unavailable-${saladId}`)).toHaveText(en.menu.unavailable);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£33.00");
+    await expect(page).toHaveURL(/\/cart$/);
+  });
+
+  test("BACK IN STOCK: a row an earlier PAY flagged clears once the feed has it again — PAY proceeds, and BACK from /phone finds it orderable", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await openBag(page);
+    const burgerId = await bagRowItemIdOf(page, CHEESE_BURGER);
+
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) =>
+      route.fulfill({ json: kioskOutOfStock(CHEESE_BURGER) })
+    );
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toBeVisible();
+    await expect(page.getByTestId(`bag-inc-${burgerId}`)).toHaveAttribute("aria-disabled", "true");
+
+    // Restocked (newest route wins): the next PAY finds nothing out, clears
+    // the stale flag on the live row and goes on.
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) => route.fulfill({ json: [] }));
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    await page.getByTestId("phone-back").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`bag-inc-${burgerId}`)).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByTestId(`bag-edit-${burgerId}`)).toBeVisible();
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
+  test("PAY RE-CHECKS A SIZE: the Large picked in Select a Size sold out — the fast-lane row (SDK-shaped, B5) is swept, never failed open: PAY stays on /cart and the row reads Unavailable", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { sized: true });
+    await bootRegisteredToMenu(page);
+    const quickAdd = page.getByTestId(`quick-add-${SIZED_ITEM}`);
+    await quickAdd.scrollIntoViewIfNeeded();
+    await quickAdd.click();
+    await page.getByTestId(`size-${SIZE_LARGE}`).click();
+    await page.getByTestId("size-continue").click();
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    await page.getByTestId("added-continue").click();
+    await openBag(page);
+    const rowId = await firstBagRowItemId(page);
+
+    const sweepBodies: string[][] = [];
+    await page.route("**/api/cx/kiosk/get_out_of_stock", (route) => {
+      const body = route.request().postDataJSON() as { items_id?: string[] } | null;
+      sweepBodies.push(body?.items_id ?? []);
+      return route.fulfill({
+        json: [
+          { item_id: SIZE_LARGE, type: "variant", partners: { partner_name: "Kiosk", inStock: false } },
+        ],
+      });
+    });
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    // The row carries its base item and its size (a hand-built row would
+    // have thrown in the sweep and failed open onto /phone).
+    expect(sweepBodies).toHaveLength(1);
+    expect(sweepBodies[0]).toEqual(expect.arrayContaining([SIZED_ITEM, SIZE_LARGE]));
+    await page.getByTestId("global-error-ok").click();
+    await expect(page).toHaveURL(/\/cart$/);
+    // The SIZE is what sold out — Unavailable, not "choices unavailable".
+    await expect(page.getByTestId(`bag-unavailable-${rowId}`)).toHaveText(en.menu.unavailable);
+    await expect(page.getByTestId(`bag-changed-${rowId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`bag-row-${rowId}`).locator(":scope > *").first()).toHaveCSS(
+      "opacity",
+      "0.5"
+    );
+  });
+
+  test("COOKING INSTRUCTIONS REACH THE ORDER: typed on the kiosk keyboard, kept across a reload on /cart, sent as special_instructions, gone for the next guest", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { skipCRM: true });
+    // MUST come second (newest route wins): the pay-at-counter surface.
+    const checkout = await mockCheckoutBackend(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
+    await openBag(page);
+
+    const entryText = page.getByTestId("bag-instructions-text");
+    await expect(entryText).toHaveText(en.bag.instructions.hint);
+    await page.getByTestId("bag-instructions-entry").click();
+    const sheet = page.getByTestId("instructions-sheet");
+    await expect(sheet.getByRole("dialog", { name: en.bag.instructions.title })).toBeVisible();
+    for (const char of "no  onions") {
+      if (char === " ") await sheet.getByTestId("keyboard-space").click();
+      else await sheet.getByRole("button", { name: char, exact: true }).click();
+    }
+    // Two spaces collapse to one.
+    await expect(sheet.getByTestId("instructions-input")).toHaveText("no onions");
+    await expect(sheet.getByTestId("instructions-counter")).toHaveText("9/100");
+    await page.getByTestId("instructions-save").click();
+    await expect(sheet).toHaveCount(0);
+    await expect(entryText).toHaveText("no onions");
+
+    // Crash-reload on /cart: the note is customer state, persisted.
+    await page.reload();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("bag-instructions-text")).toHaveText("no onions");
+
+    // PAY → /payment → PAY AT COUNTER → the push carries the note.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("payment-counter").click();
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    expect(checkout.placeOrderCount).toBe(1);
+    expect(checkout.lastPlaceOrderBody).toMatchObject({
+      special_instructions: "no onions",
+      payments: { type: "COD" },
+    });
+    expect(checkout.forbiddenUrls).toEqual([]);
+
+    // The next guest starts without it.
+    await page.getByTestId("order-success-neworder").click();
+    await expect(page).toHaveURL(/\/second$/, { timeout: 10_000 });
+    await page.getByTestId("pipeline-p1").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await addGreekSaladOneTap(page, "(1)");
+    await openBag(page);
+    await expect(page.getByTestId("bag-instructions-text")).toHaveText(en.bag.instructions.hint);
   });
 });

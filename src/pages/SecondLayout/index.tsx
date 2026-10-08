@@ -25,7 +25,7 @@ import LanguageSheet from "../../components/language/LanguageSheet";
 import ErrorModal from "../../components/common/ErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
-import plasticOverlay from "../../assets/splash/plastic-overlay.jpg";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import dineInIcon from "../../assets/icons/dine-in.svg";
 import takeOutIcon from "../../assets/icons/take-out.svg";
@@ -231,7 +231,7 @@ export default function SecondLayout() {
         aria-hidden
         alt=""
         src={plasticOverlay}
-        className="absolute bottom-0 left-0 h-[1920px] w-[1080px] object-cover opacity-40 mix-blend-soft-light"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
       />
 
       <div className="absolute left-0 top-0 w-full">

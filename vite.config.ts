@@ -18,9 +18,11 @@ export default defineConfig({
       registerType: "autoUpdate",
       devOptions: { enabled: false },
       workbox: {
-        // jpg/jpeg: the splash WELCOME photo and textures must be precached so
-        // an offline boot still shows them. No image optimizer (CLAUDE.md rule 7).
-        globPatterns: ["**/*.{js,css,html,ico,png,jpg,jpeg,svg,woff2}"],
+        // jpg/jpeg/webp: the splash WELCOME photo and textures must be precached
+        // so an offline boot still shows them. No image optimizer (CLAUDE.md
+        // rule 7). Never flatten an alpha bitmap to JPEG: the P1 JPEG of the
+        // plastic overlay lost its scratches (UB3) — alpha art ships as WebP.
+        globPatterns: ["**/*.{js,css,html,ico,png,jpg,jpeg,webp,svg,woff2}"],
         cleanupOutdatedCaches: true,
         // Safe ONLY because the app defers the actual reload to the splash screen
         // (PWAUpdateHandler dispatches setAutoUpdateOnNextStartOver; StartScreen reloads).
@@ -84,16 +86,22 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    // One copy of each singleton library. Load-bearing across repos: the linked
-    // @cx-sdk packages resolve from ../posistKiosk-cx-sdk, and without dedupe they
-    // would pull a SECOND react/redux copy from that repo's node_modules — breaking
-    // hooks and the react-redux context.
+    // One copy of each library the SDK shares with this app. Load-bearing across
+    // repos: the linked @cx-sdk packages resolve from ../posistKiosk-cx-sdk, and
+    // without dedupe they would pull a SECOND copy from that repo's node_modules —
+    // a second react/redux breaks hooks and the react-redux context; a second
+    // dayjs core + plugins cost ~2.9 KiB gzip on the boot path (audit CX-18).
+    // dayjs / lodash (the SDK bill engine) / redux-persist-transform-filter then
+    // resolve from THIS lockfile, so keep them declared in package.json.
     dedupe: [
       "react",
       "react-dom",
       "react-redux",
       "@reduxjs/toolkit",
       "redux-persist",
+      "dayjs",
+      "lodash",
+      "redux-persist-transform-filter",
     ],
   },
   server: {

@@ -188,7 +188,7 @@ test.describe("menu via REAL converters (mocked backend, slim fixture)", () => {
       r.fulfill({
         json: {
           charges: [],
-          deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+          deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
         },
       })
     );
@@ -285,7 +285,7 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
       r.fulfill({
         json: {
           charges: [],
-          deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+          deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
         },
       })
     );
@@ -360,7 +360,7 @@ test.describe("P6b PDP customization (real converter + useCustomization + commit
       r.fulfill({
         json: {
           charges: [],
-          deployment: { countryCode: "GB", currencySettings: { symbol: "£" } },
+          deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
         },
       })
     );
