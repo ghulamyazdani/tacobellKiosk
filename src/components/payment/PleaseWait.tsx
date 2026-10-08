@@ -20,11 +20,9 @@ interface PleaseWaitProps {
  * position-neutral — tb-modal-enter is only for left-1/2 top-1/2 modals).
  *
  * Re-expressed from the frame: tb-purple + the 240 px texture tile (the same
- * bytes as the frame's fill) + the plastic sheen rotated −90° at 50 %.
- * The sheen asset is the app's alpha-flattened JPEG, so it blends
- * soft-light like every other screen's sheen — Figma's "normal" blend over
- * the transparent original would wash this JPEG to lavender (flagged). The
- * hourglass is the static first frame of the 99-frame GIF (D8).
+ * bytes as the frame's fill) + the plastic sheen rotated −90° at 50 %,
+ * normal blend — Figma's recipe, now that the sheen is the alpha WebP (UB3).
+ * The hourglass is the static first frame of the 99-frame GIF (D8).
  *
  * ADA (design language, flagged): the bell is dropped (the brand zone above
  * carries the mark) and the card is centred in the 1122 reach zone. The root

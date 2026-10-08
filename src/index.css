@@ -85,7 +85,7 @@
   --color-tb-violet: #6301d2;
   /* Veg / non-veg marks (audit-fixes U1, VegMark). Design-language tokens:
    * the Figma has no diet mark, so these are the fork's VegNonVeg colours
-   * (non-text graphics on white: 4.95:1 / 5.6:1). FIGMA_UI_GUIDE §3 rows owed. */
+   * (non-text graphics on white: 4.95:1 / 5.6:1). Listed in FIGMA_UI_GUIDE §3. */
   --color-tb-veg: #008300;
   --color-tb-non-veg: #be360d;
 
