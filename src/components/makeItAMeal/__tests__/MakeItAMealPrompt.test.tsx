@@ -17,6 +17,7 @@ import {
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
@@ -469,6 +470,8 @@ describe("MakeItAMealPrompt \u2014 CustomizationOpenedViaMIAM (audit-fixes B3)",
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
+    // MEAL's group is live on the menu: an all-dead one sells as one tap (UB6).
+    store.dispatch(setModifiersMap({ modifiersMap: { meal_drink: { _id: "meal_drink", isActive: true } } }));
     mockCapture.mockReset();
   });
 
