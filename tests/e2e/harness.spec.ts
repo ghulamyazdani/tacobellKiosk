@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { holdRequests, mockKioskBackend } from "./fixtures/backend";
+import { DINE_IN, holdRequests, mockKioskBackend } from "./fixtures/backend";
+import { mockCheckoutBackend } from "./fixtures/checkout";
 import { expect, test, type Page } from "./fixtures/kiosk";
 
 /**
@@ -109,6 +110,21 @@ test.describe("P9f harness self-check", () => {
   }) => {
     await cleanRegistration(page);
     expect(await page.evaluate(() => (window as unknown as { __TB_RECS_URL__?: unknown }).__TB_RECS_URL__)).toBe("");
+  });
+
+  test("HOUSE ORDER: the checkout mock keeps the pipelines a spec gave the shared mock — it re-routes them only for its tabType", async ({
+    page,
+  }) => {
+    const pipelines = () =>
+      page.evaluate(() => fetch("/api/cx/kiosk/getPipelines", { method: "POST" }).then((r) => r.json()));
+    const own = [{ ...DINE_IN, primary_name: "E2E Probe" }];
+    await mockKioskBackend(page, { pipelines: own });
+    await mockCheckoutBackend(page);
+    await page.goto("/");
+    await expect(page.getByTestId("registration-screen")).toBeVisible();
+    expect(await pipelines()).toEqual(own);
+    await mockCheckoutBackend(page, { tabType: "table" });
+    expect(await pipelines()).toEqual([{ ...DINE_IN, tab_type: "table", primary_name: "Table Service" }]);
   });
 
   test("PAGE ERROR: an uncaught page error fails the test", async ({ page }) => {

@@ -186,7 +186,9 @@ export interface CheckoutMockOptions {
    * Pipeline `tab_type`. "table" is what routes PAY through `/tent`
    * (verified: ORIG BillSection.tsx:8,23,119 / CustomerName.tsx:119 /
    * CustomerPhone.tsx:134 all compare against the literal "table").
-   * Default "dine_in", matching bag.spec.ts's pipeline mock.
+   * Given, getPipelines answers ONE row with it, over the spec's own
+   * (mockKioskBackend's `pipelines`). Left out, the spec's pipelines stand
+   * (codDisabled still ticks "dine_in", the shared default row's tab).
    */
   tabType?: string;
   /**
@@ -365,20 +367,23 @@ export async function mockCheckoutBackend(
 
   // ---- ALLOWED endpoints, registered after the guards ----
 
-  // Pipelines: same row bag.spec.ts serves, with tab_type swappable so PAY can
-  // be routed through /tent.
-  await page.route(PIPELINES_URL, (route) =>
-    route.fulfill({
-      json: [
-        {
-          _id: "p1",
-          tab_id: "t1",
-          tab_type: tabType,
-          primary_name: tabType === "table" ? "Table Service" : "Dine In",
-        },
-      ],
-    })
-  );
+  // Pipelines: only when opts.tabType asks — one row with that tab_type, so
+  // PAY can be routed through /tent. Unconditional, it silently replaced the
+  // pipelines a spec gave mockKioskBackend (the newest route wins).
+  if (opts.tabType !== undefined) {
+    await page.route(PIPELINES_URL, (route) =>
+      route.fulfill({
+        json: [
+          {
+            _id: "p1",
+            tab_id: "t1",
+            tab_type: tabType,
+            primary_name: tabType === "table" ? "Table Service" : "Dine In",
+          },
+        ],
+      })
+    );
+  }
 
   // Device settings. Consumed as `fetchPaymentMethod?.data` (ORIG
   // usePaymentHook.ts:280-292) → a bare ARRAY of entities, not an envelope.
