@@ -5,10 +5,10 @@ import {
   type Locator,
   type Page,
   type Request,
-} from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+} from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, locale, CHEESE_BURGER } from "./fixtures/backend";
 import { APP_ORIGIN } from "./fixtures/origin";
+import { registerToStart } from "./pages/boot";
 
 /**
  * Lane fonts — ONE self-hosted OFL family, Archivo variable (wght 100–900 ×
@@ -34,32 +34,10 @@ const LATIN_EXT = "Archivo-wdth-wght-latin-ext.woff2";
 /** What TB copy and an India deployment print; Ω (in neither subset) is the control. */
 const GLYPHS = ["₹", "£", "€", "−", "…", "—", "·"];
 const CONTROL = "Ω";
-/** Has modifier groups, so a card tap opens the PDP. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
 
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-const en = readJson("../../src/i18n/locales/en/translation.json") as {
+const en = locale("en") as {
   splash: { welcome: string };
 };
-const slimMenu = readJson("./fixtures/slim-menu.json");
-
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-  "base64"
-);
 
 /** Whether a FontFace.unicodeRange ("U+0-FF, U+131, …") covers `cp`. */
 const covers = (range: string, cp: number) =>
@@ -104,75 +82,18 @@ async function expectFont(target: Locator, stretch: string, weight: string) {
   await expect(target).toHaveCSS("font-weight", weight);
 }
 
-/** House mock order: the `**\/api/**` catch-all FIRST, specific mocks after. */
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  // Item photos live on S3: answered locally, the walk never needs the internet.
-  await page.route("https://itemsposistnet.s3.ap-south-1.amazonaws.com/**", (r) =>
-    r.fulfill({ body: PNG, contentType: "image/png" })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({ json: { start_order_text_primary: "START ORDER", ideal_time: "180" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  // The deployment is India (user decision 2026-10-06): menu prices print ₹.
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "IN", currencySettings: { currency: "INR", text: "₹" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard (digits behind the 123 layer) → the boot → the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
+/**
+ * The shared mock (fixtures/backend.ts; its S3 stand-in is the harness's 1×1
+ * PNG — the bytes this spec served) on an India deployment (user decision
+ * 2026-10-06): menu prices print ₹.
+ */
+const mockKioskBackend = (page: Page) =>
+  mockBackend(page, {
+    deployment: {
+      countryCode: { name: "India", dial_code: "+91", code: "IN" },
+      currencySettings: { currency: "INR", text: "₹" },
+    },
+  });
 
 test("Archivo faces: two variable faces (latin-ext only on demand, for ₹), keyword-only check(), measured widths per class, no fallback glyphs", async ({
   page,

@@ -1,7 +1,22 @@
-import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  holdRequests as parkRequests,
+  locale,
+  SIDE_ORDERS,
+  CHEESE_BURGER,
+  DREAM_BOX,
+  EXTRA_PICKLES,
+  GREEK_SALAD,
+} from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
+import {
+  submitLicence as submitRegistration,
+  registerToStart,
+  startToSecond,
+  pickPipelineToMenu,
+} from "./pages/boot";
+import { openBag } from "./pages/order";
 
 /**
  * Post-P9 lane menu-data: the guest's language drives every NAME and the
@@ -43,51 +58,27 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  * mocked row; the regex runs over everything else.
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (idle.spec.ts): the `**\/api/**` catch-all FIRST, then the two
- * cross-origin edges the catch-all cannot see (the print agent, aborted; the
- * Xeno revoke), then the specific mocks. Newest wins. The checkout fixture
- * re-routes getPipelines with an English-only row, so the Arabic row is
- * routed again AFTER it. Boot helpers are copied from idle.spec.ts (house
- * precedent).
+ * The harness house order: the shared mock (fixtures/backend.ts) first, then
+ * the checkout fixture, then this spec's own routes. Newest wins. The checkout
+ * fixture re-routes getPipelines with an English-only row, so the Arabic row
+ * is routed again AFTER it. The print agent and the Xeno revoke are other
+ * origins: only their fixtures answer them (the harness denies an unrouted
+ * call). Boot steps are the shared page functions (pages/*).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const en = locale("en");
+const ar = locale("ar");
 
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const ar = readJson("../../src/i18n/locales/ar/translation.json");
-
-// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
-/** Modifier groups, upsellItems = [Dream box 1,]: MIAM first when combo upsell is on. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-const DREAM_BOX = "68dd79409030ed3064aee28c";
+// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; the shared ids come from fixtures/backend.ts) ----
+// CHEESE_BURGER: modifier groups, upsellItems = [Dream box 1,] — MIAM first when combo upsell is on.
+// EXTRA_PICKLES: +£1, in EXTRA_GROUP. GREEK_SALAD: isCartRecommended, no modifiers — a one-tap
+// add from the bag rail (bag.spec.ts RAIL).
 /** Dream box's single-option Nuggets slot — pre-selected and FIXED (D5). */
 const G_NUGGETS = `${DREAM_BOX}_5_combo`;
 /** Dream box's six-option Drinks slot (pack.spec.ts G_DRINKS / PEPSI_SMALL). */
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
-/** +£1, in EXTRA_GROUP. */
-const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e";
-/** isCartRecommended, no modifiers: a one-tap add from the bag rail (bag.spec.ts RAIL). */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
 const CHEESE_BURGER_DESCRIPTION = "The classic Cheese Burger with Herfy special take";
 
 /** The fixture's `ar` aliases (and Cheese Burger's descriptionTranslation). */
@@ -130,111 +121,18 @@ const ISOLATE = /[⁦-⁩]/;
  * Arabic is always offered here: what the GUEST picks is under test.
  * `settings` merges into get_kiosk_settings.
  */
-async function mockKioskBackend(page: Page, settings: Record<string, unknown>) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: { name: "العربية", code: "ar", dir: "rtl" },
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        start_order_text_secondary: "ابدأ الطلب",
-        ideal_time: "180",
-        // Cheese Burger's upsellItems → the MIAM prompt.
-        enable_combo_upsell: true,
-        ...settings,
-      },
-    })
-  );
-  await mockPipelines(page);
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockKioskBackend = (page: Page, settings: Record<string, unknown>) =>
+  mockBackend(page, {
+    arabic: true,
+    // Cheese Burger's upsellItems → the MIAM prompt.
+    settings: { enable_combo_upsell: true, ...settings },
+    pipelines: [PIPELINE],
+  });
 
 async function mockPipelines(page: Page) {
   await page.route("**/api/cx/kiosk/getPipelines", (r) =>
     r.fulfill({ json: [PIPELINE] })
   );
-}
-
-/** Type the device code on the on-screen keyboard and submit (the boot starts). */
-async function submitRegistration(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-}
-
-/** Register and land on the splash. */
-async function registerToStart(page: Page) {
-  await submitRegistration(page);
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
-/**
- * Parks matching requests until release() (idle.spec.ts parkRequests,
- * trimmed). Register it AFTER the mock it shadows (newest wins): release()
- * passes each parked request on with route.fallback().
- */
-async function parkRequests(page: Page, url: string) {
-  const parked: Route[] = [];
-  let armed = true;
-  await page.route(url, (route) => {
-    if (!armed) return route.fallback();
-    parked.push(route);
-    return undefined;
-  });
-  return {
-    get count() {
-      return parked.length;
-    },
-    release: async () => {
-      armed = false;
-      await Promise.all(parked.splice(0).map((route) => route.fallback()));
-    },
-  };
 }
 
 /** [primary, secondary] MIAM headline texts in the store (DEV-only window.__kioskStore). */
@@ -291,32 +189,6 @@ const tickerSeconds = (page: Page) =>
   page
     .locator(".tb-marquee-track")
     .evaluate((el) => Number.parseFloat((el as HTMLElement).style.animationDuration || "18s"));
-
-/** Splash → order type (/second). */
-async function startToSecond(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await expect(page.getByTestId("second-screen")).toBeVisible();
-}
-
-/** /second → /menu (loyalty off). */
-async function pickPipelineToMenu(page: Page) {
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
 
 /** One copy of the /second marquee line (DaypartTicker repeats it). */
 const ticker = (page: Page) => page.locator(".tb-marquee-track span").first();

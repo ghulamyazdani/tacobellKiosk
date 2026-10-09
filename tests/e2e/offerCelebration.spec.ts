@@ -1,6 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, fixtureJson, CHEESE_BURGER } from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addViaPdp, openBag } from "./pages/order";
 
 /**
  * Lane offers, item 33 — the offer-applied celebration: a NON-BLOCKING 2.2 s
@@ -11,149 +12,26 @@ import { fileURLToPath } from "node:url";
  * bag while it shows. It plays once per applied value and never replays on a
  * bag reopen or a return from checkout.
  *
- * Same registered-device mocked backend as offers.spec.ts (helpers copied —
- * established precedent), serving the stock P7b offers fixture, plus the
- * print agent abort. APPLY FLAT money (offers.spec.ts header): Sub £8.00,
+ * Same registered-device boot as offers.spec.ts, on the shared harness
+ * (fixtures/backend.ts mock, pages/* steps), serving the stock P7b offers
+ * fixture. APPLY FLAT money (offers.spec.ts header): Sub £8.00,
  * Discounts −£2.00, Total £7.00; after Remove, Total £9.00.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-const offersFixture = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/offers.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8, 3 addon groups (PDP path)
 const OFFER_FLAT = "offer-flat-2"; // £2 off, always eligible (offers.json)
 
 /** U+2212 MINUS SIGN — the literal character the bag renders, NOT a hyphen. */
 const MINUS = "−";
 
 /**
- * Boot + menu mocks (copied from offers.spec.ts). Order matters: Playwright
- * matches routes newest-first, so the catch-all is registered FIRST and every
- * specific mock after it. The print agent is cross-origin (the catch-all
- * misses it) and is aborted so nothing can reach real hardware.
+ * The shared boot mock (fixtures/backend.ts), serving the stock P7b offers
+ * fixture (a raw array) on get_cx_valid_offers.
  */
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) =>
-    r.fulfill({ json: offersFixture })
-  );
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockKioskBackend = (page: Page) => mockBackend(page, { offers: fixtureJson("offers.json") });
 
-/** Register on the on-screen keyboard and land on /menu (copied from offers.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-/** Menu card tap → PDP → commit plain (£8) → dismiss the added modal (copied from offers.spec.ts). */
-async function addCheeseBurgerViaPdp(page: Page) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
-
-/** VIEW MY BAG → /cart, walking through the first-open /forYou upsell (copied from offers.spec.ts). */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+/** Menu card tap → PDP → commit plain (£8) → dismiss the added modal. */
+const addCheeseBurgerViaPdp = (page: Page) =>
+  addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
 /** Rewards entry → radio-pick flat-2 → SAVE (offers.spec.ts pickAndSave). */
 async function applyFlat(page: Page) {

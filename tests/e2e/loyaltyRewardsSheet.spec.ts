@@ -1,6 +1,11 @@
-import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page, type Route } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  locale,
+  CHUNK,
+  DINE_IN,
+  TORTILLA_SAUCE,
+} from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import {
   mockXenoLoyalty,
@@ -11,6 +16,8 @@ import {
   LOYALTY_REWARDS,
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
+import { registerToStart } from "./pages/boot";
+import { typeDigits } from "./pages/order";
 
 /**
  * Lane loyalty-visual — the Xeno REWARDS sheet after its reskin (Figma
@@ -32,38 +39,19 @@ import {
  *   state or the order push. E8b: per language slot, no cross-language
  *   fallback (an Arabic guest never sees primary-slot texts).
  *
- * Mocks: the boot mocks of loyalty.spec.ts (copied — no spec exports them),
- * the print agent aborted (cross-origin, outside the catch-all), then
- * `mockXenoLoyalty` LAST (it answers the cross-origin revoke too). The lazy
- * chunk is held or aborted by a route registered BEFORE the boot (the
- * offerBuyStage.spec E11 pattern): it is requested the moment /menu mounts.
+ * Mocks: the shared boot mock (fixtures/backend.ts) with loyalty.spec.ts's
+ * LOYALTY_SETTINGS, then `mockXenoLoyalty` LAST (it answers the cross-origin
+ * revoke too). The lazy chunk (CHUNK.bag) is held or aborted by a route
+ * registered BEFORE the boot (the offerBuyStage.spec E11 pattern): it is
+ * requested the moment /menu mounts.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const en = locale("en");
+const ar = locale("ar");
 
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const ar = readJson("../../src/i18n/locales/ar/translation.json");
-
-/** £2, plain with no recommendations: a card tap adds it, no modal. */
-const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b";
 const SALAD_REWARD = LOYALTY_REWARDS.greekSalad;
 /** The ONE lazy UI chunk as the dev server serves it. */
-const LAZY_CHUNK = "**/src/components/cart/bagLazyParts.ts*";
+const LAZY_CHUNK = CHUNK.bag;
 /** LoyaltyRewardsSheet's AUTO_DISMISS_SECONDS, in ms (ada.spec LOYALTY). */
 const REWARDS_AUTO_DISMISS_MS = 25_000;
 
@@ -87,94 +75,15 @@ interface BackendOptions {
 }
 
 /**
- * Boot + menu mocks (loyalty.spec.ts) with the print agent aborted. Order
- * matters: Playwright matches routes newest-first, so the catch-all goes
- * FIRST and every specific mock after it.
+ * The shared boot mock with LOYALTY_SETTINGS and this test's settings; Arabic
+ * adds the secondary language and the pipeline's secondary_name.
  */
-async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: opts.arabic ? { name: "العربية", code: "ar", dir: "rtl" } : {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        ...(opts.arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
-        ideal_time: "180",
-        ...LOYALTY_SETTINGS,
-        ...opts.settings,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        {
-          _id: "p1",
-          tab_id: "t1",
-          tab_type: "dine_in",
-          primary_name: "Dine In",
-          ...(opts.arabic ? { secondary_name: "تناول في المطعم" } : {}),
-        },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** KioskNumpad is the only numeric keypad mounted at a time (phone, then OTP). */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
-
-/** Register on the on-screen keyboard and land on the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
+const mockKioskBackend = (page: Page, opts: BackendOptions = {}) =>
+  mockBackend(page, {
+    arabic: opts.arabic,
+    settings: { ...LOYALTY_SETTINGS, ...opts.settings },
+    pipelines: [opts.arabic ? { ...DINE_IN, secondary_name: "تناول في المطعم" } : DINE_IN],
+  });
 
 /** Splash → /second (Arabic / the ADA view when asked) → /phone. */
 async function startOrderToPhone(page: Page, { ada = false, arabic = false } = {}) {

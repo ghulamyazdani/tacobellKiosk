@@ -1,6 +1,14 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  GREEK_SALAD,
+  LARGE_FRIES,
+  DREAM_BOX,
+} from "./fixtures/backend";
+import { submitLicence as submitRegistration } from "./pages/boot";
+import { addOneTap, openBag, bagRows } from "./pages/order";
 
 /**
  * UB6 (rail-crash, user report 2026-10-08): "Something went wrong" after an
@@ -26,50 +34,23 @@ import { fileURLToPath } from "node:url";
  * asserts the crash screen is absent.
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * Helpers copied from bag-recommendations.spec.ts (house precedent; the
- * shared harness comes later): the `**\/api/**` catch-all FIRST, the print
- * agent aborted, the Xeno revoke routed. Each test serves a deep clone of
- * slim-menu, mutated, from a getMenu route registered AFTER
- * mockKioskBackend (newest wins).
+ * The shared harness (fixtures/backend.ts mock, pages/* steps); the
+ * recommendations seam and its fake S3 stay local (bag-recommendations.spec
+ * precedent). Each test serves a deep clone of slim-menu, mutated, from a
+ * getMenu route registered AFTER mockKioskBackend (newest wins).
  *
  * Money is asserted without the currency symbol (audit-fixes changes the
  * currency shape, UB1). `product-added-modal` is never asserted (R1).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const slimMenu = fixtureJson("slim-menu.json");
+const en = locale("en");
 
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-const en = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-/** £17, flagged, no groups: the one-tap anchor added from the menu. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** £9, flagged; its one group is min 0, so ADD TO BAG needs no pick. */
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
+// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; the shared ids come from fixtures/backend.ts) ----
+// GREEK_SALAD: £17, flagged, no groups — the one-tap anchor added from the menu.
+// LARGE_FRIES: £9, flagged; its one group is min 0, so ADD TO BAG needs no pick.
+// DREAM_BOX: £25, five `_combo` groups. Not flagged in the fixture.
 const FRIES_GROUP = `${LARGE_FRIES}_1573980470_addons`;
-/** £25, five `_combo` groups. Not flagged in the fixture. */
-const DREAM_BOX = "68dd79409030ed3064aee28c";
 /** The box's neighbour in Meals / Boxes, with its own live groups: the control. */
 const DREAM_BOX_SPICY = "68dd79b84c041931d29d6126";
 /** Group ids no `menu.modifiers` entry carries. */
@@ -122,67 +103,9 @@ async function serveMenu(page: Page, menu: SlimMenu) {
   await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
 }
 
-async function mockKioskBackend(page: Page, settings: Record<string, unknown> = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...settings,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/** The shared mock (fixtures/backend.ts); `settings` merges into get_kiosk_settings. */
+const mockKioskBackend = (page: Page, settings: Record<string, unknown> = {}) =>
+  mockBackend(page, { settings });
 
 /** The DEV-only URL seam, on every navigation (bag-recommendations header). */
 async function useTenantRecommendations(page: Page) {
@@ -198,17 +121,6 @@ async function mockS3(page: Page, body: unknown) {
   );
 }
 
-/** Type the device code on the on-screen keyboard and submit (the boot starts). */
-async function submitRegistration(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-}
-
 async function registerToStart(page: Page) {
   await submitRegistration(page);
   await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 20_000 });
@@ -222,26 +134,7 @@ async function startOrderToMenu(page: Page) {
 }
 
 /** The anchor: Greek Salad in one tap from the menu (no groups, no modal). */
-async function addGreekSaladFromMenu(page: Page) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+const addGreekSaladFromMenu = (page: Page) => addOneTap(page, GREEK_SALAD, "(1)");
 
 /** The rail's item ids, left to right. */
 async function railIds(page: Page): Promise<string[]> {
@@ -270,7 +163,6 @@ const tenantMapKeys = (page: Page) =>
     )
   );
 
-const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
 const pdpGroups = (page: Page) => page.locator('[data-testid^="pdp-group-"]');
 
 /**
