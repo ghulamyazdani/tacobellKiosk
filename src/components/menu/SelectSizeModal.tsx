@@ -2,15 +2,33 @@
  * Variant entities flow through untyped from the legacy converters; typed in
  * the domain passes. Do not add NEW anys.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
+import ScrollIndicator from "../chrome/ScrollIndicator";
+import { ErrorBoundary } from "../../ErrorBoundary";
+import { ADA_MODAL_MAX_HEIGHT } from "../stage/KioskStage";
 import closeIcon from "../../assets/icons/close.svg";
 // ?no-inline: a precached file, off the boot JS (SlotSelectionSheet's D7).
 import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
+
+/**
+ * ADA: the size list's box in the card at the zone's cap, where the list
+ * overflows (4+ sizes) — pt 48 + header 92 (title 32 + 24 + name 36) + gap 24
+ * down, the CTA band (gap 24 + CTA 60 + pb 24) up from the cap: 164 / 802.
+ * ponytail: a one-line name; a two-line name starts the bar 36 px above the
+ * list — measure the header if names that long reach a sized item.
+ */
+const ADA_LIST_TOP = 164;
+const ADA_LIST_HEIGHT = ADA_MODAL_MAX_HEIGHT - ADA_LIST_TOP - 108;
+
+/** Never behind a modal dialog: this one in a dev re-run, or one its CONTINUE opened. */
+const restoreFocus = (opener: Element | null) => {
+  if (opener instanceof HTMLElement && !document.querySelector('[aria-modal="true"]')) opener.focus({ preventScroll: true });
+};
 
 interface SelectSizeModalProps {
   entity: any | null;
@@ -51,6 +69,22 @@ export default function SelectSizeModal({
   const ada = useAdaActive();
   const currency = useCurrencySymbol();
   const [selectedId, setSelectedId] = useState<string>("");
+  const firstSize = useRef<HTMLButtonElement>(null);
+  const sizeList = useRef<HTMLDivElement>(null);
+
+  // The app's modal focus (ErrorModal / EditHowManyModal): focus moves in on
+  // open — CONTINUE is `disabled` until a size is picked, so the first size
+  // takes it — and back to the opener when a close leaves no modal dialog
+  // open (Menu mounts this only while open). A CONTINUE that opens the added
+  // modal or the DP-cap error leaves focus to it: this cleanup runs after
+  // GOT IT's autoFocus. The opener is read at first render, before focus
+  // moves in, because StrictMode's dev re-run of the effect finds this dialog
+  // still mounted and skips the restore. No scroll, so nothing under moves.
+  const [opener] = useState(() => document.activeElement);
+  useEffect(() => {
+    firstSize.current?.focus({ preventScroll: true });
+    return () => restoreFocus(opener);
+  }, [opener]);
 
   const variants: any[] = useMemo(() => {
     const list = Array.isArray(entity?.variants) ? [...entity.variants] : [];
@@ -99,7 +133,13 @@ export default function SelectSizeModal({
   );
 
   return (
-    <div className="absolute inset-0 z-40" data-testid="select-size-modal">
+    <div
+      className="absolute inset-0 z-40"
+      data-testid="select-size-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="select-size-title"
+    >
       <button
         type="button"
         aria-label={t("language.close")}
@@ -115,10 +155,14 @@ export default function SelectSizeModal({
           pb 24 = 1133. ADA (no frame; design language, flagged): pt 48 and
           24 gaps = 999, so the standard hero + one tile row fits the 1074
           cap: no tile name or price below the fold of a list that shows no
-          scrollbar (a 2-line name still fits; 4+ sizes scroll). */}
+          scrollbar (a 2-line name still fits). 4+ sizes scroll, under the
+          ADA list's bar (below). */}
       <div className={`tb-modal-enter absolute left-1/2 top-1/2 flex max-h-[min(1500px,calc(100%_-_48px))] w-[680px] flex-col items-center overflow-hidden rounded-[16px] bg-tb-surface px-[24px] pb-[24px] ${ada ? "gap-[24px] pt-[48px]" : "gap-[75px] pt-[80px]"}`}>
         <div className="flex w-[502px] shrink-0 flex-col items-center gap-[24px] text-center">
-          <h2 className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
+          <h2
+            id="select-size-title"
+            className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
+          >
             {t("size.title")}
           </h2>
           <p className="text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
@@ -134,9 +178,13 @@ export default function SelectSizeModal({
           <img alt="" src={closeIcon} className="h-full w-full" />
         </button>
 
-        <div className="flex min-h-0 w-[504px] flex-col gap-[26px] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={sizeList}
+          className="flex min-h-0 w-[504px] flex-col gap-[26px] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {hero && (
             <button
+              ref={firstSize}
               type="button"
               data-testid={`size-${hero.id}`}
               aria-pressed={selectedId === hero.id}
@@ -209,6 +257,20 @@ export default function SelectSizeModal({
             </div>
           )}
         </div>
+        {/* ADA (residual R3): the app's draggable Figma 1:5263 bar over the
+            list's box at the cap, shown only while the sizes overflow (4+).
+            No frame draws it here — design language, flagged. The full view's
+            1500 cap holds five sizes, so it mounts none. */}
+        {ada && (
+          <ErrorBoundary fallback={null}>
+            <ScrollIndicator
+              target={sizeList}
+              top={ADA_LIST_TOP}
+              height={ADA_LIST_HEIGHT}
+              testId="size-scrollbar"
+            />
+          </ErrorBoundary>
+        )}
 
         <button
           type="button"
