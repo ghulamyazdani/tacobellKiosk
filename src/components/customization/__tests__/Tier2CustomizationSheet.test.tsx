@@ -612,3 +612,88 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     dispatch.mockRestore();
   });
 });
+
+/*
+  User report 2026-10-09 — the tier-2 page's grid cards carry the PDP's CTA
+  (same Menu-Item_Medium cards): CHOOSE on an unpicked card, REMOVE on a pick
+  a tap takes back, nothing on a single-slot pick (a tap only re-selects it).
+*/
+describe("Tier2CustomizationSheet — the CTA on every grid card (user report 2026-10-09)", () => {
+  const EXTRAS = {
+    ...ICE_GROUP,
+    name: "Extras",
+    min: 0,
+    max: 2,
+    multiplePunchMin: 0,
+    multiplePunchMax: 2,
+    constituentItems: [
+      { id: "lime", name: "Lime", price: 0, isActive: true },
+      { id: "mint", name: "Mint", price: 0, isActive: true },
+    ],
+  };
+  const cta = (id: string) => screen.getByTestId(`tier2-option-cta-${id}`);
+  const picks = () =>
+    (tier2SelectedCustomization(store.getState()).dl_addons ?? []).map(
+      (row: { id: string; quantity: number }) => [row.id, row.quantity]
+    );
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  afterEach(() => {
+    store.dispatch(setAllowMultiplePunch(false));
+  });
+
+  it("a single-slot group: CHOOSE on both cards; the pick loses its CTA, the other reads CHOOSE and swaps", async () => {
+    seedOpenTier2();
+    renderSheet();
+
+    expect(cta("ice").textContent).toBe(i18n.t("pack.choose"));
+    expect(cta("no-ice").textContent).toBe(i18n.t("pack.choose"));
+    // ONE button named by the item (selectLabel), its CTA the description — never part of the name.
+    expect(screen.getByTestId("tier2-option-ice")).toHaveAccessibleName("Regular Ice");
+    expect(screen.getByTestId("tier2-option-ice")).toHaveAccessibleDescription(i18n.t("pack.choose"));
+
+    await userEvent.click(cta("ice"));
+    expect(picks()).toEqual([["ice", 1]]);
+    expect(screen.queryByTestId("tier2-option-cta-ice")).toBeNull();
+    // …but its box stays (hidden), so the picked card never jumps.
+    expect(screen.getByTestId("tier2-option-ice").querySelector("span.invisible")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Regular Ice" })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(cta("no-ice"));
+    expect(picks()).toEqual([["no-ice", 1]]);
+    expect(cta("ice").textContent).toBe(i18n.t("pack.choose"));
+  });
+
+  it("a flexible group: one tap on CHOOSE picks once, the CTA reads REMOVE, and REMOVE takes it back", async () => {
+    seedOpenTier2(ENTITY, EXTRAS);
+    renderSheet();
+
+    await userEvent.click(cta("lime"));
+    expect(picks()).toEqual([["lime", 1]]);
+    expect(cta("lime").textContent).toBe(i18n.t("pack.remove"));
+
+    await userEvent.click(cta("lime"));
+    expect(picks()).toEqual([]);
+    expect(cta("lime").textContent).toBe(i18n.t("pack.choose"));
+  });
+
+  it("multi-punch ON: the CTA reads the EFFECTIVE bounds the engine taps with — a raw 1/1 group with multi-punch 0/6 is no swap: its pick reads REMOVE, and REMOVE takes it back", async () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    seedOpenTier2(ENTITY, { ...ICE_GROUP, multiplePunchMin: 0, multiplePunchMax: 6 });
+    renderSheet();
+
+    await userEvent.click(cta("ice"));
+    expect(picks()).toEqual([["ice", 1]]);
+    expect(cta("ice").textContent).toBe(i18n.t("pack.remove"));
+
+    await userEvent.click(cta("ice"));
+    expect(picks()).toEqual([]);
+  });
+});

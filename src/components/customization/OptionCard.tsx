@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { getEffectiveMax, getEffectiveMin } from "@cx-sdk/ordering/customization/selectionRules";
 // ?no-inline: emitted as precached files. Inlined (<4 KB → data URIs) they
 // cost boot-path gzip (SlotSelectionSheet's radio-check precedent, D7).
 import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
@@ -28,8 +29,17 @@ export interface OptionCardProps {
   /** Omitted = no radio (a fixed pack slot). */
   radio?: "on" | "off";
   dimmed?: boolean;
-  /** A nested control → the overlay-button pattern (see below). */
-  cta?: { label: string; onClick: () => void; testId: string };
+  /**
+   * With onClick: a nested control → the overlay-button pattern (see below).
+   * Without: the LABEL of the card's own tap (optionCta) — a span inside the
+   * ONE card button, so a tap on it selects exactly once.
+   */
+  cta?: { label: string; onClick?: () => void; testId: string };
+  /**
+   * No CTA, but keep its box (hidden): a grid card whose CTA comes and goes
+   * (optionCta — a swap group's pick has none) never moves its name or row.
+   */
+  reserveCta?: boolean;
   onSelect?: () => void;
   selectLabel?: string;
   /** Testid of the overlay select button (PackSlotCard's pack-slot-open-*). */
@@ -55,6 +65,45 @@ export function formatOptionMeta(item: MetaItem, currency: string, t: TFunction)
   return parts.join(" | ");
 }
 
+/** The group fields optionCta reads — the SDK engines' own. */
+type CtaGroup = {
+  min?: unknown;
+  max?: unknown;
+  multiplePunchMin?: unknown;
+  multiplePunchMax?: unknown;
+  constituentItems?: unknown[];
+} | null | undefined;
+
+/**
+ * A grid card's CTA (user report 2026-10-09; Figma draws one on every
+ * Menu-Item_Medium — 1:2614 / 1:2728 Upgrades, 1:5332 BYO). It is the label
+ * of the card's own tap, so it says what the SDK engines
+ * (applySinglePunchSelection / applyMultiPunchSelection) do with that tap:
+ * CHOOSE on an unpicked card (a full group refuses it out loud — UB2),
+ * REMOVE on a pick a tap takes back (toggle / flexible), and NONE on the pick
+ * of a swap group (effective 1/1 over several options: a tap only re-selects
+ * it — its check says it all; the other cards' CHOOSE swaps).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared by the PDP and the tier-2 page; HMR falls back to a reload for this file
+export function optionCta(
+  group: CtaGroup,
+  allowMultiplePunch: boolean,
+  selected: boolean,
+  t: TFunction,
+  testId: string,
+): OptionCardProps["cta"] {
+  // The engines' single-slot test, verbatim: strict ===, ALL constituent items.
+  const swaps =
+    getEffectiveMin(group, allowMultiplePunch) === 1 &&
+    getEffectiveMax(group, allowMultiplePunch) === 1 &&
+    (group?.constituentItems?.length ?? 0) > 1;
+  if (selected && swaps) return undefined;
+  return { label: selected ? t("pack.remove") : t("pack.choose"), testId };
+}
+
+const CTA =
+  "tb-display relative z-10 mt-auto flex min-h-[60px] w-full items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-center text-[18px] leading-[16px] text-tb-purple";
+
 const CARD =
   "relative flex h-full min-h-[400px] w-full flex-col justify-between gap-[24px] rounded-[8px] bg-tb-grey-6 p-[24px] text-left";
 
@@ -63,9 +112,14 @@ const CARD =
  * outlined CTA (wraps — "SELECT SANDWICH" already fills 230 of its 232 px).
  * Radio (Type=Radio): 36 px at top-right 12 — a 1 px purple ring, or a purple
  * fill with the exported check at inset 16.67 %.
- * Without a CTA the whole card is ONE button carrying the testid (named by its
- * text). With one, the P9f overlay-button pattern: the container keeps the
- * testid, the CTA sits above at z-10, the named overlay goes LAST in the DOM.
+ * Without a CTA, or with a label-only one (no onClick — optionCta), the whole
+ * card is ONE button carrying the testid (named by selectLabel, else its text)
+ * and the CTA is a span inside it; named by selectLabel, it is DESCRIBED by
+ * its meta line and CTA (a screen reader still hears the price). Its pressed
+ * ::before counter-scales (tb-press-hit), so a held press on the outer band
+ * still lands — the overlay's trick. With a nested CTA (onClick), the P9f
+ * overlay-button pattern: the container keeps the testid, the CTA sits above
+ * at z-10, the named overlay goes LAST in the DOM.
  * Motion (lane motion): the button card bumps when it turns selected
  * (tb-select, driven by aria-pressed); the overlay card squeezes while its
  * overlay is pressed (tb-press-card); the check pops in; an errored card
@@ -79,11 +133,13 @@ export default function OptionCard({
   radio,
   dimmed = false,
   cta,
+  reserveCta = false,
   onSelect,
   selectLabel,
   selectTestId,
   errored = false,
 }: OptionCardProps) {
+  const id = useId();
   const className = `${CARD} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
   const content = (
     <>
@@ -98,27 +154,32 @@ export default function OptionCard({
       </span>
       {/* The frame's 134 px content box (1:4905 / 1:4907): the name sits
           under the photo at card y 242 with or without a CTA, and the CTA
-          is pinned to the foot. Only a 2-line name + meta + CTA outgrows it
-          (156 px: the name rises 22 px, as Figma's bottom-anchored name box
-          would). */}
+          is pinned to the foot. Only a 2-line name + meta + CTA (or its
+          reserved box) outgrows it (156 px: the name rises 22 px, as Figma's
+          bottom-anchored name box would). */}
       <span className="flex min-h-[134px] w-full flex-col gap-[24px]">
         <span className="flex flex-col gap-[4px]">
           <span className="block text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
             {name}
           </span>
           {meta && (
-            <span className="block text-[18px] leading-[20px] text-tb-ink-purple">{meta}</span>
+            <span id={`${id}-meta`} className="block text-[18px] leading-[20px] text-tb-ink-purple">
+              {meta}
+            </span>
           )}
         </span>
-        {cta && (
-          <button
-            type="button"
-            data-testid={cta.testId}
-            onClick={cta.onClick}
-            className="tb-display relative z-10 mt-auto flex min-h-[60px] w-full items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-center text-[18px] leading-[16px] text-tb-purple"
-          >
-            {cta.label}
-          </button>
+        {cta ? (
+          cta.onClick ? (
+            <button type="button" data-testid={cta.testId} onClick={cta.onClick} className={CTA}>
+              {cta.label}
+            </button>
+          ) : (
+            <span id={`${id}-cta`} data-testid={cta.testId} className={CTA}>
+              {cta.label}
+            </span>
+          )
+        ) : (
+          reserveCta && <span aria-hidden="true" className={`${CTA} invisible`} />
         )}
       </span>
       {radio && (
@@ -136,15 +197,18 @@ export default function OptionCard({
     </>
   );
 
-  if (onSelect && !cta) {
+  if (onSelect && !cta?.onClick) {
+    // A CTA here is label-only: its span carries `${id}-cta`.
+    const describedBy = [meta && `${id}-meta`, cta && `${id}-cta`].filter(Boolean).join(" ");
     return (
       <button
         type="button"
         data-testid={testId}
         aria-label={selectLabel}
+        aria-describedby={selectLabel && describedBy ? describedBy : undefined}
         aria-pressed={radio ? radio === "on" : undefined}
         onClick={onSelect}
-        className={`tb-select ${className}`}
+        className={`tb-select tb-press-hit ${className}`}
       >
         {content}
       </button>

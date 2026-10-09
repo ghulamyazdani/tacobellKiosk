@@ -237,6 +237,16 @@ describe("press (§3.1)", () => {
   it("a tb-press-card squeezes only while its DIRECT empty overlay is pressed", () => {
     expect(rule(".tb-press-card:has(> button:empty:active)").decl).toEqual({ scale: "var(--tb-press-scale)" });
   });
+
+  it("a tb-press-hit card keeps its whole hit area while it squeezes: its ::before covers it and counter-scales (lane addon-cta)", () => {
+    expect(rule(".tb-press-hit::before").decl).toEqual({
+      content: '""',
+      position: "absolute",
+      inset: "0",
+      transition: "scale var(--tb-dur-press) var(--tb-ease-press)",
+    });
+    expect(rule(".tb-press-hit:active::before").decl).toEqual({ scale: "calc(1 / var(--tb-press-scale))" });
+  });
 });
 
 describe("route entrances (§2)", () => {
