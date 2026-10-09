@@ -60,7 +60,7 @@ export default function CompleteYourMealRail({
   const { items, shouldShowUpsell } = useCartUpsell();
   const tenantItems = useTenantRailItems();
   const { name } = useLocalized();
-  const { addEntity } = useAddEntityToCart();
+  const { addEntity, getAddIntent } = useAddEntityToCart();
   const { doesItemExistInCart } = useCartHook();
   const cart = useSelector(selectCart) as
     | { cartItems?: { id?: string }[] }
@@ -122,10 +122,14 @@ export default function CompleteYourMealRail({
               Accessible verbs, reusing the keys TB already ships: `quickAdd`
               is the verb MenuItemCard puts on its one-tap "+" affordance, and
               `pack.customize` the one the slot sheet uses for a chooser. The
-              card picks between them from `entity.isDirectlyAddable`.
+              card picks between them from `entity.isDirectlyAddable`
+              (isOneTapAddable), which says "customize" for an upsell item
+              the classifier still adds in one tap — so that branch is named
+              by what handleTap's addEntity will do, as the PDP rail does
+              (R6). The add branch always adds.
             */
             addLabel={t("menu.quickAdd")}
-            customizeLabel={t("pack.customize")}
+            customizeLabel={t(getAddIntent(entity) === "add" ? "menu.quickAdd" : "pack.customize")}
             onAdd={handleTap}
           />
         ))}

@@ -3,10 +3,10 @@
  * consumes; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
   setCurrency,
@@ -301,5 +301,49 @@ describe("CompleteYourMealRail — card titles in the guest's language (post-P9 
     expect(screen.getByTestId("bag-rail-item-fries")).toHaveAccessibleName(
       `${i18n.t("menu.quickAdd")} Large Fries`
     );
+  });
+});
+
+/*
+  figma-polish residual R6 — a card is named by what its TAP does: the
+  classifier addEntity runs (the PDP rail's convention), never the
+  isOneTapAddable stamp. With enable_combo_upsell on, a plain item carrying
+  upsellItems is stamped "not one tap", yet the tap adds it at once (TB's raw
+  upsellItems are ids, which the tag filter drops, so no MIAM prompt opens):
+  it was announced "Customize" for a tap that adds.
+*/
+describe("CompleteYourMealRail — a card is named by what its tap does (R6)", () => {
+  const rows = () =>
+    (store.getState() as unknown as { cart: { cartItems: { id: string }[] } }).cart.cartItems.map((row) => row.id);
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setKioskSettings({ enable_combo_upsell: true }));
+    store.dispatch(setModifiersMap({ modifiersMap: { fries_addons: { _id: "fries_addons", isActive: true } } }));
+    store.dispatch(
+      setEntityMap({
+        entityMap: {
+          pepsi: { ...ENTITY_MAP.pepsi, upsellItems: ["pepsi-combo"] },
+          fries: { ...ENTITY_MAP.fries, modifiers: ["fries_addons"] },
+        },
+      })
+    );
+  });
+
+  it("a one-tap item with upsellItems is 'Quick add' — and the tap adds it, the rail staying", () => {
+    renderRail();
+    const card = screen.getByTestId("bag-rail-item-pepsi");
+
+    expect(card).toHaveAccessibleName(`${i18n.t("menu.quickAdd")} Pepsi`);
+    fireEvent.click(card);
+    expect(rows()).toEqual(["pepsi"]);
+    expect(screen.getByTestId("bag-rail")).toBeInTheDocument();
+  });
+
+  it("an item whose tap opens a chooser keeps 'Customize'", () => {
+    renderRail();
+
+    expect(screen.getByTestId("bag-rail-item-fries")).toHaveAccessibleName(`${i18n.t("pack.customize")} Large Fries`);
   });
 });
