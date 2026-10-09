@@ -1,9 +1,32 @@
-import { test, expect, type Page, type Request, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  test,
+  expect,
+  type Page,
+  type Route,
+  REQUEST_BUDGET_MS,
+  MENU_BUDGET_MS,
+  stepClockUntil,
+  persistedSlice,
+} from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  holdRequests,
+  locale,
+  SKIP_CRM,
+  GREEK_SALAD,
+} from "./fixtures/backend";
+import {
+  submitLicence,
+  registerToStart,
+  startToSecond,
+  pickPipelineToMenu,
+  holdHotspot,
+} from "./pages/boot";
+import { addOneTap, openBag, typeDigits } from "./pages/order";
 import {
   mockCheckoutBackend,
   PLACE_ORDER_URL,
+  orderIdOf,
   type CheckoutMockHandle,
 } from "./fixtures/checkout";
 import {
@@ -49,43 +72,18 @@ import {
  * N answers of an endpoint the same way and passes the rest on.
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * House order (bag.spec.ts / idle.spec.ts): the `**\/api/**` catch-all FIRST,
- * the two cross-origin edges it cannot see routed explicitly (print agent
- * aborted, Xeno revoke answered), every specific mock after it; fixture
- * layers (checkout, loyalty) next; each test's hold/script LAST — Playwright
- * matches the newest route first. Boot helpers are copied from idle.spec.ts
- * (no spec exports them — the established precedent). Customer-facing copy
- * is read from the EN translation file, so the panel VARIANT is what is
- * asserted, not a paraphrase of it.
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), the fixture layers (checkout, loyalty) next, each test's
+ * hold/script LAST. The print agent and the Xeno revoke are other origins:
+ * only their fixtures answer them, and the harness (fixtures/kiosk.ts)
+ * denies an unrouted call by name. `holdRequests`, `stepClockUntil` and the
+ * boot / bag steps are the shared harness's (fixtures/, pages/).
+ * Customer-facing copy is read from the EN translation file, so the panel
+ * VARIANT is what is asserted, not a paraphrase of it.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-
-/** £17, no modifiers, no recommendedItems: one tap lands it, no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-
-/** TB's host-configured budgets (src/redux/app/apiSlice.ts). */
-const REQUEST_BUDGET_MS = 10_000;
-const MENU_BUDGET_MS = 30_000;
+const en = locale("en");
 
 const GET_MENU_URL = "**/api/cx/kiosk/getMenu";
 const KIOSK_SETTINGS_URL = "**/api/cx/get_kiosk_settings";
@@ -101,112 +99,11 @@ interface KioskMockOptions {
   loyalty?: boolean;
 }
 
-async function mockKioskBackend(page: Page, opts: KioskMockOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route(KIOSK_SETTINGS_URL, (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...(opts.skipCRM
-          ? { skip_crm_page: true, pay_at_counter: "pay_at_counter" }
-          : {}),
-        ...(opts.loyalty ? LOYALTY_SETTINGS : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route(GET_MENU_URL, (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-interface HeldRequests {
-  /** Requests parked so far — poll it to know the call is in flight. */
-  readonly count: number;
-  /** The parked requests, oldest first (urls, bodies). */
-  readonly requests: Request[];
-  /** The parked routes. Only ever aborted by a test (a dropped connection). */
-  readonly routes: Route[];
-  /** Stop parking: later requests go on to the older mock. */
-  disarm: () => void;
-}
-
-/**
- * A hung backend: parks up to `times` matching requests and never answers
- * them; later ones (or all of them once disarmed) fall back to the older
- * mock. Register it AFTER the mock it shadows (newest route wins).
- */
-async function holdRequests(
-  page: Page,
-  url: string | RegExp,
-  { times = Number.POSITIVE_INFINITY } = {}
-): Promise<HeldRequests> {
-  const routes: Route[] = [];
-  let armed = true;
-  await page.route(url, (route) => {
-    if (!armed || routes.length >= times) return route.fallback();
-    routes.push(route);
-    return undefined;
+/** The shared mock with this spec's switches (LOYALTY_SETTINGS last: its skip_crm_page wins). */
+const mockKioskBackend = (page: Page, opts: KioskMockOptions = {}) =>
+  mockBackend(page, {
+    settings: { ...(opts.skipCRM ? SKIP_CRM : {}), ...(opts.loyalty ? LOYALTY_SETTINGS : {}) },
   });
-  return {
-    get count() {
-      return routes.length;
-    },
-    get requests() {
-      return routes.map((route) => route.request());
-    },
-    routes,
-    disarm: () => {
-      armed = false;
-    },
-  };
-}
 
 /**
  * Scripts the first answers of an endpoint: request N gets `answers[N]`,
@@ -231,27 +128,6 @@ async function answerInTurn(
   };
 }
 
-/**
- * Advances fake time in small steps until `done()` holds — for timer chains
- * the page re-arms itself (see the header). Each step is followed by the
- * check, so a slow page costs steps, never a skipped or real-time tick.
- */
-async function stepClockUntil(
-  page: Page,
-  done: () => boolean | Promise<boolean>,
-  { stepMs = 500, timeout = 20_000 } = {}
-) {
-  await expect
-    .poll(
-      async () => {
-        await page.clock.runFor(stepMs);
-        return done();
-      },
-      { timeout, intervals: [50] }
-    )
-    .toBe(true);
-}
-
 /** URLs of matching requests the page saw FAIL (aborted by a budget, dropped…). */
 function failedRequests(page: Page, pattern: RegExp): string[] {
   const failed: string[] = [];
@@ -261,55 +137,14 @@ function failedRequests(page: Page, pattern: RegExp): string[] {
   return failed;
 }
 
-/** Type the licence on the on-screen keyboard and submit — boot starts. */
-async function submitLicence(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-}
-
-async function registerToStart(page: Page) {
-  await submitLicence(page);
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
-/** Splash → the order-type cards. */
-async function startToSecond(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await expect(page.getByTestId("second-screen")).toBeVisible();
-}
-
 /** Splash → order type → /menu (loyalty off). */
 async function startOrderToMenu(page: Page) {
   await startToSecond(page);
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await pickPipelineToMenu(page);
 }
 
-async function addGreekSaladOneTap(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (see bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
 /** One Greek Salad, then PAY → /payment → PAY AT COUNTER → /receipt → NO THANKS. */
 async function pushOneSaladAtCounter(page: Page) {
@@ -325,41 +160,12 @@ async function pushOneSaladAtCounter(page: Page) {
   await page.getByTestId("receipt-none").click();
 }
 
-/** KioskNumpad is the only numeric keypad mounted at a time. */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
-
-/** The hidden operator gesture (StartScreen's useLongPress): a 3 s hold, in fake time. */
-async function holdHotspot(page: Page, testId: string) {
-  const box = await page.getByTestId(testId).boundingBox();
-  if (!box) throw new Error(`${testId} has no box`);
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.clock.runFor(3_000);
-  await page.mouse.up();
-}
-
-const orderIdOf = (body: unknown): string =>
-  String((body as { source?: { order_id?: unknown } })?.source?.order_id ?? "");
-
 /**
- * A slice of the persisted redux root (redux-persist's `persist:root`) —
- * loyalty state has no UI surface on these screens. Read-only.
+ * The persisted loyalty slice (redux-persist's `persist:root`) — loyalty
+ * state has no UI surface on these screens. Read-only.
  */
-function persistedLoyalty(
-  page: Page
-): Promise<{ isLoyaltyOn?: boolean; totalLoyaltyPoints?: number }> {
-  return page.evaluate(() => {
-    const raw = window.localStorage.getItem("persist:root");
-    const loyalty = raw
-      ? (JSON.parse(raw) as Record<string, string>).loyalty
-      : undefined;
-    return loyalty ? JSON.parse(loyalty) : {};
-  });
-}
+const persistedLoyalty = (page: Page) =>
+  persistedSlice<{ isLoyaltyOn?: boolean; totalLoyaltyPoints?: number }>(page, "loyalty");
 
 /** checkout.spec.ts's standing safety assertion (no gateway, no print agent). */
 function expectNothingDangerousWasContacted(handle: CheckoutMockHandle) {
@@ -375,11 +181,6 @@ test.describe("P9b Rule 2 recovery", () => {
   // setTimeout, so a clock installed after goto would never own them.
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
-  });
-
-  // Parked routes are never answered; drop their handlers without waiting.
-  test.afterEach(async ({ page }) => {
-    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("MENU 500: a failed menu fetch keeps the guest on /second behind menu-error; TRY AGAIN re-runs only the fetches and enters /menu", async ({

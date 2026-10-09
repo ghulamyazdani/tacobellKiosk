@@ -1,6 +1,13 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  locale,
+  DINE_IN,
+  GREEK_SALAD,
+  CHEESE_BURGER,
+  DREAM_BOX,
+} from "./fixtures/backend";
+import { typeDigits } from "./pages/order";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 
 /**
@@ -30,38 +37,18 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  * substring, a template with {{placeholders}} fragment by fragment — never a
  * substring that spans a placeholder.
  *
- * Mocks: the house order (idle.spec / bag.spec — copied, no spec exports
- * them): the `**\/api/**` catch-all FIRST, the cross-origin edges routed
- * explicitly, every specific mock after it (newest wins), the checkout
- * fixture after those.
+ * Mocks: the harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every boot
+ * endpoint; Arabic on, the Dine In card named in both languages), the
+ * checkout fixture after it; the harness (fixtures/kiosk.ts) denies any other
+ * origin by name. GREEK_SALAD (£17, plain) and CHEESE_BURGER (£8, a PDP) are
+ * the two DP items of the DP walk.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const en = locale("en");
+const ar = locale("ar");
 
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const ar = readJson("../../src/i18n/locales/ar/translation.json");
-
-/** £17, plain: a card tap adds it with no modal. A DP item in the DP walk. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** £8, modifier groups: a card tap opens the PDP. A DP item in the DP walk. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-/** The pack: Drinks (the CHOICE slot) starts empty. */
-const DREAM_BOX = "68dd79409030ed3064aee28c";
+/** The pack's Drinks group (the CHOICE slot) starts empty. */
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 
 /** The DP session under test: one DP unit per order during "Lunch". */
@@ -74,75 +61,12 @@ interface MockOptions {
   settings?: Record<string, unknown>;
 }
 
-async function mockKioskBackend(page: Page, opts: MockOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: { name: "العربية", code: "ar", dir: "rtl" },
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        start_order_text_secondary: "ابدأ الطلب",
-        ideal_time: "180",
-        ...opts.settings,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        {
-          _id: "p1",
-          tab_id: "t1",
-          tab_type: "dine_in",
-          primary_name: "Dine In",
-          secondary_name: "تناول في المطعم",
-        },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockKioskBackend = (page: Page, opts: MockOptions = {}) =>
+  mockBackend(page, {
+    arabic: true,
+    settings: opts.settings,
+    pipelines: [{ ...DINE_IN, secondary_name: "تناول في المطعم" }],
+  });
 
 /** DP on (the deployment row), the Lunch session, and its two DP items. */
 async function mockDynamicPricing(page: Page) {
@@ -195,13 +119,6 @@ async function openBag(page: Page) {
     await page.getByTestId("foryou-primary").click();
   }
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
-}
-
-/** KioskNumpad is the only numeric keypad mounted at a time. */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
 }
 
 /**

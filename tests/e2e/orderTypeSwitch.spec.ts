@@ -1,6 +1,24 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  test,
+  expect,
+  type Page,
+  type Route,
+  REQUEST_BUDGET_MS,
+  MENU_BUDGET_MS,
+  PROMPT_AFTER_MS,
+  persistedLoyaltyPoints,
+} from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  SKIP_CRM,
+  CHEESE_BURGER,
+  GREEK_SALAD,
+  TORTILLA_SAUCE,
+} from "./fixtures/backend";
+import { bootRegisteredToMenu, registerToStart, startOrderTo } from "./pages/boot";
+import { addOneTap, addViaPdp, openBag, bagRows, loyaltyRows, typeDigits } from "./pages/order";
 import {
   mockCheckoutBackend,
   type CheckoutMockHandle,
@@ -46,13 +64,16 @@ import {
  *   £10.00.
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * House order: the `**\/api/**` catch-all FIRST, then the checkout fixture
- * (print agent aborted, every gateway 500-guarded, the pay-at-counter
- * endpoints), then the specific mocks — newest wins, so the two-pipeline
- * getPipelines here replaces the fixture's single row. Loyalty is off, so
- * nothing reaches xeno.in. Boot helpers are copied from bag.spec.ts (house
- * precedent: no spec exports them). Copy is read from the EN translation
- * files (the lane's strings live in lazy.json), never paraphrased.
+ * The harness house order, newest wins: the shared mock (fixtures/
+ * backend.ts — its origin-scoped `/api/` catch-all, then every boot
+ * endpoint), then the checkout fixture (print agent aborted, every gateway
+ * 500-guarded, the pay-at-counter endpoints), then this spec's per-tab
+ * routes — so the two-pipeline getPipelines here replaces the fixture's
+ * single row — and, with `loyalty`, the Xeno surface last. Otherwise loyalty
+ * is off, so nothing reaches xeno.in. Boot and bag steps are the shared page
+ * functions (pages/boot.ts, pages/order.ts). Copy is read from the EN
+ * translation files (the lane's strings live in lazy.json), never
+ * paraphrased.
  *
  * ── TIME ────────────────────────────────────────────────────────────────
  * Only the HANG test installs Playwright's clock (before the first goto):
@@ -61,35 +82,16 @@ import {
  * waited (recovery.spec.ts / idle.spec.ts headers).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const offersFixture = readJson("./fixtures/offers.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
+const slimMenu = fixtureJson("slim-menu.json");
+const offersFixture = fixtureJson("offers.json");
+const en = locale("en");
+const enLazy = locale("en", "lazy");
 
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json, offers.json) ----
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8 on t1, £9 on t2
-const GREEK_SALAD = "5dd1093829754a432f2c32e2"; // £17, one-tap
+// CHEESE_BURGER (£8 on t1, £9 on t2), GREEK_SALAD (£17, one-tap) and
+// TORTILLA_SAUCE (£2, one-tap) come from fixtures/backend.ts.
 /** Cheese Burger's optional "Choose From Extra" group (0 / 3). */
 const BURGER_EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
-const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2, one-tap
 /** Kiddie Meal Beef Burger, re-shaped by withSizes() into a sized item (`sized` option). */
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5 on t1, £6 on t2
@@ -100,11 +102,11 @@ const OFFER_FLAT_NAME = "£2 off your order";
 /** U+2212 MINUS SIGN — the literal character the bag renders. */
 const MINUS = "−";
 
-/** TB's host-configured budgets (src/redux/app/apiSlice.ts). */
-const REQUEST_BUDGET_MS = 10_000;
-const MENU_BUDGET_MS = 30_000;
-/** P9a idle timing (idle.spec.ts): ideal_time 180 clamps to 120 s, prompt at 100 s. */
-const PROMPT_AFTER_MS = 100_000;
+/**
+ * P9a idle timing (idle.spec.ts): ideal_time 180 clamps to 120 s; the prompt
+ * shows at PROMPT_AFTER_MS (100 s). The request budgets (REQUEST_BUDGET_MS,
+ * MENU_BUDGET_MS — src/redux/app/apiSlice.ts) come from fixtures/kiosk.ts.
+ */
 const IDLE_TIMEOUT_MS = 120_000;
 
 interface Pipeline {
@@ -228,7 +230,10 @@ async function mockKioskBackend(
     requiredOnT2,
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
+  // Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. Loyalty on
+  // routes /second through the /phone lookup (loyalty.spec.ts); its
+  // skip_crm_page: false wins over SKIP_CRM's.
+  await mockBackend(page, { settings: { ...SKIP_CRM, ...(loyalty ? LOYALTY_SETTINGS : {}) } });
   // Print agent aborted + every gateway 500-guarded (fixture header).
   const checkout = await mockCheckoutBackend(page, checkoutOptions);
   const net: SwitchNet = { t2Menu: "ok", t2Charges: "ok", held: [], calls: [], checkout };
@@ -247,41 +252,6 @@ async function mockKioskBackend(
     return body;
   };
 
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment.
-        skip_crm_page: true,
-        pay_at_counter: "pay_at_counter",
-        // Loyalty on routes /second through the /phone lookup (loyalty.spec.ts).
-        ...(loyalty ? LOYALTY_SETTINGS : {}),
-      },
-    })
-  );
   if (pipelineStatuses) {
     await page.route("**/api/cx/get_all_pipeline_status", (r) =>
       r.fulfill({ json: pipelineStatuses })
@@ -306,9 +276,6 @@ async function mockKioskBackend(
     log("get_out_of_stock", route);
     return route.fulfill({ json: [] });
   });
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
   await page.route("**/api/cx/get_cx_valid_offers", (route) => {
     const body = log("offers", route);
     const offers = offersFor ? offersFor(body.tab_type) : [];
@@ -329,59 +296,14 @@ async function mockKioskBackend(
       },
     });
   });
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
   // Newest route wins: the Xeno surface goes last (loyalty.spec.ts header).
   if (loyalty) net.xeno = await mockXenoLoyalty(page);
   return net;
 }
 
-/** Register on the on-screen keyboard and land on /menu as Dine In (copied from bag.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-/** Menu card → PDP → commit plain (£8 on t1) → dismiss the added modal (bag.spec.ts). */
-async function addCheeseBurgerViaPdp(page: Page) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
-
-/** A plain item lands with one tap, no modal (bag.spec.ts). */
-async function addOneTap(page: Page, entityId: string, expectedCount: string) {
-  const card = page.getByTestId(`item-${entityId}`);
-  await card.scrollIntoViewIfNeeded();
-  await card.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
-
-/** VIEW MY BAG → /cart, through the first-open upsell if it shows (bag.spec.ts openBag). */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+/** Menu card → PDP → commit plain (£8 on t1) → dismiss the added modal (pages/order.ts). */
+const addCheeseBurgerViaPdp = (page: Page) =>
+  addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
 /** Burger (PDP) + Greek Salad (one tap) on Dine In, bag open at £25.00 / £29.00. */
 async function bootToBagWithBurgerAndSalad(page: Page) {
@@ -399,17 +321,9 @@ async function bootToBagWithBurgerAndSalad(page: Page) {
  * sheet dismissed.
  */
 async function bootIdentifiedToMenu(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-  for (const digit of LOYALTY_PHONE) await page.getByTestId(`numpad-key-${digit}`).click();
+  await registerToStart(page);
+  await startOrderTo(page, "phone-screen");
+  await typeDigits(page, LOYALTY_PHONE);
   await page.getByTestId("phone-continue").click();
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("loyalty-rewards-close").click();
@@ -423,25 +337,12 @@ async function redeemFromMenu(page: Page, couponCode: string) {
   await page.getByTestId(`loyalty-reward-${couponCode}`).click();
   await page.getByTestId("loyalty-redeem").click();
   await expect(page.getByTestId("loyalty-otp-display")).toBeVisible({ timeout: 10_000 });
-  for (const digit of LOYALTY_OTP) await page.getByTestId(`numpad-key-${digit}`).click();
+  await typeDigits(page, LOYALTY_OTP);
   await page.getByTestId("loyalty-otp-submit").click();
   await expect(page.getByTestId("loyalty-success")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("loyalty-success")).toHaveCount(0, { timeout: 10_000 });
 }
 
-/** `state.loyalty.totalLoyaltyPoints` from persist:root (loyalty.spec.ts). */
-function persistedLoyaltyPoints(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const raw = window.localStorage.getItem("persist:root");
-    if (!raw) return Number.NaN;
-    const root = JSON.parse(raw) as Record<string, string>;
-    if (!root.loyalty) return Number.NaN;
-    return Number((JSON.parse(root.loyalty) as { totalLoyaltyPoints?: number }).totalLoyaltyPoints);
-  });
-}
-
-const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
-const loyaltyRows = (page: Page) => page.locator('[data-testid^="bag-loyalty-row-"]');
 const eatInSegment = (page: Page) => page.getByTestId("bag-ordertype-eatin");
 const takeOutSegment = (page: Page) => page.getByTestId("bag-ordertype-takeout");
 const idleModal = (page: Page) => page.getByTestId("idle-modal");
@@ -575,11 +476,6 @@ async function expectNoPrompt(page: Page) {
 }
 
 test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
-  // The HANG test parks a route the page abandons; drop it without waiting.
-  test.afterEach(async ({ page }) => {
-    await page.unrouteAll({ behavior: "ignoreErrors" });
-  });
-
   test("SINGLE PIPELINE: with no take-away pipeline the TAKE OUT segment is aria-disabled and inert", async ({
     page,
   }) => {

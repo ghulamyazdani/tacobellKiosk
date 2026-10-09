@@ -1,6 +1,16 @@
-import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  test,
+  expect,
+  type Locator,
+  type Page,
+  type Route,
+  freezeClock,
+  fakeNow,
+  stepClockUntil as stepUntil,
+  stepClockTo as stepTo,
+} from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, locale, CHEESE_BURGER, CHUNK } from "./fixtures/backend";
+import { submitLicence } from "./pages/boot";
 import {
   mockCheckoutBackend,
   type CheckoutMockHandle,
@@ -41,7 +51,9 @@ import {
  * forbiddenHit === false and both initiate counts.
  *
  * ── MOCK ORDER (newest route wins) ──────────────────────────────────────
- * `mockKioskBackend` (catch-all `**\/api/**` FIRST) → `mockCheckoutBackend`
+ * The harness house order: `mockKioskBackend` (the shared mock,
+ * fixtures/backend.ts — its origin-scoped `/api/` catch-all FIRST, then
+ * every boot endpoint) → `mockCheckoutBackend`
  * with the two REAL Paytm device-setting rows (FORBIDDEN_PATH_RE guards every
  * gateway prefix with a loud 500; the print agent is aborted) →
  * `mockPaytmBackend` (tests/e2e/fixtures/paytm.ts) LAST, which wins for the
@@ -83,35 +95,15 @@ import {
  * BACK TO BAG; PAY ANOTHER WAY belongs to the non-retryable local refusals
  * (E8b). Both exits are covered, each where the product offers it.
  *
- * Boot helpers are copied from checkout.spec.ts / idle.spec.ts / ada.spec.ts
- * (no spec exports them — copying is the suite's precedent until the shared
- * harness lands). Fixture money: one Cheese Burger, £8 + VAT 15 % → £9.00.
+ * The backend mock, the clock helpers and the licence step are the shared
+ * harness's (fixtures/backend.ts, fixtures/kiosk.ts, pages/boot.ts), behind
+ * thin adapters that keep this spec's names; the boot walk stays local (its
+ * 20 s start budget, the Arabic and ADA branches). Fixture money: one Cheese
+ * Burger, £8 + VAT 15 % → £9.00.
  */
 
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const ar = readJson("../../src/i18n/locales/ar/translation.json");
-
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-/** £8, a plain PDP commit — the bag checks out at £9.00. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
+const en = locale("en");
+const ar = locale("ar");
 
 /** SDK paytm.ts windows (PAYTM_*_STOP_TIMER_SECONDS) + PAYTM_SETTLE_WINDOW_MS. */
 const EDC_WINDOW_MS = 180_000;
@@ -123,7 +115,7 @@ const STAGE_HEIGHT = 1920;
 const ADA_BRAND_ZONE_HEIGHT = 798;
 
 /* ------------------------------------------------------------------ */
-/* Boot (copied house helpers)                                         */
+/* Boot                                                                */
 /* ------------------------------------------------------------------ */
 
 interface KioskMockOptions {
@@ -131,75 +123,24 @@ interface KioskMockOptions {
   idealTime?: string;
   /** get_kiosk_settings.accessibility_mode — the tenant's ADA gate. */
   ada?: boolean;
-  /** Offer Arabic as the secondary language. */
+  /** Offer Arabic as the secondary language (the shared mock adds its splash text). */
   arabic?: boolean;
 }
 
-async function mockKioskBackend(
+/** The shared mock; skipCRM: PAY on a dine-in tab goes straight to /payment. */
+function mockKioskBackend(
   page: Page,
   { idealTime = "180", ada = false, arabic = false }: KioskMockOptions
 ) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: arabic
-          ? { name: "العربية", code: "ar", dir: "rtl" }
-          : {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        ...(arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
-        ideal_time: idealTime,
-        // skipCRM: PAY on a dine-in tab goes straight to /payment.
-        skip_crm_page: true,
-        pay_at_counter: "pay_at_counter",
-        accessibility_mode: ada,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
+  return mockBackend(page, {
+    arabic,
+    settings: {
+      ideal_time: idealTime,
+      skip_crm_page: true,
+      pay_at_counter: "pay_at_counter",
+      accessibility_mode: ada,
+    },
+  });
 }
 
 interface BootOptions extends KioskMockOptions {
@@ -230,13 +171,7 @@ async function bootToPayment(page: Page, opts: BootOptions = {}): Promise<Mocks>
   // LAST: its five routes must beat checkout's FORBIDDEN_PATH_RE.
   const paytm = await mockPaytmBackend(page, opts.script);
 
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
+  await submitLicence(page);
   await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 20_000 });
   await page.getByTestId("start-screen").click();
   await expect(page.getByTestId("second-screen")).toBeVisible({ timeout: 10_000 });
@@ -290,24 +225,9 @@ async function chooseMethod(page: Page, tile: string) {
 }
 
 /**
- * Pause the fake clock where it stands (+1 s, nothing due on /receipt): from
- * here on only {@link stepClockUntil} moves time (header, TIME). pauseAt
- * refuses a time in the past, and real time flows between the two calls — a
- * starved runner gets another try instead of a flake.
- */
-async function freezeClock(page: Page) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      await page.clock.pauseAt((await fakeNow(page)) + 1_000);
-      return;
-    } catch (error) {
-      if (attempt === 3 || !String(error).includes("past")) throw error;
-    }
-  }
-}
-
-/**
- * Freeze, tap a receipt tile (the Paytm initiate) and land on /paymentPolling.
+ * Freeze the clock (fixtures/kiosk.ts `freezeClock`: +1 s, nothing due on
+ * /receipt — from here on only {@link stepClockUntil} moves time, header
+ * TIME), tap a receipt tile (the Paytm initiate) and land on /paymentPolling.
  * `double`: a {@link doubleTap} instead of one click.
  */
 async function initiateToPolling(page: Page, receipt = "receipt-none", double = false) {
@@ -329,42 +249,26 @@ const doubleTap = (page: Page, testId: string) =>
     (el as HTMLElement).click();
   });
 
-const fakeNow = (page: Page) => page.evaluate(() => Date.now());
-
 /**
  * Advance fake time in small steps until `done()` holds — for timer chains
- * the page re-arms itself (recovery.spec.ts). GATED: time never moves while
+ * the page re-arms itself (fixtures/kiosk.ts). GATED: time never moves while
  * a Paytm request is unanswered (header).
  */
-async function stepClockUntil(
+const stepClockUntil = (
   page: Page,
   paytm: PaytmMockHandle,
   done: () => boolean | Promise<boolean>,
   { stepMs = 1_000, timeout = 60_000 } = {}
-) {
-  await expect
-    .poll(
-      async () => {
-        if ((await paytm.inFlight()) === 0) await page.clock.runFor(stepMs);
-        return done();
-      },
-      { timeout, intervals: [50] }
-    )
-    .toBe(true);
-}
-
-/** Step (gated) until the page's fake now reaches `at`; overshoots by < stepMs. */
-async function stepClockTo(
-  page: Page,
-  paytm: PaytmMockHandle,
-  at: number,
-  stepMs = 4_000
-) {
-  await stepClockUntil(page, paytm, async () => (await fakeNow(page)) >= at, {
+) =>
+  stepUntil(page, done, {
     stepMs,
-    timeout: 90_000,
+    timeout,
+    gate: async () => (await paytm.inFlight()) === 0,
   });
-}
+
+/** Step (gated) until the page's fake now reaches `at`; overshoots by < stepMs (90 s budget). */
+const stepClockTo = (page: Page, paytm: PaytmMockHandle, at: number, stepMs = 4_000) =>
+  stepTo(page, at, { stepMs, gate: async () => (await paytm.inFlight()) === 0 });
 
 const visible = (page: Page, testId: string) => async () =>
   (await page.getByTestId(testId).count()) > 0;
@@ -585,7 +489,7 @@ const staticPart = (template: string) => template.split("{{")[0].trim();
  * module). A build serves assets/paytmRuntime-<hash>.js, which chunkRecovery
  * never reloads for (chunkRecovery.test, PaytmPaymentRoute.test).
  */
-const PAYTM_CHUNK = "**/src/pages/PaytmPayment/paytmRuntime.ts*";
+const PAYTM_CHUNK = CHUNK.paytm;
 
 /** Counts the screen chunk's requests from now on. */
 function countChunkRequests(page: Page) {

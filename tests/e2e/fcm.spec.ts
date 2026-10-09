@@ -1,7 +1,7 @@
-import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { test, expect, type BrowserContext, type Page } from "./fixtures/kiosk";
 import { APP_ORIGIN } from "./fixtures/origin";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { mockKioskBackend as mockBackend, GREEK_SALAD } from "./fixtures/backend";
+import { registerToStart } from "./pages/boot";
 
 /**
  * P9e — FCM remote brand updates through the REAL Firebase SDK, end to end:
@@ -31,36 +31,16 @@ import { fileURLToPath } from "node:url";
  * listener (E9) or through the relay worker via CDP (E10).
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * House order (idle.spec.ts): the `**\/api/**` catch-all FIRST, the
- * cross-origin edges after it, specifics last (newest wins). No fake clock:
- * nothing here waits on an in-app timer, and Firebase's own timers stay real.
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), this spec's ack and FCM-key routes after it, the Google
+ * hosts per test; the harness (fixtures/kiosk.ts) denies any other origin
+ * by name. No fake clock: nothing here waits on an in-app timer, and
+ * Firebase's own timers stay real.
  */
 test.use({ channel: "chromium" });
 
 const BASE_URL = APP_ORIGIN;
-
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-/** £17, no modifiers, no recommendedItems: one tap lands it, no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
 
 /** Dummy, NON-secret Firebase web config; the VAPID key decodes as base64url. */
 const FCM_ENV = {
@@ -81,56 +61,7 @@ interface Backend {
 
 async function mockKioskBackend(page: Page): Promise<Backend> {
   const backend: Backend = { acks: [], fcmKeyPosts: [], fcmKeyStatus: 200 };
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({ json: { start_order_text_primary: "START ORDER", ideal_time: "180" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
+  await mockBackend(page);
   await page.route("**/api/cx/update_device_status", (r) => {
     backend.acks.push(r.request().postDataJSON());
     return r.fulfill({ json: {} });
@@ -139,7 +70,6 @@ async function mockKioskBackend(page: Page): Promise<Backend> {
     backend.fcmKeyPosts.push(r.request().postDataJSON());
     return r.fulfill({ status: backend.fcmKeyStatus, json: {} });
   });
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
   return backend;
 }
 
@@ -226,17 +156,6 @@ async function answerFirebaseBackend(page: Page) {
     return route.fulfill({ json: { token: FCM_TOKEN } });
   });
   return calls;
-}
-
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
 }
 
 /** Splash → order type → /menu → one Greek Salad: a guest mid-order. */
