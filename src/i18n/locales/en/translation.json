@@ -38,7 +38,6 @@
     "unavailableBody": "This kiosk can't reach the ordering system right now. It will keep trying automatically.",
     "configNoLanguage": "No language is set up for this kiosk. Add one in Cockpit.",
     "configNoPipelines": "No order types (Dine In / Take Out) are set up for this kiosk. Add them in Cockpit.",
-    "configNoStartText": "The start screen text is missing from the kiosk settings. Add it in Cockpit.",
     "retryIn": "Trying again in {{seconds}}s",
     "retryNow": "Try again now"
   },
