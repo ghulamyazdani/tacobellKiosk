@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mockKioskBackend } from "./fixtures/backend";
+import { holdRequests, mockKioskBackend } from "./fixtures/backend";
 import { expect, test, type Page } from "./fixtures/kiosk";
 
 /**
@@ -84,6 +84,24 @@ test.describe("P9f harness self-check", () => {
     await page.goto("/");
     await expect(page.getByTestId("registration-screen")).toBeVisible();
     await page.evaluate(() => fetch("/api/e2e-unmocked").catch(() => undefined));
+  });
+
+  test("DENIED: a cross-origin call to a path the shared mock names fails the test — its named routes answer the backend only", async ({
+    page,
+  }) => {
+    test.fail();
+    await cleanRegistration(page);
+    await page.evaluate(() => fetch("https://e2e-leak.invalid/api/cx/kiosk/getLanguage").catch(() => undefined));
+  });
+
+  test("DENIED: a cross-origin call to a held path fails the test — holdRequests parks the backend's calls only", async ({
+    page,
+  }) => {
+    test.fail();
+    await cleanRegistration(page);
+    await holdRequests(page, "**/api/cx/kiosk/getMenu");
+    // Parked instead, this fetch never settles: the test times out, never failing on the deny.
+    await page.evaluate(() => fetch("https://e2e-leak.invalid/api/cx/kiosk/getMenu").catch(() => undefined));
   });
 
   test("RECS SEAM: tenant recommendations are off unless the spec sets the seam — a .env URL never reaches the deny", async ({
