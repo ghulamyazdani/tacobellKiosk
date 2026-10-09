@@ -329,7 +329,7 @@ export default function BagItemRow({
           </p>
         )}
         {isPaidRow && (
-          <div className="flex h-[68px] w-[188px] items-center justify-between rounded-full border-[1.72px] border-[#b9b9b9] bg-tb-surface px-[10px]">
+          <div className="flex h-[68px] w-[188px] items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface px-[10px]">
             <button
               type="button"
               data-testid={`bag-dec-${row?.itemId}`}

@@ -53,9 +53,14 @@ const setPermission = (permission: NotificationPermission) =>
     permission,
     requestPermission: h.requestPermission,
   });
-/** Real wall time: a re-registered module import does I/O. */
+/** Real wall time: a re-registered module import does I/O. Proves a NEGATIVE over a window. */
 const settle = () =>
   act(() => new Promise<void>((resolve) => setTimeout(resolve, 150)));
+/** A POSITIVE outcome is waited ON: under parallel-suite load the import can outlast any fixed window. */
+const settleUntil = (outcome: () => void) =>
+  act(async () => {
+    await vi.waitFor(outcome, { timeout: 3000, interval: 25 });
+  });
 
 beforeEach(() => {
   store.dispatch({ type: "RESET_STATE" });
@@ -92,7 +97,7 @@ afterEach(() => {
 describe("useFcmRegistration gates — any one closed ⇒ no import, no prompt, no event", () => {
   it("control: every gate open → the seam is imported once, a token minted and registered", async () => {
     mount();
-    await settle();
+    await settleUntil(() => expect(h.register).toHaveBeenCalled());
 
     expect(h.imports).toBe(1);
     expect(h.getToken).toHaveBeenCalledTimes(1);
@@ -126,7 +131,7 @@ describe("useFcmRegistration gates — any one closed ⇒ no import, no prompt, 
     act(() => {
       store.dispatch(setShouldRegisterFcm());
     });
-    await settle();
+    await settleUntil(() => expect(h.register).toHaveBeenCalled());
 
     expect(h.imports).toBe(1);
     expect(h.register).toHaveBeenCalledTimes(1);
@@ -142,7 +147,8 @@ describe("useFcmRegistration — the firebase chunk fails to load", () => {
   ])("the import %s → FCM off: ONE 'import' event, nothing else, no throw", async (_label, factory) => {
     vi.doMock(RUNTIME, factory);
     mount();
-    await settle();
+    await settleUntil(() => expect(h.capture).toHaveBeenCalled());
+    await settle(); // then a window: ONE event, never a second
 
     expect(h.capture.mock.calls).toEqual([
       [

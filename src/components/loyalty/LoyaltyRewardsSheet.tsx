@@ -478,7 +478,7 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         <span
           aria-hidden="true"
           className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border-2 ${
-            selected ? "border-tb-purple" : "border-[#b9b9b9]"
+            selected ? "border-tb-purple" : "border-tb-grey-3"
           }`}
         >
           {selected && (

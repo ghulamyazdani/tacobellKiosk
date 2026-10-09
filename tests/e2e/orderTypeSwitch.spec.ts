@@ -68,8 +68,9 @@ import {
  * backend.ts — its origin-scoped `/api/` catch-all, then every boot
  * endpoint), then the checkout fixture (print agent aborted, every gateway
  * 500-guarded, the pay-at-counter endpoints), then this spec's per-tab
- * routes — so the two-pipeline getPipelines here replaces the fixture's
- * single row — and, with `loyalty`, the Xeno surface last. Otherwise loyalty
+ * routes — its two-pipeline getPipelines replaces the shared mock's one row
+ * (the checkout fixture routes getPipelines only when given a `tabType`,
+ * never here) — and, with `loyalty`, the Xeno surface last. Otherwise loyalty
  * is off, so nothing reaches xeno.in. Boot and bag steps are the shared page
  * functions (pages/boot.ts, pages/order.ts). Copy is read from the EN
  * translation files (the lane's strings live in lazy.json), never
@@ -257,7 +258,7 @@ async function mockKioskBackend(
       r.fulfill({ json: pipelineStatuses })
     );
   }
-  // After the checkout fixture: its single-row getPipelines must not win.
+  // Over the shared mock's one row (the checkout fixture routes getPipelines only with a tabType).
   await page.route("**/api/cx/kiosk/getPipelines", (r) => r.fulfill({ json: pipelines }));
   await page.route("**/api/cx/kiosk/getMenu", (route) => {
     const body = log("getMenu", route);

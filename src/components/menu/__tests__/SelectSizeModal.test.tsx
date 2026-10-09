@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode, useState } from "react";
 import { Provider } from "react-redux";
 import { setCurrency, toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import SelectSizeModal from "../SelectSizeModal";
+import ErrorModal from "../../common/ErrorModal";
 import i18n from "../../../i18n";
 
 const ENTITY = {
@@ -267,5 +269,157 @@ describe("SelectSizeModal — Figma 1:5701 geometry (S2)", () => {
     expect(card()).not.toHaveClass("gap-[75px]");
     expect(card()).not.toHaveClass("pt-[80px]");
     expect(card().className).toContain("max-h-[min(1500px,calc(100%_-_48px))]");
+  });
+});
+
+/*
+  Residual R3 (figma-polish) — the modal had no dialog semantics. It takes the
+  app's modal contract (CancelOrderModal / EditHowManyModal / ProductAddedModal):
+  role "dialog", aria-modal, named by its title. Focus moves in on open (the
+  ErrorModal / EditHowManyModal precedent; CONTINUE is `disabled` until a size
+  is picked, so the first size takes it) and goes back to the opener on a
+  close that leaves no modal dialog open — never behind the dialog a CONTINUE
+  opened (review F1: the restore ran after GOT IT's autoFocus and took it).
+*/
+describe("SelectSizeModal — a modal dialog (residual R3)", () => {
+  /**
+   * Menu's contract: mounted only while open; every exit unmounts it. In the
+   * same CONTINUE handler the add may open the product-added modal (a modal
+   * dialog that moves no focus) or, over the DP cap, the global error
+   * (ErrorModal, GOT IT autoFocus). StrictMode, as main.tsx renders the app:
+   * its dev re-run of the focus effect must not lose the opener.
+   */
+  function Opener({ next }: { next?: "added" | "error" }) {
+    const [open, setOpen] = useState(false);
+    const [after, setAfter] = useState(false);
+    return (
+      <StrictMode>
+        <Provider store={store}>
+          <button type="button" onClick={() => setOpen(true)}>
+            open sizes
+          </button>
+          {open && (
+            <SelectSizeModal
+              entity={ENTITY}
+              onClose={() => setOpen(false)}
+              onContinue={() => {
+                setOpen(false);
+                setAfter(true);
+              }}
+            />
+          )}
+          {after && next === "added" && <div role="dialog" aria-modal="true" aria-label="added" />}
+          {after && next === "error" && (
+            <ErrorModal
+              testId="global-error"
+              title="cap"
+              primary={{ label: "GOT IT", testId: "global-error-ok", onClick: () => setAfter(false) }}
+            />
+          )}
+        </Provider>
+      </StrictMode>
+    );
+  }
+  const modal = () => screen.getByTestId("select-size-modal");
+  const scrim = () => modal().firstElementChild as HTMLElement;
+  const x = () =>
+    screen.getAllByRole("button", { name: i18n.t("language.close") }).find((b) => b.querySelector("img")) as HTMLElement;
+  const pickAndContinue = async () => {
+    await userEvent.click(screen.getByTestId("size-v-medium"));
+    await userEvent.click(screen.getByTestId("size-continue"));
+  };
+  const openSizes = async (next?: "added" | "error") => {
+    render(<Opener next={next} />);
+    const opener = screen.getByRole("button", { name: "open sizes" });
+    await userEvent.click(opener);
+    expect(screen.getByTestId("size-v-large")).toHaveFocus();
+    return opener;
+  };
+
+  it("is a modal dialog named by its title", () => {
+    renderModal();
+
+    const dialog = screen.getByRole("dialog", { name: i18n.t("size.title") });
+    expect(dialog).toBe(modal());
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toContainElement(screen.getByTestId("size-continue"));
+  });
+
+  it.each([
+    ["the X", async () => userEvent.click(x())],
+    ["the scrim", async () => userEvent.click(scrim())],
+    ["a CONTINUE that opens nothing else", pickAndContinue],
+  ])("focus moves to the first size on open, and back to the opener when %s closes it", async (_how, close) => {
+    const opener = await openSizes();
+
+    await close();
+    expect(screen.queryByTestId("select-size-modal")).toBeNull();
+    expect(opener).toHaveFocus();
+  });
+
+  it("a CONTINUE the DP cap refuses: the global error's GOT IT keeps its autoFocus — never the opener behind it", async () => {
+    const opener = await openSizes("error");
+
+    await pickAndContinue();
+    expect(screen.getByTestId("global-error-ok")).toHaveFocus();
+    expect(opener).not.toHaveFocus();
+  });
+
+  it("a CONTINUE that opens the product-added modal: focus never goes back behind it", async () => {
+    const opener = await openSizes("added");
+
+    await pickAndContinue();
+    expect(screen.getByRole("dialog", { name: "added" })).toBeInTheDocument();
+    expect(opener).not.toHaveFocus();
+  });
+});
+
+/*
+  Residual R3 / sign-off (10) — in ADA a list of 4+ sizes overflows the
+  1074 px cap (hero 453 + 26 + two tile rows of 248 + 10 = 985 > 802) and
+  scrolled with no bar. The ADA list carries the app's ScrollIndicator over
+  its own box at the cap: pt 48 + header 92 + gap 24 = 164 down, the CTA band
+  (gap 24 + CTA 60 + pb 24 = 108) up from the foot, so 1074 − 272 = 802. It
+  shows only while the list overflows. jsdom has no layout: the list's two
+  metrics are backed by hand and a scroll event repaints.
+*/
+describe("SelectSizeModal — the ADA size list's scroll bar (residual R3)", () => {
+  afterEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  const list = () => screen.getByTestId("size-v-large").parentElement as HTMLElement;
+  const back = (scrollHeight: number, clientHeight: number) =>
+    act(() => {
+      Object.defineProperty(list(), "scrollHeight", { configurable: true, value: scrollHeight });
+      Object.defineProperty(list(), "clientHeight", { configurable: true, value: clientHeight });
+      list().dispatchEvent(new Event("scroll"));
+    });
+
+  it("ADA: the bar rides the list's box at the cap (164 / 802) and shows only while the sizes overflow", () => {
+    store.dispatch(toggleAccessibilityMode());
+    renderModal();
+    const bar = screen.getByTestId("size-scrollbar");
+    const strip = screen.getByTestId("size-scrollbar-hit");
+
+    expect(screen.getByTestId("select-size-modal").children[1]).toContainElement(bar);
+    expect(bar.style.top).toBe("164px");
+    expect(bar.style.height).toBe("802px");
+    expect(bar.style.visibility).toBe(""); // jsdom's 0 / 0: it fits
+
+    back(985, 802); // four sizes: the hero + two tile rows
+    expect(bar.style.visibility).toBe("visible");
+    expect(strip.style.visibility).toBe("visible");
+
+    back(727, 727); // three sizes fit (Figma's 727)
+    expect(bar.style.visibility).toBe("");
+    expect(strip.style.visibility).toBe("");
+  });
+
+  it("the full view mounts no bar (its 1500 cap holds five sizes)", () => {
+    renderModal();
+
+    expect(screen.queryByTestId("size-scrollbar")).toBeNull();
+    expect(screen.queryByTestId("size-scrollbar-hit")).toBeNull();
   });
 });

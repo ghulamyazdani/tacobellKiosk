@@ -74,7 +74,7 @@
   --color-tb-ink: #1f1f1f;
   --color-tb-ink-purple: #1b0726;
   /* Figma "Grey 3" (#B9B9B9): Select-a-Size disabled CTA (1:5646), pack
-   * slot borders. Six older #b9b9b9 literals predate it (follow-up). */
+   * slot borders, the steppers' rings and the offer / reward radios'. */
   --color-tb-grey-3: #b9b9b9;
   --color-tb-grey-4: #ebebeb;
   --color-tb-grey-6: #f9f9f9;

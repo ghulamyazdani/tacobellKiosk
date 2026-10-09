@@ -297,7 +297,7 @@ export default function BuyStageSheet({
               {unavailable ? t("menu.unavailable") : t("offers.buyStage.add")}
             </button>
           ) : (
-            <div className="flex h-[64px] w-full items-center justify-between rounded-full border-[1.72px] border-[#b9b9b9] bg-tb-surface">
+            <div className="flex h-[64px] w-full items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface">
               <button
                 type="button"
                 data-testid={`buy-stage-dec-${id}`}

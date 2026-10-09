@@ -22,8 +22,9 @@ import { mockCheckoutBackend, type DeviceSettingEntity } from "./fixtures/checko
  *
  * Mocks: the harness house order, NEWEST route wins: the shared mock first
  * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every boot
- * endpoint), then the checkout fixture, which serves getKisokDeviceData and
- * one pipeline, so the spec's own pipelines are registered AFTER it. The
+ * endpoint), then the checkout fixture, which serves getKisokDeviceData (and
+ * getPipelines only when given a `tabType` — never here); the spec's own
+ * pipelines are registered last, over the shared mock's one row. The
  * local DINE_IN / TABLE / TAKE_AWAY rows are this spec's own pipelines.
  */
 
@@ -69,7 +70,7 @@ async function mockKioskBackend(page: Page, opts: MockOptions) {
   await mockCheckoutBackend(page, {
     extraDeviceSettings: opts.deactivated ? [deactivatedPipelines(opts.deactivated)] : [],
   });
-  // AFTER the checkout fixture's one-pipeline answer (newest wins).
+  // Over the shared mock's one row (newest wins); the checkout fixture leaves getPipelines alone.
   await page.route("**/api/cx/kiosk/getPipelines", (r) => r.fulfill({ json: opts.pipelines }));
 }
 

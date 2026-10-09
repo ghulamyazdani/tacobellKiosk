@@ -318,7 +318,6 @@
     "close": "إغلاق المكافآت",
     "invalidPhone": "يرجى إدخال رقم هاتف محمول صالح",
     "lookupFailed": "تعذر الوصول إلى حساب المكافآت الخاص بك. يرجى المحاولة مرة أخرى.",
-    "pointsBalance": "{{points}} نقطة",
     "pointsCost": "{{points}} نقطة",
     "free": "مجانًا",
     "percentOff": "خصم {{value}}٪",
@@ -422,7 +421,12 @@
     "selectVariantFirst": "يرجى اختيار الحجم أولاً",
     "selectAllCustomizations": "يرجى إكمال جميع الخيارات المطلوبة",
     "fillCustomizationFields": "يرجى إنهاء تخصيص هذا الصنف",
-    "dpMaxQuantity": "يمكنك إضافة {{max}} عناصر كحد أقصى خلال فترة {{session}}"
+    "dpMaxQuantity_zero": "لا يمكنك إضافة أي عناصر خلال فترة {{session}}",
+    "dpMaxQuantity_one": "يمكنك إضافة عنصر واحد كحد أقصى خلال فترة {{session}}",
+    "dpMaxQuantity_two": "يمكنك إضافة عنصرين كحد أقصى خلال فترة {{session}}",
+    "dpMaxQuantity_few": "يمكنك إضافة {{count}} عناصر كحد أقصى خلال فترة {{session}}",
+    "dpMaxQuantity_many": "يمكنك إضافة {{count}} عنصرًا كحد أقصى خلال فترة {{session}}",
+    "dpMaxQuantity_other": "يمكنك إضافة {{count}} عنصر كحد أقصى خلال فترة {{session}}"
   },
   "idle": {
     "title": "لم تقم بأي نشاط منذ فترة",

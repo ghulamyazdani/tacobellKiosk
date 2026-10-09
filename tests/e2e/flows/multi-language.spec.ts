@@ -55,7 +55,7 @@ test.describe("Flow 5 — multi-language", () => {
     await page.clock.install();
     await mockKioskBackend(page, { arabic: true, settings: SKIP_CRM, pipelines: [AR_ROW] });
     const checkout = await mockCheckoutBackend(page);
-    // The checkout fixture re-routes getPipelines (one English row): the Arabic name goes back on top.
+    // The shared mock's Arabic row again: the checkout fixture routes getPipelines only with a tabType (not here).
     await page.route("**/api/cx/kiosk/getPipelines", (r) => r.fulfill({ json: [AR_ROW] }));
 
     await registerToStart(page);

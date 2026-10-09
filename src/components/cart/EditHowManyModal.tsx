@@ -83,7 +83,7 @@ export default function EditHowManyModal({
           </div>
           <div className="flex w-[632px] flex-col items-center gap-[42px]">
             {/* 2 + 29 + 44 + 29 + 2 = Figma's 106 px pill (the 2.5 px border renders 2). */}
-            <div className="flex w-[394px] items-center justify-between rounded-[57px] border-[2.5px] border-[#b9b9b9] bg-tb-surface px-[30px] py-[29px]">
+            <div className="flex w-[394px] items-center justify-between rounded-[57px] border-[2.5px] border-tb-grey-3 bg-tb-surface px-[30px] py-[29px]">
               <button
                 type="button"
                 data-testid="edit-how-many-decrease"
