@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-09 (e2e harness wave 2 merged)** · Gates at last update (Node 22.14, a clean checkout — never the user's working tree):
-> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 3,324/3,324 · e2e 466/466 (the functional suite under reducedMotion "reduce"; motion.spec under "no-preference"; every spec but the six visual walks runs under the shared harness) · guardrails 0 critical / 118 warnings · build+PWA green · boot path 351.2 KiB gzip-9 / 355 (CI build 352.8) · page JS 1,352.4 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-09 (added-modal merged)** · Gates at last update (Node 22.14, a clean checkout — never the user's working tree):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 3,368/3,368 · e2e 477/477 (the functional suite under reducedMotion "reduce"; motion.spec under "no-preference"; every spec but the six visual walks runs under the shared harness) · guardrails 0 critical / 118 warnings · build+PWA green · boot path 351.6 KiB gzip-9 / 355 (CI build 353.3) · page JS 1,354.0 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -36,7 +36,12 @@ skippable) ⇒ rewards auto-open
 item tap ⇒ `/customization` PDP (single product, variant fast-lane, pack slot
 cards + SELECT sheets + tier-2 nested customize) ⇒ ADD TO BAG; upsell-tagged
 items ⇒ MIAM prompt (accept ⇒ pack PDP · decline ⇒ item by shape); re-tap of
-an in-cart customizable ⇒ repeat sheet → `/cart` MY BAG sheet (rows, edit,
+an in-cart customizable ⇒ repeat sheet; a plain add with suggestions ⇒ YOUR
+PRODUCT HAS BEEN ADDED: a tap anywhere on a suggestion card (or its +) adds it
+in place — an "N in your order" pill, the Total moves; a sized / customizable /
+pack / in-bag suggestion closes the modal first and opens Select a Size / the
+PDP / the repeat sheet, and the add it ends in confirms without suggestions
+(one hop); ADD TO ORDER, X and the scrim close it → `/cart` MY BAG sheet (rows, edit,
 remove-confirm, Complete-Your-Meal rail, Rewards section → REWARDS sheet
 (radio + SAVE SELECTION, locked-gap nudges, suggested-items rail, freebie
 picker), Discounts line, Sub Total/Total via bill engine) ⇒
@@ -232,6 +237,27 @@ full-stage, and every return to the splash ends ADA for the next guest.
   when nothing qualifies, on the embedded in-bag PDP, under the size picker and
   with `enable_cart_upsell_screen: false` (D7). In production it shows only
   where `VITE_TENANT_RECOMMENDATIONS_URL` is set (D6) — on-device QA needs one
+- Q6 suggestion-row enrichment (lane added-modal, recorded, not built): rows
+  added from the product-added strip, the bag rail, /forYou and the PDP rail
+  are built from the raw menu entity — they lack `subCategoryName` (the
+  loyalty category is undefined, `loyaltyEngine.ts:382`), `entityType`,
+  `recommendedItems` and `isCartRecommended`, and carry raw-only fields
+  nothing reads today; the money is identical (integrator trace TR2b: same
+  variantPrice, baseItemPrice, taxes and Pay). The fix spans every
+  suggestion surface and the SDK row builders, so it needs its own contract
+- Ghost second tap: FIXED for the product-added strip (added-modal fix stage,
+  review R1 — taps 80 / 150 / 250 ms apart had closed an in-bag item's repeat
+  sheet, ticked the Cheese Burger's paid Extra Pickles, opened a pack's slot
+  picker and ticked a size; `DetourTapGuard` now swallows stage taps for
+  500 ms from the detour's start). STILL OPEN on the plain menu (older code):
+  a double tap on an in-bag item's menu "+" or card opens and then closes the
+  repeat sheet (review MP1), and a double-tapped menu card that opens the PDP
+  or Select a Size lands its second tap there — arm the guard on any surface
+  swap if the kiosk panel shows it (a Rule-1 check: it changes every PDP open)
+- The MIAM prompt's X does not clear `recommendationDetour` (Menu,
+  `ponytail:`): unreachable in TB (raw `upsellItems` are ids, and the
+  single-select diet chips never set both filters) — clear it on the prompt's
+  X if suggestions ever offer the meal
 - Not ported, by default (audit-fixes record-only R3 / R4 / R6 — open
   decisions; the client or backend may reverse them): the fork's plain-item
   info sheet (R3 — a plain item's card adds it straight to the bag, the
@@ -306,6 +332,7 @@ full-stage, and every return to the splash ends ADA for the next guest.
 | **Menu/data lane defaults (orchestrator 2026-10-06, sign-off):** (D3) ~~the Figma 1:5263 scroll bar ships as a non-interactive INDICATOR~~ → **reversed by the user 2026-10-08: the bar is draggable** (scroll-drag lane: hold the thumb and drag 1:1, tap the track to jump; a transparent 24 px hit strip beside the unchanged 11 px track — NOT 44 px, because content controls end 24 px from the screen edge at the menu / PDP / tier-2 sites and a wider strip would steal their taps; WCAG 2.5.8 AA holds — sign-off); (D4) the order type stays v1 (1:2581; v2 1:2588 not built — nothing selects it); (D5) the ticker shows `pipeline_text_<slot>` when set (secondary slot in a secondary-language session, no cross-language fallback) at the designed speed, else "It's lunch time!" — a real daypart field needs a backend proposal; (D6) `VITE_TENANT_RECOMMENDATIONS_URL` per deployment, never committed — ops to confirm TB's tenant id `5c122fc146aefe2828401642` and that the S3 bucket denies anonymous PUT (its CORS advertises GET, PUT); (D7) `enable_cart_upsell_screen: false` also hides the tenant recommendations (the fork shows them regardless); (D8) the operator's `make_it_meal_*` texts override the Figma MIAM headline (fork parity) | client / ops | ⚠️ sign-off |
 | **Emptied tenant recommendations feed:** an empty or junk 200 body keeps the last good map and reports ErrorOccurred `empty_body` on each boot (the fork clears on `data:[]`), so an emptied S3 file cannot withdraw suggestions — ops must repoint or unset `VITE_TENANT_RECOMMENDATIONS_URL` | client / ops | ⚠️ confirm |
 | **Order payload echoes the pipeline row (pre-existing, fork parity):** `extras.pipeline` carries the selected pipeline row verbatim, so an Arabic session pushes `secondary_name` (Arabic) and `primaryCode: "ar"` (the guest's language in a field named primaryCode); item names, add-ons and source.name stay English. Trim `extras.pipeline` / fix `primaryCode`? | backend | ⚠️ open |
+| **Product added sign-off list (lane added-modal, 2026-10-09; user report "item recommendation add and then add to order is not working"; Figma 1:4589 draws only the "+", with no added state):** (1) the WHOLE suggestion card adds: an empty overlay named "Quick add <name>", or "Customize <name>" when the tap leaves the modal (ForYouCard's convention, review UIA-2), with the "+" as its aria-hidden twin that never takes focus (UIA-1); the same add path as the menu "+"; (2) the count pill sits top-left at 12/12 — 36 px, tb-purple, white bold 18 px (ForYouCard's pill; no frame draws it), pops in (tb-pop-in) and the number bumps (tb-bump); an sr-only status reads "N in your order"; (3) ADD TO ORDER keeps Figma's label and look but only confirms and closes, because every add already happened on the cards (Q1; the alternatives are DONE or CONTINUE ORDERING); X and the scrim do the same; (4) a sized suggestion opens the menu "+"'s Select a Size (the contract's Q2 alternative; its default was the PDP); (5) no undo stepper on the card — removing stays in the bag (Q3); (6) three cards, no scroll (Q4); (7) the meal upgrade from a suggestion stays as the fork has it (Q5); (8) the AR draft `added.inOrder` "{{value}} في طلبك" needs native review; (9) a 500 ms stage tap guard after a suggestion leaves the modal (review R1; the OfferTierHost / BagSheet / ReachZone ghost-tap precedent) — a deliberate tap inside the window is swallowed too | client | ⚠️ sign-off |
 | **e2e harness follow-ups (wave 2 handoffs + the queue, 2026-10-09):** (1) the shared mock's NAMED routes are `**/api/<path>` globs and match every origin — a cross-origin `https://leak.e2e.test/api/cx/kiosk/getLanguage` got a 200 and the harness saw nothing (only the 11 mocked paths); put them behind the catch-all's origin check; (2) registration.spec keeps two any-origin body catch-alls (`:234` answers `{}` — the shared mock can take it; `:97` answers 401 to everything — needs a 401 route scoped to the backend origins); (3) `mockCheckoutBackend`'s pipelines route replaces the `pipelines` a spec passed to `mockKioskBackend`, so such a spec silently runs on the checkout mock's pipeline; (4) a write under `src/**/__tests__` (or any `*.test.ts(x)`) makes Tailwind's `source("../src")` scan push an `index.css` update into running e2e pages, which the harness counts as a reload — exclude test files from the Tailwind source | maintainer | ⚠️ open — a follow-up lane `harness-fixes` is fixing (1)–(4) |
 | Native scrollbar hidden on /menu and the PDP (post-P9 26): on a classic-scrollbar OS this returns ~15 px to the content (the Figma widths); headless e2e cannot see native bars — a physical-kiosk check is owed | hardware | ⚠️ open |
 | **Font assets (mislabelled since P1, found 2026-10-06):** `Archivo-Variable.woff2` was a STATIC "Archivo ExtraCondensed Thin" (every body string extra-condensed and thin, faux bold) and `Archivo-Condensed-Bold.woff2` a wdth-only variable font (the compressed CTAs at NORMAL width) | orchestrator | ✅ fonts lane (merged 2026-10-07) — ONE OFL Archivo variable family (Google Fonts CSS2 v25, wght 100–900 × wdth 62–125: `Archivo-wdth-wght-latin.woff2` 90,096 B + `-latin-ext.woff2` 85,856 B, which carries ₹) at three widths: body 100 %, `.tb-compressed` 62 %/700, `.tb-display` 125 %/900; the three P1 files deleted; licence `public/fonts/OFL.txt` (ships in dist, not precached); precache +110,152 B, JS budgets unchanged; `font-display: swap`, no preload (a cold load before the service worker installs paints system-ui, then swaps — accepted); pinned by `src/__tests__/fonts.test.ts` (decodes fvar/cmap) + `tests/e2e/fonts.spec.ts` |
@@ -385,9 +412,59 @@ full-stage, and every return to the splash ends ADA for the next guest.
   leaves the state to surface later on an unrelated screen. They live in
   `AppRoutes`' pathless `InSessionOverlays` layout route (inside ProtectedRoute,
   so never on Registration) — the fork does the same thing in IdleChecksRoutes.
+- **recommendationDetour lifecycle (lane added-modal, 2026-10-09):** a UI flag in
+  menuSelections, never persisted. While it is set, the next added-modal open
+  confirms a suggestion's detour WITHOUT a strip, so suggestions chain at most
+  one hop. SET only when a strip suggestion leaves the product-added modal
+  (`Menu.leaveAddedModal`, via addEntity's `onBeforeLeave` or the sized
+  branch), which closes the modal FIRST; its false → true edge also arms
+  `DetourTapGuard` (src/components/menu, mounted last in InSessionOverlays, so
+  it outlives /menu → /customization; its timer is cleared on unmount — never
+  arm it from an effect on the PDP). CONSUMED by the next added-modal open:
+  `useCartHook.addItemToCart` marks the item `suppressRecommendations` and
+  clears the flag, synchronously, so on the PDP's ADD TO BAG it is read before
+  `closeModalStates` runs. CLEARED by `closeModalStates` (every PDP exit: BACK,
+  "−" at 1, ADD TO BAG, a DP refusal), the Select-a-Size X and its size-only
+  CONTINUE (landed or refused), the repeat sheet's close (X, scrim, the last
+  row's "−"; "+ NEW CUSTOMIZATIONS" keeps it — the detour goes on into the
+  PDP), a menu card tap or its "+", and the session reset. An add with
+  `suppressAddedModal` (the strip, the PDP rail) never consumes it. NEVER
+  cleared by an effect: StrictMode's dev re-mount would clear it before ADD TO
+  BAG (useCustomizationDetour guards this). The plain-add open check reads
+  `selectMenuSellableEntityMap` — the same map and live out-of-stock map the
+  strip resolves over through the SDK's `resolveItemRecommendations`
+- **The PDP commit answers three ways (added-modal review R2):**
+  `addCustomizationToCart` / `addTier1CustomizationToMIAMCart` return `true`
+  (the row landed: ItemAddedToCart is sent), `false` (validation failed: the
+  completion warning opens) or `undefined` (the DP cap refused the paid add —
+  `addItemToCart` → false — so only its global error shows and no event is
+  sent). `handleAddToBag` tests `=== false`; never test truthiness
+- **Select a Size is mounted only while open** (Menu `{sizeEntity &&
+  <SelectSizeModal …/>}`, review R3): a stay-mounted modal kept an abandoned
+  pick, which came back ticked with CONTINUE live
+- **e2e: a re-tap of an in-cart PLAIN item opens no added modal** —
+  useAddEntityToCart's "add" intent calls IncreaseItemQuantityById, which bumps
+  the row silently; a spec that needs the modal twice uses a second plain
+  source or a fresh boot. A tap on a suggestion card's photo or name must be a
+  `page.mouse` click at that point (the overlay covers the tile, so
+  `locator.click` on the image waits forever). After a choice suggestion's tap
+  the stage swallows taps for 500 ms (`detour-tap-guard`): `locator.click`
+  waits it out, `page.mouse` does not. Under no-preference, let the card's
+  spring settle (`getAnimations()` … `.finished`) before measuring a tile.
+  Playwright's `dblclick` sends both clicks before a route change renders the
+  next page: on a route-changing surface (the PDP) the second half lands on
+  the old screen, while a surface mounted in the same commit (Select a Size,
+  the repeat sheet) takes it — so productAdded P7b, not P7, guards
+  DetourTapGuard (its mount in InSessionOverlays has no unit coverage: the
+  route tests render only `/`). Concurrent mutation authors each get their
+  OWN sandbox copy, never a shared one: a dev server watching another
+  author's live mutants pushes Tailwind `index.css` HMR frames and the harness
+  fails on "reloads"
 - **Overlay z-stack (KioskStage is the stacking context; BagSheet z-40 traps its
   own children):** page overlays 40 · MIAM wrapper **45** · CancelOrder /
-  LoyaltyRewards 50 · Repeat wrapper **55** · LoyaltyLogin 60 · LoyaltySuccess
+  LoyaltyRewards 50 · Repeat wrapper **55** · the detour tap guard **58**
+  (InSessionOverlays; transparent and hit-testable for 500 ms after a
+  product-added suggestion leaves the modal) · LoyaltyLogin 60 · LoyaltySuccess
   70 · LoyaltyError 80 · GlobalErrorHost **95** (in IdleGuard, figma-polish) · the
   idle prompt 100 · FullscreenGate 99998 (audit-fixes U2) and NetworkStatus
   99999 (both outside the stage). The hoisted
@@ -835,6 +912,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   `toPaytmKind` filter; D11).
 
 ## Session log
+
+- **2026-10-09 (added-modal merged)** · User report on a device: "item recommendation add and then add to order is not working". The contract (static trace, fork comparison, repro 58/58) proved RC1–RC5: only the 44 px "+" added (the card did nothing); the "+" added silently; ADD TO ORDER added nothing; a choice item's "+" left the modal open behind the PDP / repeat sheet, so BACK landed on it; suggestions chained without end (`recommendationDetour` was never set); the strip used its own lookup. Lane `added-modal` (builders modal + detour-hygiene, an integrator, two adversarial reviews, a fixer, unit + e2e test authors): the whole card adds, with an "N in your order" pill, and the Total moves; a choice suggestion closes the modal first and opens what the menu "+" opens (Select a Size / PDP / repeat sheet) with the detour set — one hop, every exit clears the flag; the strip and the open check resolve through the SDK's `resolveItemRecommendations` over the menu-sellable map and live out-of-stock; ADD TO ORDER keeps Figma's label and closes. Fix stage (5 review findings, all confirmed and fixed): R1 `DetourTapGuard`, the 500 ms ghost-tap guard; R2 ItemAddedToCart only on a PDP add that landed (a DP refusal answers `undefined`); R3 Select a Size mounted only while open; UIA-1 the aria-hidden "+" never takes focus; UIA-2 choice tiles are named "Customize <name>". The session ended during the test stage and a reboot wiped its notes; the next session resumed it from the run journal. Test stage: unit — the predecessor's additions reviewed (the pack case, `variantPrice`, the T5 extension, the repeat-sheet and session-reset guards), +2 buy-stage R2 rows and the size-only CONTINUE "no strip" check made able to fail; 49 mutants, 48 killed by unit tests, the 49th (DetourTapGuard's mount — the route tests render only `/`) killed by e2e P7b. e2e — `tests/e2e/productAdded.spec.ts`, 11 tests (P1–P8 incl. P7b, the AR pass, P8 under both motion modes), 11/11 fail on the base code, 12/12 mutants killed; the lane's full suite 465/465. Unit 3,324 → 3,368, e2e 466 → 477. No SDK edit and no new dependency. Gate on the merge: validate green (unit 206 files / 3,368; guardrails 0 critical / 118 warnings), e2e 477/477 in 7.1 min, both builds, boot path 351.6 KiB (CI 353.3) / 355, page JS 1,354.0 KB, fork `tsc -b` green.
 
 - **2026-10-09 (e2e harness wave 2 merged)** · P9f wave 2 (one workflow: groups A and B, each build → adversarial review → fix → fidelity). The session ended during the fidelity stage and a machine reboot then wiped the scratchpad; the next session rebuilt the contract, the gate script and the three handoff patches from the run journals, and found fidelity already done inside both lanes. **A** (`e2e-wave2a`): bag, pack, scrollDrag, bag-recommendations, forYou, pdpLimits, sizeFastLane, menu-scroll, vegFilter, menuCardImage — 86 tests, bodies unchanged (body diff 86/86), `--repeat-each=3` 258/258 and scrollDrag / menu-scroll / bag-recommendations at `--repeat-each=5` 135/135; fidelity (the review's §6 run): 12 product mutants (MA1–MA4, the drag, the photo fit, the diet filter, recs credentials, the group max, Dexie increments, hide-veg) — old and new kill the same tests in every row; MX1–MX3 kill 86/86 new and 0 old. Review F1 → the harness's recs seam default (+1 harness test; it fails when the kiosk.ts hunk is reverted, with or without a `.env`). **B** (`e2e-wave2b`): offers, offerAutoApply, offerBuyStage, offerCelebration, offerFreebieCustomize, loyalty, loyaltyOfferLock, loyaltyRewardsSheet, menu-arabic, fonts, railDeadGroups — 79 tests, bodies unchanged (75 bodies, loops make 79); fidelity in the build, re-derived by the review: MA5, MB1b, MB1c, MB3–MB6 killed alike (MB1, the StartScreen revoke, is equivalent for group B), MX1 / MX3 78/79 new (fonts never reaches /menu), MX2 79/79; then two body-edit commits: the Xeno revoke polls 10 → 20 s (MB1b / MB1c still killed) and fonts' Archivo walk moved off its any-origin `**/api/**` route onto the shared mock (fixer mutants MX4 / MX5 now kill it). Accepted drift: the loyalty specs now run with GB/+44 on /phone (the old bare "GB" never set a country; no assertion reads a dial code). No product bug found. The Xeno revoke runs from five sites — StartScreen's mount, Menu's Cancel Order, CustomerName's cancel, BagSheet's auto-reversal effect and `handleRemoveLoyaltyRow` (the reward row's own Remove, shown only on an out-of-stock or unavailable reward). Gate on the merge (clean checkout, 5375): validate green (unit 3,324), e2e 466/466 in 6.4 min (`--workers=4`), both builds, boot path 351.2 KiB (CI 352.8) / 355, fork `tsc -b` green.
 
