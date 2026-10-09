@@ -477,10 +477,10 @@ describe("Tent in the ADA reach zone (P9c)", () => {
       "left-[40px] top-[40px]"
     );
     expect(screen.getByTestId("tent-confirm").className).toContain(
-      "bottom-[126px]"
+      "bottom-[132px]"
     );
     expect(screen.getByTestId("tent-skip").className).toContain(
-      "bottom-[18px]"
+      "bottom-[24px]"
     );
 
     // Still the real flow, not a picture of it.
@@ -518,7 +518,7 @@ describe("Tent in the ADA reach zone (P9c)", () => {
     expect(error()?.className).toContain("top-[1410px]");
     expect(title().className).not.toContain("invisible");
     expect(screen.getByTestId("tent-confirm").className).toContain(
-      "top-[1702px]"
+      "top-[1704px]"
     );
   });
 });

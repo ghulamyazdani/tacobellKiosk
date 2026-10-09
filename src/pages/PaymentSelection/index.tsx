@@ -298,7 +298,7 @@ export default function PaymentSelection() {
           type="button"
           data-testid="payment-back"
           onClick={handleBack}
-          className={`tb-display absolute left-[24px] ${ada ? "bottom-[18px]" : "top-[1810px]"} h-[92px] w-[1032px] rounded-[8px] border-2 border-tb-surface text-center text-[28px] leading-[28px] tracking-[1px] text-tb-surface`}
+          className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
         >
           {t("payment.backToMenu")}
         </button>
@@ -360,7 +360,7 @@ export default function PaymentSelection() {
         type="button"
         data-testid="payment-back"
         onClick={handleBack}
-        className={`tb-display absolute left-[24px] ${ada ? "bottom-[18px]" : "top-[1810px]"} h-[92px] w-[1032px] rounded-[8px] border-2 border-tb-surface text-center text-[28px] leading-[28px] tracking-[1px] text-tb-surface`}
+        className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
       >
         {t("payment.backToMenu")}
       </button>
