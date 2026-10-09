@@ -1,4 +1,4 @@
-import { test, expect, type Page, stepClockUntil, PNG_1X1 } from "./fixtures/kiosk";
+import { test, expect, type Page, stepClockUntil } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   fixtureJson,
@@ -55,24 +55,8 @@ const G_SNACKS = `${DREAM_BOX}_6_combo`;
 const CHILI_NUGGETS = "696df06f5a77225b771e978a";
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
 
-/**
- * The harness's menu-photo stub (fixtures/kiosk.ts), reload-safe. The shared mock's predicate
- * catch-all puts EVERY request through page interception; when OUTSIDE reloads the page, Playwright
- * 1.63 hands some in-flight photo requests it has already settled to the CONTEXT routes, and the
- * harness stub's fulfill rejects with "Route is already handled!" — a failed test (6–17 % of OUTSIDE
- * runs on 2026-10-09; 0 % with the old local mock). This newer context route wins over the harness's
- * and swallows that settle, as the harness's own deny route does (100/100 runs).
- * ponytail: local until fixtures/kiosk.ts adds `.catch(() => undefined)` to its stub — then delete.
- */
-const MENU_PHOTOS = "https://itemsposistnet.s3.ap-south-1.amazonaws.com/**";
-
 async function mockKioskBackend(page: Page, { offers = false } = {}) {
   await mockBackend(page, { offers: offers ? fixtureJson("offers.json") : [] });
-  await page.context().route(MENU_PHOTOS, (route) =>
-    route
-      .fulfill({ body: PNG_1X1, contentType: "image/png", headers: { "Access-Control-Allow-Origin": "*" } })
-      .catch(() => undefined)
-  );
 }
 
 /** Counts every request for the lazy chunk and aborts it (register BEFORE the boot). */
