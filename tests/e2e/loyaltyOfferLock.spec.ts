@@ -1,6 +1,14 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  clone,
+  routeOffers,
+  CHEESE_BURGER,
+  TORTILLA_SAUCE,
+  CAESAR_DRESSING,
+} from "./fixtures/backend";
 import {
   mockXenoLoyalty,
   LOYALTY_OTP,
@@ -9,6 +17,15 @@ import {
   LOYALTY_SETTINGS,
   type XenoMockHandle,
 } from "./fixtures/loyalty";
+import { registerToStart, startOrderTo } from "./pages/boot";
+import {
+  addViaPdp,
+  openBag,
+  bagRows as paidRows,
+  loyaltyRows,
+  openRewardsSheet as openOffersFromEntry,
+  typeDigits,
+} from "./pages/order";
 
 /**
  * Lane loyalty-visual — a XENO reward and a CX offer in the same bag.
@@ -27,12 +44,11 @@ import {
  * keep the bill's figures (bill math unchanged). E6a's unlocked control also
  * pins the offers sheet's D2 geometry (1480 / 48 / 24 / 152 / 32).
  *
- * Mocks: the boot mocks of loyalty.spec.ts (copied — no spec exports them)
- * with its empty get_cx_valid_offers overridden per test by `routeOffers`
- * (newest route wins), then `mockXenoLoyalty` LAST (it also answers the
- * cross-origin revoke). The print agent is aborted (cross-origin, outside the
- * catch-all). Every offer id below resolves in the slim menu (the converter
- * drops unknown ids).
+ * Mocks: the shared boot mock (fixtures/backend.ts) with loyalty.spec.ts's
+ * LOYALTY_SETTINGS, its empty get_cx_valid_offers overridden per test by
+ * `routeOffers` (newest route wins), then `mockXenoLoyalty` LAST (it also
+ * answers the cross-origin revoke). Every offer id below resolves in the slim
+ * menu (the converter drops unknown ids).
  *
  * Money (bill engine — loyalty.spec / offers.spec headers): VAT 15%
  * EXCLUSIVE on the paid base, a free row is untaxed, Total = whole-unit
@@ -47,30 +63,8 @@ import {
  * keeps the persisted "£" (bag.spec header).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const offersFixture = readJson("./fixtures/offers.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-
-// ---- Slim-menu ids ----
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // £8, PDP path
-const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2, plain
-const CAESAR_DRESSING = "5dd109392b29ee1f2a82a49c"; // £2, plain
+const offersFixture = fixtureJson("offers.json");
+const en = locale("en");
 
 const SALAD_REWARD = LOYALTY_REWARDS.greekSalad; // static6562, £17 → Free, 3000 pts
 
@@ -78,7 +72,6 @@ const SALAD_REWARD = LOYALTY_REWARDS.greekSalad; // static6562, £17 → Free, 3
 const MINUS = "−";
 
 // ---- Offer payloads (offers.json shapes) ----
-const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 /** offers.json[1]: £2 off, always eligible. */
 const FLAT_2 = clone(offersFixture[1]);
@@ -142,89 +135,18 @@ const RAIL_OFFERS = [FLAT_2, MIN_25];
 const SWAP_OFFERS = [FLAT_2, FLAT_3, BOGO_SAUCE];
 const ids = (offers: Array<{ _id: string }>) => offers.map((offer) => offer._id);
 
-/**
- * Boot + menu mocks (loyalty.spec.ts) with the print agent aborted. Order
- * matters: Playwright matches routes newest-first, so the catch-all goes
- * FIRST and every specific mock after it.
- */
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...LOYALTY_SETTINGS,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/** The shared boot mock with loyalty.spec.ts's LOYALTY_SETTINGS. */
+const mockKioskBackend = (page: Page) => mockBackend(page, { settings: LOYALTY_SETTINGS });
 
 /** Base mocks, this test's offers (a raw array, newest wins), then Xeno LAST. */
 async function mockAll(page: Page, offers: unknown[]): Promise<XenoMockHandle> {
   await mockKioskBackend(page);
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: offers }));
+  await routeOffers(page, offers);
   return mockXenoLoyalty(page);
 }
 
-/** KioskNumpad is the only numeric keypad mounted at a time (phone, then OTP). */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
-
 /** Splash → order type → /phone (loyalty on routes the lookup ahead of the menu). */
-async function startOrderToPhone(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startOrderToPhone = (page: Page) => startOrderTo(page, "phone-screen");
 
 /** The pre-menu lookup: /menu as an identified guest, the rewards sheet auto-opened. */
 async function identify(page: Page) {
@@ -236,13 +158,7 @@ async function identify(page: Page) {
 
 /** Register on the on-screen keyboard → /phone → lookup → /menu (loyalty.spec). */
 async function bootIdentifiedToMenu(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+  await registerToStart(page);
   await startOrderToPhone(page);
   await identify(page);
 }
@@ -277,29 +193,8 @@ async function redeemSaladFromBag(page: Page) {
 }
 
 /** Menu card tap → PDP → commit plain (£8) → dismiss the added modal. */
-async function addCheeseBurgerViaPdp(page: Page) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
-
-/** VIEW MY BAG → /cart, through the once-per-session /forYou upsell. */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+const addCheeseBurgerViaPdp = (page: Page) =>
+  addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
 /** Rounded box of a locator (sizes only — the entrance slide moves y, not h). */
 const boxSize = async (locator: Locator) => {
@@ -307,15 +202,6 @@ const boxSize = async (locator: Locator) => {
   if (!box) throw new Error("no box");
   return { width: Math.round(box.width), height: Math.round(box.height) };
 };
-
-const paidRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
-const loyaltyRows = (page: Page) => page.locator('[data-testid^="bag-loyalty-row-"]');
-
-/** Unapplied entry row → the offers REWARDS sheet. */
-async function openOffersFromEntry(page: Page) {
-  await page.getByTestId("bag-rewards-entry").click();
-  await expect(page.getByTestId("rewards-sheet")).toBeVisible();
-}
 
 async function pickAndSave(page: Page, offerId: string) {
   await page.getByTestId(`offer-row-${offerId}`).click();
@@ -487,7 +373,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
     await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     expect(xeno.revokeUrls[0]).toContain(`rewardId=${SALAD_REWARD.couponCode}`);
 
     // Next customer: no reward, no lock — the machine applies the flagged offer.

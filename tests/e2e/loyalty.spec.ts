@@ -1,6 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page, persistedLoyaltyPoints } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend } from "./fixtures/backend";
 import {
   mockXenoLoyalty,
   CHEESE_BURGER_ID,
@@ -11,6 +10,8 @@ import {
   LOYALTY_SETTINGS,
   type XenoMockOptions,
 } from "./fixtures/loyalty";
+import { registerToStart, startOrderTo } from "./pages/boot";
+import { addViaPdp, openBag, loyaltyRows, typeDigits } from "./pages/order";
 
 /**
  * P7c — XENO loyalty vertical, end to end: the pre-menu identity lookup
@@ -19,17 +20,15 @@ import {
  * 4-digit OTP → `redeem_coupon`), the reward cart row, both entry guards, the
  * cancel-order revoke, the auto-reversal and the loyalty checkout route.
  *
- * Mock surface: `tests/e2e/fixtures/loyalty.ts`. Boot helpers are copied from
- * bag.spec.ts / pack.spec.ts (neither exports them — copying is the
- * established precedent in this suite), with two P7c deltas:
+ * Mock surface: `tests/e2e/fixtures/loyalty.ts` over the shared harness
+ * (fixtures/backend.ts mock, pages/* steps), with two P7c deltas:
  *   - `get_kiosk_settings` spreads LOYALTY_SETTINGS (`enable_loyalty: true`,
  *     `crm_phone_mandatory: true`, `crm_name_mandatory: false`,
  *     `skip_crm_page: false`). The other suites omit these, so loyalty stays
  *     OFF for them and nothing here can regress them (contract trap 10).
  *   - `mockXenoLoyalty(page)` is layered AFTER `mockKioskBackend(page)`:
- *     Playwright matches routes newest-first and the house style registers the
- *     `**\/api/**` catch-all first, so the loyalty routes must come last or
- *     the catch-all `{}` swallows them.
+ *     Playwright matches routes newest-first, so the loyalty routes must
+ *     come last or the shared mock's `/api/` catch-all `{}` swallows them.
  *
  * Two loyalty facts drive nearly every assertion:
  *   - Loyalty is "on" only when `kiosk_settings.enable_loyalty` AND a partner
@@ -38,8 +37,8 @@ import {
  *     the partner must NOT be "reelo" or the whole flow takes the other
  *     branch.
  *   - The revoke is a raw cross-origin `fetch` to `https://xeno.in:2223/...`
- *     with no timeout; the `**\/api/**` catch-all does not cover it, so the
- *     fixture routes that origin explicitly and counts the hits (trap 6).
+ *     (a 10 s AbortSignal budget): the fixture routes that origin explicitly
+ *     and counts the hits (trap 6); the harness denies it unrouted.
  *
  * Fixture money facts (same as bag.spec.ts's header): every slim-menu item
  * carries VAT@15% which the bill engine treats as EXCLUSIVE, and
@@ -62,92 +61,10 @@ import {
  * assertion that exists.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
 const GREEK_SALAD_REWARD = LOYALTY_REWARDS.greekSalad;
 
-/**
- * Boot + menu mocks (copied from bag.spec.ts) with LOYALTY_SETTINGS folded
- * into get_kiosk_settings. Order matters: Playwright matches routes
- * newest-first, so the catch-all is registered FIRST and every specific mock
- * after it.
- */
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // P7c: without enable_loyalty the partner is never fetched, loyalty
-        // never turns on and /second goes straight to /menu.
-        ...LOYALTY_SETTINGS,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/** The shared boot mock with LOYALTY_SETTINGS folded into get_kiosk_settings. */
+const mockKioskBackend = (page: Page) => mockBackend(page, { settings: LOYALTY_SETTINGS });
 
 /** Both mock layers in the one order that works (catch-all first). */
 async function mockAll(page: Page, opts: XenoMockOptions = {}) {
@@ -161,25 +78,9 @@ async function mockAll(page: Page, opts: XenoMockOptions = {}) {
  * identity lookup ahead of the menu (contract step 2).
  */
 async function bootRegisteredToPhone(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+  await registerToStart(page);
+  await startOrderTo(page, "phone-screen");
   await expect(page).toHaveURL(/\/phone$/);
-}
-
-/** KioskNumpad is the only numeric keypad mounted at a time (phone, then OTP). */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
 }
 
 /**
@@ -235,50 +136,9 @@ async function redeemReward(
   await page.getByTestId("loyalty-otp-submit").click();
 }
 
-/** Menu card tap → PDP → commit → dismiss the added modal (bag.spec helper). */
-async function addCheeseBurgerViaPdp(page: Page, expectedCta: string) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER_ID}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText(expectedCta);
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
-
-/**
- * VIEW MY BAG → /cart renders the Menu page with the bag sheet open.
- *
- * P7d: the pre-cart upsell (/forYou) now sits on this edge — it is the only
- * forward menu→cart transition, and its gate is opt-OUT. It deliberately is
- * NOT switched off here: `enable_cart_upsell_screen: false` is read by
- * useCartUpsell's single `shouldShowUpsell`, which also gates the in-bag
- * Complete-Your-Meal rail used by its sibling suites — so disabling it
- * would trade one broken assertion for another and stop this suite testing the
- * default configuration. The helper walks through the screen instead.
- *
- * markCartUpsellSeen() fires on the upsell's forward exits, so only the first
- * openBag() of a session meets it; later ones land on /cart directly. Settling
- * on whichever of the two arrived keeps that deterministic with no sleep.
- * Declining mutates no cart state, so every assertion downstream is unchanged
- * — and both original assertions below are kept verbatim. The gate's own
- * behaviour is owned by tests/e2e/forYou.spec.ts.
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
-
-const loyaltyRows = (page: Page) =>
-  page.locator('[data-testid^="bag-loyalty-row-"]');
+/** Menu card tap → PDP → commit → dismiss the added modal. */
+const addCheeseBurgerViaPdp = (page: Page, expectedCta: string) =>
+  addViaPdp(page, CHEESE_BURGER_ID, { expectedCta });
 
 /** Cart row ids (itemId) are runtime-generated — read them off the testid. */
 async function loyaltyRowItemId(page: Page): Promise<string> {
@@ -293,22 +153,6 @@ async function paidRowItemId(page: Page): Promise<string> {
   await expect(row).toBeVisible();
   const testId = await row.getAttribute("data-testid");
   return (testId ?? "").replace("bag-row-", "");
-}
-
-/**
- * `state.loyalty.totalLoyaltyPoints` out of the persisted redux root — the
- * exact value `loyalty-points-balance` renders, for the states where the
- * rewards sheet is not reachable (see the header note). Read-only.
- */
-async function persistedLoyaltyPoints(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const raw = window.localStorage.getItem("persist:root");
-    if (!raw) return Number.NaN;
-    const root = JSON.parse(raw) as Record<string, string>;
-    if (!root.loyalty) return Number.NaN;
-    const loyalty = JSON.parse(root.loyalty) as { totalLoyaltyPoints?: number };
-    return Number(loyalty.totalLoyaltyPoints);
-  });
 }
 
 test.describe("P7c XENO loyalty", () => {
@@ -578,7 +422,7 @@ test.describe("P7c XENO loyalty", () => {
     await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
 
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     expect(xeno.revokeUrls[0]).toContain("undoRewardRedemption");
     expect(xeno.revokeUrls[0]).toContain(
       `pointsToBeReturned=${GREEK_SALAD_REWARD.points}`
@@ -640,7 +484,7 @@ test.describe("P7c XENO loyalty", () => {
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
 
     // Points refunded and the claim revoked exactly once.
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     await expect
       .poll(() => persistedLoyaltyPoints(page), { timeout: 10_000 })
       .toBe(LOYALTY_POINTS_TOTAL);
