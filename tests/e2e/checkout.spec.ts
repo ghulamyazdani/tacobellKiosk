@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "./fixtures/kiosk";
+import { test, expect, type Page, stepClockUntil } from "./fixtures/kiosk";
 import { mockKioskBackend as mockBackend, CHEESE_BURGER } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
 import { addViaPdp, openBag, bagRows } from "./pages/order";
@@ -74,13 +74,19 @@ import {
  * £9.00 is therefore what `bag-pay`, `payment-total` and the pushed order all
  * have to agree on.
  *
- * ── TIMING: EXPLICIT WAITS ONLY, NEVER A SLEEP ──────────────────────────
- * Two real timers sit in this flow and both are waited on by asserting the
- * state they produce, not by sleeping:
- *   - /payment's 3000ms cancel window ends by navigating to /receipt, so the
- *     wait is `expect(receipt-screen).toBeVisible()`.
+ * ── TIMING: page.clock, NEVER A SLEEP ───────────────────────────────────
+ * `page.clock.install()` runs before the first goto (beforeEach), so every
+ * app timer is fake; it flows at real speed until a test moves it. The two
+ * timers this flow owns are driven, never waited out:
+ *   - /payment's 3000ms cancel window: once the buffer is up (the commit
+ *     that shows it arms its timer), `runFor(3_000)` closes it, and the wait
+ *     is `expect(receipt-screen).toBeVisible()`.
  *   - the push retry ladder (ORDER_PUSH_MAX_ATTEMPTS = 4, linear 1s/2s/3s
- *     backoff ≈ 6s) is waited on with `expect.poll(() => handle.placeOrderCount)`.
+ *     backoff ≈ 6s) is a timer chain the page re-arms itself, so it is
+ *     stepped with `stepClockUntil(() => handle.placeOrderCount === 4)` —
+ *     never one big jump. "No fifth attempt" is proven over 15 s of fake time
+ *     (`runFor(15_000)`, then the count); a 5 s poll passed on its first
+ *     sample and proved nothing.
  * ⚠️ /orderSuccess runs a 20s countdown that auto-resets to /start, so every
  * assertion on that screen must be made promptly — do not add waits there.
  */
@@ -141,18 +147,22 @@ async function bootToBagWithOneBurger(
   return checkout;
 }
 
-/** /payment's cancel window ends by navigating; never slept through. */
+/** /payment's cancel window ends by navigating; stepped in fake time, never slept through. */
 async function payAtCounterThroughBuffer(page: Page) {
   await page.getByTestId("payment-counter").click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
   await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
   // The 3000ms window closes by routing to the receipt step.
-  await expect(page.getByTestId("receipt-screen")).toBeVisible({
-    timeout: 15_000,
-  });
+  await page.clock.runFor(3_000);
+  await expect(page.getByTestId("receipt-screen")).toBeVisible();
 }
 
 test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete", () => {
+  // Before ANY page script: the app's timers must be fake from the start.
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install();
+  });
+
   test("HAPPY PATH: dine-in + skipCRM → PAY → /payment → PAY AT COUNTER → receipt → /orderSuccess, with exactly one COD placeOrder", async ({
     page,
   }) => {
@@ -478,12 +488,12 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await payAtCounterThroughBuffer(page);
     await page.getByTestId("receipt-none").click();
 
-    // Waited on by the state the ladder produces, not by sleeping.
-    await expect
-      .poll(() => checkout.placeOrderCount, { timeout: 30_000 })
-      .toBe(4);
-    // And it stops there — no fifth attempt, ever.
-    await expect.poll(() => checkout.placeOrderCount, { timeout: 5_000 }).toBe(4);
+    // Stepped through the ladder's own backoff, checked by the state it produces.
+    await stepClockUntil(page, () => checkout.placeOrderCount === 4);
+    // And it stops there — no fifth attempt, ever: 15 s of fake time pass,
+    // well past the next backoff (4 s), and the count has not moved.
+    await page.clock.runFor(15_000);
+    expect(checkout.placeOrderCount).toBe(4);
     expect(checkout.placeOrderFailures).toBe(4);
 
     // A customer whose order never landed must NOT be shown a success screen.
@@ -510,9 +520,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await payAtCounterThroughBuffer(page);
     await page.getByTestId("receipt-none").click();
 
-    await expect
-      .poll(() => checkout.placeOrderCount, { timeout: 30_000 })
-      .toBe(4);
+    await stepClockUntil(page, () => checkout.placeOrderCount === 4);
 
     // Rule 2: an exhausted ladder must be an explicit terminal state with two
     // live exits — never a dead modal and never a stranded customer.

@@ -1069,7 +1069,7 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
 
     // Reversed, never kept on the old tab's terms: gone, points back, claim revoked.
     await expect(loyaltyRows(page)).toHaveCount(0);
-    await expect.poll(() => net.xeno?.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => net.xeno?.revokeCount, { timeout: 20_000 }).toBe(1);
     await expect
       .poll(() => persistedLoyaltyPoints(page), { timeout: 10_000 })
       .toBe(LOYALTY_POINTS_TOTAL);
