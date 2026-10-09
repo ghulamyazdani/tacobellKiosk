@@ -1,6 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, locale } from "./fixtures/backend";
 
 /**
  * audit-fixes U2 — the fullscreen lock (FullscreenGate), end to end.
@@ -28,68 +27,18 @@ import { fileURLToPath } from "node:url";
  * script): a browser that refuses fullscreen, or has none, never blocks the
  * guest — the gate fails open.
  *
- * Mocks (registration.spec / splash.spec house order): the `**\/api/**`
- * catch-all FIRST, the print agent aborted, every boot mock after it.
+ * Mocks: the shared mock (fixtures/backend.ts — its origin-scoped `/api/`
+ * catch-all, then every boot endpoint); the harness (fixtures/kiosk.ts)
+ * denies any other origin by name. The walks stop at /second and the
+ * Activity Center, so the menu-side answers it adds are never read here.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const en = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url))
-  ).toString("utf-8")
-);
+const en = locale("en");
 
 /** A windowed browser: the 1080×1920 window on a taller screen. */
 const WINDOWED = { width: 1080, height: 2100 };
 
-async function mockBootEndpoints(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({ json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }] })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: { start_order_text_primary: "START ORDER", ideal_time: "180" },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockBootEndpoints = (page: Page) => mockBackend(page);
 
 /** The licence on the on-screen keyboard (digits live behind the 123 layer). */
 async function register(page: Page) {

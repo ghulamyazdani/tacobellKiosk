@@ -1,7 +1,19 @@
-import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type BrowserContext,
+  type Page,
+  stepClockUntil,
+} from "./fixtures/kiosk";
 import { APP_ORIGIN } from "./fixtures/origin";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  GREEK_SALAD,
+} from "./fixtures/backend";
+import { submitLicence, registerToStart, startOrderTo, holdHotspot } from "./pages/boot";
+import { addOneTap } from "./pages/order";
 
 /**
  * P9e — updates apply ONLY at the splash, end to end (Rule 1), and the boot
@@ -37,42 +49,22 @@ import { fileURLToPath } from "node:url";
  * after the splash is visible — i.e. after redux-persist rehydrated.
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * House order (idle.spec.ts / recovery.spec.ts): the `**\/api/**` catch-all
- * FIRST, the cross-origin edges it cannot see routed explicitly (print agent
- * aborted, Xeno revoke answered), every specific mock after it (Playwright
- * matches newest-first). The boot endpoints a test breaks are SCRIPTED: each
- * route reads the backend handle per request, so a test re-scripts an
- * answer mid-flow instead of stacking routes. Boot helpers are copied from
- * idle.spec.ts / recovery.spec.ts (no spec exports them — house precedent).
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), this spec's counting and scripted routes after it. The
+ * boot endpoints a test breaks are SCRIPTED: each route reads the backend
+ * handle per request, so a test re-scripts an answer mid-flow instead of
+ * stacking routes. Nothing here may reach the print agent or the Xeno
+ * revoke: the harness (fixtures/kiosk.ts) denies any other origin by name.
+ * Boot steps, `holdHotspot` and `stepClockUntil` are the shared harness's
+ * (pages/, fixtures/kiosk.ts).
  */
 
 const BASE_URL = APP_ORIGIN;
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
+const en = locale("en");
 /** process.env.PACKAGE_VERSION is package.json's version (vite.config.ts define). */
-const VERSION: string = readJson("../../package.json").version;
-
-/** £17, no modifiers, no recommendedItems: one tap lands it, no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
+const VERSION: string = fixtureJson("../../../package.json").version;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -121,12 +113,7 @@ async function mockKioskBackend(page: Page): Promise<KioskBackend> {
     versionReports: [],
     versionStatus: 200,
   };
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
+  await mockBackend(page);
   await page.route("**/api/cx/kiosk/getLanguage", (r) => {
     backend.hits.getLanguage += 1;
     return r.fulfill({
@@ -136,20 +123,6 @@ async function mockKioskBackend(page: Page): Promise<KioskBackend> {
       },
     });
   });
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
   await page.route("**/api/cx/get_kiosk_settings", (r) => {
     backend.hits.settings += 1;
     return r.fulfill(backend.settings);
@@ -164,20 +137,6 @@ async function mockKioskBackend(page: Page): Promise<KioskBackend> {
   await page.route("**/api/cx/getKisokDeviceData", (r) =>
     r.fulfill(backend.deviceSettings)
   );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
   await page.route("**/api/cx/update_device_status", (r) => {
     backend.acks.push(r.request().postDataJSON());
     return r.fulfill({ status: backend.ackStatus, json: {} });
@@ -189,7 +148,6 @@ async function mockKioskBackend(page: Page): Promise<KioskBackend> {
     });
     return r.fulfill({ status: backend.versionStatus, json: {} });
   });
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
   return backend;
 }
 
@@ -201,62 +159,11 @@ async function typeLicence(page: Page) {
   await page.getByRole("button", { name: "7", exact: true }).click();
 }
 
-/** Type the licence and submit — the first boot starts. */
-async function submitLicence(page: Page) {
-  await page.goto("/");
-  await typeLicence(page);
-  await page.getByTestId("registration-submit").click();
-}
-
-async function registerToStart(page: Page) {
-  await submitLicence(page);
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
 /** Splash → order type → /menu (loyalty off). */
-async function startOrderToMenu(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startOrderToMenu = (page: Page) => startOrderTo(page, "menu-screen");
 
-async function addGreekSaladOneTap(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
-
-/** The hidden operator gesture (useLongPress): a 3 s hold, in fake time. */
-async function holdHotspot(page: Page, testId: string) {
-  const box = await page.getByTestId(testId).boundingBox();
-  if (!box) throw new Error(`${testId} has no box`);
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.clock.runFor(3_000);
-  await page.mouse.up();
-}
-
-/**
- * Advances fake time in small steps until `done()` holds — for timer chains
- * the page re-arms itself (recovery.spec.ts). A slow page costs steps, never
- * a skipped or real-time tick.
- */
-async function stepClockUntil(
-  page: Page,
-  done: () => boolean | Promise<boolean>,
-  { stepMs = 500, timeout = 20_000 } = {}
-) {
-  await expect
-    .poll(
-      async () => {
-        await page.clock.runFor(stepMs);
-        return done();
-      },
-      { timeout, intervals: [50] }
-    )
-    .toBe(true);
-}
+const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
 /**
  * Stops the clock's real-time flow (a short jump ahead first, so the target

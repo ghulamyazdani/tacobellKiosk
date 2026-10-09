@@ -1,6 +1,6 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, SKIP_CRM, GREEK_SALAD, CHEESE_BURGER } from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
 import { mockCheckoutBackend, type CheckoutMockHandle } from "./fixtures/checkout";
 
 /**
@@ -21,23 +21,11 @@ import { mockCheckoutBackend, type CheckoutMockHandle } from "./fixtures/checkou
  * a one-tap add; VAT@15% exclusive and the total rounds to whole units →
  * Total = round(17 × 1.15) = ₹20.00. Cheese Burger ₹8 opens the PDP.
  *
- * Mock order: Playwright matches routes newest-first, so the `**\/api/**`
- * catch-all goes FIRST, every boot mock after it, and mockCheckoutBackend
- * (the /payment settings + the LOUD 500 gateway guards) last.
+ * Mock order (the harness house order, newest wins): the shared mock
+ * (fixtures/backend.ts) first, this spec's get_data over it, and
+ * mockCheckoutBackend (the /payment settings + the LOUD 500 gateway guards)
+ * last.
  */
-
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
 
 /** The backend's exact get_data `deployment` for TB India. */
 const INDIA_DEPLOYMENT = {
@@ -54,68 +42,16 @@ const NO_CURRENCY_DEPLOYMENT = {
   countryCode: { name: "India", dial_code: "+91", code: "IN" },
 };
 
-const slimMenu = JSON.parse(
-  readFileSync(fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)), "utf-8")
-);
-
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-
+/**
+ * The shared mock, then THE point of this spec: get_data answers the backend's
+ * real body — `_id`, `mobile`, `uniDec`, `uniHex` included, more than the
+ * shared mock's typed `deployment` option carries — not a test-shaped one.
+ */
 async function mockKioskBackend(page: Page, deployment: Record<string, unknown>) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) => r.fulfill({ json: { skin_id: "skin_1" } }));
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({ json: { theme_color: [], primary_color_shades: [] } })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // PAY on a dine-in tab goes straight to /payment.
-        skip_crm_page: true,
-        pay_at_counter: "pay_at_counter",
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  // THE point of this spec: the backend's real body, not a test-shaped one.
+  await mockBackend(page, { settings: SKIP_CRM });
   await page.route("**/api/cx/kiosk/get_data", (r) =>
     r.fulfill({ json: { charges: [], deployment } })
   );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
 /** One-tap add (no modifiers): the card prints the whole-rupee menu price. */

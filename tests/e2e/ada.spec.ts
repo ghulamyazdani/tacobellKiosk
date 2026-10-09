@@ -1,6 +1,22 @@
-import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  test,
+  expect,
+  type Locator,
+  type Page,
+  type Route,
+  PROMPT_AFTER_MS,
+  PROMPT_WINDOW_MS,
+} from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  GREEK_SALAD,
+  CHEESE_BURGER,
+} from "./fixtures/backend";
+import { registerToStart, startToSecond, pickPipelineToMenu } from "./pages/boot";
+import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { stageBox, type StageBox } from "./fixtures/a11y";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import {
   mockXenoLoyalty,
@@ -42,44 +58,20 @@ import {
  * back. Idle is stepped 100 s then 20 s (idle.spec.ts header).
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * House order (bag.spec.ts / idle.spec.ts): the `**\/api/**` catch-all FIRST,
- * every specific mock after it (newest wins), plus the two cross-origin edges
- * the catch-all cannot see — the print agent (aborted) and the Xeno revoke.
- * The checkout fixture layers on top. `get_kiosk_settings` carries
- * `accessibility_mode` explicitly: true unless a test is about the gate.
- * Boot helpers are copied from idle.spec.ts (the house precedent).
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), the checkout / loyalty fixtures on top, each test's own
+ * routes last. The print agent and the Xeno revoke are other origins: only
+ * their fixtures answer them, and the harness (fixtures/kiosk.ts) denies an
+ * unrouted call by name. `get_kiosk_settings` carries `accessibility_mode`
+ * explicitly: true unless a test is about the gate. Boot, bag and numpad
+ * steps are the shared page functions (pages/boot.ts, pages/order.ts);
+ * `stageBox` is fixtures/a11y.ts's.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-const en = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-/** £17, no modifiers, no recommendedItems: a card tap adds it, no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** Modifier groups: a card tap opens the PDP; a second tap, the repeat sheet. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
+/** mockTakeAwayTab's t1 answer and the source of its t2 menu. */
+const slimMenu = fixtureJson("slim-menu.json");
+const en = locale("en");
 
 // ---- Mirrors src/components/stage/KioskStage.tsx (see GEOMETRY) ----
 const STAGE_WIDTH = 1080;
@@ -94,9 +86,6 @@ const FOOTER_HEIGHT = 56;
 
 /** LoyaltyRewardsSheet's AUTO_DISMISS_SECONDS, in ms. */
 const REWARDS_AUTO_DISMISS_MS = 25_000;
-/** P9a idle timing (idle.spec.ts): prompt at 100 s, splash at 120 s. */
-const PROMPT_AFTER_MS = 100_000;
-const PROMPT_WINDOW_MS = 20_000;
 
 interface KioskMockOptions {
   /** get_kiosk_settings.accessibility_mode — the tenant's feature gate. */
@@ -105,97 +94,15 @@ interface KioskMockOptions {
   loyalty?: boolean;
 }
 
-async function mockKioskBackend(
-  page: Page,
-  { ada = true, loyalty = false }: KioskMockOptions = {}
-) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // Label only (checkout.spec.ts) — the counter tile renders either way.
-        pay_at_counter: "pay_at_counter",
-        accessibility_mode: ada,
-        ...(loyalty ? LOYALTY_SETTINGS : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard and land on the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
-/** Splash → order type (/second). */
-async function startToSecond(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await expect(page.getByTestId("second-screen")).toBeVisible();
-}
-
-/** /second → /menu (loyalty off). */
-async function pickPipelineToMenu(page: Page) {
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+const mockKioskBackend = (page: Page, { ada = true, loyalty = false }: KioskMockOptions = {}) =>
+  mockBackend(page, {
+    settings: {
+      // Label only (checkout.spec.ts) — the counter tile renders either way.
+      pay_at_counter: "pay_at_counter",
+      accessibility_mode: ada,
+      ...(loyalty ? LOYALTY_SETTINGS : {}),
+    },
+  });
 
 async function bootRegisteredToMenu(page: Page) {
   await registerToStart(page);
@@ -203,61 +110,12 @@ async function bootRegisteredToMenu(page: Page) {
   await pickPipelineToMenu(page);
 }
 
-async function addGreekSaladOneTap(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
-
-/** KioskNumpad is the only numeric keypad mounted at a time. */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
+const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
 const brandZone = (page: Page) => page.getByTestId("ada-brand-zone");
 const reachZone = (page: Page) => page.getByTestId("reach-zone");
 const footerAda = (page: Page) => page.getByTestId("footer-ada");
-
-interface StageBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** The element's box in stage DESIGN px (KioskStage scale divided out), to 1px. */
-function stageBox(locator: Locator): Promise<StageBox> {
-  return locator.evaluate((el, stageHeight) => {
-    const stage = document.querySelector('[data-testid="kiosk-stage"]');
-    if (!stage) throw new Error("kiosk-stage is not mounted");
-    const s = stage.getBoundingClientRect();
-    const k = s.height / stageHeight;
-    const b = el.getBoundingClientRect();
-    return {
-      x: Math.round((b.left - s.left) / k),
-      y: Math.round((b.top - s.top) / k),
-      width: Math.round(b.width / k),
-      height: Math.round(b.height / k),
-    };
-  }, STAGE_HEIGHT);
-}
 
 const ZONE_BOX: StageBox = {
   x: 0,

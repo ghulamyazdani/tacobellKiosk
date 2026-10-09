@@ -1,8 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page, stepClockUntil } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, CHEESE_BURGER } from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addViaPdp, openBag, bagRows } from "./pages/order";
 import {
   mockCheckoutBackend,
+  expectNothingDangerousWasContacted,
   type CheckoutMockHandle,
   type CheckoutMockOptions,
 } from "./fixtures/checkout";
@@ -22,12 +24,17 @@ import {
  * (tests/e2e/fixtures/checkout.ts) fulfils every gateway prefix, the
  * backend-ordering `placeOrder` variant and the Mashreq/terminal origins with
  * a LOUD 500 and flips `handle.forbiddenHit`; it aborts the cross-origin
- * print agent (https://localhost:65505 — the `**\/api/**` catch-all does NOT
- * cover it) and flips `handle.printAgentContacted`. Every test in this file
- * ends with {@link expectNothingDangerousWasContacted}, and the last test
- * exists for nothing else. Without those guards the house `**\/api/**`
- * catch-all answers `{}` with HTTP 200, so a regression that called a gateway
- * would look like a PASS.
+ * print agent (https://localhost:65505) and flips
+ * `handle.printAgentContacted`. Every test in this file ends with
+ * `expectNothingDangerousWasContacted` (fixtures/checkout.ts), and the last
+ * test exists for nothing else. Without those guards the shared mock's
+ * `/api/` catch-all answers a gateway path `{}` with HTTP 200, so a
+ * regression that called a gateway would look like a PASS. The print agent
+ * is another origin: the old `**\/api/**` glob matched it too (Playwright
+ * 1.63's leading `**` spans any origin — the fixture's abort won only by
+ * being newer); under the harness (fixtures/kiosk.ts) an unrouted print call
+ * is denied and fails the test by name, and the fixture's route is what lets
+ * this spec COUNT it.
  *
  * The one and only order-placing call the whole vertical may make is
  * `POST /api/onlineOrders/partner/kiosk/placeOrder`, and it must carry
@@ -39,16 +46,18 @@ import {
  * (NI/Paytm) while still showing the customer a success screen.
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * Playwright matches routes NEWEST-FIRST and the house style registers the
- * `**\/api/**` catch-all FIRST, so `mockCheckoutBackend` MUST be layered
- * AFTER `mockKioskBackend` or the catch-all `{}` swallows placeOrder and the
- * settings endpoints. {@link bootToBagWithOneBurger} enforces that ordering.
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), then the fixture layer (`mockCheckoutBackend`), then any
+ * spec override. The checkout fixture MUST come after the shared mock or the
+ * catch-all `{}` swallows placeOrder and the settings endpoints.
+ * {@link bootToBagWithOneBurger} enforces that ordering.
  *
  * ── BOOT HELPERS ────────────────────────────────────────────────────────
- * `mockKioskBackend` / `bootRegisteredToMenu` / `addCheeseBurgerViaPdp` /
- * `openBag` are copied from bag.spec.ts (neither it nor pack.spec.ts exports
- * them — copying is the established precedent in this suite), with ONE P8a
- * delta: `get_kiosk_settings` carries `skip_crm_page`. Every scenario here
+ * The shared harness page functions (pages/boot.ts, pages/order.ts);
+ * `mockKioskBackend` and `addCheeseBurgerViaPdp` below are thin adapters
+ * over the shared mock and `addViaPdp`, with ONE P8a delta:
+ * `get_kiosk_settings` carries `skip_crm_page`. Every scenario here
  * runs with skipCRM ON and loyalty OFF, which is what makes
  * `resolveCheckoutRoute` return "payment" for a dine-in tab and "tent" for a
  * table tab — the two routes this phase builds. The loyalty ("customerName")
@@ -65,161 +74,40 @@ import {
  * £9.00 is therefore what `bag-pay`, `payment-total` and the pushed order all
  * have to agree on.
  *
- * ── TIMING: EXPLICIT WAITS ONLY, NEVER A SLEEP ──────────────────────────
- * Two real timers sit in this flow and both are waited on by asserting the
- * state they produce, not by sleeping:
- *   - /payment's 3000ms cancel window ends by navigating to /receipt, so the
- *     wait is `expect(receipt-screen).toBeVisible()`.
+ * ── TIMING: page.clock, NEVER A SLEEP ───────────────────────────────────
+ * `page.clock.install()` runs before the first goto (beforeEach), so every
+ * app timer is fake; it flows at real speed until a test moves it. The two
+ * timers this flow owns are driven, never waited out:
+ *   - /payment's 3000ms cancel window: once the buffer is up (the commit
+ *     that shows it arms its timer), `runFor(3_000)` closes it, and the wait
+ *     is `expect(receipt-screen).toBeVisible()`.
  *   - the push retry ladder (ORDER_PUSH_MAX_ATTEMPTS = 4, linear 1s/2s/3s
- *     backoff ≈ 6s) is waited on with `expect.poll(() => handle.placeOrderCount)`.
+ *     backoff ≈ 6s) is a timer chain the page re-arms itself, so it is
+ *     stepped with `stepClockUntil(() => handle.placeOrderCount === 4)` —
+ *     never one big jump. "No fifth attempt" is proven over 15 s of fake time
+ *     (`runFor(15_000)`, then the count); a 5 s poll passed on its first
+ *     sample and proved nothing.
  * ⚠️ /orderSuccess runs a 20s countdown that auto-resets to /start, so every
  * assertion on that screen must be made promptly — do not add waits there.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-/** £8, 3 addon groups with no priced defaults — a plain add commits at £8.00. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-
 /**
- * Boot + menu mocks (copied from bag.spec.ts). Order matters: Playwright
- * matches routes newest-first, so the catch-all is registered FIRST and every
- * specific mock after it.
- *
- * P8a delta: `skip_crm_page`. With it ON and `enable_loyalty` absent,
+ * The shared mock (fixtures/backend.ts) with this spec's P8a delta,
+ * `skip_crm_page`: with it ON and `enable_loyalty` absent,
  * `resolveCheckoutRoute` returns "payment" (dine-in) or "tent" (table) — the
- * two destinations this phase owns.
+ * two destinations this phase owns — and /payment's back CTA returns to
+ * /cart rather than /customerName. `pay_at_counter` is the COD tile's label
+ * only: the dispatched type is PAY_AT_RESTAURANT either way
+ * (settingsEngine.getIsPayAtCounter), so no assertion depends on it.
  */
-async function mockKioskBackend(page: Page, { skipCRM = true } = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // skipCRM keeps the fan-out on the two P8a routes and makes
-        // /payment's back CTA return to /cart rather than /customerName.
-        skip_crm_page: skipCRM,
-        // Label only — the dispatched type is PAY_AT_RESTAURANT either way
-        // (settingsEngine.getIsPayAtCounter), so no assertion depends on it.
-        pay_at_counter: "pay_at_counter",
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockKioskBackend = (page: Page, { skipCRM = true } = {}) =>
+  mockBackend(page, {
+    settings: { skip_crm_page: skipCRM, pay_at_counter: "pay_at_counter" },
+  });
 
-/** Register on the on-screen keyboard and land on /menu (copied from bag.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-/**
- * Menu card tap → customization PDP → commit → dismiss the added modal
- * (customized adds always confirm). No addon is picked, so the row commits at
- * the item's own £8.00.
- */
-async function addCheeseBurgerViaPdp(page: Page) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
-
-/**
- * VIEW MY BAG → /cart (Menu with the bag sheet open). The P7d pre-cart upsell
- * sits on this edge and its gate is opt-OUT, so the first openBag() of a
- * session may land on /forYou — settle on whichever arrived (declining
- * mutates no cart state). Owned by forYou.spec.ts.
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
-
-const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
+/** No addon is picked, so the row commits at the Cheese Burger's own £8.00. */
+const addCheeseBurgerViaPdp = (page: Page) =>
+  addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
 /**
  * Cockpit's DEFAULT "Disable COD for Kiosk" row (posistApp app.js:19418-19437,
@@ -259,38 +147,22 @@ async function bootToBagWithOneBurger(
   return checkout;
 }
 
-/**
- * ⛔ The standing safety assertion — every test ends with it.
- *
- * `forbiddenUrls` / `printAgentUrls` are folded into the assertion so a
- * failure names the exact URL that was reached instead of just "expected
- * false, got true".
- */
-function expectNothingDangerousWasContacted(handle: CheckoutMockHandle) {
-  expect(
-    handle.forbiddenUrls,
-    "a gateway / terminal / backend-ordering endpoint was contacted"
-  ).toEqual([]);
-  expect(handle.forbiddenHit).toBe(false);
-  expect(
-    handle.printAgentUrls,
-    "the local print agent was contacted"
-  ).toEqual([]);
-  expect(handle.printAgentContacted).toBe(false);
-}
-
-/** /payment's cancel window ends by navigating; never slept through. */
+/** /payment's cancel window ends by navigating; stepped in fake time, never slept through. */
 async function payAtCounterThroughBuffer(page: Page) {
   await page.getByTestId("payment-counter").click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
   await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
   // The 3000ms window closes by routing to the receipt step.
-  await expect(page.getByTestId("receipt-screen")).toBeVisible({
-    timeout: 15_000,
-  });
+  await page.clock.runFor(3_000);
+  await expect(page.getByTestId("receipt-screen")).toBeVisible();
 }
 
 test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete", () => {
+  // Before ANY page script: the app's timers must be fake from the start.
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install();
+  });
+
   test("HAPPY PATH: dine-in + skipCRM → PAY → /payment → PAY AT COUNTER → receipt → /orderSuccess, with exactly one COD placeOrder", async ({
     page,
   }) => {
@@ -616,12 +488,12 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await payAtCounterThroughBuffer(page);
     await page.getByTestId("receipt-none").click();
 
-    // Waited on by the state the ladder produces, not by sleeping.
-    await expect
-      .poll(() => checkout.placeOrderCount, { timeout: 30_000 })
-      .toBe(4);
-    // And it stops there — no fifth attempt, ever.
-    await expect.poll(() => checkout.placeOrderCount, { timeout: 5_000 }).toBe(4);
+    // Stepped through the ladder's own backoff, checked by the state it produces.
+    await stepClockUntil(page, () => checkout.placeOrderCount === 4);
+    // And it stops there — no fifth attempt, ever: 15 s of fake time pass,
+    // well past the next backoff (4 s), and the count has not moved.
+    await page.clock.runFor(15_000);
+    expect(checkout.placeOrderCount).toBe(4);
     expect(checkout.placeOrderFailures).toBe(4);
 
     // A customer whose order never landed must NOT be shown a success screen.
@@ -648,9 +520,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await payAtCounterThroughBuffer(page);
     await page.getByTestId("receipt-none").click();
 
-    await expect
-      .poll(() => checkout.placeOrderCount, { timeout: 30_000 })
-      .toBe(4);
+    await stepClockUntil(page, () => checkout.placeOrderCount === 4);
 
     // Rule 2: an exhausted ladder must be an explicit terminal state with two
     // live exits — never a dead modal and never a stranded customer.

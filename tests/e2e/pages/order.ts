@@ -66,7 +66,10 @@ export async function typeDigits(page: Page, digits: string) {
   }
 }
 
-/** A rail tap scrolls the menu to that category's section. */
+/**
+ * A rail tap → its section in view. On slim-menu both sections fit the pane at load, so this cannot
+ * prove the tap scrolled: a spec that needs that asserts the section MOVED (flows/happy-path).
+ */
 export async function selectCategory(page: Page, id: string) {
   await page.getByTestId(`rail-${id}`).click();
   await expect(page.getByTestId(`section-${id}`)).toBeInViewport();

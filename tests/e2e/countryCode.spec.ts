@@ -1,7 +1,9 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures/kiosk";
 import AxeBuilder from "@axe-core/playwright";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { mockKioskBackend as mockBackend, locale, DINE_IN, GREEK_SALAD } from "./fixtures/backend";
+import { registerToStart, startOrderTo } from "./pages/boot";
+import { typeDigits } from "./pages/order";
+import { stageBox } from "./fixtures/a11y";
 import {
   mockXenoLoyalty,
   LOYALTY_REWARDS,
@@ -21,39 +23,20 @@ import {
  * (fork parity, Q23).
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (loyalty.spec.ts / orderTypeSwitch.spec.ts): the `**\/api/**`
- * catch-all FIRST, the print agent aborted, every specific mock after it,
- * the Xeno surface (mockXenoLoyalty) LAST — newest wins. `get_data` answers
- * the real deployment shape: `countryCode: {name, dial_code, code}` (India)
- * and `currencySettings: {currency, text}`. Two pipelines (Dine In / Take
- * Away, same menu) give the bag's order-type switch a target. Boot helpers
- * are copied (house precedent: no spec exports them). Copy is read from the
- * locale files; Arabic is asserted by substring.
+ * The harness house order, newest wins: the shared mock (fixtures/
+ * backend.ts) first, the Xeno surface (mockXenoLoyalty) LAST. `get_data`
+ * answers the real deployment shape: `countryCode: {name, dial_code, code}`
+ * (India) and `currencySettings: {currency, text}`. Two pipelines (Dine In /
+ * Take Away, same menu) give the bag's order-type switch a target. Boot
+ * steps are the shared page functions (pages/boot.ts). Nothing here pays,
+ * so nothing prints: under the harness an unrouted print-agent call would
+ * be denied by name. Copy is read from the locale files; Arabic is asserted
+ * by substring.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
-const arLazy = readJson("../../src/i18n/locales/ar/lazy.json");
-
-/** £17-class, no modifiers: one tap adds it (recovery.spec.ts). */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
+const en = locale("en");
+const enLazy = locale("en", "lazy");
+const arLazy = locale("ar", "lazy");
 
 /** The backend's deployment country (get_data), the real shape. */
 const INDIA = { name: "India", dial_code: "+91", code: "IN" };
@@ -73,87 +56,26 @@ interface MockOptions {
 }
 
 async function mockKioskBackend(page: Page, { arabic = false }: MockOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin: the catch-all never sees the print agent.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: arabic ? { name: "العربية", code: "ar", dir: "rtl" } : {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        start_order_text_secondary: "ابدأ الطلب",
-        ideal_time: "180",
-        accessibility_mode: true,
-        // Loyalty on: /second routes through the pre-menu /phone lookup.
-        ...LOYALTY_SETTINGS,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-        { _id: "p2", tab_id: "t2", tab_type: "take_away", primary_name: "Take Away" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: INDIA, currencySettings: { currency: "INR", text: "₹" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
+  await mockBackend(page, {
+    arabic,
+    settings: {
+      start_order_text_secondary: "ابدأ الطلب",
+      accessibility_mode: true,
+      // Loyalty on: /second routes through the pre-menu /phone lookup.
+      ...LOYALTY_SETTINGS,
+    },
+    pipelines: [
+      DINE_IN,
+      { _id: "p2", tab_id: "t2", tab_type: "take_away", primary_name: "Take Away" },
+    ],
+    deployment: { countryCode: INDIA, currencySettings: { currency: "INR", text: "₹" } },
+  });
   // Newest route wins: the Xeno surface goes last.
   return mockXenoLoyalty(page);
 }
 
-/** Register on the on-screen keyboard and land on the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
 /** Splash → Dine In → the pre-menu /phone (loyalty on). */
-async function startToPhone(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startToPhone = (page: Page) => startOrderTo(page, "phone-screen");
 
 const pill = (page: Page) => page.getByTestId("phone-country-code");
 const sheet = (page: Page) => page.getByTestId("country-sheet");
@@ -179,12 +101,6 @@ async function pickUae(page: Page) {
   await expect(pill(page)).toContainText("+971");
 }
 
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
-
 /** auth.selectedCountryCode from the DEV store seam. */
 function selectedCountry(page: Page): Promise<Record<string, unknown> | undefined> {
   return page.evaluate(
@@ -204,23 +120,6 @@ const xenoData = (xeno: XenoMockHandle, eventName: string) =>
   xeno.eventCalls
     .filter((call) => call.eventName === eventName)
     .map((call) => (call.body as { data?: Record<string, unknown> } | undefined)?.data);
-
-/** The element's box in stage DESIGN px (ada.spec.ts stageBox). */
-function stageBox(locator: Locator) {
-  return locator.evaluate((el, stageHeight) => {
-    const stage = document.querySelector('[data-testid="kiosk-stage"]');
-    if (!stage) throw new Error("kiosk-stage is not mounted");
-    const s = stage.getBoundingClientRect();
-    const k = s.height / stageHeight;
-    const b = el.getBoundingClientRect();
-    return {
-      x: Math.round((b.left - s.left) / k),
-      y: Math.round((b.top - s.top) / k),
-      width: Math.round(b.width / k),
-      height: Math.round(b.height / k),
-    };
-  }, STAGE_HEIGHT);
-}
 
 /** Capture-only screenshot: attached for review, never compared. */
 async function capture(page: Page, name: string) {

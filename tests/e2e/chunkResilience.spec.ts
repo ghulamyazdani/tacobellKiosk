@@ -1,6 +1,14 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page, stepClockUntil } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  CHUNK,
+  GREEK_SALAD,
+  DREAM_BOX,
+} from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addOneTap, openBag } from "./pages/order";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 
 /**
@@ -27,39 +35,19 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  *   before the walk back to the splash (autoUpdate.spec's dwell pattern:
  *   10 s quiet, a 5 s countdown, ONE reload).
  *
- * Mocks: the house order (bag.spec / idle.spec — copied, no spec exports
- * them): the `**\/api/**` catch-all FIRST, the cross-origin edges routed
- * explicitly (print agent aborted, Xeno revoke answered), every specific mock
- * after it (newest wins), the checkout fixture last.
+ * Mocks: the harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every boot
+ * endpoint), the checkout fixture last; the harness (fixtures/kiosk.ts)
+ * denies any other origin by name. Boot and bag steps are the shared page
+ * functions (pages/boot.ts, pages/order.ts).
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const offersFixture = readJson("./fixtures/offers.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
+const en = locale("en");
 
 /** The ONE lazy UI chunk as the dev server serves it. */
-const LAZY_CHUNK = "**/src/components/cart/bagLazyParts.ts*";
+const LAZY_CHUNK = CHUNK.bag;
 
-/** £17, plain: a card tap adds it with no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** The pack (£25): Sandwich / Sides / Nuggets one-option (pre-selected), Drinks the CHOICE slot. */
-const DREAM_BOX = "68dd79409030ed3064aee28c";
+/** DREAM_BOX, the pack (£25): Sandwich / Sides / Nuggets one-option (pre-selected), Drinks the CHOICE slot. */
 const G_SIDES = `${DREAM_BOX}_2_combo`;
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 const G_SNACKS = `${DREAM_BOX}_6_combo`;
@@ -68,59 +56,7 @@ const CHILI_NUGGETS = "696df06f5a77225b771e978a";
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
 
 async function mockKioskBackend(page: Page, { offers = false } = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({ json: { start_order_text_primary: "START ORDER", ideal_time: "180" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) =>
-    r.fulfill({ json: offers ? offersFixture : [] })
-  );
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
+  await mockBackend(page, { offers: offers ? fixtureJson("offers.json") : [] });
 }
 
 /** Counts every request for the lazy chunk and aborts it (register BEFORE the boot). */
@@ -133,38 +69,7 @@ async function abortLazyChunk(page: Page): Promise<() => number> {
   return () => aborted;
 }
 
-/** Register on the on-screen keyboard and land on /menu. */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-async function addGreekSaladOneTap(page: Page) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-}
-
-/** VIEW MY BAG → /cart, through the once-per-session /forYou upsell (bag.spec). */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
+const addGreekSaladOneTap = (page: Page) => addOneTap(page, GREEK_SALAD, "(1)");
 
 /**
  * A rejected import reaches an error boundary only on React's retry, a few
@@ -235,19 +140,6 @@ const pageLoad = (page: Page) =>
     ageMs: performance.now(),
   }));
 
-/** Fake time in small steps until `done()` holds (autoUpdate.spec). */
-async function stepClockUntil(page: Page, done: () => boolean) {
-  await expect
-    .poll(
-      async () => {
-        await page.clock.runFor(500);
-        return done();
-      },
-      { timeout: 20_000, intervals: [50] }
-    )
-    .toBe(true);
-}
-
 test.describe("figma-polish G2 — a failed lazy chunk degrades in place", () => {
   test("BAG: with bagLazyParts aborted, /menu stays up, the bag keeps rows, totals and PAY (no rail, no crash screen), the Rewards entry's scrim closes on tap, and PAY proceeds", async ({
     page,
@@ -298,7 +190,12 @@ test.describe("figma-polish G2 — a failed lazy chunk degrades in place", () =>
 
   test("PDP (Dream box): with the chunk aborted an incomplete ADD TO BAG rings the empty slot with NO completion warning and keeps every pick; CUSTOMIZE shows the tier2-loading scrim, a tap closes it with the picks intact, and the pack still commits", async ({
     page,
+    kiosk,
   }) => {
+    kiosk.allowPageError(
+      /There was an error during concurrent rendering but React was able to recover/,
+      "this test aborts bagLazyParts on purpose: the PDP's lazy part rejects mid concurrent render and React recovers (harvests 2026-10-08 and 2026-10-09; not an app bug)"
+    );
     test.slow();
     await mockKioskBackend(page);
     const aborted = await abortLazyChunk(page);

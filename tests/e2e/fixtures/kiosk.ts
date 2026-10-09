@@ -66,8 +66,12 @@ export const test = base.extend<{ kiosk: Kiosk; strictConsole: boolean }>({
           return route.abort("blockedbyclient").catch(() => undefined);
         },
       );
+      // A reload can hand an already-settled photo request to the context routes: its fulfill then
+      // throws "Route is already handled!" (Playwright 1.63, behind the shared mock's predicate route).
       await context.route(MENU_PHOTOS, (route) =>
-        route.fulfill({ body: PNG_1X1, contentType: "image/png", headers: { "Access-Control-Allow-Origin": "*" } }),
+        route
+          .fulfill({ body: PNG_1X1, contentType: "image/png", headers: { "Access-Control-Allow-Origin": "*" } })
+          .catch(() => undefined),
       );
       page.on("pageerror", (e) => pageErrors.push(e.stack ?? `${e.name}: ${e.message}`));
       page.on("console", (m) => {

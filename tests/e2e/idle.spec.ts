@@ -1,6 +1,24 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  test,
+  expect,
+  type Page,
+  type Route,
+  PROMPT_AFTER_MS,
+  PROMPT_WINDOW_MS,
+  REQUEST_BUDGET_MS,
+  MENU_BUDGET_MS,
+  dexieRows,
+  persistedLoyaltyPoints,
+} from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  holdRequests as parkRequests,
+  locale,
+  SKIP_CRM,
+  GREEK_SALAD,
+  CHEESE_BURGER,
+  TORTILLA_SAUCE,
+} from "./fixtures/backend";
 import { mockCheckoutBackend, PLACE_ORDER_URL } from "./fixtures/checkout";
 import {
   mockXenoLoyalty,
@@ -9,6 +27,8 @@ import {
   LOYALTY_REWARDS,
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
+import { registerToStart, startOrderTo, bootRegisteredToMenu } from "./pages/boot";
+import { addOneTap, openBag, typeDigits } from "./pages/order";
 
 /**
  * P9a — idle timeout + session integrity, end to end.
@@ -51,51 +71,20 @@ import {
  * A prompt at 160 s would mean the server lengthened the timeout.
  *
  * ── MOCK ORDER ──────────────────────────────────────────────────────────
- * Same house order as bag.spec.ts: the `**\/api/**` catch-all FIRST, every
- * specific mock after it (Playwright matches newest-first). Both cross-origin
- * edges the catch-all cannot see are routed here too: the print agent
- * (https://localhost:65505, aborted) and the Xeno revoke (xeno.in:2223 —
- * unrouted, its raw fetch hangs until its own 10 s bound). Fixture layers
- * (checkout, loyalty) and `parkRequests` come after that, so they win.
+ * The harness house order, NEWEST route wins: the shared mock first
+ * (fixtures/backend.ts — its origin-scoped `/api/` catch-all, then every
+ * boot endpoint), then the fixture layers (checkout, loyalty), then each
+ * test's own routes and `parkRequests` (the shared holdRequests) — so they
+ * win. The print agent and the Xeno revoke are other origins: only their
+ * fixtures answer them, and the harness (fixtures/kiosk.ts) denies an
+ * unrouted call by name.
  *
- * Boot helpers are copied from bag.spec.ts / loyalty.spec.ts (neither exports
- * them — copying is the established precedent in this suite).
+ * Boot, bag and numpad steps are the shared page functions (pages/boot.ts,
+ * pages/order.ts); the helpers below that keep their old names are thin
+ * adapters over them and over the shared mock.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json");
-
-/** £17, no modifiers, no recommendedItems: one tap lands it, no modal. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** Has modifier groups: a card tap opens the /customization PDP. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-/** £2, no modifiers, no upsell: one tap lands it (a paid row beside a reward). */
-const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b";
-
-/** D1: 120 s total, the prompt is the last 20 s. */
-const PROMPT_AFTER_MS = 100_000;
-const PROMPT_WINDOW_MS = 20_000;
-/** P9b request budgets (src/redux/app/apiSlice.ts): 10 s, getMenu 30 s. */
-const REQUEST_BUDGET_MS = 10_000;
-const MENU_BUDGET_MS = 30_000;
+const en = locale("en");
 
 interface KioskMockOptions {
   /** Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. */
@@ -106,225 +95,24 @@ interface KioskMockOptions {
   arabic?: boolean;
 }
 
-async function mockKioskBackend(page: Page, opts: KioskMockOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: opts.arabic
-          ? { name: "العربية", code: "ar", dir: "rtl" }
-          : {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        ...(opts.arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
-        // Clamped to 120 s — see the header.
-        ideal_time: "180",
-        ...(opts.skipCRM
-          ? { skip_crm_page: true, pay_at_counter: "pay_at_counter" }
-          : {}),
-        ...(opts.loyalty ? LOYALTY_SETTINGS : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-interface ParkedRequests {
-  /** Requests parked so far — poll it to know the call is in flight. */
-  readonly count: number;
-  arm: () => void;
-  /**
-   * Stop parking WITHOUT answering what is parked — for a request whose
-   * budget already aborted it in the page (P9b): it must never be answered.
-   */
-  disarm: () => void;
-  /** Hand every parked request on to the fixture handler: it completes, late. */
-  release: () => Promise<void>;
-}
-
-/**
- * Parks matching requests while armed — how a call is made to outlive the
- * session (inside its P9b budget). Register it AFTER the mock it shadows
- * (newest wins); release() passes each parked request to that older handler
- * with route.fallback(), so it completes exactly as it would have, only after
- * the kiosk moved on.
- */
-async function parkRequests(
-  page: Page,
-  url: string | RegExp,
-  { armed = true } = {}
-): Promise<ParkedRequests> {
-  const parked: Route[] = [];
-  let isArmed = armed;
-  await page.route(url, (route) => {
-    if (!isArmed) return route.fallback();
-    parked.push(route);
-    return undefined;
+/** The shared mock with this spec's switches (LOYALTY_SETTINGS last: its skip_crm_page wins). */
+const mockKioskBackend = (page: Page, opts: KioskMockOptions = {}) =>
+  mockBackend(page, {
+    arabic: opts.arabic,
+    settings: { ...(opts.skipCRM ? SKIP_CRM : {}), ...(opts.loyalty ? LOYALTY_SETTINGS : {}) },
   });
-  return {
-    get count() {
-      return parked.length;
-    },
-    arm: () => {
-      isArmed = true;
-    },
-    disarm: () => {
-      isArmed = false;
-    },
-    release: async () => {
-      isArmed = false;
-      await Promise.all(parked.splice(0).map((route) => route.fallback()));
-    },
-  };
-}
-
-/** Register on the on-screen keyboard and land on the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
 
 /** Splash → order type → /menu (loyalty off). */
-async function startOrderToMenu(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
-
-async function bootRegisteredToMenu(page: Page) {
-  await registerToStart(page);
-  await startOrderToMenu(page);
-}
-
-async function addGreekSaladOneTap(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (see bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
-
-/** KioskNumpad is the only numeric keypad mounted at a time. */
-async function typeDigits(page: Page, digits: string) {
-  for (const digit of digits) {
-    await page.getByTestId(`numpad-key-${digit}`).click();
-  }
-}
+const startOrderToMenu = (page: Page) => startOrderTo(page, "menu-screen");
 
 /** Loyalty on: Splash → order type → /phone (the pre-menu lookup). */
-async function startOrderToPhone(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startOrderToPhone = (page: Page) => startOrderTo(page, "phone-screen");
+
+const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
 /** Rows in the Dexie cart mirror (KioskDB.cartItems). Read-only. */
-function dexieCartCount(page: Page): Promise<number> {
-  return page.evaluate(
-    () =>
-      new Promise<number>((resolve, reject) => {
-        const open = indexedDB.open("KioskDB");
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const db = open.result;
-          const count = db
-            .transaction("cartItems", "readonly")
-            .objectStore("cartItems")
-            .count();
-          count.onsuccess = () => {
-            db.close();
-            resolve(count.result);
-          };
-          count.onerror = () => {
-            db.close();
-            reject(count.error);
-          };
-        };
-      })
-  );
-}
-
-/**
- * `state.loyalty.totalLoyaltyPoints` from the persisted redux root (the
- * loyalty.spec.ts reader) — the balance has no UI surface off the rewards
- * sheet. Read-only.
- */
-function persistedLoyaltyPoints(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const raw = window.localStorage.getItem("persist:root");
-    if (!raw) return Number.NaN;
-    const root = JSON.parse(raw) as Record<string, string>;
-    if (!root.loyalty) return Number.NaN;
-    const loyalty = JSON.parse(root.loyalty) as { totalLoyaltyPoints?: number };
-    return Number(loyalty.totalLoyaltyPoints);
-  });
-}
+const dexieCartCount = async (page: Page) => (await dexieRows(page)).length;
 
 const idleModal = (page: Page) => page.getByTestId("idle-modal");
 

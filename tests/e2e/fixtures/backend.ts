@@ -31,8 +31,8 @@ export const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b"; // £2
 export const CAESAR_DRESSING = "5dd109392b29ee1f2a82a49c"; // £2, the menu's last card
 export const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1 burger addon
 export const DREAM_BOX = "68dd79409030ed3064aee28c"; // pack, £25
-export const SIDE_ORDERS = "5dd1092ecc7088762eee2659"; // rail category 1: salad, burger, fries, sauces
-export const MEALS_COMBOS = "5dd10932188e72ce1b3eb354"; // rail category 2: kiddie meals, packs
+export const SIDE_ORDERS = "5dd1092ecc7088762eee2659"; // rail row 2 (order 4): salad, burger, fries, sauces
+export const MEALS_COMBOS = "5dd10932188e72ce1b3eb354"; // rail row 1 (order 3), marked on load: kiddie meals, packs
 
 export const DINE_IN = { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" };
 /** PAY → /payment on a dine-in tab. pay_at_counter is the COD tile's LABEL key. */
