@@ -13,7 +13,10 @@ import {
   setMinMaxErroredBaseItems,
   setUpdatedBaseItems,
 } from "@cx-sdk/catalog/state/Menu.slice";
-import { setBottomSheet } from "../../redux/features/menuSelections/menuSelections.slice";
+import {
+  setBottomSheet,
+  setRecommendationDetour,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 
 import {
   checkCustomizationQuantity,
@@ -471,6 +474,10 @@ const useCustomization = ({
 
   const closeModalStates = async () => {
     try {
+      // Every PDP exit ends a suggestion detour (BACK, "−" at 1, ADD TO BAG
+      // after the modal open consumed it, a DP refusal). Never an (un)mount
+      // effect: StrictMode's re-mount would clear it before ADD TO BAG.
+      dispatch(setRecommendationDetour(false));
       if (isForceOpenMakeItAMealModal) {
         dispatch(
           closeMakeItAMealSession({
@@ -1008,7 +1015,9 @@ const useCustomization = ({
     try {
       // `addTier1CustomizationToMIAMCart` returns `true` only when the item is
       // actually committed to the cart. It returns `false` (and shows an error
-      // modal) when validation fails — no variant selected, or min/max not met.
+      // modal) when validation fails — no variant selected, or min/max not met
+      // — and `undefined` when the DP cap refused the paid add (its global
+      // error is up; review R2).
       const wasAdded = customization
         ? addTier1CustomizationToMIAMCart(customization)
         : addTier1CustomizationToMIAMCart();
@@ -1131,6 +1140,11 @@ const useCustomization = ({
         return false;
       }
 
+      // A paid add the DP cap refuses (addItemToCart → false) has already
+      // raised the global error: the answer is then neither true (an
+      // ItemAddedToCart for a row that never landed — review R2) nor false
+      // (the PDP's completion warning over that error — never two modals).
+      let landed = true;
       // EDIT vs ADD flows preserved exactly
       if (isOpenBottomSheet?.openType === "edit") {
         if (!commitEdit(returnableFinalObject, "VARIANT")) return false;
@@ -1164,16 +1178,16 @@ const useCustomization = ({
           // the engine's stripBuyStageMarkers), and the added-modal is
           // suppressed so it cannot pop over the offers modal hosting this
           // tier.
-          addItemToCart(stripBuyStageMarkers(returnableFinalObject), "VARIANT", {
+          landed = addItemToCart(stripBuyStageMarkers(returnableFinalObject), "VARIANT", {
             suppressAddedModal: true,
           });
         } else {
-          addItemToCart(returnableFinalObject, "VARIANT");
+          landed = addItemToCart(returnableFinalObject, "VARIANT");
         }
       }
 
       closeModalStates();
-      return true;
+      return landed ? true : undefined;
     } else if (SelectedEntity?.modifiers?.length > 0) {
       // CUSTOMIZABLE (non-variant) branch
 
@@ -1238,6 +1252,8 @@ const useCustomization = ({
 
         closeModalStates();
       } else {
+        // See the VARIANT branch above — a DP refusal answers undefined.
+        let landed = true;
         // See the VARIANT branch above — freebies stage into cart.getItems.
         if (SelectedEntity?.isGetItem) {
           addGetItemToRdx(returnableFinalObject, "CUSTOMIZABLE");
@@ -1252,17 +1268,17 @@ const useCustomization = ({
           );
         } else if (SelectedEntity?.isBuyStageItem) {
           // Buy-stage commit — see the VARIANT branch above.
-          addItemToCart(
+          landed = addItemToCart(
             stripBuyStageMarkers(returnableFinalObject),
             "CUSTOMIZABLE",
             { suppressAddedModal: true },
           );
         } else {
-          addItemToCart(returnableFinalObject, "CUSTOMIZABLE");
+          landed = addItemToCart(returnableFinalObject, "CUSTOMIZABLE");
         }
 
         closeModalStates();
-        return true;
+        return landed ? true : undefined;
       }
 
       return true;

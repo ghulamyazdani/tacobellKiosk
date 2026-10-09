@@ -13,6 +13,10 @@ import {
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import {
+  selectRecommendationDetour,
+  setRecommendationDetour,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import RepeatItemSheet from "../RepeatItemSheet";
 import "../../../i18n";
 
@@ -147,6 +151,47 @@ describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
     await userEvent.click(screen.getByTestId("repeat-sheet-close"));
     expect(cartState().repeatItembottomSheet.isOpen).toBe(false);
     expect(screen.queryByTestId("repeat-sheet")).not.toBeInTheDocument();
+  });
+
+  /*
+    Lane added-modal: an in-bag suggestion from the product-added strip opens
+    this sheet with recommendationDetour set. Every way the sheet closes ends
+    the detour (the add it would confirm never comes), so it can never hide
+    the NEXT add's strip; "+ NEW CUSTOMIZATIONS" continues the detour into the
+    PDP, whose own exits end it.
+  */
+  it.each([
+    ["X", () => screen.getByTestId("repeat-sheet-close")],
+    ["the backdrop", () => screen.getByTestId("repeat-sheet").children[0]],
+    ["'−' on the last row", () => screen.getByTestId("repeat-dec-cb-1")],
+  ])("%s closes the sheet and ends a suggestion detour", async (_exit, target) => {
+    seedOpenSheet();
+    store.dispatch(setRecommendationDetour(true));
+    renderSheet();
+    await userEvent.click(target());
+    expect(cartState().repeatItembottomSheet.isOpen).toBe(false);
+    expect(selectRecommendationDetour(store.getState())).toBe(false);
+  });
+
+  it("+ NEW CUSTOMIZATIONS keeps a suggestion detour (it continues into the PDP)", async () => {
+    seedOpenSheet();
+    store.dispatch(setRecommendationDetour(true));
+    renderSheet();
+    await userEvent.click(screen.getByTestId("repeat-new-customizations"));
+    expect(cartState().repeatItembottomSheet.isOpen).toBe(false);
+    expect(selectRecommendationDetour(store.getState())).toBe(true);
+  });
+
+  // Test stage (guard): only a CLOSE ends the detour — a '−' that leaves a
+  // unit keeps the sheet, and the detour, going.
+  it("'−' that leaves a unit keeps the sheet open and the suggestion detour", async () => {
+    seedOpenSheet([{ ...BURGER_ROW, quantity: 2 }]);
+    store.dispatch(setRecommendationDetour(true));
+    renderSheet();
+    await userEvent.click(screen.getByTestId("repeat-dec-cb-1"));
+    expect(cartState().cartItems).toEqual([expect.objectContaining({ itemId: "cb-1", quantity: 1 })]);
+    expect(cartState().repeatItembottomSheet.isOpen).toBe(true);
+    expect(selectRecommendationDetour(store.getState())).toBe(true);
   });
 
   it("ADA (P9c): capped by its containing block with the X and the CTA outside the scroller", () => {

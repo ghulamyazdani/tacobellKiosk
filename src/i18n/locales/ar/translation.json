@@ -112,7 +112,8 @@
   "added": {
     "title": "تمت إضافة منتجك",
     "youMightLike": "قد يعجبك أيضاً",
-    "addToOrder": "أضف إلى الطلب"
+    "addToOrder": "أضف إلى الطلب",
+    "inOrder": "{{value}} في طلبك"
   },
   "size": {
     "title": "اختر الحجم",

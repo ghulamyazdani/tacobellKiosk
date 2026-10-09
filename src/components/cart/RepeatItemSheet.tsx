@@ -25,7 +25,10 @@ import {
   buildVariantTierPayload,
   hasComboUpsell,
 } from "@cx-sdk/ordering/cart/addIntent";
-import { setSelectedEntity } from "../../redux/features/menuSelections/menuSelections.slice";
+import {
+  setRecommendationDetour,
+  setSelectedEntity,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useGridView from "../../hooks/customization/useGridView";
@@ -83,7 +86,12 @@ function SheetBody({ sheet }: { sheet: any }) {
     (row: any) => (quantities[String(row?.itemId)] ?? 0) > 0,
   );
 
-  const close = () => dispatch(closeRepeatItemBottomSheet());
+  // X, the scrim and the last row's "−": closing ends a suggestion detour (the
+  // add it would confirm never comes). NEW CUSTOMIZATIONS keeps it (→ the PDP).
+  const close = () => {
+    dispatch(closeRepeatItemBottomSheet());
+    dispatch(setRecommendationDetour(false));
+  };
 
   const increase = (row: any) => {
     // DP max-quantity gate: the hook returns false (and raises the global
@@ -115,7 +123,7 @@ function SheetBody({ sheet }: { sheet: any }) {
       if (!anyLeft) {
         // Last row hit 0 → close, and (fork parity) un-blacklist the base
         // item so the MIAM upsell may offer it again next time.
-        dispatch(closeRepeatItemBottomSheet());
+        close();
         // Payload cast matches the house pattern (useCartIndexedDb.ts):
         // the SDK reducer types its action `any`, so RTK infers `{id} & void`.
         dispatch(removeBlackListed({ id: row?.id } as any));

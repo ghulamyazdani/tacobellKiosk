@@ -21,6 +21,7 @@ import OrderSuccess from "../pages/OrderSuccess";
 import NotFound from "../pages/NotFound";
 import MakeItAMealPrompt from "../components/makeItAMeal/MakeItAMealPrompt";
 import RepeatItemSheet from "../components/cart/RepeatItemSheet";
+import DetourTapGuard from "../components/menu/DetourTapGuard";
 import { captureKioskEvent, KioskEventName } from "../utils/analytics";
 import useCartHook from "../hooks/menuHooks/useCartHook";
 import { CartRehydratedContext } from "../hooks/utils/useCartRehydrated";
@@ -95,6 +96,10 @@ function InSessionOverlays() {
           <RepeatItemSheet />
         </div>
       </div>
+      {/* z-58, 500 ms after a product-added suggestion leaves the modal
+          (lane added-modal R1): a double tap's second half never lands on
+          the surface that replaced it. */}
+      <DetourTapGuard />
     </>
   );
 }

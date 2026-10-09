@@ -37,7 +37,11 @@ import {
   markOfferAutoApplied,
   optOutOfAutoApply,
 } from "../../../redux/features/offerSession/offerSession.slice";
-import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
+import {
+  mutateAddToCartModal,
+  setOutOfStockItems,
+  setRecommendationDetour,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import {
   getCelebratedBarKey,
   setCelebratedBarKey,
@@ -252,6 +256,26 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
       await fireReset(scope);
 
       expect(state().menuSelections.outOfStockItems).toEqual({});
+    }
+  );
+
+  /*
+    Lane added-modal (guard): the product-added modal can stay open
+    indefinitely, and a suggestion's detour flag left set would hide the
+    NEXT guest's first strip — both scopes end both.
+  */
+  it.each<SessionResetScope>(["full", "nextCustomer"])(
+    'resetSession("%s") closes the product-added modal and ends a suggestion detour',
+    async (scope) => {
+      store.dispatch(
+        mutateAddToCartModal({ isOpen: true, item: { id: "fries", recommendedItems: ["taco"] } })
+      );
+      store.dispatch(setRecommendationDetour(true));
+
+      await fireReset(scope);
+
+      expect(state().menuSelections.addToCartModal).toEqual({ isOpen: false, item: {} });
+      expect(state().menuSelections.recommendationDetour).toBe(false);
     }
   );
 

@@ -12,6 +12,7 @@ import { convertCategoryData } from "@cx-sdk/catalog/menu/menuFilteringUtils";
 import { buildVariantCommitPayload } from "@cx-sdk/ordering/customization/commitPayload";
 import { buildVariantTierPayload } from "@cx-sdk/ordering/cart/addIntent";
 import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
+import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import {
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -56,7 +57,11 @@ import LoyaltyLoginModal from "../../components/loyalty/LoyaltyLoginModal";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { scrollBehavior } from "../../utils/autoScroll";
-import { selectAddToCartModal } from "../../redux/features/menuSelections/menuSelections.slice";
+import {
+  mutateAddToCartModal,
+  selectAddToCartModal,
+  setRecommendationDetour,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 import { ErrorBoundary } from "../../ErrorBoundary";
 
 // D9 — the Xeno rewards sheet rides the ONE lazy UI chunk (bagLazyParts: a
@@ -327,6 +332,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * opens → CustomizationOpened; the combo prompt → MakeItAMealOpened.
    */
   const handleEntityAction = (entity: any, fromQuickAdd = false) => {
+    // A fresh menu tap is never a suggestion detour's add.
+    dispatch(setRecommendationDetour(false));
     if (!fromQuickAdd) {
       trackItem(KioskEventName.ItemClicked, entity, {
         item_price: entity?.price,
@@ -363,6 +370,38 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     openDoubleTierModal(entity, () => {}, undefined);
   };
 
+  /**
+   * A product-added suggestion that needs a choice LEAVES the modal: close it
+   * first (BACK on the PDP must never bring it back) and mark the detour, so
+   * the add it ends in confirms WITHOUT another strip (one hop; fork
+   * YouMightLikeStrip.handleAdd). useCartHook's next modal open consumes it.
+   */
+  const leaveAddedModal = () => {
+    dispatch(setRecommendationDetour(true));
+    dispatch(mutateAddToCartModal(false));
+  };
+
+  /**
+   * A suggestion tap does what the same item's menu "+" does: a sized item
+   * → Select a Size; options / pack → the PDP; already in the bag (repeat
+   * on) → the repeat sheet — each after leaveAddedModal. A plain add lands
+   * in place and the modal stays open (the tile counts it).
+   * ponytail: a MIAM prompt abandoned after a suggestion keeps the flag until
+   * the next menu tap, PDP exit, modal open or reset (one strip lost at
+   * worst); unreachable today — raw upsellItems are ids (Q5). Clear it on the
+   * prompt's X if suggestions ever offer the meal.
+   */
+  const handleSuggestionAdd = (entity: RecommendedEntity) => {
+    if (getAddIntent(entity) === "variant") {
+      leaveAddedModal();
+      setSizeEntity(entity);
+      return;
+    }
+    if (addEntity(entity, { suppressAddedModal: true, onBeforeLeave: leaveAddedModal })) {
+      trackAdded(entity, entity?.price, entity?.type);
+    }
+  };
+
   const handleSizeContinue = (variant: any) => {
     const parent = sizeEntity;
     setSizeEntity(null);
@@ -392,6 +431,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       }),
       "VARIANT"
     );
+    // After a suggestion's Select a Size: the modal this add opened already
+    // consumed the detour; a DP-cap refusal must not leave it set.
+    dispatch(setRecommendationDetour(false));
     if (landed) trackAdded(parent, variant?.price, "VARIANT");
   };
 
@@ -613,18 +655,20 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         />
       </div>
       <LanguageSheet open={languageOpen} onClose={() => setLanguageOpen(false)} />
-      <ProductAddedModal
-        onQuickAdd={(entity) => {
-          if (addEntity(entity, { suppressAddedModal: true })) {
-            trackAdded(entity, entity?.price, entity?.type);
-          }
-        }}
-      />
-      <SelectSizeModal
-        entity={sizeEntity}
-        onClose={() => setSizeEntity(null)}
-        onContinue={handleSizeContinue}
-      />
+      <ProductAddedModal onQuickAdd={handleSuggestionAdd} />
+      {/* Mounted only while open, so every open starts with no size ticked
+          and CONTINUE disabled (1:5628) — an abandoned pick never survives
+          (review R3). */}
+      {sizeEntity && (
+        <SelectSizeModal
+          entity={sizeEntity}
+          onClose={() => {
+            setSizeEntity(null);
+            dispatch(setRecommendationDetour(false));
+          }}
+          onContinue={handleSizeContinue}
+        />
+      )}
       {/* P7a overlays — z-stack: BagSheet z-40 (a stacking context, so its
           RewardsSheet/FreebiePicker/OfferRemovalNotice children all paint in
           its z-40 slot), confirm modals z-50. The MIAM prompt and the repeat

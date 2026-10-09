@@ -10,7 +10,10 @@ import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
-import { mutateAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
+import {
+  mutateAddToCartModal,
+  setOutOfStockItems,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import ProductAddedModal from "../ProductAddedModal";
 import i18n from "../../../i18n";
 
@@ -136,8 +139,11 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
 
     const plus = screen.getByTestId(`added-rec-add-${BURRITO.id}`);
-    expect(plus).toHaveAccessibleName(i18n.t("menu.quickAdd"));
-    expect(plus).toHaveClass("absolute", "right-[7px]", "top-[5px]", "h-[44px]", "w-[44px]");
+    // Lane added-modal: the tile's overlay is its ONE accessible control; the
+    // '+' is its visual twin above it, hidden from AT and the tab order.
+    expect(plus).toHaveAttribute("aria-hidden", "true");
+    expect(plus).toHaveAttribute("tabindex", "-1");
+    expect(plus).toHaveClass("absolute", "z-10", "right-[7px]", "top-[5px]", "h-[44px]", "w-[44px]");
     expect(plus.firstElementChild).toHaveClass("h-[36px]", "w-[36px]", "rounded-full");
     // Figma Quick Add (1:421) pressed: the white circle turns #F3D9FF. The
     // white is on the circle, not the button, so the press reaches it
@@ -147,8 +153,259 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     fireEvent.click(plus);
 
     expect(onQuickAdd).toHaveBeenCalledTimes(1);
-    expect(onQuickAdd).toHaveBeenCalledWith(BURRITO);
+    // The resolver's entity: the menu's own plus the resolved price and the
+    // isDirectlyAddable stamp.
+    expect(onQuickAdd).toHaveBeenCalledWith(expect.objectContaining(BURRITO));
     expect(isOpen()).toBe(true);
+  });
+
+  /*
+    Lane added-modal (user report 2026-10-09, RC1): the WHOLE tile adds — an
+    EMPTY overlay (P9f overlay-button pattern; tb-press-card squeezes on
+    `> button:empty:active`) named "Quick add <name>". DOM order after the
+    text: the count status, the overlay, the '+' (z-10) — so a tap on the
+    pill lands on the overlay.
+  */
+  it("the whole tile adds: an empty overlay 'Quick add <name>' (a direct child, the card presses); the '+' above it fires exactly once too", () => {
+    const onQuickAdd = vi.fn();
+    render(<ProductAddedModal onQuickAdd={onQuickAdd} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
+
+    const card = screen.getByTestId(`added-rec-${BURRITO.id}`);
+    expect(card).toHaveClass("tb-press-card", "relative");
+    const overlay = screen.getByRole("button", { name: "Quick add Crispy Chicken Burrito" });
+    expect(overlay.parentElement).toBe(card);
+    expect(overlay).toBeEmptyDOMElement();
+    expect(overlay).toHaveClass("absolute", "inset-0");
+    const plus = screen.getByTestId(`added-rec-add-${BURRITO.id}`);
+    expect(Array.from(card.children).slice(-3)).toEqual([within(card).getByRole("status"), overlay, plus]);
+    // The tile's only controls — no undo stepper (sign-off Q3: removing stays in the bag).
+    expect(within(card).getAllByRole("button", { hidden: true })).toEqual([overlay, plus]);
+
+    fireEvent.click(overlay);
+    expect(onQuickAdd).toHaveBeenCalledTimes(1);
+    expect(onQuickAdd).toHaveBeenCalledWith(expect.objectContaining(BURRITO));
+
+    onQuickAdd.mockClear();
+    fireEvent.click(plus);
+    expect(onQuickAdd).toHaveBeenCalledTimes(1);
+    expect(onQuickAdd).toHaveBeenCalledWith(expect.objectContaining(BURRITO));
+    expect(plus).toHaveClass("z-10");
+    expect(plus).toHaveAttribute("aria-hidden", "true");
+    expect(plus).toHaveAttribute("tabindex", "-1");
+    // ONE accessible control per tile.
+    expect(screen.getAllByRole("button", { name: /^Quick add / }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Quick add Crunchy Taco",
+      "Quick add Crispy Chicken Burrito",
+    ]);
+    expect(isOpen()).toBe(true);
+  });
+
+  // Review UIA-1: a tap moved focus onto the aria-hidden '+' (Chrome then
+  // un-hides it as a nameless focused button and warns "Blocked aria-hidden").
+  // Its mousedown default — the focus move, touch's compat mousedown too — is
+  // cancelled; the press and the add stay.
+  it("the '+' never takes focus: its mousedown default is cancelled, and the tap still adds", () => {
+    const onQuickAdd = vi.fn();
+    render(<ProductAddedModal onQuickAdd={onQuickAdd} />, { wrapper });
+    open({ id: "added", recommendedItems: [BURRITO.id] });
+    const plus = screen.getByTestId(`added-rec-add-${BURRITO.id}`);
+
+    // fireEvent answers false when the handler called preventDefault().
+    expect(fireEvent.mouseDown(plus)).toBe(false);
+    fireEvent.click(plus);
+    expect(onQuickAdd).toHaveBeenCalledTimes(1);
+  });
+
+  // Review UIA-2 — ForYouCard's convention (the bag rail, /forYou): a tile
+  // that adds in place is "Quick add <name>"; one that needs a choice LEAVES
+  // the modal (Select a Size / the PDP / the repeat sheet) and is named
+  // "Customize <name>", the only warning a screen reader gives of that.
+  it("a tile that needs a choice is named 'Customize <name>'; a one-tap tile 'Quick add <name>'", () => {
+    const BOX = {
+      id: "r-sized",
+      name: "Cravings Box",
+      hasVariant: true,
+      isVariant: false,
+      variants: [{ id: "s-regular", price: 5, isActive: true }],
+    };
+    store.dispatch(setEntityMap({ entityMap: { ...ENTITY_MAP, [BOX.id]: BOX } }));
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BOX.id] });
+
+    expect(within(screen.getByTestId(`added-rec-${TACO.id}`)).getByRole("button")).toHaveAccessibleName(
+      `${i18n.t("menu.quickAdd")} ${TACO.name}`
+    );
+    expect(within(screen.getByTestId(`added-rec-${BOX.id}`)).getByRole("button")).toHaveAccessibleName(
+      `${i18n.t("pack.customize")} ${BOX.name}`
+    );
+  });
+
+  /*
+    RC2: the tile counts that item in the order — the cart's own read
+    (doesItemExistInCart: paid rows of that id; free get-items and loyalty
+    rewards excluded), live. ForYouCard's imageTop pill at 12/12: it pops in
+    (tb-pop-in), each change re-keys the number so it bumps (tb-bump). The
+    digits are aria-hidden; an always-mounted status speaks "N in your order".
+  */
+  it("the count pill: paid rows of that id (free / loyalty excluded), live; the number re-keys inside the same pill; a status speaks it (EN, AR)", async () => {
+    const row = (id: string, itemId: string, quantity: number, extra: Record<string, unknown> = {}) => ({
+      id,
+      itemId,
+      name: id,
+      quantity,
+      type: "ITEM",
+      price: 1,
+      total_price: 1,
+      ...extra,
+    });
+    const rows = [
+      row(BURRITO.id, "b-1", 2),
+      row(BURRITO.id, "b-2", 1),
+      row(TACO.id, "t-free", 1, { isGetItem: true }),
+      row(TACO.id, "t-reward", 1, { isLoyaltyItem: true }),
+    ];
+    store.dispatch(setCartItems(rows));
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id, QUESADILLA.id] });
+
+    const pill = screen.getByTestId(`added-count-${BURRITO.id}`);
+    expect(pill).toHaveTextContent(/^3$/);
+    expect(pill).toHaveAttribute("aria-hidden", "true");
+    expect(pill).toHaveClass(
+      "tb-pop-in",
+      "h-[36px]",
+      "min-w-[36px]",
+      "rounded-full",
+      "bg-tb-purple",
+      "px-[8px]",
+      "text-[18px]",
+      "font-bold",
+      "text-tb-surface"
+    );
+    const number = pill.firstElementChild;
+    expect(number).toHaveClass("tb-bump");
+    expect(screen.queryByTestId(`added-count-${TACO.id}`)).toBeNull();
+    expect(screen.queryByTestId(`added-count-${QUESADILLA.id}`)).toBeNull();
+
+    // Every tile carries its status at the pill's corner (empty at 0).
+    const statuses = tiles().map((tile) => within(tile).getByRole("status"));
+    expect(statuses).toHaveLength(3);
+    statuses.forEach((s) => expect(s).toHaveClass("absolute", "left-[12px]", "top-[12px]"));
+    expect(statuses[0]).toBeEmptyDOMElement();
+    expect(statuses[1]).toContainElement(pill);
+    const spoken = () => statuses[1].querySelector(".sr-only")?.textContent;
+    expect(spoken()).toBe(i18n.t("added.inOrder", { value: 3 }));
+
+    act(() => {
+      store.dispatch(setCartItems([...rows, row(BURRITO.id, "b-3", 1)]));
+    });
+    expect(screen.getByTestId(`added-count-${BURRITO.id}`)).toBe(pill);
+    expect(pill).toHaveTextContent(/^4$/);
+    expect(pill.firstElementChild).not.toBe(number);
+    expect(pill.firstElementChild).toHaveClass("tb-bump");
+    const english = i18n.t("added.inOrder", { value: 4 });
+    expect(spoken()).toBe(english);
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    expect(spoken()).toBe(i18n.t("added.inOrder", { value: 4 }));
+    expect(spoken()).not.toBe(english);
+  });
+
+  /*
+    RC5: the strip resolves through the SDK's resolveItemRecommendations — the
+    resolver the modal-open check mirrors — over the menu-sellable map (UB6)
+    and the LIVE out-of-stock map.
+  */
+  describe("the strip resolves through the SDK resolver (RC5)", () => {
+    const SELF = { id: "added", name: "Bean Burrito", price: 3 };
+    const INACTIVE = { id: "r-inactive", name: "Old Taco", price: 2, isActive: false };
+    const PHANTOM = {
+      id: "r-phantom",
+      name: "Nachos Meal",
+      price: 9,
+      hasVariant: true,
+      isVariant: false,
+      variants: [{ id: "p-1", price: 9, isActive: false }],
+    };
+    const SIZED = {
+      id: "r-box",
+      name: "Cravings Box",
+      price: 13,
+      hasVariant: true,
+      isVariant: false,
+      variants: [
+        { id: "x-large", price: 7, isActive: true },
+        { id: "x-regular", price: 5, isActive: true },
+        { id: "x-off", price: 1, isActive: false },
+      ],
+    };
+    const ids = () => tiles().map((t) => t.dataset.testid?.replace("added-rec-", ""));
+
+    beforeEach(() => {
+      store.dispatch(
+        setEntityMap({
+          entityMap: {
+            ...ENTITY_MAP,
+            ...Object.fromEntries([SELF, INACTIVE, PHANTOM, SIZED].map((e) => [e.id, e])),
+          },
+        })
+      );
+    });
+
+    it("{baseItemId} / {refer_baseItem_id} references count; never the added item itself; no duplicates", () => {
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({
+        id: SELF.id,
+        recommendedItems: [{ baseItemId: TACO.id }, { refer_baseItem_id: BURRITO.id }, SELF.id, TACO.id],
+      });
+
+      expect(ids()).toEqual([TACO.id, BURRITO.id]);
+    });
+
+    it("a row without recommendedItems falls back to the menu's list for that item", () => {
+      store.dispatch(
+        setEntityMap({ entityMap: { ...ENTITY_MAP, [SELF.id]: { ...SELF, recommendedItems: [QUESADILLA.id] } } })
+      );
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({ id: SELF.id });
+
+      expect(ids()).toEqual([QUESADILLA.id]);
+    });
+
+    it("the LIVE out-of-stock map drops a suggestion — before the modal opens and while it is open", () => {
+      store.dispatch(setOutOfStockItems({ [TWISTS.id]: { _id: TWISTS.id, inStock: false } }));
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({ id: SELF.id, recommendedItems: [TACO.id, QUESADILLA.id, TWISTS.id] });
+      expect(ids()).toEqual([TACO.id, QUESADILLA.id]);
+
+      act(() => {
+        store.dispatch(
+          setOutOfStockItems({
+            [TWISTS.id]: { _id: TWISTS.id, inStock: false },
+            [QUESADILLA.id]: { _id: QUESADILLA.id, inStock: false },
+          })
+        );
+      });
+      expect(ids()).toEqual([TACO.id]);
+    });
+
+    it("an inactive entity and a size parent with no active size are never offered", () => {
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({ id: SELF.id, recommendedItems: [INACTIVE.id, PHANTOM.id, TACO.id] });
+
+      expect(ids()).toEqual([TACO.id]);
+    });
+
+    it("a size parent reads its lowest ACTIVE size price (the menu card's), never its raw price", () => {
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({ id: SELF.id, recommendedItems: [SIZED.id] });
+
+      const tile = screen.getByTestId(`added-rec-${SIZED.id}`);
+      expect(within(tile).getByText(SIZED.name).nextElementSibling?.textContent).toBe("£5");
+    });
   });
 
   it("Total = the menu bar's subTotal; ONE CTA — ADD TO ORDER closes; no VIEW MY BAG", () => {
