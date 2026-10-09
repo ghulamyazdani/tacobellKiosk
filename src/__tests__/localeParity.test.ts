@@ -25,14 +25,38 @@ const EN = new Map([...flatten(en), ...flatten(enLazy)]);
 const AR = new Map([...flatten(ar), ...flatten(arLazy)]);
 const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
+/**
+ * An i18next plural form (`key_one`, `key_other`, …). Each locale carries its
+ * own language's CLDR set, so EN and AR differ by design in the forms only.
+ */
+const PLURAL = /_(zero|one|two|few|many|other)$/;
+const family = (key: string) => key.replace(PLURAL, "");
 
 describe("locale parity — en ↔ ar", () => {
-  it("both locales define exactly the same keys", () => {
-    const onlyEn = [...EN.keys()].filter((key) => !AR.has(key));
-    const onlyAr = [...AR.keys()].filter((key) => !EN.has(key));
+  it("both locales define exactly the same keys (plural families compared by family)", () => {
+    const enFamilies = new Set([...EN.keys()].map(family));
+    const arFamilies = new Set([...AR.keys()].map(family));
+    const onlyEn = [...enFamilies].filter((key) => !arFamilies.has(key));
+    const onlyAr = [...arFamilies].filter((key) => !enFamilies.has(key));
 
     expect({ onlyEn, onlyAr }).toEqual({ onlyEn: [], onlyAr: [] });
     expect(EN.size).toBeGreaterThan(0);
+  });
+
+  it("a plural family carries exactly its language's CLDR forms, and never a bare key beside them", () => {
+    const wrong = (copy: Map<string, unknown>, lng: string) => {
+      const want = [...new Intl.PluralRules(lng).resolvedOptions().pluralCategories].sort().join();
+      const forms = new Map<string, string[]>();
+      for (const key of copy.keys()) {
+        const suffix = PLURAL.exec(key)?.[1];
+        if (suffix) forms.set(family(key), [...(forms.get(family(key)) ?? []), suffix]);
+      }
+      return [...forms]
+        .filter(([base, suffixes]) => suffixes.sort().join() !== want || copy.has(base))
+        .map(([base]) => base);
+    };
+
+    expect({ en: wrong(EN, "en"), ar: wrong(AR, "ar") }).toEqual({ en: [], ar: [] });
   });
 
   it("every value is non-blank copy", () => {
@@ -44,8 +68,18 @@ describe("locale parity — en ↔ ar", () => {
   });
 
   it("every key interpolates the same {{placeholders}} in both", () => {
-    const mismatched = [...EN]
-      .filter(([key, value]) => placeholders(value).join() !== placeholders(AR.get(key)).join())
+    // A plural form may spell its number out ("عنصرين"), so {{count}} is not
+    // compared there; an AR-only form (zero / two / few / many) answers to
+    // EN's `_other`.
+    const names = (key: string, value: unknown) =>
+      placeholders(value)
+        .filter((name) => !(PLURAL.test(key) && name === "count"))
+        .join();
+    const mismatched = [...AR]
+      .filter(([key, value]) => {
+        const twin = EN.has(key) ? key : `${family(key)}_other`;
+        return names(key, value) !== names(twin, EN.get(twin));
+      })
       .map(([key]) => key);
 
     expect(mismatched).toEqual([]);
@@ -92,7 +126,7 @@ describe("locale parity — en ↔ ar", () => {
   });
 
   it.each([
-    ["toast.dpMaxQuantity", ["max", "session"]],
+    ["toast.dpMaxQuantity_other", ["count", "session"]],
     ["second.noPipelines", []],
     ["pdp.groupCount", ["count", "max"]],
     ["pack.choose", []],

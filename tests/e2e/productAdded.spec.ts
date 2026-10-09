@@ -465,7 +465,7 @@ test.describe("lane added-modal — the product-added modal's suggestions", () =
     await bootRegisteredToMenu(page);
     await openSaladModal(page); // the one DP unit this session allows
     await expect(total(page)).toHaveText(totalText(17));
-    const refusal = en.toast.dpMaxQuantity.replace("{{max}}", "1").replace("{{session}}", DP_SESSION.sessionName);
+    const refusal = en.toast.dpMaxQuantity_one.replace("{{count}}", "1").replace("{{session}}", DP_SESSION.sessionName);
 
     // The '+' first (the path main already had), then the whole card.
     const taps: [string, () => Promise<void>][] = [

@@ -131,7 +131,9 @@ function useCartHook() {
       setShowErrorModalGlobal({
         showErrorModal: true,
         errorMessage: i18n.t("toast.dpMaxQuantity", {
-          max: currentSessionRdx?._extras?.maxQtyItem,
+          // A NUMBER, so i18next picks the plural form ("1 item"); parsed as
+          // the SDK's cap check parses the session's string.
+          count: parseInt(currentSessionRdx?._extras?.maxQtyItem, 10),
           session: currentSessionRdx?.sessionName ?? "",
         }),
       }),

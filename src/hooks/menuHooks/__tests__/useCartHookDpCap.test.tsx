@@ -16,10 +16,12 @@ import i18n from "../../../i18n";
 /*
   Lane figma-polish G1 — the dynamic-pricing session cap. A rejected add /
   update / increase raises the GLOBAL error (now visible: GlobalErrorHost)
-  with TRANSLATED copy — t("toast.dpMaxQuantity", {max, session}) through
+  with TRANSLATED copy — t("toast.dpMaxQuantity", {count, session}) through
   i18n.t (the hook must not subscribe its dozens of hosts to language
   changes); the SDK's English buildDpMaxQuantityErrorMessage stays for the
-  fork. The rejection returns false and writes nothing.
+  fork. The rejection returns false and writes nothing. `count` is the cap
+  as a NUMBER (residual R4), so i18next picks the plural form: EN _one /
+  _other, AR zero / one / two / few / many / other.
   Seam: the Dexie cart mirror (no IndexedDB in jsdom).
 */
 
@@ -82,7 +84,7 @@ describe("useCartHook — the DP session cap raises translated copy (G1)", () =>
     expect(cartItems()).toBe(before);
     expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
     expect(selectErrorMessageGlobal(store.getState())).toBe(ENGLISH);
-    expect(i18n.t("toast.dpMaxQuantity", { max: "2", session: "Lunch" })).toBe(ENGLISH);
+    expect(i18n.t("toast.dpMaxQuantity", { count: 2, session: "Lunch" })).toBe(ENGLISH);
   });
 
   it("Arabic: the copy is i18n.t('toast.dpMaxQuantity') in Arabic — never the SDK's English builder", async () => {
@@ -96,9 +98,24 @@ describe("useCartHook — the DP session cap raises translated copy (G1)", () =>
     });
 
     const message = selectErrorMessageGlobal(store.getState());
-    expect(message).toBe(i18n.t("toast.dpMaxQuantity", { max: "2", session: "Lunch" }));
+    expect(message).toBe(i18n.t("toast.dpMaxQuantity", { count: 2, session: "Lunch" }));
     expect(message).not.toBe(ENGLISH);
     expect(message).not.toContain("upto");
+    // A cap of two is Arabic's dual ("عنصرين"), never the 3–10 plural ("عناصر").
+    expect(message).toContain("عنصرين");
+    expect(message).not.toContain("عناصر");
+  });
+
+  it("a cap of ONE is singular: 'You can add up to 1 item …' (was '1 items')", () => {
+    store.dispatch(setCurrentSession({ ...LUNCH, _extras: { maxQtyItem: "1" } }));
+    store.dispatch(setCartItems([{ ...TACOS, quantity: 1 }]));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    act(() => {
+      result.current.addItemToCart({ ...BURRITO }, "ITEM");
+    });
+
+    expect(selectErrorMessageGlobal(store.getState())).toBe("You can add up to 1 item during the Lunch session");
   });
 
   it("under the cap the add lands and nothing is raised (the gate is the cap, not the add)", () => {
@@ -113,5 +130,51 @@ describe("useCartHook — the DP session cap raises translated copy (G1)", () =>
     expect(outcome).toBe(true);
     expect(cartItems()).toHaveLength(2);
     expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
+  });
+});
+
+/*
+  Residual R4 — the plural forms themselves. EN has _one / _other; AR has all
+  six CLDR forms (drafts, flagged for native review): 0 zero, 1 one, 2 two,
+  3–10 few, 11–99 many, 100+ other — each its own copy, none a raw key.
+*/
+describe("toast.dpMaxQuantity — i18next plurals (residual R4)", () => {
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  const copy = (count: number) => i18n.t("toast.dpMaxQuantity", { count, session: "Lunch" });
+  const form = (suffix: string, count: number) =>
+    i18n.t(`toast.dpMaxQuantity_${suffix}`, { count, session: "Lunch" });
+
+  it("English: 1 → _one ('1 item'), 2 and 5 → _other", () => {
+    expect(copy(1)).toBe("You can add up to 1 item during the Lunch session");
+    expect(copy(2)).toBe("You can add up to 2 items during the Lunch session");
+    expect(copy(5)).toBe(form("other", 5));
+  });
+
+  it("Arabic: each CLDR form resolves to its own copy", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    const cases: [number, string][] = [
+      [0, "zero"],
+      [1, "one"],
+      [2, "two"],
+      [3, "few"],
+      [11, "many"],
+      [100, "other"],
+    ];
+
+    for (const [count, suffix] of cases) {
+      expect(copy(count), `${count} → _${suffix}`).toBe(form(suffix, count));
+      expect(copy(count)).not.toContain("toast.");
+      expect(copy(count)).toContain("Lunch");
+    }
+    // Six different TEMPLATES: the rendered copy of 3 / 11 / 100 differs by the number alone.
+    const templates = cases.map(([, suffix]) => i18n.getResource("ar", "translation", `toast.dpMaxQuantity_${suffix}`));
+    expect(new Set(templates).size).toBe(cases.length);
   });
 });

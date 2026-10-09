@@ -149,7 +149,12 @@ async function expectGlobalError(
       .split(/\{\{\w+\}\}/)
       .map((part) => part.trim())
       .filter(Boolean);
-    for (const part of [...fragments, ...Object.values(values)]) {
+    // A value only where the template has its placeholder: an Arabic plural
+    // form may spell its number out (toast.dpMaxQuantity_one).
+    const shown = Object.entries(values)
+      .filter(([name]) => template.includes(`{{${name}}}`))
+      .map(([, value]) => value);
+    for (const part of [...fragments, ...shown]) {
       await expect(dialog).toContainText(part);
     }
   }
@@ -225,13 +230,14 @@ test.describe("figma-polish G1 — the global error is visible and translated", 
       await mockKioskBackend(page);
       await mockDynamicPricing(page);
       await startOrderToMenu(page, lang);
-      const values = { max: "1", session: DP_SESSION.sessionName };
+      // maxQtyItem 1: the singular form (EN "1 item", residual R4).
+      const values = { count: "1", session: DP_SESSION.sessionName };
 
       // The first DP unit lands; the second is over the cap.
       await tapGreekSalad(page);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
       await tapGreekSalad(page);
-      await expectGlobalError(page, lang, (copy) => copy.toast.dpMaxQuantity, values);
+      await expectGlobalError(page, lang, (copy) => copy.toast.dpMaxQuantity_one, values);
       expect(await cartRows(page)).toEqual([[GREEK_SALAD, 1]]);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
       await dismissGlobalError(page);
@@ -244,7 +250,7 @@ test.describe("figma-polish G1 — the global error is visible and translated", 
       await burger.click();
       await expect(page.getByTestId("customization-screen")).toBeVisible();
       await page.getByTestId("pdp-add-to-bag").click();
-      await expectGlobalError(page, lang, (copy) => copy.toast.dpMaxQuantity, values);
+      await expectGlobalError(page, lang, (copy) => copy.toast.dpMaxQuantity_one, values);
       await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
       await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
       expect(await cartRows(page)).toEqual([[GREEK_SALAD, 1]]);

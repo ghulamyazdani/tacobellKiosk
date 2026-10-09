@@ -422,7 +422,8 @@
     "selectVariantFirst": "Please choose a size first",
     "selectAllCustomizations": "Please complete every required choice",
     "fillCustomizationFields": "Please finish customising this item",
-    "dpMaxQuantity": "You can add up to {{max}} items during the {{session}} session"
+    "dpMaxQuantity_one": "You can add up to {{count}} item during the {{session}} session",
+    "dpMaxQuantity_other": "You can add up to {{count}} items during the {{session}} session"
   },
   "idle": {
     "title": "you have been inactive",
