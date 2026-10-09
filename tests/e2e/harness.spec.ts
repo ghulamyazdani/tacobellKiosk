@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DINE_IN, holdRequests, mockKioskBackend } from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import { expect, test, type Page } from "./fixtures/kiosk";
@@ -239,4 +243,26 @@ test.describe("P9f harness self-check", () => {
       }
     });
   }
+
+  // @tailwindcss/vite 4.3 watches every file its scanner reads for index.css: a write to one pushes an
+  // index.css frame into every open page. The plugin's own compile + Scanner, called as it calls them —
+  // resolved THROUGH the plugin (they are its pinned dependencies, not ours), so the guard runs exactly
+  // the pair the dev server runs.
+  test("DEV-SERVER RELOAD (source): Tailwind's scan for src/index.css reads no unit-test file", async () => {
+    const fromPlugin = createRequire(createRequire(import.meta.url).resolve("@tailwindcss/vite"));
+    const { compile } = fromPlugin("@tailwindcss/node") as typeof import("@tailwindcss/node");
+    const { Scanner } = fromPlugin("@tailwindcss/oxide") as typeof import("@tailwindcss/oxide");
+    const css = fileURLToPath(new URL("../../src/index.css", import.meta.url));
+    const { root, sources } = await compile(readFileSync(css, "utf8"), {
+      base: dirname(css),
+      onDependency: () => undefined,
+    });
+    // The scan root is source("…"); without one, the whole Vite root (the repo).
+    const scanRoot = root ?? { base: dirname(dirname(css)), pattern: "**/*" };
+    const scanner = new Scanner({ sources: [...(scanRoot === "none" ? [] : [{ ...scanRoot, negated: false }]), ...sources] });
+    scanner.scan();
+    expect(scanner.files).toContain(`${dirname(css)}/App.tsx`);
+    const unitTest = /\/(__tests__|__mocks__)\/|\.(test|spec)\.[cm]?[jt]sx?$|\/setupTests\.ts$/;
+    expect(scanner.files.filter((file) => unitTest.test(file))).toEqual([]);
+  });
 });
