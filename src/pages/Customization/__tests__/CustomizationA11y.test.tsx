@@ -261,22 +261,22 @@ describe("PDP names and the Show more style (item 42)", () => {
     expect(screen.getByTestId("pdp-qty")).toHaveTextContent("2");
   });
 
-  it("a plain option card is ONE button named by its text; a BYO card's overlay is named by the item, its CTA by the verb; a slot's overlay by its CTA", () => {
+  it("an option card (add-on or BYO) is ONE button named by the item, its CTA the verb inside it; a slot's overlay by its CTA", () => {
     openBox();
     renderPdp();
 
-    // Add-on (no CTA): the card itself.
+    // Add-on: the card itself.
     const salsa = screen.getByTestId("pdp-option-salsa");
     expect(salsa.tagName).toBe("BUTTON");
     expect(salsa).toHaveAccessibleName(/Salsa/);
     expect(salsa).toHaveAttribute("aria-pressed", "false");
 
-    // BYO (`_combo`, several picks): the overlay LAST, named by the item; the CTA by its verb.
+    // BYO (`_combo`, several picks): the same ONE button, named by the item; the CTA its verb (2026-10-09).
     const churros = screen.getByTestId("pdp-option-churros");
-    const overlay = churros.lastElementChild as HTMLElement;
-    expect(overlay).toHaveAccessibleName("Churros");
-    expect(overlay).toHaveClass("absolute", "inset-0");
-    expect(screen.getByTestId("pdp-option-cta-churros")).toHaveAccessibleName(i18n.t("pack.choose"));
+    expect(churros.tagName).toBe("BUTTON");
+    expect(churros).toHaveAccessibleName("Churros");
+    expect(churros).toContainElement(screen.getByTestId("pdp-option-cta-churros"));
+    expect(screen.getByTestId("pdp-option-cta-churros")).toHaveTextContent(i18n.t("pack.choose"));
 
     // Pack slot (min 1 / max 1): the overlay is named by its CTA label.
     expect(screen.getByTestId(`pack-slot-open-${DRINK._id}`)).toHaveAccessibleName(

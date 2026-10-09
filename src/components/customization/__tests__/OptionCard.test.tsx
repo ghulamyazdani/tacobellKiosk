@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { TFunction } from "i18next";
-import OptionCard, { Counter, CtaBar, formatOptionMeta, GroupHeader, OptionRow } from "../OptionCard";
+import OptionCard, { Counter, CtaBar, formatOptionMeta, GroupHeader, optionCta, OptionRow } from "../OptionCard";
 import i18n from "../../../i18n";
 
 /*
@@ -29,6 +29,34 @@ describe("formatOptionMeta — '+£0.50 | 360 Cal'", () => {
 
   it("never fabricates '0 Cal' for a free option without calorie data", () => {
     expect(formatOptionMeta({ price: 0, calorieCount: 0 }, "£", t)).toBe("");
+  });
+});
+
+/* User report 2026-10-09: the CTA says what the SDK engines do with the card's tap. */
+describe("optionCta — the label of the card's own tap", () => {
+  const two = [{}, {}];
+  const group = (min: number, max: number, items: object[] = two, mp = { min, max }) => ({
+    min,
+    max,
+    multiplePunchMin: mp.min,
+    multiplePunchMax: mp.max,
+    constituentItems: items,
+  });
+
+  it.each([
+    ["an unpicked card", group(0, 3), false, false, "pack.choose"],
+    ["a pick in a flexible group (a tap removes it)", group(0, 3), false, true, "pack.remove"],
+    ["a pick in a toggle group (min 0 / max 0)", group(0, 0), false, true, "pack.remove"],
+    ["an unpicked card in a swap group (a tap swaps)", group(1, 1), false, false, "pack.choose"],
+    ["the pick of a swap group: none (a tap only re-selects it)", group(1, 1), false, true, null],
+    ["the pick of a ONE-option 1/1 group (the engines' flexible branch: a tap removes it)", group(1, 1, [{}]), false, true, "pack.remove"],
+    // Only min 1 AND max 1 swap: an optional pick-one (0/1) or a 1/3 group is flexible — a tap on the pick removes it.
+    ["the pick of an optional pick-one group (0/1: flexible, a tap removes it)", group(0, 1), false, true, "pack.remove"],
+    ["the pick of a 1/3 group (flexible: a tap removes it)", group(1, 3), false, true, "pack.remove"],
+    ["multi-punch ON: a raw 1/1 group with multi-punch 0 / 6 is no swap", group(1, 1, two, { min: 0, max: 6 }), true, true, "pack.remove"],
+    ["multi-punch ON: a raw 0/3 group with multi-punch 1 / 1 is a swap", group(0, 3, two, { min: 1, max: 1 }), true, true, null],
+  ])("%s", (_label, g, amp, selected, key) => {
+    expect(optionCta(g, amp, selected, t, "cta")).toEqual(key ? { label: t(key), testId: "cta" } : undefined);
   });
 });
 
@@ -115,6 +143,77 @@ describe("OptionCard (Menu-Item_Medium)", () => {
     fireEvent.click(cta);
     expect(onCta).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a CTA WITHOUT onClick is the label of the card's own tap: the card stays ONE button (named by selectLabel, aria-pressed), the label a styled span inside it", () => {
+    const onSelect = vi.fn();
+    render(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Extra Pickles"
+        meta="+£1.00"
+        radio="off"
+        cta={{ label: "Choose", testId: "card-cta" }}
+        onSelect={onSelect}
+        selectLabel="Extra Pickles"
+      />
+    );
+    const card = screen.getByTestId("card");
+    const cta = screen.getByTestId("card-cta");
+
+    expect(card.tagName).toBe("BUTTON");
+    expect(card).toHaveClass("tb-select", "tb-press-hit", "relative"); // the squeeze keeps its hit area (index.css)
+    expect(screen.getAllByRole("button")).toEqual([card]);
+    expect(card).toHaveAccessibleName("Extra Pickles");
+    expect(card).toHaveAttribute("aria-pressed", "false");
+    expect(card).toContainElement(cta);
+    expect(cta.tagName).toBe("SPAN");
+    expect(cta).toHaveTextContent("Choose");
+    expect(cta).toHaveClass("min-h-[60px]", "w-full", "rounded-[4px]", "border", "border-tb-purple", "text-tb-purple");
+
+    fireEvent.click(cta);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a card named by selectLabel is DESCRIBED by its price line and its CTA, so a screen reader hears the price (review A1); a card named by its text needs no description", () => {
+    const { rerender } = render(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Extra Pickles"
+        meta="+£1.00"
+        radio="off"
+        cta={{ label: "Choose", testId: "card-cta" }}
+        onSelect={vi.fn()}
+        selectLabel="Extra Pickles"
+      />
+    );
+    expect(screen.getByTestId("card")).toHaveAccessibleName("Extra Pickles");
+    expect(screen.getByTestId("card")).toHaveAccessibleDescription("+£1.00 Choose");
+
+    // A swap group's pick: no price line, no CTA → nothing to describe.
+    rerender(<OptionCard testId="card" image={null} name="Cola" radio="on" onSelect={vi.fn()} selectLabel="Cola" reserveCta />);
+    expect(screen.getByTestId("card")).not.toHaveAttribute("aria-describedby");
+
+    // Named by its text (no selectLabel): the price is already in the name.
+    rerender(<OptionCard testId="card" image={null} name="Regular Ice" meta="10 Cal" radio="off" onSelect={vi.fn()} />);
+    expect(screen.getByTestId("card")).toHaveAccessibleName(/Regular Ice.*10 Cal/);
+    expect(screen.getByTestId("card")).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("reserveCta keeps the CTA's box when there is no CTA (hidden: no text, no testid), so a swap group's pick never jumps; without it, no box", () => {
+    const { rerender } = render(
+      <OptionCard testId="card" image={null} name="Cola" radio="on" onSelect={vi.fn()} selectLabel="Cola" reserveCta />
+    );
+    const box = screen.getByTestId("card").querySelector("span.invisible");
+    expect(box).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveClass("mt-auto", "min-h-[60px]", "w-full");
+    expect(box).toBeEmptyDOMElement();
+    expect(box).not.toHaveAttribute("data-testid");
+
+    rerender(<OptionCard testId="card" image={null} name="Cola" radio="on" onSelect={vi.fn()} selectLabel="Cola" />);
+    expect(screen.getByTestId("card").querySelector("span.invisible")).toBeNull();
   });
 
   it("the CTA is ≥ 60 px tall and WRAPS (no nowrap — a long or Arabic group name never clips); outlined purple", () => {

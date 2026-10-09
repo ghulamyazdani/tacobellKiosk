@@ -32,6 +32,7 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
+  optionCta,
   OptionRow,
 } from "../../components/customization/OptionCard";
 import YouMightLikeRail from "../../components/customization/YouMightLikeRail";
@@ -476,8 +477,13 @@ export default function Customization({
   );
 
   // Option cards (radio) for one-per-tap groups, Cards/Item/Old stepper rows
-  // for multi-punch ones. CHOOSE / SWAP only on `_combo` (BYO) cards — the
-  // same toggle as the card (D9); add-on cards carry none.
+  // for multi-punch ones. EVERY card carries the CTA, add-on and BYO alike
+  // (D9 amended 2026-10-09: Figma draws one on every card — 1:2614 / 1:2728
+  // Upgrades, 1:5332 — and add-on cards without it drew the user report "why
+  // choose is not coming"). It is the label of the card's own tap (one
+  // button, one select), so it says what the SDK does with that tap: CHOOSE,
+  // REMOVE, or none on a swap group's pick (optionCta) — whose box stays
+  // (reserveCta), so picking never moves the card's name or the row.
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
     const items: any[] = (group?.constituentItems ?? []).filter(
@@ -496,7 +502,6 @@ export default function Customization({
     const oneOfOne = minPicks === 1 && maxPicks === 1;
     const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
-    const isByo = String(group?._id ?? "").includes("_combo");
 
     return (
       <section
@@ -542,7 +547,6 @@ export default function Customization({
           <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
             {items.map((item: any) => {
               const selected = isSelected(group, item);
-              const select = () => addCustomizations(group, item, null, nextGroup, false);
               return (
                 <OptionCard
                   key={item.id}
@@ -551,20 +555,10 @@ export default function Customization({
                   name={name(item)}
                   meta={formatOptionMeta(item, currency, t)}
                   radio={selected ? "on" : "off"}
-                  onSelect={select}
-                  selectLabel={isByo ? name(item) : undefined}
-                  cta={
-                    isByo
-                      ? {
-                          // A tap on a selected card REMOVES it (these
-                          // groups take several picks — never a one-for-one
-                          // swap; the min 1/max 1 slots are PackSlotCards).
-                          label: selected ? t("pack.remove") : t("pack.choose"),
-                          onClick: select,
-                          testId: `pdp-option-cta-${item.id}`,
-                        }
-                      : undefined
-                  }
+                  onSelect={() => addCustomizations(group, item, null, nextGroup, false)}
+                  selectLabel={name(item)}
+                  cta={optionCta(group, amp, selected, t, `pdp-option-cta-${item.id}`)}
+                  reserveCta
                 />
               );
             })}

@@ -61,6 +61,7 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
+  optionCta,
   OptionRow,
 } from "./OptionCard";
 
@@ -493,9 +494,11 @@ export default function Tier2CustomizationSheet() {
     selectionFor(group).find((s: any) => s?.id === item?.id)?.quantity ?? 0;
 
   // The PDP's building blocks with this session's handlers: radio cards
-  // (no CTAs, no badges) for one-per-tap groups, stepper rows for
-  // multi-punch ones. Section id={group._id} — the hook's error AutoScroll
-  // targets it inside #scrollCustomizableItem2.
+  // (the PDP's CTA on every card — optionCta + reserveCta, user report
+  // 2026-10-09; no badges) for one-per-tap groups, stepper rows for
+  // multi-punch ones.
+  // Section id={group._id} — the hook's error AutoScroll targets it inside
+  // #scrollCustomizableItem2.
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
     const items: any[] = (group?.constituentItems ?? []).filter(
@@ -563,19 +566,25 @@ export default function Tier2CustomizationSheet() {
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
-            {items.map((item: any) => (
-              <OptionCard
-                key={item.id}
-                testId={`tier2-option-${item.id}`}
-                image={resolveEntityImage(item)}
-                name={name(item)}
-                meta={formatOptionMeta(item, currency, t)}
-                radio={isSelected(group, item) ? "on" : "off"}
-                onSelect={() =>
-                  addCustomizations(group, item, null, nextGroup, false)
-                }
-              />
-            ))}
+            {items.map((item: any) => {
+              const selected = isSelected(group, item);
+              return (
+                <OptionCard
+                  key={item.id}
+                  testId={`tier2-option-${item.id}`}
+                  image={resolveEntityImage(item)}
+                  name={name(item)}
+                  meta={formatOptionMeta(item, currency, t)}
+                  radio={selected ? "on" : "off"}
+                  onSelect={() =>
+                    addCustomizations(group, item, null, nextGroup, false)
+                  }
+                  selectLabel={name(item)}
+                  cta={optionCta(group, amp, selected, t, `tier2-option-cta-${item.id}`)}
+                  reserveCta
+                />
+              );
+            })}
           </div>
         )}
       </section>

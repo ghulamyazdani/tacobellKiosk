@@ -182,7 +182,7 @@ describe("PDP names in the guest's language (post-P9 28)", () => {
     expect(screen.queryByText(/Extra Pickles/)).not.toBeInTheDocument();
   });
 
-  it("Arabic: a grid option tile shows the alias (its accessible name is its text)", async () => {
+  it("Arabic: a grid option tile shows the alias (its accessible name is the alias; its price and Arabic CTA are its description)", async () => {
     await arabicSession();
     seedPdp(BURGER);
     renderPdp();
@@ -190,7 +190,8 @@ describe("PDP names in the guest's language (post-P9 28)", () => {
     const tile = screen.getByTestId("pdp-option-mild");
     expect(tile).toHaveTextContent(iso(AR_MILD), { normalizeWhitespace: false });
     expect(tile).not.toHaveTextContent("Mild Sauce");
-    expect(tile.getAttribute("aria-label")).toBeNull();
+    expect(tile).toHaveAccessibleName(iso(AR_MILD));
+    expect(tile).toHaveAccessibleDescription(`+£0.50 ${i18n.t("pack.choose")}`);
   });
 
   it("Arabic: the description is the raw translation in a dir='auto' leaf — never isolated", async () => {

@@ -290,6 +290,18 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
   .tb-press-card > button:empty:active {
     scale: calc(1 / var(--tb-press-scale));
   }
+  /* A ONE-button card (OptionCard's grid card) squeezes itself, so the same
+   * counter-scaled hit area rides on its ::before: a press held on the outer
+   * band still lands on the card (lane addon-cta). Needs a positioned card. */
+  .tb-press-hit::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transition: scale var(--tb-dur-press) var(--tb-ease-press);
+  }
+  .tb-press-hit:active::before {
+    scale: calc(1 / var(--tb-press-scale));
+  }
 
   /* Page content entrance: data-enter is latched at mount by usePageEnter()
    * on the page ROOT (never animated); .tb-enter goes on content blocks. */
