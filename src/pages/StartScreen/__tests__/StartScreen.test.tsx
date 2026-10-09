@@ -83,6 +83,7 @@ describe("StartScreen — the splash (P9d)", () => {
 
     const button = screen.getByRole("button", { name: WELCOME_NAME });
     expect(button).toBe(screen.getByTestId("start-screen"));
+    expect(button).toHaveClass("tb-no-press"); // motion §3.1: the full-surface button never squeezes
     expect(screen.queryByText(/start order/i)).not.toBeInTheDocument();
 
     await userEvent.click(button);

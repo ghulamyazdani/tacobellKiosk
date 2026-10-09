@@ -165,6 +165,7 @@ describe("ReachZone — the ADA reach-zone view (P9c, Figma 1:5392)", () => {
       expect(brandZone()?.className).toContain("top-0");
       expect(brandZone()?.nextElementSibling).toBe(container());
       expect(brandZone()).not.toContainElement(container());
+      expect(brandZone()).toHaveClass("tb-no-press"); // motion §3.1: a full-surface button never squeezes
     });
 
     it("is the containing block for fixed overlays in both modes (contain: layout paint)", () => {

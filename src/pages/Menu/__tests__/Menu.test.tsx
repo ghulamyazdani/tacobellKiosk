@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
   emptyMenuData,
   setEntityMap,
@@ -9,6 +9,7 @@ import {
   setTags,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { openLoyaltyItemsModal } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
   setCurrency,
   setEnableAccessibilityMode,
@@ -26,6 +27,7 @@ import { setSelectedTabId } from "@cx-sdk/core/auth/authentication.slice";
 import { store } from "../../../redux/app/store";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { mutateAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import Menu from "../index";
 import i18n from "../../../i18n";
 
@@ -993,3 +995,92 @@ describe("Menu — the funnel events (B3)", () => {
   });
 });
 
+
+/*
+  Lane motion (§2.4 / §2.7 / §3.9). The page root latches data-enter at mount:
+  none on a page load (POP); fwd on a PUSH — unless Menu mounts QUIET under
+  an open overlay: the bag (/cart), the product-added modal (Figma 1:5502:
+  the menu stays still) or the loyalty rewards sheet. The rail + pane row is
+  the one arriving block; the scrollbar, the CTA bar and the footer stay. The
+  rail tap scrolls smooth, or jumps under reduced motion.
+*/
+describe("Menu — motion (lane motion)", () => {
+  /** A PUSH from another route (<Navigate> fires after the first commit). */
+  const mountPushed = (to: "/menu" | "/cart" = "/menu") =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/second"]}>
+          <Routes>
+            <Route path="/second" element={<Navigate to={to} />} />
+            <Route path="/menu" element={<Menu />} />
+            <Route path="/cart" element={<Menu bagOpen />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("menu-screen");
+  const defaultMatchMedia = window.matchMedia;
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setMenuData({ menu: CONVERTED_MENU }));
+    notePath("/start");
+    notePath("/second");
+  });
+
+  afterEach(() => {
+    window.matchMedia = defaultMatchMedia;
+    vi.restoreAllMocks();
+  });
+
+  it("a page load (POP) mounts still; a PUSH from /second arrives fwd", () => {
+    const pop = renderMenu();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+  });
+
+  it("the rail + pane row is the one tb-enter block (0) — never the scrollbar, the CTA bar or the footer", () => {
+    mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toHaveClass("[--i:0]");
+    expect(blocks[0]).toContainElement(screen.getByTestId("rail-c1"));
+    for (const id of ["menu-scrollbar", "cta-view-bag", "footer-cancel"]) {
+      expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
+    }
+  });
+
+  it.each([
+    ["the open bag (/cart)", () => {}, "/cart"],
+    ["the product-added modal", () => store.dispatch(mutateAddToCartModal({ isOpen: true, item: { id: "e-plain" } })), "/menu"],
+    ["the loyalty rewards sheet", () => store.dispatch(openLoyaltyItemsModal({ isTimerOn: false })), "/menu"],
+  ] as const)("quiet under %s: a PUSH mounts still", (_overlay, open, to) => {
+    open();
+    mountPushed(to);
+    expect(root()).not.toHaveAttribute("data-enter");
+  });
+
+  it("a rail tap scrolls the pane smooth — or jumps (auto) when the OS asks for reduced motion", () => {
+    const scrollTo = vi.spyOn(Element.prototype, "scrollTo").mockImplementation(() => {});
+    renderMenu();
+
+    fireEvent.click(screen.getByTestId("rail-c1"));
+    expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "smooth" }));
+
+    window.matchMedia = (query: string) => ({
+      ...defaultMatchMedia(query),
+      matches: query === "(prefers-reduced-motion: reduce)",
+    });
+    fireEvent.click(screen.getByTestId("rail-c1"));
+    expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "auto" }));
+  });
+});

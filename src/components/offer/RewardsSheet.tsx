@@ -394,9 +394,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
 
   return (
     <div className="absolute inset-0 z-50" data-testid="rewards-sheet">
-      {/* Own position-neutral entrance keyframe — tb-modal-enter is reserved
-          for centered modals (it carries a -50% translate). */}
-      <style>{`@keyframes tbRewardsSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("offers.close")}
@@ -413,8 +411,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         aria-modal="true"
         aria-labelledby="rewards-sheet-title"
         aria-describedby={lockedByReward ? "rewards-loyalty-lock" : undefined}
-        style={{ animation: "tbRewardsSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="tb-sheet-enter absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         <div className="relative shrink-0 pb-[64px] pt-[54px]">
           <div className="flex items-center justify-center gap-[8px] px-[104px]">

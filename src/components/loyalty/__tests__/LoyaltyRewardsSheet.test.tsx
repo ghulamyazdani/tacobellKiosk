@@ -376,6 +376,39 @@ describe("LoyaltyRewardsSheet (Xeno redemption surface — contract step 6)", ()
     });
   });
 
+  describe("motion (D-M3, §3.2, §3.3)", () => {
+    it("the panel rises over a still scrim; the picked dot pops in; each typed OTP character pops into its cell", async () => {
+      seedIdentifiedCustomer();
+      openSheet();
+      renderSheet();
+      const sheet = screen.getByTestId("loyalty-rewards-sheet");
+      const [scrim, panel] = Array.from(sheet.children);
+      expect(scrim.tagName).toBe("BUTTON");
+      expect(scrim).not.toHaveAttribute("style");
+      expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+      expect(panel).toHaveAttribute("role", "dialog");
+      expect(panel).toHaveClass("tb-sheet-enter");
+      expect(panel).not.toHaveAttribute("style");
+      expect(sheet.querySelector("style")).toBeNull();
+
+      const salad = screen.getByTestId("loyalty-reward-static6562");
+      expect(salad.querySelector(".tb-pop-in")).toBeNull();
+      await userEvent.click(salad);
+      expect(salad.querySelectorAll(".tb-pop-in")).toHaveLength(1);
+      expect(salad).not.toHaveClass("tb-select"); // a full-width row only pops its dot
+
+      await userEvent.click(screen.getByTestId("loyalty-redeem"));
+      const display = await screen.findByTestId("loyalty-otp-display");
+      expect(display.querySelector(".tb-pop-in")).toBeNull();
+      await typeOtp("12");
+      const typed = [...display.querySelectorAll(".tb-pop-in")];
+      expect(typed.map((cell) => cell.textContent)).toEqual(["1", "2"]);
+      expect(typed[0]).toHaveClass("inline-block"); // a transformable box inside the cell
+      await typeOtp("3");
+      expect(display.querySelectorAll(".tb-pop-in")[0]).toBe(typed[0]); // typed characters never replay
+    });
+  });
+
   describe("REDEEM chain — the contract's dispatch sequence", () => {
     it("validate_coupon → authenticate_redemption puts the customer on the 4-digit OTP step and parks the priced reward", async () => {
       seedIdentifiedCustomer();

@@ -324,7 +324,7 @@ export default function MakeItAMealPrompt() {
                 data-testid={`miam-combo-${combo?.id}`}
                 aria-pressed={isMulti ? isPicked : undefined}
                 onClick={() => handleComboTap(combo)}
-                className={`flex w-full flex-col gap-[22px] bg-tb-grey-6 p-[24px] text-left ${
+                className={`tb-select flex w-full flex-col gap-[22px] bg-tb-grey-6 p-[24px] text-left ${
                   isMulti && isPicked
                     ? "shadow-[inset_0_0_0_3px_var(--color-tb-purple)]"
                     : ""

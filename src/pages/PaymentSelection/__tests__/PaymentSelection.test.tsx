@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
   setCurrency,
   setDeploymentInfo,
@@ -16,6 +16,7 @@ import {
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import PaymentSelection from "../index";
 import i18n from "../../../i18n";
 
@@ -688,6 +689,68 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       mount();
 
       expect(headline()).toHaveClass(...H2, "top-[120px]");
+    });
+  });
+
+  /*
+    Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
+    on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
+    the session trail (AppRoutes' notePath; seeded here). Only the content
+    blocks carry tb-enter [--i]; the chrome, BACK and the buffer never move.
+  */
+  describe("motion", () => {
+    /** A PUSH from another route: <Navigate> fires after the first commit. */
+    const mountPushed = () =>
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/from"]}>
+            <Routes>
+              <Route path="/from" element={<Navigate to="/payment" />} />
+              <Route path="/payment" element={<PaymentSelection />} />
+            </Routes>
+          </MemoryRouter>
+        </Provider>
+      );
+    const root = () => screen.getByTestId("payment-screen");
+
+    beforeEach(() => {
+      notePath("/start");
+    });
+
+    it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /payment arrives back", () => {
+      const pop = mount();
+      expect(root()).not.toHaveAttribute("data-enter");
+      pop.unmount();
+
+      const pushed = mountPushed();
+      expect(root()).toHaveAttribute("data-enter", "fwd");
+      pushed.unmount();
+
+      notePath("/payment");
+      notePath("/receipt");
+      mountPushed();
+      expect(root()).toHaveAttribute("data-enter", "back");
+    });
+
+    it("tb-enter [--i] on the title, TOTAL and the tile row (0–2) — never the bell, BACK or the buffer", () => {
+      mountPushed();
+      const blocks = [...root().querySelectorAll(".tb-enter")];
+      expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2"]);
+      expect(blocks[1]).toBe(screen.getByTestId("payment-total"));
+      expect(blocks[2]).toContainElement(screen.getByTestId("payment-counter"));
+
+      tap("payment-counter"); // the cancel buffer opens
+      for (const element of [screen.getByAltText("Taco Bell"), screen.getByTestId("payment-back"), buffer() as HTMLElement]) {
+        expect(element.closest(".tb-enter")).toBeNull();
+      }
+    });
+
+    it("the unavailable dead end never animates, even on a PUSH", () => {
+      store.dispatch(setDeploymentInfo(disableCodFor("table")));
+      mountPushed();
+
+      expect(screen.getByTestId("payment-unavailable")).not.toHaveAttribute("data-enter");
+      expect(screen.getByTestId("payment-unavailable").querySelector("[data-enter], .tb-enter")).toBeNull();
     });
   });
 });

@@ -87,6 +87,20 @@ describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
     expect(screen.getByTestId("repeat-new-customizations")).toBeInTheDocument();
   });
 
+  it("motion D-M3: the panel rises (tb-sheet-enter), the scrim never animates, no inline keyframes remain", () => {
+    seedOpenSheet();
+    renderSheet();
+    const sheet = screen.getByTestId("repeat-sheet");
+    const [scrim, panel] = Array.from(sheet.children);
+    expect(scrim.tagName).toBe("BUTTON");
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel).not.toHaveAttribute("style");
+    expect(panel).toContainElement(screen.getByTestId("repeat-row-cb-1"));
+    expect(sheet.querySelector("style")).toBeNull();
+  });
+
   it("only PAID rows of the base item are snapshotted (loyalty/freebie rows excluded by the reducer)", () => {
     seedOpenSheet([
       { ...BURGER_ROW },

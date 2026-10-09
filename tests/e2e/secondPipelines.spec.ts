@@ -210,9 +210,17 @@ test.describe("figma-polish S3 — /second's order types and the picked pipeline
     await expect(page.getByTestId("pipeline-p1")).toContainText("Dine In");
     await expect(page.getByTestId("pipeline-p2")).toHaveCount(0);
     await expect(page.getByTestId("second-no-pipelines")).toHaveCount(0);
-    const box = await page.getByTestId("pipeline-p1").boundingBox();
-    expect(box, "the card has a box").not.toBeNull();
-    expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - 540), "centred on the stage").toBeLessThanOrEqual(1);
+    // The card arrives with /second's entrance (motion lane): even under
+    // reduced motion it rests a frame or two after mount, so poll its box.
+    await expect
+      .poll(
+        async () => {
+          const box = await page.getByTestId("pipeline-p1").boundingBox();
+          return box ? Math.abs(box.x + box.width / 2 - 540) : Number.POSITIVE_INFINITY;
+        },
+        { message: "the card has a box, centred on the stage" }
+      )
+      .toBeLessThanOrEqual(1);
 
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });

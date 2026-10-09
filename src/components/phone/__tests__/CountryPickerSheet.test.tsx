@@ -84,6 +84,24 @@ describe("CountryPickerSheet (UB5)", () => {
     expect(within(screen.getByTestId("country-IN")).queryAllByRole("img")).toHaveLength(0);
   });
 
+  it("motion: the panel rises (tb-sheet-enter) over a still scrim; only the picked row's check pops in (D-M3, §3.2)", () => {
+    store.dispatch(setCountryCode({ code: "AE", dialCode: "+971", min: 9, max: 9, picked: true }));
+    mount();
+    const sheet = screen.getByTestId("country-sheet");
+    const scrim = screen.getByTestId("country-sheet-scrim");
+    expect(sheet.firstElementChild).toBe(scrim);
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    const panel = scrim.nextElementSibling as HTMLElement;
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel).not.toHaveAttribute("style");
+    expect(panel).toContainElement(screen.getByTestId("country-list"));
+    expect(sheet.querySelector("style")).toBeNull();
+
+    expect([...sheet.querySelectorAll(".tb-pop-in")]).toEqual([screen.getByTestId("country-AE").querySelector("img")]);
+    expect(screen.getByTestId("country-AE")).not.toHaveClass("tb-select"); // a full-width row only pops its check
+  });
+
   it("239 rows from the SDK table: India (the default) first, then A→Z; no AQ / AX, one IL, no spaces", () => {
     mount();
 

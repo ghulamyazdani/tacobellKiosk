@@ -102,6 +102,26 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(screen.getByTestId("miam-close")).toBeInTheDocument();
   });
 
+  it("motion §3.2: with several combos the picked card bumps (tb-select on aria-pressed) and the pick follows the tap", async () => {
+    const BOX = { ...COMBO, id: "combo-2", name: "Cravings Box" };
+    store.dispatch(
+      openMakeItAMealModal({
+        isOpen: true,
+        selectedItem: { ...BURGER, upsellItems: [COMBO, BOX] },
+        availableCombos: [COMBO, BOX],
+      })
+    );
+    renderPrompt();
+    const [first, second] = ["combo-1", "combo-2"].map((id) => screen.getByTestId(`miam-combo-${id}`));
+    for (const card of [first, second]) expect(card).toHaveClass("tb-select");
+    expect(first).toHaveAttribute("aria-pressed", "true"); // the first is preselected
+    expect(second).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(second);
+    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(first).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("the combo's price carries the deployment's symbol (UB1 — never a bare amount)", () => {
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     openPrompt();

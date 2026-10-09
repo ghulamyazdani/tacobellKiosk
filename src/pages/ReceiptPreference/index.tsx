@@ -6,6 +6,7 @@ import usePayAtCounter, {
 } from "../../hooks/paymentsHooks/usePayAtCounter";
 import usePaytmCheckout from "../../hooks/paymentsHooks/usePaytmCheckout";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import ErrorModal from "../../components/common/ErrorModal";
 import PleaseWait from "../../components/payment/PleaseWait";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
@@ -50,6 +51,7 @@ import tbBell from "../../assets/brand/tb-bell.svg";
  * AGAIN (new ids) or PAY ANOTHER WAY → /payment, and BACK TO BAG → /cart.
  */
 export default function ReceiptPreferenceScreen() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const ada = useAdaActive();
@@ -121,8 +123,11 @@ export default function ReceiptPreferenceScreen() {
   }, [dismissError, navigate]);
 
   return (
+    // Motion §2.7: the title and the tile row arrive (.tb-enter); texture,
+    // BACK, bell, NONE and the overlays stay.
     <div
       data-testid="receipt-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       {/* Full-bleed purple texture — the SAME asset as the splash screen
@@ -156,13 +161,13 @@ export default function ReceiptPreferenceScreen() {
       )}
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[666px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
+        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[666px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
       >
         {t("receipt.title")}
       </h1>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[292px]" : "top-[838px]"} flex -translate-x-1/2 gap-[24px]`}
+        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[292px]" : "top-[838px]"} flex -translate-x-1/2 gap-[24px]`}
       >
         <button
           type="button"

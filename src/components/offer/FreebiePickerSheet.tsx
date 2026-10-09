@@ -66,7 +66,7 @@ function SelectionGlyph({ selected, mode }: { selected: boolean; mode: "or" | "a
     return (
       <span
         aria-hidden="true"
-        className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-tb-purple"
+        className="tb-pop-in flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-tb-purple"
       >
         <svg viewBox="0 0 13.34 13.34" className="h-[18px] w-[18px]">
           <path
@@ -86,7 +86,7 @@ function SelectionGlyph({ selected, mode }: { selected: boolean; mode: "or" | "a
         selected ? "border-tb-purple" : "border-tb-grey-4"
       }`}
     >
-      {selected && <span className="h-[20px] w-[20px] rounded-full bg-tb-purple" />}
+      {selected && <span className="tb-pop-in h-[20px] w-[20px] rounded-full bg-tb-purple" />}
     </span>
   );
 }
@@ -433,9 +433,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   return (
     <div className="absolute inset-0 z-[80]" data-testid="freebie-picker">
-      {/* Position-neutral bottom-sheet entrance — tb-modal-enter is reserved
-          for centered modals (house rule). */}
-      <style>{`@keyframes tbFreebieSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("language.close")}
@@ -451,8 +449,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       <div
         role="dialog"
         aria-labelledby="freebie-picker-title"
-        style={{ animation: "tbFreebieSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
+        className="tb-sheet-enter absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
       >
         <h2
           id="freebie-picker-title"

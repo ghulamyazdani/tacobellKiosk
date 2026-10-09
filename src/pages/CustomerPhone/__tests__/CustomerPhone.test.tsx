@@ -2,12 +2,13 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import CustomerPhone from "../index";
 import i18n from "../../../i18n";
 
@@ -337,5 +338,60 @@ describe("CustomerPhone — the country picker (UB5)", () => {
 
     // Exact: toHaveTextContent("501") is a substring match, so "0501" passed it too.
     expect(screen.getByTestId("phone-number-display").textContent).toBe("501");
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
+  on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
+  the session trail (AppRoutes' notePath; seeded here). Only the content
+  blocks carry tb-enter [--i]; BACK, the bell and the footer never move.
+*/
+describe("CustomerPhone — the route entrance (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/phone" />} />
+            <Route path="/phone" element={<CustomerPhone />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("phone-screen");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    notePath("/start");
+  });
+
+  it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /phone arrives back", () => {
+    const pop = mount();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/phone");
+    notePath("/customerName");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("tb-enter [--i] on the title, copy, entry row, keypad, CONTINUE and SKIP (0–5) — never BACK or the footer", () => {
+    mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3", "4", "5"]);
+    expect(blocks[2]).toContainElement(screen.getByTestId("phone-number-display"));
+    expect(blocks[3]).toContainElement(screen.getByTestId("kiosk-numpad"));
+    expect(blocks[4]).toBe(screen.getByTestId("phone-continue"));
+    expect(blocks[5]).toBe(screen.getByTestId("phone-skip"));
+    for (const id of ["phone-back", "footer-cancel"]) {
+      expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
+    }
   });
 });

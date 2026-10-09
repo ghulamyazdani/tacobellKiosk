@@ -920,6 +920,10 @@ test.describe("scroll-drag: the Figma 1:5263 bar is draggable (user request 2026
     page,
   }) => {
     test.slow();
+    // The rail tap scrolls smoothly only WITHOUT reduced motion (motion lane:
+    // scrollBehavior() jumps under reduce, the suite's default since
+    // playwright.config) — this case needs a smooth scroll to grab.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
     await page.getByTestId("footer-ada").click();

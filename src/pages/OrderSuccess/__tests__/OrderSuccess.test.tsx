@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { setKioskSettings, toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
@@ -18,6 +18,7 @@ import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import { IdleHoldContext } from "../../../hooks/utils/useIdleTimeout";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import OrderSuccess, { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../index";
 import i18n from "../../../i18n";
 
@@ -537,5 +538,123 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     expect(block()).not.toHaveClass("top-[345px]");
     expect(heading()).toHaveClass("w-[569px]", "text-[48px]");
     expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
+  });
+});
+
+/*
+  Lane motion. The promo panel is a .tb-enter block under the page's latched
+  data-enter: mounting it (or flipping display: none → flex) after the
+  arrival would START its entrance on a live page — the ADA exit did (D-M6:
+  the mode switch never animates). ADA hides it with `invisible`, which
+  restarts nothing. The countdown fill is a compositor-only translateX of a
+  full-width rounded fill (a scaleX squashed its 6 px leading cap).
+*/
+describe("OrderSuccess — motion (lane motion)", () => {
+  const panel = () =>
+    screen.getByText(i18n.t("success.rewardsHeadline")).parentElement as HTMLElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockNavigate.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    seedPlacedOrder();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the ADA switch never remounts or un-displays the promo panel (D-M6)", () => {
+    store.dispatch(toggleAccessibilityMode());
+    mount();
+    const inAda = panel();
+    expect(inAda).toHaveClass("tb-enter", "invisible");
+
+    act(() => {
+      store.dispatch(toggleAccessibilityMode()); // the brand-panel exit
+    });
+    expect(panel()).toBe(inAda);
+    expect(inAda).not.toHaveClass("invisible");
+    expect(inAda).not.toHaveClass("hidden");
+  });
+
+  it("the countdown fill slides in from the left (translateX), never scaleX", () => {
+    mount();
+    const fill = screen.getByRole("progressbar").firstElementChild as HTMLElement;
+    expect(fill.style.transform).toBe("translateX(-100%)");
+
+    tick(5);
+    expect(fill.style.transform).toBe("translateX(-75%)");
+  });
+
+  it("the fill is a full-width transform with a 1 s linear transition — never a width — and aria-valuenow still reports the progress", () => {
+    mount();
+    const bar = screen.getByRole("progressbar");
+    const fill = bar.firstElementChild as HTMLElement;
+    expect(fill).toHaveClass("w-full", "transition-transform", "duration-1000", "ease-linear");
+    expect(fill.style.width).toBe("");
+    expect(fill.style.transform).not.toMatch(/scale/);
+
+    tick(5);
+    expect(progress()).toBe(25);
+    expect(fill.style.transform).toBe(`translateX(${progress() - 100}%)`);
+    expect(fill.style.width).toBe("");
+  });
+
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/orderSuccess" />} />
+            <Route path="/orderSuccess" element={<OrderSuccess />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("order-success");
+  const pieces = () => document.querySelectorAll(".tb-confetti-piece");
+
+  it("a reload (POP) is still and never bursts; an in-session arrival (PUSH) is fwd with ONE 28-piece burst on the number", () => {
+    notePath("/start");
+    const pop = mount();
+    expect(root()).not.toHaveAttribute("data-enter");
+    expect(pieces()).toHaveLength(0);
+    expect(screen.getByTestId("order-number")).toHaveClass("tb-pop-in");
+    pop.unmount();
+
+    notePath("/receipt");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    const number = screen.getByTestId("order-number");
+    expect(number).toHaveClass("tb-pop-in", "relative");
+    const burst = number.querySelector(":scope > span");
+    expect(burst).toHaveAttribute("aria-hidden", "true");
+    expect(burst).toHaveClass("pointer-events-none", "absolute", "inset-0");
+    expect(burst?.querySelectorAll(".tb-confetti-piece")).toHaveLength(28);
+    expect(pieces()).toHaveLength(28); // ONE burst
+    expect(orderNumber()).toBe("#12345"); // empty pieces: the called-out number is intact
+  });
+
+  it("the next customer's Order Complete (PLACE NEW ORDER chains them) arrives fwd and bursts again", () => {
+    notePath("/orderSuccess"); // the previous customer
+    for (const path of ["/second", "/menu", "/cart", "/payment", "/receipt"]) notePath(path);
+    mountPushed();
+
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    expect(pieces()).toHaveLength(28);
+  });
+
+  it("tb-enter [--i] on the heading, the promo panel, the countdown and the buttons (0–3) — never the bell", () => {
+    notePath("/start");
+    mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3"]);
+    expect(blocks[0]).toContainElement(screen.getByTestId("order-number"));
+    expect(blocks[1]).toBe(panel());
+    expect(blocks[2]).toContainElement(screen.getByRole("progressbar"));
+    expect(blocks[3]).toContainElement(screen.getByTestId("order-success-neworder"));
+    expect(screen.getByAltText("Taco Bell").closest(".tb-enter")).toBeNull();
   });
 });

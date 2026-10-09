@@ -32,6 +32,8 @@ interface KioskKeyboardProps {
  * vibrant-purple letter keys with the chunky black border (2px sides,
  * 5px base), grey special keys (shift / backspace / 123 / GO), 40px bold
  * glyphs, QWERTY + digit/symbol layer. All keys ≥44px targets (Rule 4).
+ * Pressed (Key set 1:1053): the 2 px travel and an instant fill swap —
+ * #883ED2 letters, Grey 3 specials; tb-no-press keeps the global squeeze off.
  */
 export default function KioskKeyboard({
   value,
@@ -58,9 +60,9 @@ export default function KioskKeyboard({
   );
 
   const keyBase =
-    "flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px] active:translate-y-[2px] active:border-b-2";
-  const letterKey = `${keyBase} w-[70px] bg-tb-purple-vibrant`;
-  const specialKey = `${keyBase} bg-tb-grey-4`;
+    "tb-no-press flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px] active:translate-y-[2px] active:border-b-2";
+  const letterKey = `${keyBase} w-[70px] bg-tb-purple-vibrant active:bg-tb-purple-press`;
+  const specialKey = `${keyBase} bg-tb-grey-4 active:bg-tb-grey-3`;
 
   const rows = digits ? DIGIT_ROWS : LETTER_ROWS;
   const row3 = digits ? DIGIT_ROW3 : LETTER_ROW3;
@@ -92,7 +94,7 @@ export default function KioskKeyboard({
           aria-label={t("keyboard.shift")}
           aria-pressed={shift}
           onClick={() => setShift((s) => !s)}
-          className={`${specialKey} w-[113px] ${shift ? "bg-tb-yellow" : ""}`}
+          className={`tb-select ${specialKey} w-[113px] ${shift ? "bg-tb-yellow" : ""}`}
         >
           <img alt="" src={shiftIcon} className="h-[54px] w-[54px]" />
         </button>

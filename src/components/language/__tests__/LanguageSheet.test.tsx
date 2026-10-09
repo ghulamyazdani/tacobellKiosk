@@ -69,16 +69,17 @@ describe("LanguageSheet (P9f — pure-CSS motion)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("the entrance is CSS keyframes on the scrim and the sheet", () => {
+  it("the entrance is the shared tb-sheet-enter class on the panel; the scrim never animates (motion D-M3)", () => {
     renderSheet();
 
     const [scrim] = screen.getAllByRole("button", { name: i18n.t("language.close") });
-    expect(scrim.style.animation).toContain("tbLanguageScrimEnter");
-    expect(screen.getByRole("heading").parentElement?.style.animation).toContain("tbLanguageSheetEnter");
-    // …and both names resolve to the sheet's own @keyframes (else the entrance is silently a no-op).
-    const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("");
-    expect(css).toMatch(/@keyframes\s+tbLanguageScrimEnter\s*\{/);
-    expect(css).toMatch(/@keyframes\s+tbLanguageSheetEnter\s*\{/);
+    expect(scrim.getAttribute("style")).toBeNull();
+    expect(scrim).not.toHaveClass("tb-sheet-enter");
+    const panel = screen.getByRole("heading").parentElement;
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel?.getAttribute("style")).toBeNull();
+    // The keyframes live in index.css now — no inline <style> left behind.
+    expect(screen.getByTestId("language-sheet").querySelector("style")).toBeNull();
   });
 });
 

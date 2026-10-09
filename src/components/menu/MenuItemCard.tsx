@@ -63,7 +63,9 @@ const isNew = (entity: any): boolean =>
  *
  * Overlay-button pattern: the card is a div (the quick-add button cannot
  * nest inside another button); a full-card button named by the item opens
- * it, and the quick-add sits above that overlay via z-10.
+ * it, and the quick-add sits above that overlay via z-10. The overlay stays a
+ * DIRECT, empty child: tb-press-card squeezes the card while it is pressed
+ * (`:has(> button:empty:active)`).
  */
 export default function MenuItemCard({
   entity,
@@ -83,7 +85,7 @@ export default function MenuItemCard({
       <div
         data-testid={`item-${entity?.id}`}
         aria-disabled={unavailable ? "true" : undefined}
-        className="relative col-span-2 flex h-[578px] w-full flex-col items-center justify-between overflow-hidden rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
+        className="tb-press-card relative col-span-2 flex h-[578px] w-full flex-col items-center justify-between overflow-hidden rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
       >
         <div className={`flex flex-col items-center gap-[16px] ${unavailable ? "opacity-40" : ""}`}>
           {isNew(entity) && (
@@ -140,7 +142,7 @@ export default function MenuItemCard({
     <div
       data-testid={`item-${entity?.id}`}
       aria-disabled={unavailable ? "true" : undefined}
-      className="relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6"
+      className="tb-press-card relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6"
     >
       <div className={`flex flex-col gap-[4px] pl-[24px] pr-[64px] pt-[24px] ${unavailable ? "opacity-40" : ""}`}>
         <p className="line-clamp-2 text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">

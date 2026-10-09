@@ -69,21 +69,16 @@ export default function LanguageSheet({ open, onClose }: LanguageSheetProps) {
 
   return (
     <div className="absolute inset-0 z-40" data-testid="language-sheet">
-      {/* Pure-CSS entrance, position-neutral (translateY only — tb-modal-enter
-          is for centred modals). No exit animation: the sheet unmounts at
+      {/* Pure-CSS entrance: the panel rises (tb-sheet-enter); the scrim never
+          animates (motion D-M3). No exit animation: the sheet unmounts at
           once, like every other sheet (house pattern). */}
-      <style>{`@keyframes tbLanguageScrimEnter{from{opacity:0}to{opacity:1}}@keyframes tbLanguageSheetEnter{from{transform:translateY(480px)}to{transform:translateY(0)}}`}</style>
       <button
         type="button"
         aria-label={t("language.close")}
         onClick={onClose}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
-        style={{ animation: "tbLanguageScrimEnter 0.25s ease-out both" }}
       />
-      <div
-        className="absolute bottom-0 left-0 w-[1080px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[54px] pt-[54px]"
-        style={{ animation: "tbLanguageSheetEnter 0.25s ease-out both" }}
-      >
+      <div className="tb-sheet-enter absolute bottom-0 left-0 w-[1080px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[54px] pt-[54px]">
         <h2 className="tb-display mb-[64px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
           {t("language.title")}
         </h2>

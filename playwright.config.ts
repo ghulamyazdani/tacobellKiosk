@@ -26,6 +26,10 @@ const config = defineConfig({
     screenshot: "only-on-failure",
     // Kiosk hardware resolution — portrait.
     viewport: { width: 1080, height: 1920 },
+    // Motion lane: the functional suite and the visual walks run deterministic
+    // (every animation ends in 1 ms — index.css reduced-motion block). Real
+    // motion is proven by tests/e2e/motion.spec.ts (no-preference).
+    reducedMotion: "reduce",
   },
   projects: [
     {

@@ -4,6 +4,7 @@ import { paytmSessionEffects } from "@cx-sdk/payments/settlement/paytmKioskSettl
 import usePaytmSettlement from "../../hooks/paymentsHooks/usePaytmSettlement";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import ErrorModal from "../../components/common/ErrorModal";
 import PleaseWait from "../../components/payment/PleaseWait";
@@ -45,6 +46,9 @@ import downHereArrow from "../../assets/icons/down-here-arrow.svg";
  * scrolls back (same rule as ReachZone). PleaseWait follows it too.
  */
 export default function PaytmPayment() {
+  // Above the no-session return (hook order). A screen that arrives after
+  // its route committed (the lazy chunk) is still a forward entrance.
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const ada = useAdaActive();
   const { formatTime } = useAppSettings();
@@ -85,8 +89,11 @@ export default function PaytmPayment() {
       terminalPrompt === "none");
 
   return (
+    // Motion §2.7: the content column arrives (.tb-enter); the sheen, the
+    // bell, DOWN HERE, CANCEL and the overlays stay.
     <div
       data-testid="paytm-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-clip bg-tb-pink"
     >
       {/* The frame's sheen: Figma's plastic_2 as the stage-sized alpha
@@ -109,7 +116,7 @@ export default function PaytmPayment() {
       )}
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[40px] gap-[40px]" : "top-[435px] gap-[100px]"} flex w-[884px] -translate-x-1/2 flex-col items-center`}
+        className={`tb-enter [--i:0] absolute left-1/2 ${ada ? "top-[40px] gap-[40px]" : "top-[435px] gap-[100px]"} flex w-[884px] -translate-x-1/2 flex-col items-center`}
       >
         <h1 className="tb-display text-center text-[64px] leading-[0.85] tracking-[-3px] text-tb-purple">
           {t(edc ? "paytm.instructions.title" : "paytm.qr.title")}
@@ -118,11 +125,14 @@ export default function PaytmPayment() {
         <div
           className={`flex ${ada ? "size-[360px]" : "size-[616px]"} items-center justify-center`}
         >
+          {/* Figma Credit card 1 (1:5603): the card tilts on a loop about
+              its bottom-left corner, inside the slot (motion §3.7). Nothing
+              tappable around it. */}
           {edc ? (
             <img
               alt=""
               src={creditCard}
-              className={ada ? "h-[162px] w-[252px]" : "h-[277.2px] w-[431.2px]"}
+              className={`tb-card-tilt ${ada ? "h-[162px] w-[252px]" : "h-[277.2px] w-[431.2px]"}`}
             />
           ) : (
             showCancel && <PaytmQr value={qrCode} size={ada ? 360 : 616} />

@@ -46,6 +46,10 @@ export default function MenuCtaBar({
 
   const itemCount: number = cart?.cartItems?.length ?? 0;
   const netAmount = cart?.subTotal ?? 0;
+  // Re-keys the bag mark so tb-bump replays on every add / remove / re-price
+  // (an increment of an existing row changes only the subtotal). It also
+  // bumps once on mount — accepted (motion contract §3.3).
+  const bagKey = `${itemCount}:${Number(netAmount).toFixed(2)}`;
 
   // Label per the brief: REWARDS until the lookup has returned a coupon list,
   // MY REWARDS (n) once it has.
@@ -75,7 +79,7 @@ export default function MenuCtaBar({
           <span className="tb-display text-[24px] leading-[32px] text-tb-surface">
             {t("menu.viewMyBag")} ({itemCount})
           </span>
-          <img alt="" src={bagIcon} className="h-[50px] w-[50px]" />
+          <img key={bagKey} alt="" src={bagIcon} className="tb-bump h-[50px] w-[50px]" />
         </button>
       </div>
     );
@@ -117,11 +121,12 @@ export default function MenuCtaBar({
           onClick={onViewBag}
           className="relative flex h-[50px] min-h-[44px] w-[50px] min-w-[44px] items-center justify-center"
         >
-          <img alt="" src={bagIcon} className="h-[50px] w-[50px]" />
+          <img key={bagKey} alt="" src={bagIcon} className="tb-bump h-[50px] w-[50px]" />
           {itemCount > 0 && (
             <span
+              key={itemCount}
               aria-hidden="true"
-              className="absolute -right-[8px] -top-[8px] flex h-[28px] min-w-[28px] items-center justify-center rounded-full bg-tb-pink px-[6px] text-[16px] font-bold leading-none text-tb-purple"
+              className="tb-pop-in absolute -right-[8px] -top-[8px] flex h-[28px] min-w-[28px] items-center justify-center rounded-full bg-tb-pink px-[6px] text-[16px] font-bold leading-none text-tb-purple"
             >
               {itemCount}
             </span>

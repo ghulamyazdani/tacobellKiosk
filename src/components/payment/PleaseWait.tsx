@@ -22,7 +22,9 @@ interface PleaseWaitProps {
  * Re-expressed from the frame: tb-purple + the 240 px texture tile (the same
  * bytes as the frame's fill) + the plastic sheen rotated −90° at 50 %,
  * normal blend — Figma's recipe, now that the sheen is the alpha WebP (UB3).
- * The hourglass is the static first frame of the 99-frame GIF (D8).
+ * The hourglass is the static first frame of the 99-frame GIF (D8), turned
+ * by tb-hourglass: the GIF's two half-turns per 3.96 s (motion lane, D8
+ * revisited — sign-off); the sand does not flow.
  *
  * ADA (design language, flagged): the bell is dropped (the brand zone above
  * carries the mark) and the card is centred in the 1122 reach zone. The root
@@ -71,7 +73,7 @@ export default function PleaseWait({
       <div
         className={`absolute left-1/2 ${ada ? "top-[161px]" : "top-[560px]"} flex h-[800px] w-[680px] -translate-x-1/2 flex-col items-center justify-center gap-[54px] rounded-[16px] bg-tb-purple-vibrant px-[24px] pb-[24px] pt-[80px]`}
       >
-        <img alt="" src={hourglass} className="size-[352px]" />
+        <img alt="" src={hourglass} className="tb-hourglass size-[352px]" />
         <div className="flex flex-col items-center gap-[16px] text-center text-tb-surface">
           <h2 className="tb-display text-[64px] leading-[0.85] tracking-[-3px]">
             {t("paytm.wait.title")}

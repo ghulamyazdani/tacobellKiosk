@@ -43,6 +43,7 @@ import CancelOrderModal from "../../components/common/CancelOrderModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { ErrorBoundary } from "../../ErrorBoundary";
@@ -102,6 +103,9 @@ const pickedCount = (selection: ReadonlyArray<{ quantity?: unknown } | null>) =>
 export default function Customization({
   embedded = false,
 }: { embedded?: boolean } = {}) {
+  // Above the no-session return (hook order). Embedded, the result is
+  // ignored: OfferTierHost's own static data-enter drives the pane.
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -499,7 +503,7 @@ export default function Customization({
         key={group._id}
         id={group._id}
         data-testid={`pdp-group-${group._id}`}
-        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
       >
         <GroupHeader
           name={name(group)}
@@ -586,11 +590,14 @@ export default function Customization({
     <div
       data-testid="customization-screen"
       data-embedded={embedded ? "true" : undefined}
+      data-enter={embedded ? undefined : enter}
       className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
     >
       {/* Contents at x 24 / w 1032 (every PDP frame). pb-[72px] = the old
-          220 minus the 148 px CTA bar below, so the scroll end is unchanged. */}
-      <div ref={pdpScrollRef} id="scrollCustomizableItem" className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[72px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          220 minus the 148 px CTA bar below, so the scroll end is unchanged.
+          The pane is the page's one arriving block (motion §2.7); the
+          scrollbar, the CTA bar, the footer and the sheets stay. */}
+      <div ref={pdpScrollRef} id="scrollCustomizableItem" className="tb-enter [--i:0] min-h-0 flex-1 overflow-y-auto px-[24px] pb-[72px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Hero (1:598): the band always renders; imageless items show it bare. */}
         <div className="-mx-[24px] flex h-[450px] w-[1080px] items-center justify-center bg-tb-grey-6">
           {heroImage && (

@@ -102,6 +102,11 @@ describe("OfferTierHost", () => {
     const host = screen.getByTestId("offer-tier-host");
     expect(host.className).toContain("absolute inset-0 z-[85]");
     expect(within(host).getByTestId("customization-screen")).toHaveAttribute("data-embedded", "true");
+    // Motion §2.4: the host's STATIC fwd plays the embedded PDP's pane in from
+    // the right; the embedded root itself never carries data-enter.
+    expect(host).toHaveAttribute("data-enter", "fwd");
+    expect(within(host).getByTestId("customization-screen")).not.toHaveAttribute("data-enter");
+    expect(host.querySelector("#scrollCustomizableItem")).toHaveClass("tb-enter");
   });
 
   it("unmount with an offer session open closes it (the bag going away mid-tier)", () => {

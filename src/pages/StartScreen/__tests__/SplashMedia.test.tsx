@@ -739,3 +739,51 @@ describe("lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+/*
+  Lane motion §3.6. The idle return lands on a STILL splash: no card shifts
+  and nothing fades at mount. An advance remounts all three cards, which
+  shift in together by one card pitch (tb-carousel-in) on their own slots; a
+  skipped (failed) slide is not an advance. The CTA pulses (tb-attract,
+  opacity only) on every layout.
+*/
+describe("motion (lane motion §3.6)", () => {
+  const shifted = () =>
+    (["prev", "centre", "next"] as const).filter((slot) => card(slot)?.classList.contains("tb-carousel-in"));
+
+  it("the first frame is still; an advance shifts all three cards in, each still on its slot", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: 5 },
+      { url: u("b.jpg"), iteration_time: 5 },
+      { url: u("c.jpg"), iteration_time: 5 },
+    ]);
+    renderSplash();
+    expect(shifted()).toEqual([]);
+    expect(host().querySelector(".tb-carousel-in, .tb-fade-in")).toBeNull();
+
+    tick(5_000);
+    expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("c.jpg")]);
+    expect(shifted()).toEqual(["prev", "centre", "next"]);
+    expect(host().querySelector(".tb-fade-in")).toBeNull();
+  });
+
+  it("a skipped (failed) centre is not an advance: the remounted cards stay still", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderSplash();
+
+    fireEvent.error(media("centre"));
+    expect(cards()[1]).toBe(u("b.jpg"));
+    expect(shifted()).toEqual([]);
+  });
+
+  it.each([
+    ["WELCOME", [{ url: "   " }], /touch anywhere to start/i],
+    ["the single slide", [{ url: "https://cdn.test/one.jpg" }], /start order/i],
+    ["the carousel", [{ url: "https://cdn.test/one.jpg" }, { url: "https://cdn.test/two.jpg" }], /start order/i],
+  ])("the CTA pulses (tb-attract) — %s", (_layout, slides, cta) => {
+    seed(slides);
+    renderSplash();
+    expect(screen.getByText(cta)).toHaveClass("tb-attract");
+    expect(host().querySelectorAll(".tb-attract")).toHaveLength(1);
+  });
+});

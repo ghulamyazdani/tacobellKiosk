@@ -19,6 +19,8 @@ interface CategoryRailProps {
  * compressed-bold rows, selected = vibrant purple pill). Rows pad 24 / 12:
  * "CRAVINGS MENU" (174.3 px) needs the 179 px box; labels stay left-aligned.
  * Only the category list scrolls; the bell and the slot above it stay put.
+ * The selected fill swaps instantly (Figma); `aria-current` drives the
+ * tb-select bump (motion lane, design language).
  */
 export default function CategoryRail({
   categories,
@@ -41,8 +43,9 @@ export default function CategoryRail({
               key={category.id}
               type="button"
               data-testid={`rail-${category.id}`}
+              aria-current={selected ? "true" : undefined}
               onClick={() => onSelect(category.id)}
-              className={`tb-compressed h-[64px] w-full shrink-0 rounded-[8px] pl-[24px] pr-[12px] text-left text-[30px] leading-[24px] min-h-[44px] ${
+              className={`tb-select tb-compressed h-[64px] w-full shrink-0 rounded-[8px] pl-[24px] pr-[12px] text-left text-[30px] leading-[24px] min-h-[44px] ${
                 selected ? "bg-tb-purple-vibrant text-tb-surface" : "text-tb-purple"
               }`}
             >

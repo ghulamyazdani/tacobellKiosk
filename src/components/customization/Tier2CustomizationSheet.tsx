@@ -518,7 +518,7 @@ export default function Tier2CustomizationSheet() {
         key={group._id}
         id={group._id}
         data-testid={`tier2-group-${group._id}`}
-        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
       >
         <GroupHeader
           name={name(group)}

@@ -367,6 +367,17 @@ export default function BagSheet({
   }, [ctaTapGuard]);
 
   const displayRows: any[] = consolidateGetItemsForDisplay(cartRdx?.cartItems);
+  // Motion §3.3: only a row ADDED while the bag is open rises in — the rows
+  // it opened with arrive with the panel. Latched on the OPEN edge (adjust
+  // state while rendering), not at mount: BagSheet stays mounted under Menu
+  // across /menu ↔ /cart. A reload on /cart opens over an EMPTY cart (the
+  // Dexie restore is async), so the latch also waits for the rows or the
+  // settled rehydrate (the empty-cart exit's rule below).
+  const [openRows, setOpenRows] = useState<ReadonlySet<unknown> | null>(null);
+  const latchRows = open && (cartRehydrated || displayRows.length > 0);
+  if (latchRows !== (openRows !== null)) {
+    setOpenRows(latchRows ? new Set(displayRows.map((row) => row?.itemId)) : null);
+  }
   const isTakeOut = orderTypeKindOf(tabType) === "takeOut";
   const hasAppliedOffer = Boolean(cartOffer && Object.keys(cartOffer).length > 0);
   // "Identified" = the XENO lookup has a phone to key on (setPhoneNumberRdx on
@@ -1122,7 +1133,7 @@ export default function BagSheet({
       onClick={
         !active && canSwitch ? () => setSwitchTarget(switchCandidate) : undefined
       }
-      className={`flex h-[52px] min-w-[44px] flex-1 items-center justify-center gap-[8px] rounded-[30px] ${
+      className={`tb-select flex h-[52px] min-w-[44px] flex-1 items-center justify-center gap-[8px] rounded-[30px] ${
         active ? "bg-tb-surface" : ""
       }`}
     >
@@ -1130,7 +1141,7 @@ export default function BagSheet({
         {label}
       </span>
       {active ? (
-        <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full bg-tb-purple">
+        <span className="tb-pop-in flex h-[20px] w-[20px] items-center justify-center rounded-full bg-tb-purple">
           {/* Check glyph (Figma icon 8544a14e) inlined. */}
           <svg viewBox="0 0 13.34 13.34" className="h-[13px] w-[13px]" aria-hidden="true">
             <path
@@ -1149,9 +1160,7 @@ export default function BagSheet({
 
   return (
     <div className="absolute inset-0 z-40" data-testid="bag-sheet">
-      {/* Sheet entrance: own position-neutral translateY keyframe
-          (tb-modal-enter is reserved for centered modals). */}
-      <style>{`@keyframes tbBagSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("bag.close")}
@@ -1163,15 +1172,12 @@ export default function BagSheet({
           the scrim above covers the reach zone only (ReachZone confines
           this whole subtree). */}
       <div
-        style={{
-          animation: "tbBagSheetEnter 0.2s ease-out both",
-          height: sheetHeight,
-        }}
-        className="absolute bottom-0 left-0 flex w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        style={{ height: sheetHeight }}
+        className="tb-sheet-enter absolute bottom-0 left-0 flex w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         <div className="relative shrink-0 pb-[40px] pt-[54px]">
           <p className="tb-display text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
-            {t("bag.title")} ({totalQuantity})
+            {t("bag.title")} (<span key={totalQuantity} className="tb-bump inline-block">{totalQuantity}</span>)
           </p>
           <button
             type="button"
@@ -1199,6 +1205,7 @@ export default function BagSheet({
                 <BagItemRow
                   key={row?.itemId ?? index}
                   row={row}
+                  rise={openRows !== null && !openRows.has(row?.itemId)}
                   currency={currency}
                   onEdit={handleEditTap}
                   onRequestRemove={setRemoveCandidate}
@@ -1229,7 +1236,7 @@ export default function BagSheet({
                     {(play) => (
                       <div
                         data-testid="bag-rewards-applied"
-                        className="relative flex w-full items-start gap-[24px] py-[24px]"
+                        className="tb-press-card relative flex w-full items-start gap-[24px] py-[24px]"
                       >
                         <span className="relative flex h-[152px] w-[152px] shrink-0 items-center justify-center rounded-[8px] bg-tb-grey-6">
                           <span

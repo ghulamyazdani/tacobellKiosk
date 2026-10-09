@@ -81,7 +81,7 @@ export default function MenuFilterChips({ onChange }: MenuFilterChipsProps) {
             aria-pressed={on}
             data-testid={`menu-filter-${tag}`}
             onClick={() => toggle(tag)}
-            className={`tb-compressed flex h-[56px] w-full items-center gap-[12px] rounded-[8px] border-2 border-tb-purple pl-[16px] text-[24px] leading-[24px] ${
+            className={`tb-select tb-compressed flex h-[56px] w-full items-center gap-[12px] rounded-[8px] border-2 border-tb-purple pl-[16px] text-[24px] leading-[24px] ${
               on ? "bg-tb-purple text-tb-surface" : "text-tb-purple"
             }`}
           >

@@ -19,6 +19,7 @@ import {
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import FooterBar from "../../components/chrome/FooterBar";
@@ -119,6 +120,7 @@ const maskExceptLast = (input: string) =>
  * re-derived (or a flex column).
  */
 export default function CustomerPhone() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -403,8 +405,11 @@ export default function CustomerPhone() {
   const dialCode = selectedCountryCode?.dialCode ?? "";
 
   return (
+    // Motion §2.7: the copy, the entry row, the keypad and the two actions
+    // arrive (.tb-enter); BACK, the bell, the footer and overlays stay.
     <div
       data-testid="phone-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       <button
@@ -425,19 +430,19 @@ export default function CustomerPhone() {
       )}
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[330px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
+        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[330px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
       >
         {t("phone.title")}
       </h1>
       <p
-        className={`absolute left-1/2 ${ada ? "top-[260px]" : "top-[470px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
+        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[260px]" : "top-[470px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
       >
         {isLoyaltyOnSetting ? t("phone.loyaltySubtitle") : t("phone.subtitle")}
       </p>
 
       {/* Country pill (opens the picker, UB5) + masked entry field. */}
       <div
-        className={`absolute left-1/2 ${ada ? "top-[316px]" : "top-[580px]"} flex w-[844px] -translate-x-1/2 items-center gap-[16px]`}
+        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[316px]" : "top-[580px]"} flex w-[844px] -translate-x-1/2 items-center gap-[16px]`}
       >
         <button
           type="button"
@@ -492,7 +497,7 @@ export default function CustomerPhone() {
       </div>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[436px]" : "top-[740px]"} -translate-x-1/2`}
+        className={`tb-enter [--i:3] absolute left-1/2 ${ada ? "top-[436px]" : "top-[740px]"} -translate-x-1/2`}
       >
         <KioskNumpad
           value={inputValue}
@@ -507,7 +512,7 @@ export default function CustomerPhone() {
         data-testid="phone-continue"
         onClick={handleContinue}
         disabled={isLoyaltyEventLoading}
-        className={`tb-display absolute left-1/2 ${ada ? "top-[876px]" : "top-[1260px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
+        className={`tb-enter [--i:4] tb-display absolute left-1/2 ${ada ? "top-[876px]" : "top-[1260px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
       >
         {isLoyaltyEventLoading ? t("phone.checking") : t("phone.continue")}
       </button>
@@ -517,7 +522,7 @@ export default function CustomerPhone() {
           type="button"
           data-testid="phone-skip"
           onClick={skipPhoneAndName}
-          className={`absolute left-1/2 ${ada ? "top-[996px]" : "top-[1400px]"} min-h-[44px] -translate-x-1/2 px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline`}
+          className={`tb-enter [--i:5] absolute left-1/2 ${ada ? "top-[996px]" : "top-[1400px]"} min-h-[44px] -translate-x-1/2 px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline`}
         >
           {t("phone.skip")}
         </button>

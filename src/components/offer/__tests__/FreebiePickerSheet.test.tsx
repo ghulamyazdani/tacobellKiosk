@@ -344,6 +344,26 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     expect(confirm).toHaveAttribute("aria-disabled", "false");
   });
 
+  it("motion: the panel rises (tb-sheet-enter) over a still scrim; a pick's indicator pops in (D-M3, §3.2)", async () => {
+    renderPicker(CHOICE_OFFER);
+    const sheet = screen.getByTestId("freebie-picker");
+    const [scrim, panel] = Array.from(sheet.children);
+    expect(scrim.tagName).toBe("BUTTON");
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    expect(panel).toBe(screen.getByRole("dialog"));
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel).not.toHaveAttribute("style");
+    expect(sheet.querySelector("style")).toBeNull();
+
+    const tortilla = screen.getByTestId("freebie-option-tortilla-sauce");
+    expect(sheet.querySelector(".tb-pop-in")).toBeNull();
+    await userEvent.click(tortilla);
+    expect(tortilla.querySelectorAll(".tb-pop-in")).toHaveLength(1);
+    expect(screen.getByTestId("freebie-option-caesar-dressing").querySelector(".tb-pop-in")).toBeNull();
+    expect(tortilla).not.toHaveClass("tb-select"); // a full-width row only pops its indicator
+  });
+
   it("gated CONFIRM without a pick commits nothing", async () => {
     const { onClose } = renderPicker(CHOICE_OFFER);
     await userEvent.click(screen.getByTestId("freebie-confirm"));
@@ -412,6 +432,12 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
       "aria-disabled",
       "false"
     );
+    // Motion §3.2: each granted plain entry's filled check pops in.
+    const sheet = screen.getByTestId("freebie-picker");
+    expect(sheet.querySelectorAll('[aria-hidden="true"].tb-pop-in.bg-tb-purple svg')).toHaveLength(
+      sheet.querySelectorAll('[aria-hidden="true"].bg-tb-purple svg').length
+    );
+    expect(sheet.querySelectorAll(".tb-pop-in svg").length).toBeGreaterThan(0);
     await userEvent.click(screen.getByTestId("freebie-confirm"));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));

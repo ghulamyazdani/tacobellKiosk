@@ -70,6 +70,11 @@ describe("tb-* text pairs meet WCAG AA 4.5:1 (P9f)", () => {
     ["tb-purple", "tb-lilac"],
     ["tb-purple-vibrant", "white"],
     ["tb-pink-dark", "white"],
+    // Motion lane, the Figma pressed fills (momentary, still AA): letter /
+    // digit keycaps (Key 1:1053), the red CTAs, the grey special keycaps.
+    ["white", "tb-purple-press"],
+    ["white", "tb-red-press"],
+    ["black", "tb-grey-3"],
   ])("%s on %s", (fg, bg) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
@@ -133,10 +138,19 @@ describe("Grey 3 — only on a disabled control (lane figma-polish S2)", () => {
   });
 
   it("bg-tb-grey-3 fills only SelectSizeModal's CTA — and that CTA is `disabled` exactly while it is grey", () => {
-    const sources = readdirSync(SRC, { recursive: true, encoding: "utf8" })
-      .filter((file) => /\.tsx?$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
-      .filter((file) => readFileSync(join(SRC, file), "utf8").includes("bg-tb-grey-3"));
-    expect(sources).toEqual(["components/menu/SelectSizeModal.tsx"]);
+    const filesMatching = (pattern: RegExp) =>
+      readdirSync(SRC, { recursive: true, encoding: "utf8" })
+        .filter((file) => /\.tsx?$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
+        .filter((file) => pattern.test(readFileSync(join(SRC, file), "utf8")))
+        .sort();
+    // A resting fill (no variant prefix)…
+    expect(filesMatching(/(?<![\w:-])bg-tb-grey-3(?![\w-])/)).toEqual(["components/menu/SelectSizeModal.tsx"]);
+    // …vs the keycaps' momentary Figma press (Key 1:1053, motion lane) under
+    // BLACK glyphs (10.7:1, pinned above) — never a resting fill.
+    expect(filesMatching(/active:bg-tb-grey-3(?![\w-])/)).toEqual([
+      "components/keyboard/KioskKeyboard.tsx",
+      "components/keyboard/KioskNumpad.tsx",
+    ]);
 
     const entity = {
       id: "box",

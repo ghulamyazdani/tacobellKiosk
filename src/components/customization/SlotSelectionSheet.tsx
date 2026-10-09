@@ -70,7 +70,7 @@ function SheetBody({
     return (
       <div
         key={item?.id}
-        className="relative flex items-center gap-[24px] border-t border-tb-grey-4 pt-[23px]"
+        className="tb-press-card relative flex items-center gap-[24px] border-t border-tb-grey-4 pt-[23px]"
       >
         <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
           {imageUrl && (
@@ -107,7 +107,7 @@ function SheetBody({
           }`}
         >
           {isPicked && (
-            <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />
+            <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
           )}
         </span>
 
@@ -135,7 +135,6 @@ function SheetBody({
 
   return (
     <div className="absolute inset-0 z-40" data-testid="slot-sheet">
-      <style>{`@keyframes tbSlotSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <button
         type="button"
         aria-label={t("language.close")}
@@ -147,10 +146,7 @@ function SheetBody({
           root → the reach container) minus a 96 px scrim band: 1500 on the
           1920 stage, 1026 in the 1122 ADA reach zone. Title/X and SAVE keep
           their content height; only the options shrink and scroll. */}
-      <div
-        className="absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col gap-[75px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]"
-        style={{ animation: "tbSlotSheetEnter 0.2s ease-out both" }}
-      >
+      <div className="tb-sheet-enter absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col gap-[75px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]">
         <h2 className="tb-display px-[72px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
           {t("pack.selectGroup", { name: name(group) })}
         </h2>
@@ -194,9 +190,10 @@ function SheetBody({
  * "Included" rows (falsy price) then "Upgrades" rows (+price | cal); purple
  * underlined Customize link only where canCustomize(item); radio at the
  * right; SAVE locks while group.min > 0 and nothing is picked. Pure
- * presentational — selection legality is the caller's job. Entrance is the
- * tb-modal-enter pattern adapted for bottom anchoring (pure CSS keyframe,
- * scoped here because index.css's transform targets centered modals).
+ * presentational — selection legality is the caller's job. Entrance: the
+ * panel rises with index.css's tb-sheet-enter (pure CSS, motion lane); the
+ * scrim appears at once and closing is instant. A row squeezes while its
+ * pick overlay is pressed (tb-press-card) and the radio check pops in.
  */
 export default function SlotSelectionSheet(props: SlotSelectionSheetProps) {
   if (!props.open || !props.group) return null;

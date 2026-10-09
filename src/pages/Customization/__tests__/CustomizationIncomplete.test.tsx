@@ -188,7 +188,7 @@ describe("PDP completion warning (item 23)", () => {
     await addToBag();
     expect(title()).toBe("Let's finish your choices first");
     expect(message()).toBe("Please choose your sauce before adding to your bag");
-    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).toHaveClass("ring-4", "ring-red-500");
+    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).toHaveClass("ring-4", "ring-red-500", "tb-shake"); // motion §3.8
   });
 
   it("a slot group among the missing ones → the box title", async () => {

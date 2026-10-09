@@ -95,6 +95,15 @@ const PATTERNS = [
     description: "Do not put non-serializable objects (DOM nodes, class instances) in Redux — causes GC bloat",
     excludeCommented: true,
   },
+  {
+    name: "JS-driven motion (rAF / View Transitions / Web Animations / animationend / framer-motion)",
+    regex: /\b(requestAnimationFrame|startViewTransition)\s*\(|\.animate\s*\(|\bon(Animation|Transition)End\b|["'](animation|transition)end["']|framer-motion/g,
+    severity: "CRITICAL",
+    description:
+      "Motion is pure CSS and nothing waits on it (motion contract §2.6 / §5.6; PROGRESS \"Motion system (lane motion)\") — use the index.css tb-* motion classes; JS animation freezes in occluded windows, View Transitions swallow taps, and gating state on an animation delays the flow",
+    fileExtensions: [".ts", ".tsx"],
+    excludeCommented: true,
+  },
 
   // ─── WARNING: Stability & architecture patterns ──────────────────────
   {

@@ -357,3 +357,140 @@ describe("BagSheet in the ADA reach zone (P9c)", () => {
     expect(panel()).toHaveStyle({ height: "1676px" });
   });
 });
+
+/*
+  Motion §3.3: only a row ADDED while the bag is open rises in (tb-rise). A
+  reload on /cart opens the bag over an EMPTY redux cart (cartItems live in
+  Dexie, restored async by AppRoutes): the rows the restore lands are the
+  rows the bag opened with, so they must not rise either. No provider here
+  ⇒ CartRehydratedContext is false (the restore still pending).
+*/
+describe("BagSheet rows rise only when added while open (motion §3.3)", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+  });
+
+  it("the rows it opened with stay still; a row added while open rises", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    renderSheet();
+    expect(screen.getByTestId("bag-row-cb-1")).not.toHaveClass("tb-rise");
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    });
+    expect(screen.getByTestId("bag-row-cb-1")).not.toHaveClass("tb-rise");
+    expect(screen.getByTestId("bag-row-pep-1")).toHaveClass("tb-rise");
+  });
+
+  it("a reload on /cart: the rows the Dexie restore lands never rise", () => {
+    renderSheet(); // open over the empty pre-restore cart
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }])); // the restore lands
+    });
+    expect(screen.getByTestId("bag-row-cb-1")).not.toHaveClass("tb-rise");
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    });
+    expect(screen.getByTestId("bag-row-pep-1")).toHaveClass("tb-rise");
+  });
+
+  /** The SAME BagSheet across /menu ↔ /cart: Menu keeps it mounted, `open` flips. */
+  const sheetTree = (open: boolean) => (
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/cart"]}>
+        <BagSheet open={open} onClose={vi.fn()} />
+      </MemoryRouter>
+    </Provider>
+  );
+
+  it("rows added on the menu while the bag was closed arrive with the panel (no rise) on the next open", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const { rerender } = render(sheetTree(true));
+    rerender(sheetTree(false)); // back to the menu: the same instance stays mounted
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }])); // a menu add
+    });
+    rerender(sheetTree(true));
+    expect(screen.getByTestId("bag-row-cb-1")).not.toHaveClass("tb-rise");
+    expect(screen.getByTestId("bag-row-pep-1")).not.toHaveClass("tb-rise");
+  });
+
+  it("a removal is instant: the row leaves at once, nothing else starts to rise", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    renderSheet();
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    });
+    expect(screen.queryByTestId("bag-row-pep-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bag-sheet").querySelectorAll('[data-testid^="bag-row-"]')).toHaveLength(1);
+    expect(screen.getByTestId("bag-row-cb-1")).not.toHaveClass("tb-rise");
+  });
+});
+
+/*
+  Motion D-M3 / §3.2 / §3.3: the panel rises with the shared tb-sheet-enter
+  (its inline style keeps only the height), the scrim never animates; the
+  active order-type segment bumps (tb-select) and pops its check; the MY BAG
+  count re-keys a small inline-block leaf, so the title text never changes.
+*/
+describe("BagSheet — motion surfaces", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+  });
+
+  it("the panel rises (tb-sheet-enter, only a height inline); the scrim is still; no inline keyframes", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    renderSheet();
+    const sheet = screen.getByTestId("bag-sheet");
+    const [scrim, panel] = Array.from(sheet.children) as HTMLElement[];
+    expect(scrim.tagName).toBe("BUTTON");
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel.style.animation).toBe("");
+    expect(panel.style.height).not.toBe("");
+    expect(panel).toContainElement(screen.getByTestId("bag-row-cb-1"));
+    expect(sheet.querySelector("style")).toBeNull();
+  });
+
+  it("the active order-type segment carries tb-select with aria-pressed and pops its check; the other has no check", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    renderSheet();
+    const segments = ["eatin", "takeout"].map((key) => screen.getByTestId(`bag-ordertype-${key}`));
+    for (const segment of segments) expect(segment).toHaveClass("tb-select");
+    const active = segments.filter((segment) => segment.getAttribute("aria-pressed") === "true");
+    expect(active).toHaveLength(1);
+    expect(active[0].querySelectorAll(".tb-pop-in")).toHaveLength(1);
+    const idle = segments.find((segment) => segment !== active[0]) as HTMLElement;
+    expect(idle).toHaveAttribute("aria-pressed", "false");
+    expect(idle.querySelector(".tb-pop-in")).toBeNull();
+  });
+
+  it("MY BAG (n): the count is a NEW tb-bump leaf when the quantity changes, the SAME one otherwise", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    renderSheet();
+    const title = screen.getByText(/^My Bag \(/);
+    const count = () => title.querySelector(".tb-bump") as HTMLElement;
+    const one = count();
+    expect(one).toHaveClass("inline-block");
+    expect(one).toHaveTextContent(/^1$/);
+    expect(title).toHaveTextContent(/^My Bag \(1\)$/);
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW, total_price: 9.2 }])); // re-priced, same quantity
+    });
+    expect(count()).toBe(one);
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    });
+    expect(count()).not.toBe(one);
+    expect(title).toHaveTextContent(/^My Bag \(3\)$/);
+  });
+});

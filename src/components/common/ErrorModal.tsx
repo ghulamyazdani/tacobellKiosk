@@ -63,7 +63,7 @@ export default function ErrorModal({
         }`}
       >
         <div className="flex w-[502px] flex-col items-center gap-[24px]">
-          {icon && <img src={warningIcon} alt="" className="size-[179px]" />}
+          {icon && <img src={warningIcon} alt="" className="tb-wiggle size-[179px]" />}
           <h2
             id={`${testId}-title`}
             className="tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
@@ -104,7 +104,7 @@ export default function ErrorModal({
             data-testid={primary.testId}
             autoFocus
             onClick={primary.onClick}
-            className={`tb-display h-[60px] ${wide ? "w-full" : "w-[280px]"} whitespace-nowrap rounded-[4px] ${primary.danger ? "bg-tb-red" : "bg-tb-purple"} text-[18px] leading-[16px] text-tb-surface`}
+            className={`tb-display h-[60px] ${wide ? "w-full" : "w-[280px]"} whitespace-nowrap rounded-[4px] ${primary.danger ? "bg-tb-red active:bg-tb-red-press" : "bg-tb-purple"} text-[18px] leading-[16px] text-tb-surface`}
           >
             {primary.label}
           </button>

@@ -9,7 +9,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import {
   closeMakeItAMealSession,
   makeItAMealIsSessionOpen,
@@ -21,6 +21,7 @@ import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendati
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import Customization from "../index";
 import "../../../i18n";
 
@@ -199,5 +200,75 @@ describe("Customization embedded (in-bag PDP for offer tier sessions)", () => {
     expect(screen.getByTestId("pdp-variant-small")).toBeInTheDocument();
     expect(screen.getByTestId("pdp-variant-medium")).toBeInTheDocument();
     expect(screen.queryByTestId("pdp-variant-large")).not.toBeInTheDocument();
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.4 / §2.7). The ROUTE PDP's root latches data-enter
+  at mount: none on a page load (POP), fwd on a PUSH (/menu → /customization),
+  back on a PUSH to a screen already on the session trail (AppRoutes'
+  notePath; seeded here). Embedded, the root never carries it — OfferTierHost's
+  host div does (a static "fwd", OfferTierHost.test). The scroll pane is the
+  one arriving block; the scrollbar, the CTA bar and the footer stay.
+*/
+describe("Customization — the route entrance (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = (embedded: boolean, to: string) =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to={to} />} />
+            <Route path={to} element={<Customization embedded={embedded} />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("customization-screen");
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
+    store.dispatch(setCartItems([{ id: "taco", itemId: "taco-1", quantity: 1, type: "ITEM", total_price: 5 }]));
+    notePath("/start");
+  });
+
+  it("the route PDP: a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /customization arrives back", () => {
+    seedTier(BURGER);
+    const pop = renderPdp(false, "/customization");
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed(false, "/customization");
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/customization");
+    notePath("/forYou");
+    mountPushed(false, "/customization");
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("embedded: the root never carries data-enter, even mounted by a PUSH", () => {
+    seedTier(FREEBIE_BURGER);
+    mountPushed(true, "/cart");
+    expect(root()).toHaveAttribute("data-embedded", "true");
+    expect(root()).not.toHaveAttribute("data-enter");
+  });
+
+  it("the scroll pane is the one tb-enter block (0) — never the scrollbar, the CTA bar or the footer", () => {
+    seedTier(BURGER);
+    mountPushed(false, "/customization");
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks).toEqual([document.getElementById("scrollCustomizableItem")]);
+    expect(blocks[0]).toHaveClass("[--i:0]");
+    for (const id of ["pdp-scrollbar", "pdp-back", "pdp-add-to-bag", "footer-cancel"]) {
+      expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
+    }
   });
 });

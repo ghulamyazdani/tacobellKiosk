@@ -383,3 +383,44 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
     });
   });
 });
+
+/*
+  Motion §3.3: the stepper's quantity re-keys a small leaf (a NEW node per
+  quantity replays tb-bump; the SAME node otherwise), and the row rises in
+  only when BagSheet says it was added while the bag was open.
+*/
+describe("BagItemRow — motion", () => {
+  const tree = (row: any, rise?: boolean) => (
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/cart"]}>
+        <BagItemRow row={row} rise={rise} currency="£" onEdit={vi.fn()} onRequestRemove={vi.fn()} />
+      </MemoryRouter>
+    </Provider>
+  );
+  const qty = () => screen.getByTestId("bag-dec-fries-1").nextElementSibling as HTMLElement;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  it("the quantity is a NEW tb-bump leaf per quantity, the SAME one on a same-quantity render", () => {
+    const { rerender } = render(tree(ITEM_ROW));
+    const one = qty();
+    expect(one).toHaveClass("tb-bump");
+    expect(one).toHaveTextContent(/^1$/);
+
+    rerender(tree({ ...ITEM_ROW, total_price: 3 }));
+    expect(qty()).toBe(one);
+
+    rerender(tree({ ...ITEM_ROW, quantity: 2 }));
+    expect(qty()).not.toBe(one);
+    expect(qty()).toHaveTextContent(/^2$/);
+  });
+
+  it("rises (tb-rise) only when told to", () => {
+    const { rerender } = render(tree(ITEM_ROW));
+    expect(screen.getByTestId("bag-row-fries-1")).not.toHaveClass("tb-rise");
+    rerender(tree(ITEM_ROW, true));
+    expect(screen.getByTestId("bag-row-fries-1")).toHaveClass("tb-rise");
+  });
+});

@@ -281,11 +281,16 @@ function glyphX(locator: Locator, a: string, b: string) {
   );
 }
 
-/** The /second marquee's computed cycle, in seconds. */
+/**
+ * The /second marquee's cycle, in seconds: the INLINE duration DaypartTicker
+ * sets for an operator line. No inline style (the design copy) means
+ * index.css's 18 s design cycle. Never the computed value: the suite runs
+ * under reduced motion (playwright.config), where every animation computes 1 ms.
+ */
 const tickerSeconds = (page: Page) =>
   page
     .locator(".tb-marquee-track")
-    .evaluate((el) => Number.parseFloat(getComputedStyle(el).animationDuration));
+    .evaluate((el) => Number.parseFloat((el as HTMLElement).style.animationDuration || "18s"));
 
 /** Splash → order type (/second). */
 async function startToSecond(page: Page) {

@@ -15,7 +15,7 @@ const BASE = {
   scrim: "absolute inset-0 bg-tb-purple/80",
   card: "tb-modal-enter absolute left-1/2 top-1/2 flex w-[680px] flex-col items-center gap-[80px] rounded-[16px] bg-tb-surface px-[24px] pb-[24px] pt-[80px] text-center",
   copy: "flex w-[502px] flex-col items-center gap-[24px]",
-  icon: "size-[179px]",
+  icon: "tb-wiggle size-[179px]", // motion lane: the warning mark wiggles once
   title: "tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple",
   message: "text-[28px] leading-[32px] text-tb-ink-purple",
   row: "flex gap-[26px]",
@@ -99,8 +99,10 @@ describe("ErrorModal variants (lane bag-pdp, I3)", () => {
       secondary: { label: "Back", testId: "x-secondary", onClick: vi.fn() },
       primary: { label: "Got it", testId: "x-primary", onClick: vi.fn(), danger: true },
     });
+    // …pressing to Figma's #C02121 (motion lane; a purple primary presses
+    // vibrant through index.css's unlayered fill rule instead).
     expect(screen.getByTestId("x-primary").getAttribute("class")).toBe(
-      BASE.primary.replace("bg-tb-purple", "bg-tb-red"),
+      BASE.primary.replace("bg-tb-purple", "bg-tb-red active:bg-tb-red-press"),
     );
     expect(screen.getByTestId("x-secondary").getAttribute("class")).toBe(BASE.secondary);
   });

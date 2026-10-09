@@ -268,6 +268,19 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(pay).toHaveTextContent("£6.60");
   });
 
+  it("motion §3.1: the applied row squeezes through its DIRECT empty overlay (tb-press-card), never through Remove", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(applyOffer({ offer: FLAT_OFFER }));
+    renderSheet();
+
+    const applied = screen.getByTestId("bag-rewards-applied");
+    expect(applied).toHaveClass("tb-press-card");
+    const overlays = applied.querySelectorAll(":scope > button:empty");
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]).toHaveAttribute("aria-label");
+    expect(applied.querySelector(":scope > button:empty")).not.toBe(screen.getByTestId("bag-rewards-remove"));
+  });
+
   it("applied row: its named overlay (LAST child) reopens the RewardsSheet — the only path to a swap", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(applyOffer({ offer: FLAT_OFFER }));

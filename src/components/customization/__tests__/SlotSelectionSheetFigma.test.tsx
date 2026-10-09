@@ -67,8 +67,15 @@ describe("SlotSelectionSheet — Figma 1:2814 structure (item 23)", () => {
       "gap-[75px]",
       "max-h-[min(1500px,calc(100%_-_96px))]",
     );
-    const skrim = screen.getByTestId("slot-sheet").firstElementChild?.nextElementSibling;
+    // Motion lane: the panel rises with index.css's tb-sheet-enter — the
+    // inline <style> keyframes are gone, and the skrim (now the first child)
+    // never animates.
+    expect(sheet).toHaveClass("tb-sheet-enter");
+    expect(sheet).not.toHaveAttribute("style");
+    expect(screen.getByTestId("slot-sheet").querySelector("style")).toBeNull();
+    const skrim = screen.getByTestId("slot-sheet").firstElementChild;
     expect(skrim).toHaveClass("bg-tb-purple/80");
+    expect(skrim).not.toHaveAttribute("style");
     expect(screen.getByRole("heading", { level: 2 })).toHaveClass("text-tb-purple", "text-[32px]");
     expect(screen.getByTestId("slot-sheet-close")).toHaveClass("right-[44px]", "top-[44px]", "h-[48px]", "w-[48px]");
   });
