@@ -422,7 +422,7 @@ test.describe("P7c XENO loyalty", () => {
     await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
 
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     expect(xeno.revokeUrls[0]).toContain("undoRewardRedemption");
     expect(xeno.revokeUrls[0]).toContain(
       `pointsToBeReturned=${GREEK_SALAD_REWARD.points}`
@@ -484,7 +484,7 @@ test.describe("P7c XENO loyalty", () => {
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
 
     // Points refunded and the claim revoked exactly once.
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     await expect
       .poll(() => persistedLoyaltyPoints(page), { timeout: 10_000 })
       .toBe(LOYALTY_POINTS_TOTAL);

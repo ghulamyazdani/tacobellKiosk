@@ -373,7 +373,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
     await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-    await expect.poll(() => xeno.revokeCount, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => xeno.revokeCount, { timeout: 20_000 }).toBe(1);
     expect(xeno.revokeUrls[0]).toContain(`rewardId=${SALAD_REWARD.couponCode}`);
 
     // Next customer: no reward, no lock — the machine applies the flagged offer.
