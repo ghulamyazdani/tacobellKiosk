@@ -205,7 +205,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     // A radio group: "Required", no "n of max" count.
     const extra = page.getByTestId(`pdp-group-${EXTRA_GROUP}`);
     await expect(extra).toContainText(en.pdp.required);
-    const options = extra.locator('[data-testid^="pdp-option-"]');
+    const options = extra.locator('[data-testid^="pdp-option-"]:not([data-testid^="pdp-option-cta-"])');
     await expect(options).toHaveCount(3);
     // Cards, not stepper rows (the item cap would have drawn steppers).
     await expect(extra.getByRole("button", { name: /^Increase quantity/ })).toHaveCount(0);
@@ -236,7 +236,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(extra).not.toContainText(en.pdp.required);
 
     // Several picks, never a swap (radio cards: the item cap is 1).
-    const options = extra.locator('[data-testid^="pdp-option-"]');
+    const options = extra.locator('[data-testid^="pdp-option-"]:not([data-testid^="pdp-option-cta-"])');
     await expect(options).toHaveCount(3);
     const pickles = page.getByTestId(`pdp-option-${EXTRA_PICKLES}`);
     const second = options.nth(1);
