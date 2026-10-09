@@ -56,8 +56,10 @@ import { useStore } from "react-redux";
 import {
   hasItemRecommendations,
   type EntityMap,
+  type ModifierGroupMap,
   type OutOfStockMap,
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
+import { selectMenuSellableEntityMap } from "./useCartUpsell";
 import {
   buildCartItemContent,
   buildGetItemRdxContent,
@@ -82,9 +84,12 @@ import {
 
 export type { AddItemToCartOptions };
 
-/** The two slices the recommendation lookup reads out of the untyped store. */
+/**
+ * The two slices the recommendation lookup reads out of the untyped store (the
+ * menu's maps through selectMenuSellableEntityMap).
+ */
 interface RecommendationLookupState {
-  menu?: { entityMap?: EntityMap };
+  menu?: { entityMap?: EntityMap; modifiersMap?: ModifierGroupMap };
   menuSelections?: { outOfStockItems?: OutOfStockMap };
 }
 
@@ -159,11 +164,13 @@ function useCartHook() {
     // to show, so the fastest add path on the kiosk stays unblocked otherwise.
     // Short-circuits on the first resolvable id and allocates nothing when the
     // item has no `recommendedItems` at all, which is the common case.
+    // The menu-sellable map is the one the strip resolves over, so a dead pack
+    // never opens the modal onto an empty strip (memoized per menu load).
     let showRecommendationModal = false;
     if (!isCustomizedAdd && !options?.suppressAddedModal) {
       const state = store.getState() as RecommendationLookupState;
       showRecommendationModal = hasItemRecommendations(
-        state?.menu?.entityMap,
+        selectMenuSellableEntityMap(state),
         state?.menuSelections?.outOfStockItems,
         itemContent,
       );
