@@ -78,7 +78,8 @@ export default function FooterBar({
           <span className="h-[32px] w-[32px] overflow-hidden rounded-full">
             <img alt="" src={gbFlag} className="h-full w-full object-cover" />
           </span>
-          <span className="tb-display text-[16px] leading-[16px] font-medium text-tb-surface">
+          {/* dir="auto": the language's own name (العربية) reads rtl in an ltr layout. */}
+          <span dir="auto" className="tb-display text-[16px] leading-[16px] font-medium text-tb-surface">
             {/* || not ??: a session reset stores name "" (a blank label) */}
             {selectedLanguage?.name || t("language.english")}
           </span>

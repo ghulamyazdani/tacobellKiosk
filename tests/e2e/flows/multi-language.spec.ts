@@ -26,12 +26,7 @@ const AR_ROW = { ...DINE_IN, secondary_name: "تناول في المطعم" };
  * the walk no longer meets (the fix landed) fails the test until it is removed, and an unlisted
  * target still fails.
  */
-const PENDING_APP_FIX: { target: string; why: string }[] = [
-  {
-    target: "footer-language",
-    why: 'FooterBar renders the selected language\'s own name (العربية) raw in an LTR span: needs dir="auto" (FooterBar.tsx:79-82) — P9f F handoff to the app lane',
-  },
-];
+const PENDING_APP_FIX: { target: string; why: string }[] = [];
 /** The PENDING_APP_FIX targets this test's walk actually met. */
 const pendingMet = new Set<string>();
 
