@@ -179,7 +179,8 @@ describe("Menu — the lazy Xeno rewards sheet (lane loyalty-visual D9)", () => 
     await act(async () => gate.release());
     openRewards();
 
-    expect(await screen.findByTestId("loyalty-rewards-sheet")).toBeInTheDocument();
+    // 3 s: the lazy chunk's import is slow under parallel load (1 s flaked).
+    expect(await screen.findByTestId("loyalty-rewards-sheet", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(scrim()).toBeNull();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
@@ -222,7 +223,7 @@ describe("Menu — the lazy Xeno rewards sheet (lane loyalty-visual D9)", () => 
     renderMenu();
     openRewards();
 
-    expect(await screen.findByTestId("loyalty-rewards-sheet")).toBeInTheDocument();
+    expect(await screen.findByTestId("loyalty-rewards-sheet", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(scrim()).toBeNull();
   });
 });
