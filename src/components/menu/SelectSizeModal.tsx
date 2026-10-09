@@ -93,7 +93,7 @@ export default function SelectSizeModal({
       }`}
     >
       {selectedId === v.id && (
-        <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />
+        <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
       )}
     </span>
   );
@@ -141,7 +141,7 @@ export default function SelectSizeModal({
               data-testid={`size-${hero.id}`}
               aria-pressed={selectedId === hero.id}
               onClick={() => setSelectedId(hero.id)}
-              className="relative flex h-[453px] w-[504px] shrink-0 flex-col items-center rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
+              className="tb-select relative flex h-[453px] w-[504px] shrink-0 flex-col items-center rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
             >
               {/* Figma 1:5707: the 326 px image band sits at the hero's foot,
                   the photo at 7.25 % / 20.25 % of it (445 × 232). */}
@@ -186,7 +186,7 @@ export default function SelectSizeModal({
                     data-testid={`size-${v.id}`}
                     aria-pressed={selectedId === v.id}
                     onClick={() => setSelectedId(v.id)}
-                    className="relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
+                    className="tb-select relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
                   >
                     <span className="h-[108px] w-[206px]">
                       {imageUrl && (

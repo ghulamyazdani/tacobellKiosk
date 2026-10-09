@@ -3,6 +3,10 @@
  * port). The anys are inherited; typed in later domain passes. Do not add NEW
  * anys.
  */
+/** "smooth" — or an instant jump when the OS asks for reduced motion (read per call). */
+export const scrollBehavior = (): ScrollBehavior =>
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+
 const AutoScroll = (
   windowParentElement: any,
   windowChildElement: any,
@@ -10,7 +14,7 @@ const AutoScroll = (
 ) => {
   windowParentElement?.scrollTo({
     top: windowChildElement - negativeMargin,
-    behavior: "smooth",
+    behavior: scrollBehavior(),
     transition: "all 1s ease-in-out",
   });
 };

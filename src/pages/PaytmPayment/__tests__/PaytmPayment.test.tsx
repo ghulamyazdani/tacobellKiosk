@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
   setBillPaymentInfo,
@@ -16,6 +16,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setAutenticationDetails } from "@cx-sdk/core/auth/authentication.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import PaytmPayment from "../index";
 import i18n, { isolate } from "../../../i18n";
 import bellPurple from "../../../assets/brand/tb-bell-purple.svg";
@@ -350,5 +351,69 @@ describe("PaytmPayment — /paymentPolling", () => {
     await advance(3000);
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.7 / §3.7). The root's data-enter is latched at
+  mount: none on a page load (POP), fwd on a PUSH — also when the lazy chunk
+  mounts the screen after its route committed (AppRoutes already noted it) —
+  and back on a PUSH to a screen already on the session trail (seeded here).
+  Only the content column carries tb-enter; the EDC card tilts on a loop.
+*/
+describe("PaytmPayment — motion (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/paymentPolling" state={{ receipt: "none" }} />} />
+            <Route path="/paymentPolling" element={<PaytmPayment />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>,
+    );
+  const root = () => screen.getByTestId("paytm-screen");
+
+  beforeEach(() => {
+    notePath("/start");
+    seed("edc");
+  });
+
+  it("a page load (POP) mounts still; a PUSH arrives fwd, lazily mounted or not; a PUSH back arrives back", () => {
+    const pop = mount();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/receipt");
+    notePath("/paymentPolling"); // the lazy chunk arrives after AppRoutes noted its route
+    const lazy = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    lazy.unmount();
+
+    notePath("/payment");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("the content column is the one tb-enter block; the bell, DOWN HERE and CANCEL stay; the EDC card tilts", () => {
+    const { container } = mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toHaveClass("[--i:0]");
+    expect(blocks[0]).toContainElement(screen.getByTestId("paytm-total"));
+    for (const element of [
+      img(container, bellPurple),
+      screen.getByText(i18n.t("paytm.instructions.downHere")),
+      screen.getByTestId("paytm-cancel"),
+    ]) {
+      expect(element?.closest(".tb-enter")).toBeNull();
+    }
+    expect(img(container, creditCard)).toHaveClass("tb-card-tilt");
   });
 });

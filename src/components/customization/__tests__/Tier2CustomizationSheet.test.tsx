@@ -171,8 +171,9 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     expect(selectErrorMessageGlobal(state)).toBe(
       "Please check the customization errors"
     );
-    expect(screen.getByTestId("tier2-group-dl_addons").className).toContain(
-      "ring-red-500"
+    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveClass(
+      "ring-red-500",
+      "tb-shake" // motion §3.8: the unfinished group shakes
     );
   });
 

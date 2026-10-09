@@ -66,6 +66,10 @@ const CARD =
  * Without a CTA the whole card is ONE button carrying the testid (named by its
  * text). With one, the P9f overlay-button pattern: the container keeps the
  * testid, the CTA sits above at z-10, the named overlay goes LAST in the DOM.
+ * Motion (lane motion): the button card bumps when it turns selected
+ * (tb-select, driven by aria-pressed); the overlay card squeezes while its
+ * overlay is pressed (tb-press-card); the check pops in; an errored card
+ * shakes once with its ring (a selected one keeps tb-select — accepted).
  */
 export default function OptionCard({
   testId,
@@ -80,7 +84,7 @@ export default function OptionCard({
   selectTestId,
   errored = false,
 }: OptionCardProps) {
-  const className = `${CARD} ${errored ? "ring-4 ring-red-500" : ""}`;
+  const className = `${CARD} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
   const content = (
     <>
       <span className="flex h-[172px] w-full shrink-0 items-center justify-center">
@@ -124,7 +128,9 @@ export default function OptionCard({
             radio === "on" ? "bg-tb-purple" : "border border-tb-purple"
           }`}
         >
-          {radio === "on" && <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />}
+          {radio === "on" && (
+            <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
+          )}
         </span>
       )}
     </>
@@ -138,14 +144,14 @@ export default function OptionCard({
         aria-label={selectLabel}
         aria-pressed={radio ? radio === "on" : undefined}
         onClick={onSelect}
-        className={className}
+        className={`tb-select ${className}`}
       >
         {content}
       </button>
     );
   }
   return (
-    <div data-testid={testId} className={className}>
+    <div data-testid={testId} className={`tb-press-card ${className}`}>
       {content}
       {onSelect && (
         <button
@@ -214,7 +220,9 @@ export function OptionRow({
         >
           <img alt="" src={qty === 1 ? trashIcon : minusIcon} className="h-[24px] w-[24px]" />
         </button>
-        <span className="text-[20px] font-black leading-[16px] text-black">{qty}</span>
+        <span key={qty} className="tb-bump text-[20px] font-black leading-[16px] text-black">
+          {qty}
+        </span>
         <button
           type="button"
           aria-label={increaseLabel}
@@ -259,7 +267,10 @@ export function GroupHeader({
         </span>
       )}
       {max !== undefined && max > 1 && (
-        <span className="ml-auto shrink-0 text-[20px] font-medium leading-[24px] tracking-[-0.5px] text-black">
+        <span
+          key={count ?? 0}
+          className="tb-bump ml-auto shrink-0 text-[20px] font-medium leading-[24px] tracking-[-0.5px] text-black"
+        >
           {t("pdp.groupCount", { count: count ?? 0, max })}
         </span>
       )}
@@ -271,6 +282,8 @@ export function GroupHeader({
  * Counter (1:615): "−" and "+" white 64 px circles with a 2 px Grey 4 ring,
  * the count a filled purple circle. Testids `${testId}-decrease`, `${testId}`,
  * `${testId}-increase`; no onIncrease = no "+" (the hide-plus setting).
+ * Pressed (1:604): the white fill turns lilac (index.css) and so does the
+ * ring; the value re-keys an inner span so tb-bump replays on each change.
  */
 export function Counter({
   testId,
@@ -288,7 +301,7 @@ export function Counter({
   increaseLabel: string;
 }) {
   const control =
-    "flex h-[64px] w-[64px] items-center justify-center rounded-full border-2 border-tb-grey-4 bg-tb-surface";
+    "flex h-[64px] w-[64px] items-center justify-center rounded-full border-2 border-tb-grey-4 bg-tb-surface active:border-tb-lilac";
   return (
     <div className="flex shrink-0 items-center gap-[12px]">
       <button
@@ -304,7 +317,9 @@ export function Counter({
         data-testid={testId}
         className="flex h-[64px] w-[64px] items-center justify-center rounded-full bg-tb-purple text-[20px] font-black leading-[16px] text-tb-surface"
       >
-        {value}
+        <span key={value} className="tb-bump">
+          {value}
+        </span>
       </span>
       {onIncrease && (
         <button
@@ -324,6 +339,7 @@ export function Counter({
 /**
  * CTA/Bottom screen (1:589): the 148 px purple bar — BACK (chevron + an
  * underlined label, 168 px) and the action (label + the 50 px bag icon).
+ * BACK pressed (set 1:558): the label turns #883ED2 (tb-purple-press).
  */
 export function CtaBar({
   backTestId,
@@ -348,10 +364,12 @@ export function CtaBar({
         type="button"
         data-testid={backTestId}
         onClick={onBack}
-        className="flex h-full min-w-[168px] items-center justify-center gap-[10px] px-[37px]"
+        className="group flex h-full min-w-[168px] items-center justify-center gap-[10px] px-[37px]"
       >
         <img alt="" src={chevronLeftIcon} className="h-[23px] w-[23px]" />
-        <span className="tb-display text-[18px] leading-[20px] text-tb-surface underline">{backLabel}</span>
+        <span className="tb-display text-[18px] leading-[20px] text-tb-surface underline group-active:text-tb-purple-press">
+          {backLabel}
+        </span>
       </button>
       <button
         type="button"

@@ -245,9 +245,7 @@ function SheetBody({ sheet }: { sheet: any }) {
 
   return (
     <div className="absolute inset-0 z-[60]" data-testid="repeat-sheet">
-      {/* Position-neutral bottom-sheet entrance — tb-modal-enter is reserved
-          for centered modals (SlotSelectionSheet precedent). */}
-      <style>{`@keyframes tbRepeatSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("language.close")}
@@ -259,8 +257,7 @@ function SheetBody({ sheet }: { sheet: any }) {
           in the 1122 ADA reach zone. The title/X and the CTA keep their
           content height; only the rows shrink and scroll. */}
       <div
-        className="absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
-        style={{ animation: "tbRepeatSheetEnter 0.2s ease-out both" }}
+        className="tb-sheet-enter absolute bottom-0 left-0 flex max-h-[min(1200px,calc(100%_-_96px))] w-[1080px] flex-col rounded-t-[24px] bg-tb-surface pt-[44px]"
       >
         <h2 className="tb-display mb-[20px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple">
           {t("repeat.title")}

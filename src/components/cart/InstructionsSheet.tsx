@@ -39,8 +39,7 @@ export default function InstructionsSheet({
 
   return (
     <div className="absolute inset-0 z-50" data-testid="instructions-sheet">
-      {/* Own position-neutral entrance (tb-modal-enter is for centred modals). */}
-      <style>{`@keyframes tbInstructionsSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         data-testid="instructions-scrim"
@@ -52,8 +51,7 @@ export default function InstructionsSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="instructions-title"
-        className="absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col items-center gap-[40px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]"
-        style={{ animation: "tbInstructionsSheetEnter 0.2s ease-out both" }}
+        className="tb-sheet-enter absolute bottom-0 left-0 flex max-h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col items-center gap-[40px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]"
       >
         <h2
           id="instructions-title"

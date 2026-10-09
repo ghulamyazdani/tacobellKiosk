@@ -96,6 +96,16 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     );
   });
 
+  it("motion §3.2: the picked dot pops in as it mounts; the 1032 px row itself never bumps", () => {
+    renderRow();
+    expect(screen.getByTestId("offer-radio-offer-flat-2").firstElementChild).toBeNull();
+
+    cleanup();
+    renderRow({ selected: true });
+    expect(screen.getByTestId("offer-radio-offer-flat-2").firstElementChild).toHaveClass("tb-pop-in");
+    expect(screen.getByTestId("offer-row-offer-flat-2")).not.toHaveClass("tb-select");
+  });
+
   it("upTo certainty renders 'Save up to £X'", () => {
     renderRow({
       entry: eligibleEntry({

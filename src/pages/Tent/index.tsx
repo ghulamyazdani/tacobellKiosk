@@ -10,6 +10,7 @@ import {
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
@@ -74,6 +75,7 @@ const MAX_DISPLAY_CELLS = 6;
  * only while ADA_BRAND_ZONE_HEIGHT ≤ 822; past that, re-derive the tops.
  */
 export default function Tent() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -93,6 +95,9 @@ export default function Tent() {
     typeof tentValueRdx === "string" ? tentValueRdx : ""
   );
   const [rangeError, setRangeError] = useState("");
+  // Keys the error banner: every refused key remounts it, so it re-shakes
+  // (motion §3.8) and re-announces — setRangeError(sameText) would not.
+  const [refusals, setRefusals] = useState(0);
   const errorTimer = useRef<number | null>(null);
   const reportedUnconfigured = useRef(false);
 
@@ -162,6 +167,7 @@ export default function Tent() {
     setRangeError(
       t("tent.rangeError", { from: tentRange.from, to: tentRange.to })
     );
+    setRefusals((count) => count + 1);
     if (errorTimer.current !== null) {
       window.clearTimeout(errorTimer.current);
     }
@@ -253,8 +259,11 @@ export default function Tent() {
   }, [dispatch, inputValue, navigate]);
 
   return (
+    // Motion §2.7: the title, the display and the keypad arrive (.tb-enter);
+    // texture, BACK, bell, CONFIRM / NO THANKS and the error stay.
     <div
       data-testid="tent-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       {/* Full-bleed purple texture — the SAME asset as the splash screen
@@ -289,7 +298,7 @@ export default function Tent() {
       )}
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[566px]"} w-[880px] -translate-x-1/2 text-center text-[58px] leading-[56px] tracking-[-1.5px] text-tb-surface${ada && rangeError ? " invisible" : ""}`}
+        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[566px]"} w-[880px] -translate-x-1/2 text-center text-[58px] leading-[56px] tracking-[-1.5px] text-tb-surface${ada && rangeError ? " invisible" : ""}`}
       >
         {t("tent.title")}
       </h1>
@@ -301,15 +310,17 @@ export default function Tent() {
         aria-readonly="true"
         aria-label={t("tent.displayLabel")}
         dir="ltr"
-        className={`absolute left-1/2 ${ada ? "top-[346px]" : "top-[819px]"} flex h-[90px] w-[400px] -translate-x-1/2 items-center justify-center gap-[28px] rounded-[10px] bg-tb-surface`}
+        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[346px]" : "top-[819px]"} flex h-[90px] w-[400px] -translate-x-1/2 items-center justify-center gap-[28px] rounded-[10px] bg-tb-surface`}
       >
         {Array.from({ length: displayCells }, (_, index) => (
           <span
             key={index}
             className="flex h-[48px] w-[48px] items-center justify-center"
           >
+            {/* A digit pops into its cell (motion §3.3): the class arrives
+                with the digit, which starts it. */}
             {inputValue[index] ? (
-              <span className="text-[40px] font-bold leading-none text-tb-purple">
+              <span className="tb-pop-in text-[40px] font-bold leading-none text-tb-purple">
                 {inputValue[index]}
               </span>
             ) : (
@@ -323,7 +334,7 @@ export default function Tent() {
       </div>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[460px]" : "top-[940px]"} -translate-x-1/2`}
+        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[460px]" : "top-[940px]"} -translate-x-1/2`}
       >
         <KioskNumpad
           value={inputValue}
@@ -340,9 +351,10 @@ export default function Tent() {
           display/keypad when the zone grows. */}
       {rangeError && (
         <p
+          key={refusals}
           data-testid="tent-error"
           role="alert"
-          className={`absolute left-1/2 ${ada ? "bottom-[calc(100%_-_330px)]" : "top-[1410px]"} w-[880px] -translate-x-1/2 rounded-[8px] bg-tb-red px-[24px] py-[18px] text-center text-[26px] leading-[32px] font-bold text-tb-surface`}
+          className={`tb-shake absolute left-1/2 ${ada ? "bottom-[calc(100%_-_330px)]" : "top-[1410px]"} w-[880px] -translate-x-1/2 rounded-[8px] bg-tb-red px-[24px] py-[18px] text-center text-[26px] leading-[32px] font-bold text-tb-surface`}
         >
           {rangeError}
         </p>

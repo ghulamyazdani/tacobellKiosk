@@ -119,7 +119,7 @@ export default function OrderTypeSwitchFlow({
       className="absolute inset-0 z-[85] flex flex-col items-center justify-center gap-[32px] bg-tb-purple/90"
     >
       <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
-        <div className="h-full w-1/3 animate-pulse rounded-full bg-tb-pink" />
+        <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-pink" />
       </div>
       <p className="tb-display text-[32px] leading-[32px] text-tb-surface">
         {t("bag.orderType.switching")}

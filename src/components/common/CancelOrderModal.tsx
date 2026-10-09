@@ -81,7 +81,7 @@ export default function CancelOrderModal({
             type="button"
             data-testid="cancel-order-confirm"
             onClick={confirm}
-            className="min-h-[56px] min-w-[280px] rounded-[6px] bg-tb-red px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-surface"
+            className="min-h-[56px] min-w-[280px] rounded-[6px] bg-tb-red active:bg-tb-red-press px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-surface"
           >
             {t("cancelOrder.confirm")}
           </button>

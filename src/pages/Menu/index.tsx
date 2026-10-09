@@ -3,7 +3,7 @@
  * typed with the SDK menu types in the P6 pass. Do not add NEW anys.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
@@ -36,6 +36,7 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useSessionReset from "../../hooks/utils/useSessionReset";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
@@ -54,6 +55,8 @@ import ErrorModal from "../../components/common/ErrorModal";
 import LoyaltyLoginModal from "../../components/loyalty/LoyaltyLoginModal";
 import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { scrollBehavior } from "../../utils/autoScroll";
+import { selectAddToCartModal } from "../../redux/features/menuSelections/menuSelections.slice";
 import { ErrorBoundary } from "../../ErrorBoundary";
 
 // D9 — the Xeno rewards sheet rides the ONE lazy UI chunk (bagLazyParts: a
@@ -120,6 +123,17 @@ interface MenuProps {
 type TrackedEntity = { id?: unknown; name?: unknown } | null | undefined;
 
 export default function Menu({ bagOpen = false }: MenuProps) {
+  // Motion §2.4: Menu mounting under the product-added modal (Figma 1:5502:
+  // the menu stays still), the bag or the rewards sheet is quiet. Read from
+  // the store, never a new useSelector (that would re-render the card grid);
+  // the hook keeps only the mount-time value. /menu <-> /cart is this SAME
+  // instance (no key), so the bag opening never replays the entrance.
+  const storeState = useStore().getState();
+  const enter = usePageEnter(
+    bagOpen ||
+      Boolean(selectAddToCartModal(storeState)) ||
+      Boolean(selectLoyaltyItemsModal(storeState)?.isOpen)
+  );
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -200,9 +214,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
 
   /**
    * B3 (PAR-07) — MenuViewed once per mount, when the menu is there (a late
-   * refetch counts on arrival; fork Menu.tsx:227-252). /cart is a separate
-   * `<Menu bagOpen />` element, so /menu ↔ /cart remounts — the bag's mount
-   * is not a menu view. Ref-latched: StrictMode re-runs effects.
+   * refetch counts on arrival; fork Menu.tsx:227-252). /cart's
+   * `<Menu bagOpen />` is the SAME instance as /menu (sibling routes, no key
+   * — verified in lane motion), so a mount under the open bag is not a menu
+   * view: the event waits for the bag to close. Ref-latched: StrictMode
+   * re-runs effects.
    */
   const menuViewedRef = useRef(false);
   useEffect(() => {
@@ -260,7 +276,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     setSelectedCategoryId(id);
     const el = sectionRefs.current[id];
     if (el && paneRef.current) {
-      paneRef.current.scrollTo({ top: el.offsetTop - 24, behavior: "smooth" });
+      // Instant under reduced motion (motion §3.9).
+      paneRef.current.scrollTo({ top: el.offsetTop - 24, behavior: scrollBehavior() });
     }
     captureKioskEvent(KioskEventName.SupCategoryClicked, { category_id: id });
   };
@@ -495,12 +512,15 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   return (
     <div
       data-testid="menu-screen"
+      data-enter={enter}
       // h-full = ReachZone's container: 1920, or the ADA reach zone (Figma
       // 1:5392 — only the rail+pane viewport shrinks; CTA and footer stay
       // pinned to the bottom).
       className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
     >
-      <div className="flex min-h-0 flex-1">
+      {/* The rail + pane row is the one arriving block (motion §2.7); the
+          scrollbar, the CTA bar, the footer and every overlay stay. */}
+      <div className="tb-enter [--i:0] flex min-h-0 flex-1">
         <CategoryRail
           categories={railCategories}
           selectedId={activeCategoryId}

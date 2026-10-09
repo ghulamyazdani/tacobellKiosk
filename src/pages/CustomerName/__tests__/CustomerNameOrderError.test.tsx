@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import CustomerName from "../index";
 import i18n from "../../../i18n";
 
@@ -98,5 +99,61 @@ describe("/customerName order-error panel (P9b R4)", () => {
     const placeholder = screen.getByText(i18n.t("customerName.placeholder"));
     expect(placeholder).toHaveClass("text-black/55");
     expect(placeholder).not.toHaveClass("text-black/35");
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
+  on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
+  the session trail (AppRoutes' notePath; seeded here). Only the content
+  blocks carry tb-enter [--i]; BACK, the footer and the overlays never move.
+*/
+describe("/customerName — the route entrance (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/customerName" />} />
+            <Route path="/customerName" element={<CustomerName />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("customer-name-screen");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    pay.failed = false;
+    pay.onTimeout = false;
+    notePath("/start");
+  });
+
+  it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /customerName arrives back", () => {
+    const pop = mount();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/customerName");
+    notePath("/payment");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("tb-enter [--i] on the title, copy, field, CONTINUE and keyboard (0–4) — never BACK, the footer or the error panel", () => {
+    pay.failed = true;
+    mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3", "4"]);
+    expect(blocks[2]).toContainElement(screen.getByTestId("customer-name-input"));
+    expect(blocks[3]).toBe(screen.getByTestId("customer-name-continue"));
+    for (const id of ["customer-name-back", "footer-cancel", "order-error"]) {
+      expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
+    }
   });
 });

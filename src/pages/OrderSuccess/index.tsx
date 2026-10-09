@@ -12,6 +12,8 @@ import useSessionReset, {
 import usePrintUtility from "../../hooks/utils/usePrintUtility";
 import { useIdleHold } from "../../hooks/utils/useIdleTimeout";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
+import ConfettiBurst from "../../components/common/ConfettiBurst";
 import type {
   OrderSuccessLocationState,
   ReceiptPreference,
@@ -85,6 +87,7 @@ interface CurrentOrderSnapshot {
 }
 
 export default function OrderSuccess() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -230,8 +233,11 @@ export default function OrderSuccess() {
   }, [leave, orderIdRdx, remaining]);
 
   return (
+    // Motion §2.7 / §3.5: the heading, the promo panel, the countdown and the
+    // buttons arrive (.tb-enter); the soft-light texture and the bell stay.
     <div
       data-testid="order-success"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden"
       style={{
         // Tailwind emits only the theme vars some utility uses — all four are used.
@@ -264,7 +270,7 @@ export default function OrderSuccess() {
           block (both 116/98, −3.27). The wrapper stays 920 wide so a wide
           number never clips (only the guest h1 takes the 569 box). */}
       <div
-        className={`absolute left-1/2 ${ada ? "bottom-[570px]" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
+        className={`tb-enter [--i:0] absolute left-1/2 ${ada ? "bottom-[570px]" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
       >
         <h1
           className={`tb-display text-tb-surface ${
@@ -275,11 +281,16 @@ export default function OrderSuccess() {
         >
           {isLoggedIn ? t("success.orderHeading") : t("success.thankYou")}
         </h1>
+        {/* The number pops (motion §3.5); `relative` centres the one
+            confetti burst on it. The burst renders only on an in-session
+            arrival (enter set), so a reload (POP) never replays it; its
+            pieces are empty spans, so the text stays "#NNNNN". */}
         <p
           data-testid="order-number"
-          className={`tb-display ${isLoggedIn ? "mt-0" : "mt-[24px]"} text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface`}
+          className={`tb-pop-in relative tb-display ${isLoggedIn ? "mt-0" : "mt-[24px]"} text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface`}
         >
           {orderNumber ? `#${orderNumber}` : ""}
+          {enter && <ConfettiBurst />}
         </p>
         {/* Title/H4 of 1:5932: Cm Bd 34/38. */}
         <p className="tb-compressed mt-[24px] text-[34px] leading-[38px] text-tb-surface">
@@ -287,31 +298,37 @@ export default function OrderSuccess() {
         </p>
       </div>
 
-      {/* Promo panel — frame geometry, NO QR (see the header note). Omitted
-          in ADA (header note). */}
-      {!ada && (
-        <div className="absolute left-1/2 top-[700px] flex h-[700px] w-[406px] -translate-x-1/2 flex-col items-center justify-center gap-[28px] overflow-hidden rounded-[24px] bg-tb-ink-purple/35 px-[36px] text-center">
-          <img
-            aria-hidden
-            alt=""
-            src={tbBell}
-            className="h-[107px] w-[120px] opacity-90"
-          />
-          <p className="tb-display text-[34px] leading-[1.05] tracking-[-1px] text-tb-yellow">
-            {isLoggedIn
-              ? t("success.promoHeadline")
-              : t("success.rewardsHeadline")}
-          </p>
-          <p className="text-[24px] font-bold uppercase leading-[1.25] text-tb-cream">
-            {isLoggedIn ? t("success.promoSub") : t("success.rewardsSub")}
-          </p>
-        </div>
-      )}
+      {/* Promo panel — frame geometry, NO QR (see the header note). Hidden
+          in ADA (header note) with `invisible`, never unmounted or
+          `hidden`: either would replay its entrance on the ADA exit (the
+          mode switch never animates — motion D-M6). */}
+      <div
+        className={`tb-enter [--i:1] absolute left-1/2 top-[700px] flex h-[700px] w-[406px] -translate-x-1/2 flex-col items-center justify-center gap-[28px] overflow-hidden rounded-[24px] bg-tb-ink-purple/35 px-[36px] text-center ${ada ? "invisible" : ""}`}
+      >
+        <img
+          aria-hidden
+          alt=""
+          src={tbBell}
+          className="h-[107px] w-[120px] opacity-90"
+        />
+        <p className="tb-display text-[34px] leading-[1.05] tracking-[-1px] text-tb-yellow">
+          {isLoggedIn
+            ? t("success.promoHeadline")
+            : t("success.rewardsHeadline")}
+        </p>
+        <p className="text-[24px] font-bold uppercase leading-[1.25] text-tb-cream">
+          {isLoggedIn ? t("success.promoSub") : t("success.rewardsSub")}
+        </p>
+      </div>
 
       {/* Honest countdown: bar position == elapsed/total, both from the
-          same constant. */}
+          same constant. The full-width fill slides in from the left inside
+          the clipping track (motion §3.5): composited, its rounded leading
+          cap intact (a scaleX squashed it), and the 1 s transition turns
+          the 1 Hz steps into one smooth fill (under reduced motion it steps
+          once a second). */}
       <div
-        className={`absolute left-1/2 ${ada ? "bottom-[389px]" : "top-[1470px]"} w-[720px] -translate-x-1/2`}
+        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "bottom-[389px]" : "top-[1470px]"} w-[720px] -translate-x-1/2`}
       >
         <div
           role="progressbar"
@@ -322,8 +339,8 @@ export default function OrderSuccess() {
           className="h-[12px] w-full overflow-hidden rounded-[6px] bg-tb-surface/25"
         >
           <div
-            className="h-full rounded-[6px] bg-tb-yellow"
-            style={{ width: `${progress}%` }}
+            className="h-full w-full rounded-[6px] bg-tb-yellow transition-transform duration-1000 ease-linear"
+            style={{ transform: `translateX(${progress - 100}%)` }}
           />
         </div>
         <p className="mt-[20px] text-center text-[24px] leading-[1.2] text-tb-cream">
@@ -332,7 +349,7 @@ export default function OrderSuccess() {
       </div>
 
       <div
-        className={`absolute left-1/2 ${ada ? "bottom-[190px]" : "top-[1610px]"} flex w-[920px] -translate-x-1/2 items-stretch justify-center gap-[40px]`}
+        className={`tb-enter [--i:3] absolute left-1/2 ${ada ? "bottom-[190px]" : "top-[1610px]"} flex w-[920px] -translate-x-1/2 items-stretch justify-center gap-[40px]`}
       >
         <button
           type="button"

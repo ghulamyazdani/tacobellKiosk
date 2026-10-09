@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { KioskEventName } from "@cx-sdk/core";
 import {
   closeAccessibilityMode,
@@ -27,6 +27,7 @@ import {
   STAGE_WIDTH,
 } from "../../../components/stage/KioskStage";
 import type { ForYouCardProps } from "../../../components/cart/ForYouCard";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import ForYou from "../index";
 import i18n from "../../../i18n";
 
@@ -665,6 +666,65 @@ describe("ForYou — the pre-cart upsell screen", () => {
       expect(seen()).toBe(false);
       // ...and they still get to the menu.
       expect(mockNavigate).toHaveBeenCalledWith("/menu");
+    });
+  });
+
+  /*
+    Lane motion (§2.3 / §2.7 / §3.2). The root's data-enter is latched at
+    mount: none on a page load (POP), fwd on a PUSH (/menu → /forYou), back on
+    a PUSH to a screen already on the session trail (seeded here — AppRoutes'
+    notePath). The heading, the grid and the actions arrive; the primary bumps
+    as it turns into the way forward.
+  */
+  describe("motion", () => {
+    /** A PUSH from another route: <Navigate> fires after the first commit. */
+    const pushedTree = () => (
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/forYou" />} />
+            <Route path="/forYou" element={<ForYou />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+    const root = () => screen.getByTestId("foryou-screen");
+
+    beforeEach(() => {
+      notePath("/start");
+    });
+
+    it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /forYou arrives back", () => {
+      const pop = render(tree());
+      expect(root()).not.toHaveAttribute("data-enter");
+      pop.unmount();
+
+      const pushed = render(pushedTree());
+      expect(root()).toHaveAttribute("data-enter", "fwd");
+      pushed.unmount();
+
+      notePath("/forYou");
+      notePath("/customization"); // the detour
+      render(pushedTree());
+      expect(root()).toHaveAttribute("data-enter", "back");
+    });
+
+    it("tb-enter [--i] on the heading (0), the grid (1) and the actions (2)", () => {
+      render(pushedTree());
+      const blocks = [...root().querySelectorAll(".tb-enter")];
+      expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2"]);
+      expect(blocks[0]).toBe(screen.getByTestId("foryou-heading"));
+      expect(blocks[1]).toContainElement(screen.getByTestId("foryou-card-a"));
+      expect(blocks[2]).toContainElement(primary());
+    });
+
+    it("the primary bumps (tb-bump) exactly when it turns into the way forward", () => {
+      render(tree());
+      expect(primary()).not.toHaveClass("tb-bump");
+
+      setCartUnitsLive(2);
+      expect(primary()).toHaveClass("tb-bump");
+      expect(primaryText()).toBe(PROCEED);
     });
   });
 });

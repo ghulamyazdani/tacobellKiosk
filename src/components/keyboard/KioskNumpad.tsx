@@ -30,7 +30,8 @@ interface KioskNumpadProps {
  * backspace (grey, key-backspace.svg). Key treatment, sizing rhythm and
  * prop shape deliberately mirror KioskKeyboard so the two keyboards read
  * as one family; used by the loyalty phone entry and the 4-digit OTP step.
- * All keys are ≥44px targets (Rule 4).
+ * All keys are ≥44px targets (Rule 4). Pressed: as KioskKeyboard (Key set
+ * 1:1053 — travel plus #883ED2 digits / Grey 3 specials, no squeeze).
  */
 export default function KioskNumpad({
   value,
@@ -56,9 +57,9 @@ export default function KioskNumpad({
   const clear = useCallback(() => onChange(""), [onChange]);
 
   const keyBase =
-    "flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px] active:translate-y-[2px] active:border-b-2";
-  const digitKey = `${keyBase} w-[120px] bg-tb-purple-vibrant`;
-  const specialKey = `${keyBase} w-[120px] bg-tb-grey-4`;
+    "tb-no-press flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px] active:translate-y-[2px] active:border-b-2";
+  const digitKey = `${keyBase} w-[120px] bg-tb-purple-vibrant active:bg-tb-purple-press`;
+  const specialKey = `${keyBase} w-[120px] bg-tb-grey-4 active:bg-tb-grey-3`;
 
   const renderDigit = (digit: string) => (
     <button
@@ -114,7 +115,7 @@ export default function KioskNumpad({
           type="button"
           data-testid="numpad-go"
           onClick={onSubmit}
-          className={`${keyBase} w-[400px] bg-tb-grey-4`}
+          className={`${keyBase} w-[400px] bg-tb-grey-4 active:bg-tb-grey-3`}
         >
           <span className="text-[40px] font-bold uppercase leading-none text-black">
             {t("keyboard.go")}

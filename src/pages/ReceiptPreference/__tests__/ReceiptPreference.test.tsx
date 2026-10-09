@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import ReceiptPreferenceScreen from "../index";
 import i18n from "../../../i18n";
 
@@ -207,5 +208,64 @@ describe("/receipt — the Figma geometry (S4)", () => {
     expect(screen.getByTestId("receipt-print").parentElement).toHaveClass("top-[292px]");
     expect(screen.getByTestId("receipt-print")).toHaveClass("h-[416px]", "w-[416px]");
     expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
+  on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
+  the session trail (AppRoutes' notePath; seeded here). Only the title and
+  the tile row carry tb-enter [--i]; BACK, the bell and NONE never move.
+*/
+describe("/receipt — the route entrance (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/receipt" />} />
+            <Route path="/receipt" element={<ReceiptPreferenceScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("receipt-screen");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(
+      setCartItems([
+        { id: "cw", itemId: "cw-1", name: "Crunchwrap", quantity: 1, type: "ITEM", total_price: 5 },
+      ])
+    );
+    store.dispatch(setAmount(5));
+    notePath("/start");
+  });
+
+  it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /receipt arrives back", () => {
+    const pop = mount();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/receipt");
+    notePath("/paymentPolling");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("tb-enter [--i] on the title (0) and the tile row (1) — never BACK, the bell or NONE", () => {
+    mountPushed();
+    const blocks = [...root().querySelectorAll(".tb-enter")];
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1"]);
+    expect(blocks[0]).toBe(screen.getByRole("heading", { level: 1 }));
+    expect(blocks[1]).toContainElement(screen.getByTestId("receipt-print"));
+    for (const element of [screen.getByTestId("receipt-back"), screen.getByAltText("Taco Bell"), screen.getByTestId("receipt-none")]) {
+      expect(element.closest(".tb-enter")).toBeNull();
+    }
   });
 });

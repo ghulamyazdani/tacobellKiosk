@@ -8,6 +8,7 @@ import {
   selectCartOffer,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { ErrorBoundary } from "../../ErrorBoundary";
+import ConfettiBurst from "../common/ConfettiBurst";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
 /** Shorter than the fork's 3 s modal: this card blocks nothing. */
@@ -33,34 +34,6 @@ const bellMaskStyle: CSSProperties = {
   maskPosition: "center",
 };
 
-const CONFETTI_COLOURS = [
-  "bg-tb-yellow",
-  "bg-tb-pink",
-  "bg-tb-purple-vibrant",
-  "bg-tb-pink-dark",
-  "bg-tb-lilac",
-] as const;
-
-/**
- * 28 pieces, computed ONCE at module load (never Math.random in render —
- * react-hooks/purity): golden-angle directions spread them evenly, a +160px
- * drop biases the burst downward over the bag, and a staggered --d keeps it
- * from reading as one flat ring. Motion is the .tb-confetti-piece CSS.
- */
-const CONFETTI = Array.from({ length: 28 }, (_, i) => {
-  const angle = i * 2.39996;
-  const reach = 200 + ((i * 47) % 160);
-  return {
-    colour: CONFETTI_COLOURS[i % CONFETTI_COLOURS.length],
-    style: {
-      "--tx": `${Math.round(Math.cos(angle) * reach * 1.3)}px`,
-      "--ty": `${Math.round(Math.sin(angle) * reach * 0.5 + 160)}px`,
-      "--r": `${((i * 97) % 540) - 270}deg`,
-      "--d": `${(i % 4) * 60}ms`,
-    } as CSSProperties,
-  };
-});
-
 /** The card itself: a child component so its render sits inside the boundary. */
 function CelebrationCard({ name, amount }: { name: string; amount: string | null }) {
   const { t } = useTranslation();
@@ -69,11 +42,7 @@ function CelebrationCard({ name, amount }: { name: string; amount: string | null
       data-testid="offer-applied-celebration"
       className="tb-chip-pop relative flex w-full items-center gap-[24px] rounded-[24px] bg-tb-purple px-[32px] py-[24px] shadow-[0px_20px_40px_0px_rgba(0,0,0,0.25)]"
     >
-      <span aria-hidden="true" className="absolute inset-0">
-        {CONFETTI.map(({ colour, style }, index) => (
-          <span key={index} className={`tb-confetti-piece ${colour}`} style={style} />
-        ))}
-      </span>
+      <ConfettiBurst />
       {/* REWARDS INCOMING (1:4079) seal language at card scale: pink bell on
           a yellow disc. Decorative — the title carries the message. Disc and
           copy are `relative` so they paint above the (positioned) confetti. */}

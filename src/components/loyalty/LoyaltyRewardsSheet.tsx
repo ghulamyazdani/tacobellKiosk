@@ -482,7 +482,7 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
           }`}
         >
           {selected && (
-            <span className="h-[20px] w-[20px] rounded-full bg-tb-purple" />
+            <span className="tb-pop-in h-[20px] w-[20px] rounded-full bg-tb-purple" />
           )}
         </span>
       </button>
@@ -500,15 +500,13 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         index === otp.length ? "border-tb-purple" : "border-tb-grey-4"
       }`}
     >
-      {otp[index] ?? ""}
+      {otp[index] ? <span className="tb-pop-in inline-block">{otp[index]}</span> : ""}
     </span>
   ));
 
   return (
     <div className="absolute inset-0 z-50" data-testid="loyalty-rewards-sheet">
-      {/* Position-neutral scoped keyframe — `tb-modal-enter` carries a -50%
-          translate and is reserved for centered modals. */}
-      <style>{`@keyframes tbLoyaltySheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("loyalty.close")}
@@ -526,10 +524,9 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
       <div
         role="dialog"
         aria-labelledby="loyalty-rewards-title"
-        style={{ animation: "tbLoyaltySheetEnter 0.2s ease-out both" }}
         onPointerDownCapture={handleTouch}
         onScrollCapture={handleTouch}
-        className="absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="tb-sheet-enter absolute bottom-0 left-0 flex h-[min(1480px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         {/* Auto-dismiss progress — purely decorative; disappears the moment
             the customer touches the sheet. */}

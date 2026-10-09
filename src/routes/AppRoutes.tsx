@@ -24,6 +24,7 @@ import RepeatItemSheet from "../components/cart/RepeatItemSheet";
 import { captureKioskEvent, KioskEventName } from "../utils/analytics";
 import useCartHook from "../hooks/menuHooks/useCartHook";
 import { CartRehydratedContext } from "../hooks/utils/useCartRehydrated";
+import { notePath } from "../hooks/utils/usePageEnter";
 
 /**
  * In-session overlay chrome — mounted ONCE for the whole authenticated
@@ -206,6 +207,9 @@ export function AppRoutes() {
       route_path: location.pathname,
     });
   }, [location.pathname]);
+
+  // Motion contract §2.3: the session trail usePageEnter reads (after commit).
+  useEffect(() => { notePath(location.pathname); }, [location.pathname]);
 
   // Back-navigation neutralisation: an unattended kiosk must never respond
   // to browser back/forward (hardware keyboards, gesture navigation).

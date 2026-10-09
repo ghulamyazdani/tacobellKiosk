@@ -16,6 +16,7 @@ import { selectCart, selectCartAmount } from "@cx-sdk/ordering/state/cart.slice"
 import { selectRedeemedLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import usePayAtCounter from "../../hooks/paymentsHooks/usePayAtCounter";
 import useSessionReset from "../../hooks/utils/useSessionReset";
@@ -93,6 +94,7 @@ const CRM_LOOKUP_TIMEOUT_MS = 10000;
  * only while ADA_BRAND_ZONE_HEIGHT ≤ 837; past that, re-derive them.
  */
 export default function CustomerName() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -305,8 +307,11 @@ export default function CustomerName() {
   }, [checkAndRevokeLoyaltyReward, navigate, resetSession]);
 
   return (
+    // Motion §2.7: the copy, the field, CONTINUE and the keyboard arrive
+    // (.tb-enter); BACK, the footer and the overlays stay.
     <div
       data-testid="customer-name-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       <button
@@ -319,18 +324,18 @@ export default function CustomerName() {
       </button>
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[220px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
+        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[220px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
       >
         {t("customerName.title")}
       </h1>
       <p
-        className={`absolute left-1/2 ${ada ? "top-[270px]" : "top-[370px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
+        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[270px]" : "top-[370px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
       >
         {t("customerName.subtitle")}
       </p>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[330px]" : "top-[480px]"} flex h-[100px] w-[844px] -translate-x-1/2 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
+        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[330px]" : "top-[480px]"} flex h-[100px] w-[844px] -translate-x-1/2 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
       >
         <span
           data-testid="customer-name-input"
@@ -358,13 +363,13 @@ export default function CustomerName() {
         data-testid="customer-name-continue"
         onClick={handleContinue}
         disabled={loadingCRM || placingOrder}
-        className={`tb-display absolute left-1/2 ${ada ? "top-[454px]" : "top-[640px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
+        className={`tb-enter [--i:3] tb-display absolute left-1/2 ${ada ? "top-[454px]" : "top-[640px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
       >
         {placingOrder ? t("payment.placingOrder") : t("customerName.continue")}
       </button>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[598px]" : "top-[820px]"} w-[1000px] -translate-x-1/2`}
+        className={`tb-enter [--i:4] absolute left-1/2 ${ada ? "top-[598px]" : "top-[820px]"} w-[1000px] -translate-x-1/2`}
       >
         <KioskKeyboard
           value={inputValue}

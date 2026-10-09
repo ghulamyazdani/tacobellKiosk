@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
   setGeneralSettings,
   setKioskSettings,
@@ -15,6 +15,7 @@ import {
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import Tent from "../index";
 import i18n from "../../../i18n";
 
@@ -351,6 +352,90 @@ describe("Tent — the table-number step", () => {
       tap("tent-skip");
 
       expect(mockNavigate).toHaveBeenCalledWith("/payment");
+    });
+  });
+
+  /*
+    Lane motion (§2.3 / §2.7 / §3.3 / §3.8). The root's data-enter is latched
+    at mount: none on a page load (POP), fwd on a PUSH, back on a PUSH to a
+    screen already on the session trail (AppRoutes' notePath; seeded here).
+    Only the content blocks carry tb-enter [--i]; the chrome never moves.
+  */
+  describe("motion", () => {
+    /** A PUSH from another route: <Navigate> fires after the first commit. */
+    const mountPushed = () =>
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/from"]}>
+            <Routes>
+              <Route path="/from" element={<Navigate to="/tent" />} />
+              <Route path="/tent" element={<Tent />} />
+            </Routes>
+          </MemoryRouter>
+        </Provider>
+      );
+    const root = () => screen.getByTestId("tent-screen");
+
+    beforeEach(() => {
+      notePath("/start");
+    });
+
+    it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /tent arrives back", () => {
+      const pop = mount();
+      expect(root()).not.toHaveAttribute("data-enter");
+      pop.unmount();
+
+      const pushed = mountPushed();
+      expect(root()).toHaveAttribute("data-enter", "fwd");
+      pushed.unmount();
+
+      notePath("/tent");
+      notePath("/phone");
+      mountPushed();
+      expect(root()).toHaveAttribute("data-enter", "back");
+    });
+
+    it("tb-enter [--i] on the title (0), the display (1) and the keypad (2) — never on BACK, the CTAs or the error", () => {
+      mountPushed();
+      const blocks = [...root().querySelectorAll(".tb-enter")];
+      expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2"]);
+      expect(blocks[0]).toBe(screen.getByRole("heading", { level: 1 }));
+      expect(blocks[1]).toBe(screen.getByTestId("tent-display"));
+      expect(blocks[2]).toContainElement(screen.getByTestId("kiosk-numpad"));
+
+      type("99"); // refused: the error shows
+      for (const id of ["tent-back", "tent-confirm", "tent-skip", "tent-error"]) {
+        expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
+      }
+    });
+
+    it("a digit pops into its cell as it arrives; the digits already there keep their node", () => {
+      mount();
+      const display = screen.getByTestId("tent-display");
+      expect(display.querySelector(".tb-pop-in")).toBeNull(); // dot placeholders
+
+      type("1");
+      const one = display.querySelector(".tb-pop-in");
+      expect(one).toHaveTextContent(/^1$/);
+
+      type("2");
+      const digits = display.querySelectorAll(".tb-pop-in");
+      expect([...digits].map((digit) => digit.textContent)).toEqual(["1", "2"]);
+      expect(digits[0]).toBe(one);
+    });
+
+    it("every refused key re-shakes the error: a NEW node while it is still shown, never two", () => {
+      mount();
+      type("99"); // 99 > 20: refused
+      const first = error() as HTMLElement;
+      expect(first).toHaveClass("tb-shake");
+
+      type("9"); // refused again — same text, still on screen
+      const second = error() as HTMLElement;
+      expect(second).not.toBe(first);
+      expect(second).toHaveClass("tb-shake");
+      expect(second).toHaveTextContent(first.textContent ?? "");
+      expect(screen.getAllByTestId("tent-error")).toHaveLength(1);
     });
   });
 });

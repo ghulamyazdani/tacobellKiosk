@@ -69,6 +69,15 @@ describe("PleaseWait", () => {
     expect(root.querySelector(".top-\\[560px\\]")).not.toBeNull();
   });
 
+  it("motion §3.7: the hourglass (and only it) turns on the Figma Loader 1 loop", () => {
+    mount();
+    const turning = screen.getByTestId("please-wait").querySelectorAll(".tb-hourglass");
+    expect(turning).toHaveLength(1);
+    expect(turning[0].tagName).toBe("IMG");
+    expect(turning[0].getAttribute("src")).toMatch(/hourglass/);
+    expect(turning[0].closest("button")).toBeNull(); // a transform loop never sits on a tap target
+  });
+
   it("ADA: the bell is dropped and the card sits at 161 in the reach zone", () => {
     store.dispatch(setEnableAccessibilityMode(true));
     store.dispatch(toggleAccessibilityMode());

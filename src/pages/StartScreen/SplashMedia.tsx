@@ -46,9 +46,13 @@ const SPLASH_REPORT_WINDOW_MS = 60 * 60 * 1000;
 
 const MEDIA = "pointer-events-none absolute inset-0 h-full w-full object-cover";
 const CENTRED = "absolute left-1/2 -translate-x-1/2";
-/** Figma Title/H5 (Exp Bl 32/32, −1) — every splash CTA. */
+/**
+ * Figma Title/H5 (Exp Bl 32/32, −1) — every splash CTA. tb-attract: the
+ * prompt pulses (opacity only, 2 s, infinite — motion §3.6), so the
+ * start-screen button's box never moves.
+ */
 const CTA =
-  "tb-display whitespace-nowrap text-[32px] leading-[32px] tracking-[-1px] text-tb-surface";
+  "tb-display tb-attract whitespace-nowrap text-[32px] leading-[32px] tracking-[-1px] text-tb-surface";
 /** Figma Title/H1 (Exp Bl 116/98, −3.27) — WELCOME, ORDER HERE. */
 const H1 =
   "tb-display text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface";
@@ -73,6 +77,12 @@ type Fail = (index: number, kind: Kind) => void;
 interface Rotation {
   cur: number;
   failed: ReadonlyMap<number, Kind>;
+  /**
+   * An advance happened this visit (motion §3.6): from then on remounted
+   * cards shift in by one card pitch. False at mount, so the splash's first
+   * frame (the idle return) is static; a failure or the retry never sets it.
+   */
+  moved: boolean;
 }
 
 /** The next live slide from `from` going `step`, wrapping; `from` if none. */
@@ -164,13 +174,14 @@ export default function SplashMedia() {
   // mounts a fresh layer that snapshots the new media. No key needed.
   const [slides] = useState(() => toSplashSlides(mediaData));
   const n = slides.length;
-  const [{ cur, failed }, setRotation] = useState<Rotation>({
+  const [{ cur, failed, moved }, setRotation] = useState<Rotation>({
     cur: 0,
     failed: new Map(),
+    moved: false,
   });
 
   const advance = useCallback(
-    () => setRotation((r) => ({ ...r, cur: live(r.cur, 1, n, r.failed) })),
+    () => setRotation((r) => ({ ...r, cur: live(r.cur, 1, n, r.failed), moved: true })),
     [n],
   );
   const fail = useCallback<Fail>(
@@ -192,6 +203,7 @@ export default function SplashMedia() {
         // Only the CURRENT slide failing moves the rotation; a failed peek
         // just drops out of the neighbours.
         return {
+          ...r,
           failed: nowFailed,
           cur: r.cur === index ? live(index, 1, n, nowFailed) : r.cur,
         };
@@ -214,6 +226,7 @@ export default function SplashMedia() {
           // H1: re-point cur — with every slide failed it sits on a failed
           // index (live() returned `from`); a kept no_video one would stick.
           return {
+            ...r,
             failed: kept,
             cur: kept.has(r.cur) ? live(r.cur, 1, n, kept) : r.cur,
           };
@@ -251,6 +264,11 @@ export default function SplashMedia() {
   // elements, and only the centre one ever plays a video (Rule 5).
   const prev = live(cur, -1, n, failed);
   const next = live(cur, 1, n, failed);
+  // A conveyor shift of one card pitch, on the cards a change remounts.
+  // Prefixed, never glued after a class: Tailwind only extracts a literal
+  // like `left-[992px]` with a separator after it (`left-[992px]${…}` is not
+  // a class, and the three cards would stack at x 0).
+  const shift = moved ? "tb-carousel-in " : "";
   return (
     <>
       <div
@@ -270,7 +288,7 @@ export default function SplashMedia() {
         className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
       />
       <Bell className="top-[128px]" />
-      <div key={`prev${prev}`} className={`${CARD} left-[-592px]`}>
+      <div key={`prev${prev}`} className={`${shift}${CARD} left-[-592px]`}>
         <SlideMedia
           slide={slides[prev]}
           index={prev}
@@ -279,8 +297,9 @@ export default function SplashMedia() {
           onFail={fail}
         />
       </div>
-      {/* Keyed by slide: each change remounts the centre, which fades in. */}
-      <div key={`cur${cur}`} className={`${CARD} tb-fade-in left-[200px]`}>
+      {/* Keyed by slide: an advance remounts all three cards, which shift in
+          together; the first frame of a visit is static (no fade-in). */}
+      <div key={`cur${cur}`} className={`${shift}${CARD} left-[200px]`}>
         <SlideMedia
           slide={slide}
           index={cur}
@@ -289,7 +308,7 @@ export default function SplashMedia() {
           onFail={fail}
         />
       </div>
-      <div key={`next${next}`} className={`${CARD} left-[992px]`}>
+      <div key={`next${next}`} className={`${shift}${CARD} left-[992px]`}>
         <SlideMedia
           slide={slides[next]}
           index={next}

@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, NavigationType } from "react-router-dom";
 import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../redux/app/store";
 import { AppRoutes } from "../AppRoutes";
+import { notePath, pageEnterDirection } from "../../hooks/utils/usePageEnter";
 
 /*
   CartRehydratedContext is the "the cart rows are real now" signal BagSheet's
@@ -117,5 +118,32 @@ describe("AppRoutes — the cart-rehydrated signal (crash-reload on /cart)", () 
         },
       ],
     ]);
+  });
+});
+
+/*
+  Motion contract §2.3: AppRoutes writes the session trail usePageEnter reads,
+  once per COMMITTED pathname. Here an unregistered device's /second commits,
+  the guard bounces it to / (REPLACE), and both land on the trail — so a later
+  PUSH to /second reads as a return ("back").
+*/
+describe("AppRoutes — the motion session trail", () => {
+  beforeEach(() => {
+    syncCartOnReLoad.mockReset();
+    syncCartOnReLoad.mockResolvedValue(undefined);
+    notePath("/start"); // a fresh, empty trail
+  });
+
+  it("notes each committed pathname: a PUSH back to one of them is back, anything else fwd", async () => {
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/second"]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </Provider>
+    );
+    await waitFor(() => expect(signal()).toHaveTextContent("true")); // the guard landed on /
+    expect(pageEnterDirection("/second", NavigationType.Push)).toBe("back");
+    expect(pageEnterDirection("/menu", NavigationType.Push)).toBe("fwd");
   });
 });

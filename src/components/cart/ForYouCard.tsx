@@ -185,7 +185,7 @@ function ForYouCardBase({
           on the first glyphs of the name (pl-24, pt-24). No Figma frame draws
           it (1:3171's rail has none) — design language, flagged. */}
       {quantity > 0 && (
-        <span className={`absolute ${imageTop ? "top-[12px]" : "bottom-[12px]"} left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface`}>
+        <span key={quantity} className={`tb-pop-in absolute ${imageTop ? "top-[12px]" : "bottom-[12px]"} left-[12px] flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface`}>
           {quantity}
         </span>
       )}

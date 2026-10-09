@@ -13,6 +13,7 @@ import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { STAGE_HEIGHT, STAGE_WIDTH } from "../../components/stage/KioskStage";
@@ -60,6 +61,8 @@ interface CartLike {
  * gated (`enable_cart_upsell_screen: false`), so it is reversible by config.
  */
 export default function ForYou() {
+  // Above the empty-snapshot return (hook order).
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -230,6 +233,8 @@ export default function ForYou() {
   return (
     <div
       data-testid="foryou-screen"
+      // Motion §2.7: the heading, the grid and the actions arrive (.tb-enter).
+      data-enter={enter}
       // h-full = ReachZone's container: the zone already lowers the page in
       // the ADA view, so it centres in both modes (8 cards fit 1122).
       className="relative flex h-full w-[1080px] flex-col items-center justify-center bg-tb-surface px-[24px]"
@@ -238,7 +243,7 @@ export default function ForYou() {
           read as an offer, not an interstitial advert. */}
       <h1
         data-testid="foryou-heading"
-        className="tb-display text-center text-[56px] leading-[0.9] tracking-[-2px] text-tb-purple"
+        className="tb-enter [--i:0] tb-display text-center text-[56px] leading-[0.9] tracking-[-2px] text-tb-purple"
       >
         {t("upsell.anythingElse")}
       </h1>
@@ -253,7 +258,7 @@ export default function ForYou() {
           classes: if the two ever disagreed the grid would overflow a page that
           cannot scroll, taking the buttons below it off screen. */}
       <div
-        className="mt-[48px] flex w-full flex-wrap items-stretch justify-center"
+        className="tb-enter [--i:1] mt-[48px] flex w-full flex-wrap items-stretch justify-center"
         style={{ gap: CART_UPSELL_GRID_GAP_PX }}
       >
         {visible.map((entity) => (
@@ -284,18 +289,19 @@ export default function ForYou() {
         ))}
       </div>
 
-      <div className="mt-[48px] flex w-full flex-col items-center gap-[24px]">
+      <div className="tb-enter [--i:2] mt-[48px] flex w-full flex-col items-center gap-[24px]">
         {/* ONE button. It is a plain decline until something is taken, at which
             point both its label and its fill become the way forward — so there
             is never a moment with no visible exit, and never two competing
-            calls to action. */}
+            calls to action. The bump arrives with the fill (motion §3.2), so
+            the flip to "go forward" is felt, not just seen. */}
         <button
           type="button"
           data-testid="foryou-primary"
           onClick={() => goToCart(!takenSomething)}
           className={`tb-display min-h-[84px] w-[560px] rounded-[8px] py-[32px] text-center text-[24px] leading-[20px] ${
             takenSomething
-              ? "bg-tb-purple text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
+              ? "tb-bump bg-tb-purple text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]"
               : "border border-tb-purple bg-tb-surface text-tb-purple"
           }`}
         >

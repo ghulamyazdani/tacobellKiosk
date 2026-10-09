@@ -68,7 +68,7 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("the frame's shell: tb-purple/80 scrim, a 680 card (tb-modal-enter centred), the H5 title, a 48 px close at 25/25", () => {
+  it("the frame's shell: tb-purple/80 scrim, a 680 card (the Figma tb-modal-spring, centred by its fill), the H5 title, a 48 px close at 25/25", () => {
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id] });
 
@@ -80,8 +80,11 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     const [scrim, card] = Array.from(modal.children);
     expect(scrim).toHaveClass("bg-tb-purple/80", "absolute", "inset-0");
     expect(scrim).toHaveAccessibleName(i18n.t("language.close"));
+    // Motion lane: Figma 1:5502 → 1:5521 springs the card — ONE animation
+    // owner, so the generic entrance is gone.
+    expect(card).not.toHaveClass("tb-modal-enter");
     expect(card).toHaveClass(
-      "tb-modal-enter",
+      "tb-modal-spring",
       "left-1/2",
       "top-1/2",
       "w-[680px]",
@@ -136,6 +139,11 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(plus).toHaveAccessibleName(i18n.t("menu.quickAdd"));
     expect(plus).toHaveClass("absolute", "right-[7px]", "top-[5px]", "h-[44px]", "w-[44px]");
     expect(plus.firstElementChild).toHaveClass("h-[36px]", "w-[36px]", "rounded-full");
+    // Figma Quick Add (1:421) pressed: the white circle turns #F3D9FF. The
+    // white is on the circle, not the button, so the press reaches it
+    // through `group` (the unlayered button.bg-tb-surface fill cannot).
+    expect(plus).toHaveClass("group");
+    expect(plus.firstElementChild).toHaveClass("bg-tb-surface", "group-active:bg-tb-lilac");
     fireEvent.click(plus);
 
     expect(onQuickAdd).toHaveBeenCalledTimes(1);

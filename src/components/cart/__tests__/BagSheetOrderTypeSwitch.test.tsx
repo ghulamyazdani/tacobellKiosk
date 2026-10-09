@@ -299,6 +299,9 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       expect(overlay).toHaveAttribute("aria-live", "polite");
       expect(overlay).toHaveTextContent("Updating your order…");
       expect(overlay.querySelector("button")).toBeNull();
+      // Motion §3.7: an indeterminate sweep inside its clipping track, not a pulse.
+      expect(overlay.querySelector(".tb-indeterminate")?.parentElement).toHaveClass("overflow-hidden");
+      expect(overlay.querySelector(".animate-pulse")).toBeNull();
       expect(lastBlocked()).toBe(true);
 
       await act(async () => {

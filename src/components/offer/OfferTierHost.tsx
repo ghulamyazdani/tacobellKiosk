@@ -82,8 +82,11 @@ export default function OfferTierHost() {
       />
     ) : null;
   }
+  // Static "fwd" (motion §2.4): every open mounts a fresh PDP, whose scroll
+  // pane enters from the right like a /customization push. The embedded
+  // root itself carries no data-enter.
   return (
-    <div className="absolute inset-0 z-[85]" data-testid="offer-tier-host">
+    <div className="absolute inset-0 z-[85]" data-testid="offer-tier-host" data-enter="fwd">
       <Customization embedded />
     </div>
   );

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { setPipelines } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setPipelineStatuses } from "@cx-sdk/catalog/state/kioskOpenStatus.slice";
 import {
@@ -14,6 +14,7 @@ import {
   setSelectedLanguage,
 } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { store } from "../../../redux/app/store";
+import { notePath } from "../../../hooks/utils/usePageEnter";
 import SecondLayout from "../index";
 import i18n from "../../../i18n";
 
@@ -295,5 +296,78 @@ describe("SecondLayout — server-driven ticker copy and pipeline names (post-P9
     expect(screen.getByTestId("pipeline-p-dine")).toHaveTextContent("Dine In");
     expect(screen.getByTestId("pipeline-p-dine").textContent).not.toMatch(/[\u2066-\u2069]/);
     expect(screen.getByTestId("pipeline-p-take")).toHaveTextContent("Take Out");
+  });
+});
+
+/*
+  Lane motion (§2.3 / §2.4 / §2.7). The root's data-enter is latched at
+  mount: none on a page load (POP), fwd on a PUSH (/start → /second, NEW
+  ORDER), back on a PUSH to a screen already on the session trail (AppRoutes'
+  notePath; seeded here). The title and each card arrive, the cards staggered
+  after it (--i = index + 1); the texture, ticker, bell and footer never move.
+*/
+describe("SecondLayout — the route entrance (lane motion)", () => {
+  /** A PUSH from another route: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/second" />} />
+            <Route path="/second" element={<SecondLayout />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const root = () => screen.getByTestId("second-screen");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setPipelines(PIPELINES));
+    notePath("/start");
+  });
+
+  it("a page load (POP) mounts still; a PUSH arrives fwd; a PUSH back to a visited /second arrives back", () => {
+    const pop = renderSecond();
+    expect(root()).not.toHaveAttribute("data-enter");
+    pop.unmount();
+
+    const pushed = mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "fwd");
+    pushed.unmount();
+
+    notePath("/second");
+    notePath("/phone");
+    mountPushed();
+    expect(root()).toHaveAttribute("data-enter", "back");
+  });
+
+  it("the title (0) then each card (index + 1) arrive — never the ticker, the bell or the footer", () => {
+    mountPushed();
+    const blocks = [...root().querySelectorAll<HTMLElement>(".tb-enter")];
+    expect(blocks).toEqual([
+      screen.getByRole("heading", { level: 1 }),
+      screen.getByTestId("pipeline-p-dine"),
+      screen.getByTestId("pipeline-p-take"),
+    ]);
+    expect(blocks[0]).toHaveClass("[--i:0]");
+    expect(blocks.slice(1).map((card) => card.style.getPropertyValue("--i"))).toEqual(["1", "2"]);
+    for (const element of [
+      screen.getByAltText("Taco Bell"),
+      screen.getByTestId("footer-language"),
+      root().querySelector(".tb-marquee-track") as HTMLElement,
+    ]) {
+      expect(element.closest(".tb-enter")).toBeNull();
+    }
+  });
+
+  it("no pipelines: the title (0) and the notice (1) arrive", () => {
+    store.dispatch(setPipelines([]));
+    mountPushed();
+    expect([...root().querySelectorAll(".tb-enter")]).toEqual([
+      screen.getByRole("heading", { level: 1 }),
+      screen.getByTestId("second-no-pipelines"),
+    ]);
+    expect(screen.getByTestId("second-no-pipelines")).toHaveClass("[--i:1]");
   });
 });

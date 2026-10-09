@@ -213,7 +213,7 @@ export default function CountryPickerSheet({ onClose }: CountryPickerSheetProps)
             isPicked ? "bg-tb-purple" : "border border-tb-purple bg-tb-surface"
           }`}
         >
-          {isPicked && <img alt="" src={radioCheckIcon} className="h-[24px] w-[24px]" />}
+          {isPicked && <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />}
         </span>
       </button>
     );
@@ -227,25 +227,20 @@ export default function CountryPickerSheet({ onClose }: CountryPickerSheetProps)
       aria-modal="true"
       aria-labelledby="country-sheet-title"
     >
-      {/* Pure-CSS entrance, position-neutral (translateY only — tb-modal-enter
-          is for centred modals); the sheet unmounts at once on close. */}
-      <style>{`@keyframes tbCountryScrimEnter{from{opacity:0}to{opacity:1}}@keyframes tbCountrySheetEnter{from{transform:translateY(480px)}to{transform:translateY(0)}}`}</style>
+      {/* Pure-CSS entrance: the panel rises (tb-sheet-enter); the scrim never
+          animates (motion D-M3). The sheet unmounts at once on close. */}
       <button
         type="button"
         data-testid="country-sheet-scrim"
         aria-label={t("language.close")}
         onClick={dismiss}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
-        style={{ animation: "tbCountryScrimEnter 0.25s ease-out both" }}
       />
       {/* A fixed height, not max-h: the title and the search box must not
           jump while the results shrink under the guest's typing. The cap is
           1:2814's — 1500 on the 1920 stage, 1026 in the 1122 ADA zone; only
           the list scrolls. */}
-      <div
-        className="absolute bottom-0 left-0 flex h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col gap-[24px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]"
-        style={{ animation: "tbCountrySheetEnter 0.25s ease-out both" }}
-      >
+      <div className="tb-sheet-enter absolute bottom-0 left-0 flex h-[min(1500px,calc(100%_-_96px))] w-[1080px] flex-col gap-[24px] rounded-t-[60px] bg-tb-surface px-[24px] pb-[24px] pt-[54px]">
         <h2
           id="country-sheet-title"
           className="tb-display px-[72px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"

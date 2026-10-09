@@ -237,7 +237,8 @@ export default function StartScreen() {
         resetAnalyticsSession();
         navigate("/second");
       }}
-      className="relative isolate block h-full w-full cursor-pointer overflow-hidden bg-tb-purple text-left"
+      // tb-no-press: a full-surface button never squeezes (motion §3.1).
+      className="tb-no-press relative isolate block h-full w-full cursor-pointer overflow-hidden bg-tb-purple text-left"
     >
       {/* `isolate`: nothing in the media layer can stack over the z-20
           operator hotspot (a sibling). A decorative crash shows WELCOME in

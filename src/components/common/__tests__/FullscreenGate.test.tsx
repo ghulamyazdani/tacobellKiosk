@@ -105,6 +105,7 @@ describe("FullscreenGate — when it shows (audit-fixes U2)", () => {
     expect(button).toBe(gate());
     expect(button.parentElement).toBe(document.body);
     expect(button).toHaveClass("fixed", "inset-0", "z-[99998]", "bg-tb-purple/95", "tb-fade-in");
+    expect(button).toHaveClass("tb-no-press"); // motion §3.1: a full-surface button never squeezes
     expect(button).toHaveTextContent(/^TAP TO CONTINUE/);
   });
 

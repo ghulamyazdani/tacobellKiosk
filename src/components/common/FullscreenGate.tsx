@@ -88,12 +88,13 @@ export default function FullscreenGate() {
   };
 
   // tb-fade-in: opacity-only, position-neutral on a fixed portal.
+  // tb-no-press: a full-surface button never squeezes (motion §3.1).
   return createPortal(
     <button
       type="button"
       data-testid="fullscreen-gate"
       onClick={() => void enter()}
-      className="tb-fade-in fixed inset-0 z-[99998] flex flex-col items-center justify-center bg-tb-purple/95 p-8"
+      className="tb-fade-in tb-no-press fixed inset-0 z-[99998] flex flex-col items-center justify-center bg-tb-purple/95 p-8"
     >
       <span className="tb-display mb-4 text-center text-5xl text-tb-surface">
         {t("fullscreen.title")}

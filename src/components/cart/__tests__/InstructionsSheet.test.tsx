@@ -42,9 +42,11 @@ describe("InstructionsSheet (U3)", () => {
     // Fixer UI-4: the keyboard-driven field is a named, described textbox.
     expect(screen.getByRole("textbox", { name: "Cooking instructions" })).toBe(field());
     expect(field()).toHaveAccessibleDescription("0/100");
-    // Its own position-neutral entrance — never tb-modal-enter (a sheet).
+    // A sheet's position-neutral entrance — never tb-modal-enter: the shared
+    // tb-sheet-enter class (motion lane), no inline keyframes.
     expect(dialog.className).not.toContain("tb-modal-enter");
-    expect(dialog.getAttribute("style")).toContain("tbInstructionsSheetEnter");
+    expect(dialog).toHaveClass("tb-sheet-enter");
+    expect(screen.getByTestId("instructions-sheet").querySelector("style")).toBeNull();
   });
 
   it("types on the keyboard with a space bar; runs of spaces collapse to one", () => {

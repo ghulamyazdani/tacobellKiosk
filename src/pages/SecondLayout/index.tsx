@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -19,6 +20,7 @@ import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import DaypartTicker from "../../components/chrome/DaypartTicker";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
@@ -65,6 +67,7 @@ const iconForPipeline = (pipeline: Pipeline) =>
  * under the bell either: they take the ADA swipe row.
  */
 export default function SecondLayout() {
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -209,8 +212,11 @@ export default function SecondLayout() {
   };
 
   return (
+    // Motion §2.7: data-enter on the root (never animated); only the title
+    // and the cards (.tb-enter) arrive — texture, ticker, bell, footer stay.
     <div
       data-testid="second-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       {/* Both layers are stage-sized and bottom-anchored, i.e. registered to
@@ -251,7 +257,7 @@ export default function SecondLayout() {
           twoRows ? "top-[573px]" : "top-1/2 -translate-y-1/2"
         }`}
       >
-        <h1 className="tb-display mb-[64px] text-center text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface">
+        <h1 className="tb-enter [--i:0] tb-display mb-[64px] text-center text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface">
           {t("second.title")}
         </h1>
         {/* Every pipeline deactivated for this device (D13, design language,
@@ -263,7 +269,7 @@ export default function SecondLayout() {
         {pipelines.length === 0 ? (
           <p
             data-testid="second-no-pipelines"
-            className="text-center text-[32px] font-medium leading-[36px] tracking-[-1px] text-tb-surface"
+            className="tb-enter [--i:1] text-center text-[32px] font-medium leading-[36px] tracking-[-1px] text-tb-surface"
           >
             {t("second.noPipelines")}
           </p>
@@ -275,17 +281,20 @@ export default function SecondLayout() {
                 : "flex flex-wrap justify-center gap-[24px]"
             }
           >
-            {pipelines.map((pipeline) => {
+            {pipelines.map((pipeline, index) => {
               const openState = checkPipelineClosedFromRedux(pipeline._id);
               const closed = openState.status === false;
               return (
+                // Staggered after the title (--i = index + 1, capped at 7 in
+                // CSS); the backwards fill keeps a closed card's opacity-50.
                 <button
                   key={pipeline._id}
                   type="button"
                   data-testid={`pipeline-${pipeline._id}`}
                   disabled={closed}
                   onClick={() => handleSelectPipeline(pipeline)}
-                  className={`relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
+                  style={{ "--i": index + 1 } as CSSProperties}
+                  className={`tb-enter relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
                     closed ? "opacity-50" : "active:scale-[0.98]"
                   }${scrollRow ? " shrink-0" : ""}`}
                 >
@@ -315,7 +324,8 @@ export default function SecondLayout() {
           className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 bg-tb-purple/90"
         >
           <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-tb-pink" />
+            {/* Indeterminate sweep (motion §3.7), clipped by the track. */}
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-pink" />
           </div>
           <p className="tb-display text-3xl text-tb-surface">{t("second.preparingMenu")}</p>
         </div>

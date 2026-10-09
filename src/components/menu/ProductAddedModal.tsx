@@ -31,7 +31,8 @@ interface ProductAddedModalProps {
  * Opens via the fork contract: useCartHook.addItemToCart dispatches
  * mutateAddToCartModal when the added item has recommendations (or was a
  * customized/variant add). The strip resolves the added item's
- * recommendedItems against the converted entityMap. CSS entrance only.
+ * recommendedItems against the converted entityMap. CSS entrance only: the
+ * Figma Smart Animate spring (index.css tb-modal-spring).
  */
 export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps) {
   const { t } = useTranslation();
@@ -73,7 +74,10 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
         onClick={close}
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
-      <div className="tb-modal-enter absolute left-1/2 top-1/2 flex w-[680px] flex-col items-center gap-[75px] rounded-[16px] bg-tb-surface px-[24px] pb-[24px] pt-[80px]">
+      {/* Figma 1:5502 → 1:5521: the card springs open (tb-modal-spring);
+          its fill carries the centring, so no translate utility here. The
+          scrim above appears at once (Figma). */}
+      <div className="tb-modal-spring absolute left-1/2 top-1/2 flex w-[680px] flex-col items-center gap-[75px] rounded-[16px] bg-tb-surface px-[24px] pb-[24px] pt-[80px]">
         <h2
           id="added-title"
           className="tb-display w-[502px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
@@ -124,9 +128,10 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                       aria-label={t("menu.quickAdd")}
                       data-testid={`added-rec-add-${entity.id}`}
                       onClick={() => onQuickAdd(entity)}
-                      className="absolute right-[7px] top-[5px] flex h-[44px] w-[44px] items-center justify-center"
+                      className="group absolute right-[7px] top-[5px] flex h-[44px] w-[44px] items-center justify-center"
                     >
-                      <span className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]">
+                      {/* Figma Quick Add pressed fill (white → lilac) on the circle. */}
+                      <span className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)] group-active:bg-tb-lilac">
                         <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
                       </span>
                     </button>

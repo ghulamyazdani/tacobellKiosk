@@ -76,6 +76,9 @@
    * "YES, DELETE"/"YES, CANCEL ORDER" CTAs (remove-item 1:4533 and
    * cancel-order 1:4552 both render rgb(222,19,19)). */
   --color-tb-red: #de1313;
+  /* Figma pressed states (raw in Figma): Key / CTA Back #883ED2; CTA Error Primary #C02121. */
+  --color-tb-purple-press: #883ed2;
+  --color-tb-red-press: #c02121;
   /* Idle prompt (P9a, 1:4514): the CTA_Sheet_Fixed Secondary/"Loading" fill
    * behind START AGAIN — the design's only countdown cue. Unbound in Figma
    * (raw #F3D9FF), so the name is ours; tb-purple on it is 8.7:1. */
@@ -132,13 +135,16 @@
 }
 
 /* Modal entrance: CSS-only (JS/rAF animations freeze in occluded windows —
- * fatal for operator UI on a kiosk). translate/opacity composited. */
+ * fatal for operator UI on a kiosk). translate/opacity composited. Motion
+ * tokens since lane motion; the class name stays (15 users, and ada.spec
+ * locates cards by it). The fill carries the resting centring, so the
+ * reduced-motion block shortens it, never removes it. */
 @keyframes tb-modal-enter {
-  from { opacity: 0; transform: translate(-50%, calc(-50% + 40px)); }
+  from { opacity: 0; transform: translate(-50%, calc(-50% + var(--tb-dist-modal))); }
   to { opacity: 1; transform: translate(-50%, -50%); }
 }
 .tb-modal-enter {
-  animation: tb-modal-enter 0.2s ease-out both;
+  animation: tb-modal-enter var(--tb-dur-modal) var(--tb-ease-out) both;
 }
 
 /* Splash carousel slide change (P9d, 1:2203 has no motion data): opacity
@@ -192,10 +198,274 @@
 .tb-success-pulse {
   animation: tb-success-pulse 0.6s ease-out both;
 }
+
+/* ═══ Motion system (lane motion, 2026-10-09). Contract: PROGRESS "Motion
+ * system" note. Pure CSS; transform/opacity only; ENTER-ONLY (overlays still
+ * unmount at once — house rule); every finite animation ends by itself and
+ * nothing waits for one (no animationend, timers or rAF — guardrail). New
+ * keyframes are FROM-ONLY with `backwards` fill, so the end state is the
+ * element's own styles; the centred modals (and the sheets, as before) keep
+ * `both` because their fill carries the resting transform. ═══ */
+:root {
+  --tb-dur-press: 120ms;
+  --tb-dur-pop: 200ms;
+  --tb-dur-modal: 200ms;
+  --tb-dur-sheet: 240ms;
+  --tb-dur-select: 250ms;
+  --tb-dur-bump: 250ms;
+  --tb-dur-page: 260ms;
+  --tb-stagger: 40ms;
+  --tb-dur-shake: 300ms;
+  --tb-dur-carousel: 500ms;
+  --tb-dur-spring: 958ms; /* Figma 1:5502 → 1:5521 */
+  --tb-dur-indeterminate: 1200ms;
+  --tb-dur-attract: 2000ms;
+  --tb-dur-card-tilt: 3120ms; /* Figma 1:5603 GIF loop */
+  --tb-dur-hourglass: 3960ms; /* Figma 1:6301 GIF loop */
+  --tb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --tb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --tb-ease-press: cubic-bezier(0.2, 0, 0.38, 0.9);
+  /* Figma "Bouncy" (assumed m1 k600 c15 — O6), 958 ms; Chromium 113+. */
+  --tb-ease-bouncy: linear(0, 0.007 0.5%, 0.040 1.2%, 0.099 2.0%, 0.177 2.8%, 0.272 3.5%, 0.378 4.2%, 0.764 6.8%, 0.910 7.8%, 1.041 8.8%, 1.152 9.8%, 1.241 10.8%, 1.292 11.5%, 1.338 12.5%, 1.361 13.5%, 1.359 14.8%, 1.345 15.5%, 1.322 16.2%, 1.256 17.8%, 1.049 21.5%, 0.967 23.2%, 0.929 24.2%, 0.901 25.2%, 0.881 26.2%, 0.869 27.5%, 0.869 28.7%, 0.882 30.2%, 1.015 37.5%, 1.038 39.5%, 1.048 41.5%, 1.043 44.2%, 0.995 51.5%, 0.983 55.5%, 1.006 69.2%, 0.998 83.0%, 1);
+  --tb-dist-page: 40px;
+  --tb-dist-rise: 16px;
+  --tb-dist-modal: 40px;
+  --tb-dist-sheet: 80px;
+  --tb-dist-shake: 6px;
+  --tb-carousel-step: 792px; /* SplashMedia card pitch 992 − 200 */
+  --tb-press-scale: 0.97;
+  --tb-select-from: 0.94;
+  --tb-pop-from: 0.6;
+  --tb-bump-peak: 1.2;
+  --tb-spring-from: 0.4437; /* Figma 301.683 / 680 */
+}
+
+/* Press. The squeeze is design language (sign-off); base layer so any
+ * Tailwind scale/transition utility wins. Never on :empty buttons (scrims,
+ * overlay hit areas), disabled ones or .tb-no-press (full-surface buttons,
+ * keycaps). */
+@layer base {
+  button {
+    transition: scale var(--tb-dur-press) var(--tb-ease-press);
+  }
+  button:active:not(:disabled, :empty, [aria-disabled="true"], .tb-no-press) {
+    scale: var(--tb-press-scale);
+  }
+}
+/* Figma pressed fills (instant): Primary 1:638 #501098→#9A23F8; Quick Add
+ * 1:421 / Counter 1:604 white→#F3D9FF (extended to every white button —
+ * sign-off); Secondary +15 % white. Unlayered: beats the fill utility while
+ * pressed (so such a button cannot restyle its press with active:).
+ * ORDER MATTERS: the three rules have equal specificity, so on a button that
+ * carries two of the keys the LATER rule wins. The outlined-white rule goes
+ * FIRST because the /second pipeline card (SecondLayout) carries
+ * border-tb-surface AND bg-tb-surface: pressed to 15 % white it would show the
+ * purple texture through and its purple label would vanish — it takes the
+ * lilac white-button press instead. A .tb-no-press full-surface button (the
+ * splash, the ADA brand panel: bg-tb-purple under their media) takes no
+ * fill either — a whole screen never flashes vibrant while held. */
+button.border-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+  background-color: rgb(255 255 255 / 0.15);
+}
+button.bg-tb-purple:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+  background-color: var(--color-tb-purple-vibrant);
+}
+button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+  background-color: var(--color-tb-lilac);
+}
+
+@layer components {
+  /* A card whose hit area is an empty overlay button (P9f overlay pattern). */
+  .tb-press-card {
+    transition: scale var(--tb-dur-press) var(--tb-ease-press);
+  }
+  .tb-press-card:has(> button:empty:active) {
+    scale: var(--tb-press-scale);
+  }
+  /* …and the pressed overlay counter-scales (same box, same origin, same
+   * transition), so the card's HIT AREA stays whole while it squeezes:
+   * Chromium hit-tests a tap AFTER :active applies, and the outer 1.5 %
+   * would miss. A card that clips (overflow-hidden — MenuItemCard) clips
+   * its overlay too and keeps that band (motion risk: hardware check). */
+  .tb-press-card > button:empty:active {
+    scale: calc(1 / var(--tb-press-scale));
+  }
+
+  /* Page content entrance: data-enter is latched at mount by usePageEnter()
+   * on the page ROOT (never animated); .tb-enter goes on content blocks. */
+  [data-enter="fwd"] {
+    --tb-enter-x: var(--tb-dist-page);
+  }
+  [data-enter="back"] {
+    --tb-enter-x: calc(var(--tb-dist-page) * -1);
+  }
+  [data-enter] .tb-enter {
+    animation: tb-enter var(--tb-dur-page) var(--tb-ease-out) backwards;
+    animation-delay: calc(min(var(--i, 0), 7) * var(--tb-stagger));
+  }
+  .tb-rise {
+    animation: tb-rise var(--tb-dur-page) var(--tb-ease-out) backwards;
+  }
+
+  /* Bottom-sheet PANEL (never the scrim). Same end state + fill as the ten
+   * inline keyframes it replaces. */
+  .tb-sheet-enter {
+    animation: tb-sheet-enter var(--tb-dur-sheet) var(--tb-ease-out) both;
+  }
+  /* Product added (Figma 1:5502 → 1:5521): the card springs open from
+   * 44 % at full opacity; the fill carries the centring like tb-modal-enter. */
+  .tb-modal-spring {
+    animation: tb-modal-spring 400ms var(--tb-ease-spring) both;
+  }
+
+  .tb-pop-in {
+    animation: tb-pop-in var(--tb-dur-pop) var(--tb-ease-spring) backwards;
+  }
+  .tb-bump {
+    animation: tb-bump var(--tb-dur-bump) var(--tb-ease-out);
+  }
+  .tb-select:is([aria-pressed="true"], [aria-checked="true"], [aria-current="true"]) {
+    animation: tb-select var(--tb-dur-select) var(--tb-ease-spring) backwards;
+  }
+  .tb-shake {
+    animation: tb-shake var(--tb-dur-shake) ease-in-out;
+  }
+  .tb-wiggle {
+    animation: tb-wiggle 500ms ease-in-out var(--tb-dur-modal);
+  }
+
+  .tb-carousel-in {
+    animation: tb-carousel-in var(--tb-dur-carousel) var(--tb-ease-out) backwards;
+  }
+  /* Infinite loops: never a transform loop on/around a tap target. */
+  .tb-attract {
+    animation: tb-attract var(--tb-dur-attract) ease-in-out infinite;
+  }
+  .tb-indeterminate {
+    animation: tb-indeterminate var(--tb-dur-indeterminate) ease-in-out infinite;
+  }
+  .tb-hourglass {
+    animation: tb-hourglass var(--tb-dur-hourglass) ease-in-out infinite;
+  }
+  .tb-card-tilt {
+    transform-origin: 0 100%;
+    animation: tb-card-tilt var(--tb-dur-card-tilt) ease-in-out infinite;
+  }
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  .tb-modal-spring {
+    animation-duration: var(--tb-dur-spring);
+    animation-timing-function: var(--tb-ease-bouncy);
+  }
+}
+
+@keyframes tb-enter {
+  from { opacity: 0; transform: translateX(var(--tb-enter-x, 0px)); }
+}
+@keyframes tb-rise {
+  from { opacity: 0; transform: translateY(var(--tb-dist-rise)); }
+}
+@keyframes tb-sheet-enter {
+  from { opacity: 0; transform: translateY(var(--tb-dist-sheet)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tb-modal-spring {
+  from { transform: translate(-50%, -50%) scale(var(--tb-spring-from)); }
+  to { transform: translate(-50%, -50%); }
+}
+@keyframes tb-pop-in {
+  from { opacity: 0; transform: scale(var(--tb-pop-from)); }
+}
+@keyframes tb-bump {
+  40% { transform: scale(var(--tb-bump-peak)); }
+}
+@keyframes tb-select {
+  from { transform: scale(var(--tb-select-from)); }
+}
+@keyframes tb-shake {
+  20%, 60% { transform: translateX(calc(var(--tb-dist-shake) * -1)); }
+  40%, 80% { transform: translateX(var(--tb-dist-shake)); }
+}
+@keyframes tb-wiggle {
+  25% { transform: rotate(-8deg); }
+  50% { transform: rotate(6deg); }
+  75% { transform: rotate(-3deg); }
+}
+@keyframes tb-carousel-in {
+  from { transform: translateX(var(--tb-carousel-step)); }
+}
+@keyframes tb-attract {
+  50% { opacity: 0.65; }
+}
+@keyframes tb-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+/* Figma Loader 1 (1:6301): two clockwise half-turns per 3.96 s, measured
+ * from the 99-frame GIF (figma/hourglass-unwrapped.txt); on the static frame.
+ * Each segment's curve is fitted to the GIF's 40 ms frames (slow creep, snap
+ * flip, settle): within 2.2° of every frame, pinned by
+ * src/__tests__/motionCss.test.ts. */
+@keyframes tb-hourglass {
+  0%, 10.1% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.3, 0.05, 0.7, 0.1); }
+  20.2% { transform: rotate(35deg); animation-timing-function: cubic-bezier(0.4, 0.5, 0.2, 0.9); }
+  24.2% { transform: rotate(181deg); animation-timing-function: cubic-bezier(0.45, 0.8, 0.4, 0.8); }
+  32.3%, 36.4% { transform: rotate(200deg); animation-timing-function: cubic-bezier(0.6, 0, 0, 0.9); }
+  40.4%, 52.5% { transform: rotate(180deg); animation-timing-function: cubic-bezier(0.95, 0.2, 0.85, 0.7); }
+  62.6% { transform: rotate(222deg); animation-timing-function: cubic-bezier(0.4, 0.95, 0, 0.75); }
+  66.7% { transform: rotate(363deg); animation-timing-function: cubic-bezier(0.2, 0.15, 0, 0.7); }
+  74.7%, 78.8% { transform: rotate(380deg); animation-timing-function: cubic-bezier(0.5, 0.05, 0.05, 0.9); }
+  82.8%, 100% { transform: rotate(360deg); }
+}
+/* Figma Credit card 1 (1:5603): −12° about the bottom-left, held, back
+ * (figma/card-angles.txt); the snap and the return fitted the same way. */
+@keyframes tb-card-tilt {
+  0%, 19.2% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.6, 0.95, 0, 0.9); }
+  29.5%, 57.7% { transform: rotate(-12deg); animation-timing-function: cubic-bezier(1, 0, 0.45, 0.85); }
+  67.9%, 100% { transform: rotate(0deg); }
+}
+
+/* Reduced motion (D-M4) — the ONE global block. Everything reaches its end
+ * state at once (1 ms, fill kept: the centred modals' resting transform
+ * lives in their fill — never `animation: none`), loops make one 1 ms pass
+ * and rest at their base frame, delays and staggers vanish; !important also
+ * beats inline animation styles (DaypartTicker, Registration). Transitions
+ * are 0 s, never 1 ms: transition-property defaults to `all`, so a non-zero
+ * duration on `*` would make EVERY property change on EVERY element a
+ * one-frame transition (layout reads lag a frame — the ADA switch did).
+ * The press squeeze is motion too: under reduce only the Figma fills answer
+ * a press — and a pressed box applied in full before the tap's hit test
+ * would shrink out from under an edge tap (Chromium hit-tests a touch tap
+ * AFTER :active applies). A 1 ms animation still PAINTS its from-keyframe
+ * once, so EVERY from-state is its end state here (else the product-added
+ * card flashed at 44 %, a selection at 94 %, the splash cards one pitch
+ * off — and the opacity-0 entrances painted their offset box for a frame,
+ * so anything measured then read the wrong geometry: ada.spec's PDP "+" at
+ * x 1032 instead of 992). They now only appear a frame late, in place. */
 @media (prefers-reduced-motion: reduce) {
-  .tb-confetti-piece { display: none; }
-  .tb-chip-pop,
-  .tb-success-pulse { animation-duration: 0.001s; }
+  :root {
+    --tb-press-scale: 1;
+    --tb-spring-from: 1;
+    --tb-select-from: 1;
+    --tb-carousel-step: 0px;
+    --tb-dist-page: 0px;
+    --tb-dist-rise: 0px;
+    --tb-dist-sheet: 0px;
+    --tb-dist-modal: 0px;
+    --tb-pop-from: 1;
+  }
+  *,
+  ::before,
+  ::after {
+    animation-delay: 0s !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0s !important;
+  }
+  .tb-confetti-piece {
+    display: none;
+  }
 }
 
 html,

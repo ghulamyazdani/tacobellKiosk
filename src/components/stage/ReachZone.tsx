@@ -105,7 +105,7 @@ export function ReachZone({ children }: { children: ReactNode }) {
             setExitGuard(true);
             dispatch(closeAccessibilityMode());
           }}
-          className="absolute left-0 top-0 flex items-center justify-center overflow-hidden bg-tb-purple"
+          className="tb-no-press absolute left-0 top-0 flex items-center justify-center overflow-hidden bg-tb-purple"
           style={{ width: STAGE_WIDTH, height: ADA_BRAND_ZONE_HEIGHT }}
         >
           {/* The splash/second backdrop, cropped to the panel: texture tile

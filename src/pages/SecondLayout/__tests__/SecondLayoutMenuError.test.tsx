@@ -195,6 +195,11 @@ describe("SecondLayout — menu-load failure stays on /second (P9b R8)", () => {
 
     expect(screen.getByTestId("menu-fetching")).toBeInTheDocument();
     expect(screen.queryByTestId("menu-error")).not.toBeInTheDocument();
+    // Lane motion §3.7: an indeterminate sweep (inside its clipping track), not a pulse.
+    const bar = screen.getByTestId("menu-fetching").querySelector(".tb-indeterminate");
+    expect(bar?.parentElement).toHaveClass("overflow-hidden");
+    expect(screen.getByTestId("menu-fetching").querySelector(".animate-pulse")).toBeNull();
+    expect(screen.getByTestId("menu-fetching").closest(".tb-enter")).toBeNull(); // an overlay never arrives
 
     await act(async () => {
       answer(LOADED_MENU);

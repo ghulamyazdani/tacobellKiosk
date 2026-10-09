@@ -13,6 +13,7 @@ import { pickPaytmSelections } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import usePageEnter from "../../hooks/utils/usePageEnter";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import usePayAtCounter, {
   PAY_AT_COUNTER_PAYMENT_TYPE,
@@ -117,6 +118,9 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  * follows the page height.
  */
 export default function PaymentSelection() {
+  // Above the unavailable branch's early return (hook order); that branch
+  // renders no data-enter, so it stays static.
+  const enter = usePageEnter();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -303,14 +307,17 @@ export default function PaymentSelection() {
   }
 
   return (
+    // Motion §2.7: the title, TOTAL and the tile row arrive (.tb-enter);
+    // the chrome, BACK TO MENU and the buffer dialog stay.
     <div
       data-testid="payment-screen"
+      data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
       <PaymentChrome ada={ada} />
 
       <h1
-        className={`tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[572px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
+        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[572px]"} w-[856px] -translate-x-1/2 text-center text-[64px] leading-[54.4px] tracking-[-3px] text-tb-surface`}
       >
         {t("payment.title")}
       </h1>
@@ -319,7 +326,7 @@ export default function PaymentSelection() {
           (cart.netAmount, written by BagSheet's setAmount(getCheckoutNetAmount)). */}
       <div
         data-testid="payment-total"
-        className={`absolute left-1/2 ${ada ? "top-[302px]" : "top-[744px]"} flex w-[856px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
+        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[302px]" : "top-[744px]"} flex w-[856px] -translate-x-1/2 items-center justify-between rounded-[8px] bg-tb-purple-vibrant p-[40px]`}
       >
         <span className="tb-compressed text-[48px] leading-[44px] text-tb-surface">
           {t("payment.total")}
@@ -331,7 +338,7 @@ export default function PaymentSelection() {
       </div>
 
       <div
-        className={`absolute left-1/2 ${ada ? "top-[482px]" : "top-[932px]"} flex -translate-x-1/2 gap-[24px]`}
+        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[482px]" : "top-[932px]"} flex -translate-x-1/2 gap-[24px]`}
       >
         {tiles.map((tile) => (
           <button

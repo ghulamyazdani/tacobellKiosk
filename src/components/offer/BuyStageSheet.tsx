@@ -347,9 +347,7 @@ export default function BuyStageSheet({
 
   return (
     <div className="absolute inset-0 z-50" data-testid="buy-stage-sheet">
-      {/* Own position-neutral entrance keyframe — tb-modal-enter is reserved
-          for centered modals (it carries a -50% translate). */}
-      <style>{`@keyframes tbBuyStageSheetEnter{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* The scrim never animates (motion D-M3); the panel rises (tb-sheet-enter). */}
       <button
         type="button"
         aria-label={t("offers.close")}
@@ -364,8 +362,7 @@ export default function BuyStageSheet({
       <div
         role="dialog"
         aria-labelledby="buy-stage-title"
-        style={{ animation: "tbBuyStageSheetEnter 0.2s ease-out both" }}
-        className="absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
+        className="tb-sheet-enter absolute bottom-0 left-0 flex h-[min(1470px,calc(100%_-_96px))] w-[1080px] flex-col overflow-hidden rounded-t-[60px] bg-tb-surface"
       >
         <div className="relative shrink-0 border-b border-tb-grey-4 px-[120px] pb-[28px] pt-[54px] text-center">
           <p className="text-[18px] font-bold uppercase leading-[22px] tracking-[2px] text-tb-ink-purple/70">

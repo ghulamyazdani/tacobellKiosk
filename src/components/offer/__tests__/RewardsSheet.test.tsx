@@ -175,6 +175,20 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     expect(screen.queryByTestId("rewards-sheet")).not.toBeInTheDocument();
   });
 
+  it("motion D-M3: the panel rises (tb-sheet-enter), the scrim never animates, no inline keyframes remain", () => {
+    store.dispatch(setFilteredOffers([FLAT_OFFER]));
+    renderSheet();
+    const sheet = screen.getByTestId("rewards-sheet");
+    const [scrim, panel] = Array.from(sheet.children);
+    expect(scrim.tagName).toBe("BUTTON");
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    expect(panel).toBe(screen.getByRole("dialog"));
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel).not.toHaveAttribute("style");
+    expect(sheet.querySelector("style")).toBeNull();
+  });
+
   it("open: eligible row gets a radio, locked row gets the pink minBill nudge (no radio), gone row is struck", () => {
     store.dispatch(setFilteredOffers([FLAT_OFFER, PERCENT_OFFER, GONE_OFFER]));
     renderSheet();

@@ -188,6 +188,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("BuyStageSheet — motion (D-M3)", () => {
+  it("the panel rises (tb-sheet-enter), the scrim never animates, no inline keyframes remain", () => {
+    renderStage(BOGO);
+    const sheet = screen.getByTestId("buy-stage-sheet");
+    const [scrim, panel] = Array.from(sheet.children);
+    expect(scrim.tagName).toBe("BUTTON");
+    expect(scrim).not.toHaveAttribute("style");
+    expect(scrim.className).not.toMatch(/(^|\s)(tb-|animate-)/);
+    expect(panel).toBe(screen.getByRole("dialog"));
+    expect(panel).toHaveClass("tb-sheet-enter");
+    expect(panel).not.toHaveAttribute("style");
+    expect(sheet.querySelector("style")).toBeNull();
+  });
+});
+
 describe("BuyStageSheet — counters, adds and the CONTINUE gate", () => {
   it("the counter reads '0 of 2 added' with an empty progress bar", () => {
     renderStage(BOGO);

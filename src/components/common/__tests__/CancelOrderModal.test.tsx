@@ -83,6 +83,12 @@ describe("CancelOrderModal — the guest's answer is reported (audit-fixes B3)",
     ]);
   });
 
+  it("motion §3.1: YES, CANCEL presses to Figma's CTA Error red (#C02121); NO keeps its own press", () => {
+    mount();
+    expect(screen.getByTestId("cancel-order-confirm")).toHaveClass("bg-tb-red", "active:bg-tb-red-press");
+    expect(screen.getByTestId("cancel-order-cancel")).not.toHaveClass("active:bg-tb-red-press");
+  });
+
   it("closed: nothing rendered, nothing reported", () => {
     const { container } = mount(false);
 

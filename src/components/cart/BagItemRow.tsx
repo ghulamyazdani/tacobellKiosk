@@ -41,6 +41,8 @@ const asIdList = (value: unknown): unknown[] => (Array.isArray(value) ? value : 
 
 interface BagItemRowProps {
   row: any;
+  /** Motion §3.3: a row ADDED while the bag is open rises in (BagSheet decides). */
+  rise?: boolean;
   currency: string;
   /** Edit-from-bag: BagSheet owns the full contract-B1 dispatch recipe. */
   onEdit: (row: any) => void;
@@ -79,6 +81,7 @@ interface BagItemRowProps {
  */
 export default function BagItemRow({
   row,
+  rise = false,
   currency,
   onEdit,
   onRequestRemove,
@@ -200,7 +203,7 @@ export default function BagItemRow({
       data-testid={
         isLoyaltyRow ? `bag-loyalty-row-${row?.itemId}` : `bag-row-${row?.itemId}`
       }
-      className="flex w-full items-start gap-[24px] border-t border-tb-grey-4 py-[24px]"
+      className={`flex w-full items-start gap-[24px] border-t border-tb-grey-4 py-[24px] ${rise ? "tb-rise" : ""}`}
     >
       {imageUrl ? (
         <img
@@ -344,7 +347,7 @@ export default function BagItemRow({
                 />
               </svg>
             </button>
-            <p className="text-[20px] font-black leading-[16px] text-black">{quantity}</p>
+            <p key={quantity} className="tb-bump text-[20px] font-black leading-[16px] text-black">{quantity}</p>
             <button
               type="button"
               data-testid={`bag-inc-${row?.itemId}`}

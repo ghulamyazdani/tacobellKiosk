@@ -253,7 +253,7 @@ export default function OfferRow({
             }`}
           >
             {selected && (
-              <span className="h-[20px] w-[20px] rounded-full bg-tb-purple" />
+              <span className="tb-pop-in h-[20px] w-[20px] rounded-full bg-tb-purple" />
             )}
           </span>
         )
