@@ -60,8 +60,9 @@ import { openBag } from "./pages/order";
  * ── MOCKS ───────────────────────────────────────────────────────────────
  * The harness house order: the shared mock (fixtures/backend.ts) first, then
  * the checkout fixture, then this spec's own routes. Newest wins. The checkout
- * fixture re-routes getPipelines with an English-only row, so the Arabic row
- * is routed again AFTER it. The print agent and the Xeno revoke are other
+ * fixture routes getPipelines only when given a `tabType` (never here), so the
+ * shared mock's Arabic row stands; mockPipelines answers the same row again
+ * after it. The print agent and the Xeno revoke are other
  * origins: only their fixtures answer them (the harness denies an unrouted
  * call). Boot steps are the shared page functions (pages/*).
  */
@@ -223,7 +224,7 @@ test.describe("Post-P9 names + operator copy in the guest's language", () => {
       pay_at_counter: "pay_at_counter",
     });
     const checkout = await mockCheckoutBackend(page);
-    // After the checkout fixture: its English-only pipeline row must not win.
+    // The shared mock's row again (the checkout fixture leaves getPipelines alone without a tabType).
     await mockPipelines(page);
     await registerToStart(page);
     await startToSecond(page);

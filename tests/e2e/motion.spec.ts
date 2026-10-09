@@ -478,7 +478,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     page,
   }) => {
     await mockBackend(page);
-    // AFTER mockBackend: checkout's mock serves its own single pipeline (newest route wins).
+    // Two order types over the shared mock's one (newest route wins); checkout's mock routes getPipelines only with a tabType.
     await page.route(PIPELINES_URL, (route) => route.fulfill({ json: [DINE_IN, TAKE_AWAY] }));
     await registerToStart(page);
     const rate = await slowMotion(page);
