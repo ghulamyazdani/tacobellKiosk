@@ -318,7 +318,6 @@
     "close": "إغلاق المكافآت",
     "invalidPhone": "يرجى إدخال رقم هاتف محمول صالح",
     "lookupFailed": "تعذر الوصول إلى حساب المكافآت الخاص بك. يرجى المحاولة مرة أخرى.",
-    "pointsBalance": "{{points}} نقطة",
     "pointsCost": "{{points}} نقطة",
     "free": "مجانًا",
     "percentOff": "خصم {{value}}٪",

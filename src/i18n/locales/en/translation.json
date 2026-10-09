@@ -318,7 +318,6 @@
     "close": "Close rewards",
     "invalidPhone": "Please enter a valid mobile number",
     "lookupFailed": "We couldn't reach your rewards account. Please try again.",
-    "pointsBalance": "{{points}} points",
     "pointsCost": "{{points}} points",
     "free": "Free",
     "percentOff": "{{value}}% off",
