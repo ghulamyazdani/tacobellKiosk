@@ -6,8 +6,8 @@
 > truth: Figma `33e5briUYJiBqxv6P0AbqY`; logic source of truth:
 > `@cx-sdk/*` (linked from `../posistKiosk-cx-sdk/packages`).
 >
-> Last updated: **2026-10-09 (e2e harness wave 1 merged)** · Gates at last update (Node 22.14, a clean checkout — never the user's working tree):
-> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 3,324/3,324 · e2e 465/465 (the functional suite under reducedMotion "reduce"; motion.spec under "no-preference") · guardrails 0 critical / 118 warnings · build+PWA green · boot path 351.2 KiB gzip-9 / 355 (CI build 352.9) · page JS 1,352.6 KB / 2,000 · fork app `tsc -b` green**
+> Last updated: **2026-10-09 (bottom CTAs per Figma)** · Gates at last update (Node 22.14, a clean checkout — never the user's working tree):
+> **`yarn validate` green (tsc -b type-checks unit tests + e2e specs) · unit 3,324/3,324 · e2e 465/465 (the functional suite under reducedMotion "reduce"; motion.spec under "no-preference") · guardrails 0 critical / 118 warnings · build+PWA green · boot path 351.2 KiB gzip-9 / 355 (CI build 352.8) · page JS 1,352.4 KB / 2,000 · fork app `tsc -b` green**
 
 ## Phase status
 
@@ -834,6 +834,8 @@ full-stage, and every return to the splash ends ADA for the next guest.
   `toPaytmKind` filter; D11).
 
 ## Session log
+
+- **2026-10-09 (bottom CTAs per Figma)** · User report: "Back button in the bottom bar should be same as the ui in figma". Compared every Back in a bottom bar with its frame: the PDP CTA bar's < BACK already matched `1:559`; /payment's BACK TO MENU did not — like every copy of Figma's `CTA_Sheet_Fixed` (/receipt NO THANKS, /tent CONFIRM TABLE NUMBER + NO THANKS) it was 92 px with a 2 px outline and 28 px tracked type. Now 84 px at 1812 (CONFIRM at 1704 with its shadow), a 1 px outline, Exp Bl 24/20 (`1:3367` / `1:3380` / `1:4454` / `1:4455`), ADA at the same distances from the zone's bottom; the rewards-OTP and buy-stage BACK (design language on the same component) take its 1 px sheet outline (`1:3204`). Also dropped the dead `loading.configNoStartText` key. Open for sign-off: /tent, /receipt, /phone and /customerName keep a top-left BACK the frames do not draw (a way back on every checkout step). Unit 3,324, e2e 465.
 
 - **2026-10-09 (e2e harness wave 1 merged)** · P9f wave 1 (one workflow: plan → groups F, C, D → adversarial review → fix → fidelity). **F** new `tests/e2e/flows/`: happy path, cart management, payment failure ×2, every screen in Arabic, accessibility ×6 (axe + 44 px over 44 states: 0 violations) — 11 tests. **C** checkout / paytm / orderTypeSwitch / currency / countryCode and **D** idle / recovery / ada / autoUpdate / fcm / chunkResilience / globalError / secondPipelines / fullscreen moved onto the shared harness (159 tests, bodies unchanged — body diff + before / after runs); then, as their own commits, checkout's timers on `page.clock` (the cancel window and the push ladder stepped; "no fifth attempt" now proven over 15 s of fake time — the old 5 s poll passed on its first sample; checkout ×3 118 s → 53 s), the 20 s Xeno revoke poll, and the harness photo stub surviving a reload (a 6–17 % OUTSIDE flake; chunkResilience's local copy dropped). App fix from flow 5: the footer's language name (العربية) reads rtl (`dir="auto"`). Fidelity: 46 product mutants + 3 harness mutants — K_new = K_old in 79 comparisons, the harness mutants kill 163 / 59 / 80 new tests and 0 old ones, every flow kills its own gap mutant. Open-decision notes: re-PAY after the uncertain panel mints a new order id (TIMEOUT row); the rail's colour-only selection (sign-off S8). Unit 3,324, e2e 454 → 465.
 
