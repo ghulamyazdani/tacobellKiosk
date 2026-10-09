@@ -36,10 +36,17 @@
      (see the corbi.png trap in CLAUDE.md).
 4. **Colors/typography**: map to the `@theme` tokens (§3) — never hardcode a
    hex that already has a token; new design colors become new `tb-*` tokens.
-5. **Motion**: critical/operator UI = **pure CSS animations only**
-   (`tb-modal-enter` pattern) — rAF/framer freezes in occluded windows.
-   Never combine Tailwind `translate-*` classes with keyframe `transform`
-   (they stack — one owner per element).
+5. **Motion**: **pure CSS animations only** — the motion system's tokens and
+   classes live in `src/index.css` (`--tb-dur-*` / `--tb-ease-*` /
+   `--tb-dist-*`; `.tb-enter` with `data-enter` from `usePageEnter`,
+   `.tb-modal-spring` = Figma 1:5502 → 1:5521 Bouncy, `.tb-sheet-enter`,
+   `.tb-pop-in`, `.tb-bump`, `.tb-select`, `.tb-shake`, `.tb-hourglass`,
+   `.tb-card-tilt`; `tb-no-press` opts a full-surface button out of the
+   press squeeze). Figma's pressed fills come from the `tb-purple-press` /
+   `tb-red-press` tokens. Closing is instant; scrims never animate; every
+   animation collapses under `prefers-reduced-motion`. Never combine
+   Tailwind `translate-*` classes with keyframe `transform` (one owner per
+   element), and never JS-driven motion (a guardrail fails on it).
 6. **Data**: screens render from SDK state (converted menu tree, pipelines,
    cart) — Figma's literal content (product names, prices) is placeholder.
    Splash content is the operator's getMedia `home_screen` media (P9d); the
