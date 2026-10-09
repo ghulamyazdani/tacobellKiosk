@@ -1,7 +1,13 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
 import { crc32, deflateSync } from "node:zlib";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  GREEK_SALAD,
+  LARGE_FRIES,
+  CHEESE_BURGER,
+} from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
 
 /**
  * UB4 (user report 2026-10-08: "in the item card width of the item image
@@ -21,33 +27,16 @@ import { crc32, deflateSync } from "node:zlib";
  * painted width of the photo is natW × max(boxW / natW, boxH / natH) for
  * `cover` (and × min(…) for `contain`): it must reach the box width.
  *
- * House mock order (bag.spec / ada.spec): the `**\/api/**` catch-all FIRST,
- * the cross-origin edges routed explicitly, every specific mock after it.
+ * Harness house order (P9f, newest route wins): the shared mock
+ * (fixtures/backend.ts) serving cardMenu(), then this file's photo route —
+ * a page route, so it wins over the harness's 1×1 photo stub. Boot is the
+ * shared pages/boot.ts.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-
-// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-/** Badged NEW in the copy below → the 504-px arch-top hero. */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** A grid card that gets a 60+ character name. */
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
-/** A grid card with its fixture name (one line). */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
+// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; fixtures/backend.ts) ----
+// GREEK_SALAD: badged NEW in the copy below → the 504-px arch-top hero.
+// LARGE_FRIES: a grid card that gets a 60+ character name.
+// CHEESE_BURGER: a grid card with its fixture name (one line).
 
 /** Real TB India-length names (visual-order header): 70 and 62 characters. */
 const HERO_NAME = "2 Value Rice Bowl Non Veg+1 Small Fries+1 Cinnamon Twists+2 Pepsi Zero";
@@ -92,7 +81,7 @@ const PHOTO = squarePhoto();
 
 /** The slim menu, Greek Salad badged NEW (the hero), two long names. */
 function cardMenu() {
-  const menu = readJson("./fixtures/slim-menu.json");
+  const menu = fixtureJson("slim-menu.json");
   for (const category of menu.categories)
     for (const sub of category.subCategories)
       for (const entity of sub.entities) {
@@ -105,72 +94,12 @@ function cardMenu() {
   return menu;
 }
 
+/** The shared mock serving cardMenu(); every S3 item image is PHOTO (header). */
 async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) => r.fulfill({ json: { status: "success" } }));
+  await mockBackend(page, { menu: cardMenu() });
   await page.route("https://itemsposistnet.s3.ap-south-1.amazonaws.com/**", (r) =>
     r.fulfill({ body: PHOTO, contentType: "image/png" })
   );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) => r.fulfill({ json: { skin_id: "skin_1" } }));
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({ json: { start_order_text_primary: "START ORDER", ideal_time: "180" } })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    })
-  );
-  const menu = cardMenu();
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
 interface PhotoProbe {

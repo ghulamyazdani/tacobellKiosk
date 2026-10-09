@@ -6,6 +6,7 @@
  *    call no page route answered, is aborted and fails the test at teardown. A spec ALLOWS a host by
  *    routing it with page.route (page routes always win).
  *  - The 657 menu photos (S3) answer a 1×1 PNG: no spec needs the internet.
+ *  - The tenant recommendations rail is off unless a spec sets `window.__TB_RECS_URL__` (no .env leak).
  *  - STRICT: uncaught page errors, i18next missingKey (a raw key on screen), dev-server reloads mid-test.
  *  - console.error is judged only under test.use({ strictConsole: true }) (the flows).
  */
@@ -73,6 +74,13 @@ export const test = base.extend<{ kiosk: Kiosk; strictConsole: boolean }>({
           .fulfill({ body: PNG_1X1, contentType: "image/png", headers: { "Access-Control-Allow-Origin": "*" } })
           .catch(() => undefined),
       );
+      // Tenant recommendations OFF ("" = off) unless the spec sets the DEV seam itself: a developer's
+      // .env VITE_TENANT_RECOMMENDATIONS_URL would make every boot fetch the tenant's S3 file — denied,
+      // on that machine only. Set only if absent: Playwright does not order init scripts.
+      await page.addInitScript(() => {
+        const w = window as unknown as { __TB_RECS_URL__?: unknown };
+        if (!("__TB_RECS_URL__" in w)) w.__TB_RECS_URL__ = "";
+      });
       page.on("pageerror", (e) => pageErrors.push(e.stack ?? `${e.name}: ${e.message}`));
       page.on("console", (m) => {
         const text = m.text();

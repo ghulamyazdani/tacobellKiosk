@@ -1,6 +1,13 @@
-import { test, expect, type CDPSession, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type CDPSession, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  SIDE_ORDERS,
+  CAESAR_DRESSING as CAESAR,
+  DREAM_BOX,
+  LARGE_FRIES,
+} from "./fixtures/backend";
+import { stageBox } from "./fixtures/a11y";
+import { bootRegisteredToMenu as bootToMenu } from "./pages/boot";
 
 /**
  * Lane scroll-drag (user request 2026-10-08, reverses D3): "the scroll bar in
@@ -52,54 +59,29 @@ import { fileURLToPath } from "node:url";
  *     + lostpointercapture on the captured strip (TOUCH OWNER).
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (menu-scroll.spec.ts): the `**\/api/**` catch-all FIRST, the
- * print agent aborted, the Xeno revoke routed, then the specific mocks
- * (newest wins). Arabic is always offered (menu-arabic.spec.ts: getLanguage's
- * secondary language plus start_order_text_secondary).
- * `accessibility_mode: true` puts the ADA toggle in the footer. The boot
- * helpers and stageBox are copied from menu-scroll.spec.ts (house precedent).
- * No currency text is asserted.
+ * The harness house order (newest route wins): the shared mock
+ * (fixtures/backend.ts), nothing routed over it. Arabic is always offered
+ * (its `arabic` option: getLanguage's secondary language plus
+ * start_order_text_secondary). `accessibility_mode: true` puts the ADA
+ * toggle in the footer. The print agent and the Xeno revoke are other
+ * origins the harness denies by name. The boot is the shared pages/boot.ts
+ * plus this file's 1:1 stage check; stageBox is fixtures/a11y.ts. No
+ * currency text is asserted.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
+// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; SIDE_ORDERS, CAESAR, DREAM_BOX, LARGE_FRIES: fixtures/backend.ts) ----
+// CAESAR (Caesar Dressing): the right column of the Sauces row; no modifiers, upsell or
+//   recommendations, so its quick-add lands it at once. It is inside the bar's y-range at the
+//   end of the ADA menu.
+// DREAM_BOX: the pack PDP, which overflows (EN 480, ADA 1278).
+// LARGE_FRIES: its PDP fits in EN and overflows only in ADA (by 382).
 /**
  * Kiddie Meal Beef Burger: the right column, inside the EN bar's y-range at
  * the top; modifiers, so a tap opens its PDP.
  */
 const BEEF_BURGER = "5dd1093a188e72ce1b3eb358";
-/**
- * Caesar Dressing: the right column of the Sauces row; no modifiers, upsell
- * or recommendations, so its quick-add lands it at once. It is inside the
- * bar's y-range at the end of the ADA menu.
- */
-const CAESAR = "5dd109392b29ee1f2a82a49c";
-/** Pack PDP: overflows (EN 480, ADA 1278). */
-const DREAM_BOX = "68dd79409030ed3064aee28c";
 /** Dream box's Sides slot: CUSTOMIZE opens the tier-2 page (pack.spec.ts). */
 const G_SIDES = `${DREAM_BOX}_2_combo`;
-/** Large Fries: its PDP fits in EN and overflows only in ADA (by 382). */
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 
 // ---- Mirrors src/components/stage/KioskStage.tsx (ada.spec.ts) ----
 const STAGE_HEIGHT = 1920;
@@ -115,87 +97,19 @@ const CONTENT_EDGE = 1056;
 /** The visible track's centre column (x 1057–1068). */
 const BAR_X = 1062;
 
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: { name: "العربية", code: "ar", dir: "rtl" },
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        start_order_text_secondary: "ابدأ الطلب",
-        // Clamped to 120 s: the idle prompt opens at 100 s (idle.spec.ts).
-        ideal_time: "180",
-        accessibility_mode: true,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/**
+ * The shared mock (fixtures/backend.ts): Arabic offered, ADA available. Its
+ * ideal_time "180" clamps to 120 s: the idle prompt opens at 100 s (idle.spec.ts).
+ */
+const mockKioskBackend = (page: Page) =>
+  mockBackend(page, { arabic: true, settings: { accessibility_mode: true } });
 
 /**
  * Register on the on-screen keyboard, then splash → order type → /menu, and
  * pin the 1:1 stage that lets stage px drive the mouse.
  */
 async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await bootToMenu(page);
   expect(await page.getByTestId("kiosk-stage").boundingBox()).toEqual({
     x: 0,
     y: 0,
@@ -210,30 +124,6 @@ async function openPdp(page: Page, itemId: string) {
   await card.scrollIntoViewIfNeeded();
   await card.click();
   await expect(page.getByTestId("customization-screen")).toBeVisible();
-}
-
-interface StageBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** The element's box in stage DESIGN px (KioskStage scale divided out), to 1px. */
-function stageBox(locator: Locator): Promise<StageBox> {
-  return locator.evaluate((el, stageHeight) => {
-    const stage = document.querySelector('[data-testid="kiosk-stage"]');
-    if (!stage) throw new Error("kiosk-stage is not mounted");
-    const s = stage.getBoundingClientRect();
-    const k = s.height / stageHeight;
-    const b = el.getBoundingClientRect();
-    return {
-      x: Math.round((b.left - s.left) / k),
-      y: Math.round((b.top - s.top) / k),
-      width: Math.round(b.width / k),
-      height: Math.round(b.height / k),
-    };
-  }, STAGE_HEIGHT);
 }
 
 /** The menu's scroll pane: the parent of the category sections. */

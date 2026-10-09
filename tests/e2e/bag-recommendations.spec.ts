@@ -1,6 +1,18 @@
-import { test, expect, type Locator, type Page, type Request, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page, type Request } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  holdRequests as parkRequests,
+  fixtureJson,
+  locale,
+  CHEESE_BURGER,
+  LARGE_FRIES,
+  GREEK_SALAD,
+  TORTILLA_SAUCE,
+  EXTRA_PICKLES,
+  CAESAR_DRESSING,
+} from "./fixtures/backend";
+import { submitLicence as submitRegistration, registerToStart, startOrderTo } from "./pages/boot";
+import { openBag } from "./pages/order";
 
 /**
  * Post-P9 29a/29b: the tenant (S3) co-purchase recommendations behind the
@@ -33,53 +45,25 @@ import { fileURLToPath } from "node:url";
  * Large Fries (5) · Tortilla Sauce (3) · Greek Salad (2).
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (idle.spec.ts): the `**\/api/**` catch-all FIRST, the print
- * agent aborted, the Xeno revoke routed, then the specific mocks (newest
- * wins). The S3 host is cross-origin, so the catch-all never sees it.
+ * The harness house order (newest route wins): the shared mock
+ * (fixtures/backend.ts) first, then a test's own routes. The S3 host is
+ * another origin: mockS3's page route is what lets it through the harness's
+ * default-deny (the print agent and the Xeno revoke stay denied by name).
  * Playwright adds CORS headers to a fulfilled cross-origin response; the
- * mock sends S3's own `*` explicitly. Boot helpers and parkRequests are
- * copied from idle.spec.ts (house precedent).
+ * mock sends S3's own `*` explicitly. The boot steps, openBag and
+ * parkRequests (holdRequests) are the shared pages/boot.ts, pages/order.ts
+ * and fixtures/backend.ts.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const slimMenu = fixtureJson("slim-menu.json");
+const en = locale("en");
 
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-const en = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-/** Modifier groups: a card tap opens the PDP. isCartRecommended. */
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-/** isCartRecommended (the flagged fallback). */
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
-/** isCartRecommended (the flagged fallback). */
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-/** NOT flagged: on the rail only from the tenant file. */
-const TORTILLA_SAUCE = "5dd109392b29ee1f2a82a49b";
-/** +£1, in the Cheese Burger's addon group: the guest's own PDP pick (R1). */
-const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e";
-/** £2, plain, in no tenant list: the SILENT ADD control (R1). */
-const CAESAR_DRESSING = "5dd109392b29ee1f2a82a49c";
+// ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; fixtures/backend.ts) ----
+// CHEESE_BURGER: modifier groups, so a card tap opens the PDP. isCartRecommended.
+// LARGE_FRIES, GREEK_SALAD: isCartRecommended (the flagged fallback).
+// TORTILLA_SAUCE: NOT flagged — on the rail only from the tenant file.
+// EXTRA_PICKLES: +£1, in the Cheese Burger's addon group — the guest's own PDP pick (R1).
+// CAESAR_DRESSING: £2, plain, in no tenant list — the SILENT ADD control (R1).
 
 const RECS_HOST = "https://recommendations.e2e.test";
 const RECS_URL = `${RECS_HOST}/data.json`;
@@ -102,67 +86,9 @@ const FLAGGED_RAIL = [GREEK_SALAD, LARGE_FRIES].sort();
 /** Headers the kiosk's RTK transport would send — none may reach S3. */
 const DEVICE_HEADERS = ["authorization", "x-access-token", "login_code", "cookie"];
 
-async function mockKioskBackend(page: Page, settings: Record<string, unknown> = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...settings,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+/** The shared mock (fixtures/backend.ts); `settings` merge over its START ORDER / ideal_time. */
+const mockKioskBackend = (page: Page, settings: Record<string, unknown> = {}) =>
+  mockBackend(page, { settings });
 
 /** The DEV-only URL seam, on every navigation (header). */
 async function useTenantRecommendations(page: Page) {
@@ -208,59 +134,8 @@ async function mockS3(page: Page, status: 200 | 500 | "hang" = 200): Promise<S3M
   return mock;
 }
 
-interface ParkedRequests {
-  /** Requests parked so far — poll it to know the call is in flight. */
-  readonly count: number;
-  /** Hand every parked request on to the fixture handler: it completes, late. */
-  release: () => Promise<void>;
-}
-
-/**
- * Parks matching requests until release() (idle.spec.ts parkRequests,
- * trimmed). Register it AFTER the mock it shadows (newest wins): release()
- * passes each parked request on with route.fallback().
- */
-async function parkRequests(page: Page, url: string): Promise<ParkedRequests> {
-  const parked: Route[] = [];
-  let armed = true;
-  await page.route(url, (route) => {
-    if (!armed) return route.fallback();
-    parked.push(route);
-    return undefined;
-  });
-  return {
-    get count() {
-      return parked.length;
-    },
-    release: async () => {
-      armed = false;
-      await Promise.all(parked.splice(0).map((route) => route.fallback()));
-    },
-  };
-}
-
-/** Type the device code on the on-screen keyboard and submit (the boot starts). */
-async function submitRegistration(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-}
-
-async function registerToStart(page: Page) {
-  await submitRegistration(page);
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
-
 /** Splash → order type → /menu (loyalty off). */
-async function startOrderToMenu(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startOrderToMenu = (page: Page) => startOrderTo(page, "menu-screen");
 
 /** Card tap → PDP → ADD TO BAG → dismiss the added modal (bag.spec.ts). */
 async function addCheeseBurgerViaPdp(page: Page) {
@@ -273,20 +148,6 @@ async function addCheeseBurgerViaPdp(page: Page) {
   await expect(page.getByTestId("product-added-modal")).toBeVisible();
   await page.getByTestId("added-continue").click();
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-}
-
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell
- * (/forYou); declining it mutates no cart state (bag.spec.ts openBag).
- */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
 }
 
 /** The rail's item ids, left to right. */

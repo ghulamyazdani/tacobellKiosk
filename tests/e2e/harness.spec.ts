@@ -86,6 +86,13 @@ test.describe("P9f harness self-check", () => {
     await page.evaluate(() => fetch("/api/e2e-unmocked").catch(() => undefined));
   });
 
+  test("RECS SEAM: tenant recommendations are off unless the spec sets the seam — a .env URL never reaches the deny", async ({
+    page,
+  }) => {
+    await cleanRegistration(page);
+    expect(await page.evaluate(() => (window as unknown as { __TB_RECS_URL__?: unknown }).__TB_RECS_URL__)).toBe("");
+  });
+
   test("PAGE ERROR: an uncaught page error fails the test", async ({ page }) => {
     test.fail();
     await cleanRegistration(page);

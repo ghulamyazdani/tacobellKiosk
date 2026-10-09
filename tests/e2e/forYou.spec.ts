@@ -1,6 +1,12 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  CHEESE_BURGER,
+  GREEK_SALAD,
+  LARGE_FRIES,
+} from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addOneTap, addViaPdp, bagRows } from "./pages/order";
 
 /**
  * P7d — /forYou, the pre-cart upsell.
@@ -10,10 +16,10 @@ import { fileURLToPath } from "node:url";
  * BACKWARD return and is never upsold, so this suite only ever enters through
  * that one control.
  *
- * mockKioskBackend / bootRegisteredToMenu / addCheeseBurgerViaPdp /
- * addGreekSaladOneTap are copied from bag.spec.ts (which copied them from
- * pack.spec.ts — neither file exports them; the copy is the established
- * precedent in this suite).
+ * Harness (P9f): the shared mock (fixtures/backend.ts) and the shared boot
+ * and bag steps (pages/boot.ts, pages/order.ts); mockKioskBackend,
+ * addCheeseBurgerViaPdp and addGreekSaladOneTapFromMenu keep their names as
+ * thin adapters over them.
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json — verified, not assumed):
  * - isCartRecommended=true on exactly 3 entities, which is the whole /forYou
@@ -43,31 +49,6 @@ import { fileURLToPath } from "node:url";
  * still the load-bearing assertion.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-// ---- Fixture ids (see header) ----
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
-
 /** See the COPY note in the header — either spelling, exact match on both. */
 const NOT_TODAY = /^Not Today$/;
 const PROCEED_TO_ORDER = /^Proceed to Order$/;
@@ -82,121 +63,32 @@ const DECLINE_FILL = /border-tb-purple/;
 const PROCEED_FILL = /bg-tb-purple/;
 
 /**
- * Boot + menu mocks (copied from bag.spec.ts). Order matters: Playwright
- * matches routes newest-first, so the catch-all is registered FIRST and every
- * specific mock after it.
+ * The shared mock (fixtures/backend.ts), with this spec's one setting.
  *
  * `cartUpsellScreen` is deliberately tri-state. Leaving it undefined OMITS
  * `enable_cart_upsell_screen` entirely, which is what the real settings API
  * sends today and what the opt-out gate must treat as ON; passing `false`
  * writes the boolean, which is the only value that closes the gate.
  */
-async function mockKioskBackend(
-  page: Page,
-  { cartUpsellScreen }: { cartUpsellScreen?: boolean } = {}
-) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...(cartUpsellScreen === undefined
-          ? {}
-          : { enable_cart_upsell_screen: cartUpsellScreen }),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard and land on /menu (copied from bag.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+const mockKioskBackend = (page: Page, { cartUpsellScreen }: { cartUpsellScreen?: boolean } = {}) =>
+  mockBackend(page, {
+    settings: cartUpsellScreen === undefined ? {} : { enable_cart_upsell_screen: cartUpsellScreen },
+  });
 
 /**
- * Menu card tap → modifiers intent → customization PDP → commit → dismiss the
- * added modal (customized adds always confirm). Copied from bag.spec.ts.
- * Lands ONE unit in the cart, which is the baseline every case below starts on.
+ * Menu card tap → customization PDP → commit at £8.00 → dismiss the added
+ * modal (customized adds always confirm). Lands ONE unit in the cart, which is
+ * the baseline every case below starts on.
  */
-async function addCheeseBurgerViaPdp(page: Page) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
+const addCheeseBurgerViaPdp = (page: Page) =>
+  addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
 /**
  * Plain one-tap add from the MENU: Greek Salad has no modifiers, no variants
  * and no recommendedItems → lands straight in the cart with no added modal.
- * Copied from bag.spec.ts.
  */
-async function addGreekSaladOneTapFromMenu(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
+const addGreekSaladOneTapFromMenu = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
 /** The ONE forward edge. Every case enters the upsell through this control. */
 async function tapViewBag(page: Page) {
@@ -219,8 +111,6 @@ async function expectUpsellScreen(page: Page) {
   await expect(page.getByTestId("foryou-screen")).toBeVisible({ timeout: 10_000 });
   await expect(page).toHaveURL(/\/forYou$/);
 }
-
-const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
 
 test.describe("P7d pre-cart upsell (/forYou)", () => {
   test("ENTRY: VIEW MY BAG opens the upsell — its own route, no bag sheet behind it, all three flagged items at RAW prices", async ({

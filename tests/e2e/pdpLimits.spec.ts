@@ -1,6 +1,13 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  LARGE_FRIES,
+  CHEESE_BURGER,
+  EXTRA_PICKLES,
+} from "./fixtures/backend";
+import { bootRegisteredToMenu } from "./pages/boot";
 
 /**
  * audit-fixes UB2 + U1 on the PDP, end to end over the REAL converters and
@@ -21,35 +28,20 @@ import { fileURLToPath } from "node:url";
  * (tagged veg) is re-shaped into a sized item with no groups; Large Fries is
  * tagged non-veg (one optional addon group → the PDP); Cheese Burger (veg)
  * carries the "Choose From Extra" addon group (0 / 3, three options).
+ *
+ * Harness (P9f): the shared mock (fixtures/backend.ts) and the shared boot
+ * (pages/boot.ts); mockKioskBackend keeps its name as a thin adapter.
  */
 
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
-const slimMenu = readJson("./fixtures/slim-menu.json");
+const en = locale("en");
+const enLazy = locale("en", "lazy");
+const slimMenu = fixtureJson("slim-menu.json");
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-// ---- Fixture ids (see header) ----
+// ---- Fixture ids (see header; LARGE_FRIES, CHEESE_BURGER, EXTRA_PICKLES: fixtures/backend.ts) ----
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
-const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e";
 
 type MenuJson = {
   settings: Record<string, unknown>;
@@ -94,78 +86,13 @@ function oneOfOneMenu(): MenuJson {
 }
 
 /**
- * Boot + menu mocks (copied from pack.spec.ts). Order matters: Playwright
- * matches routes newest-first, so the catch-all is registered FIRST and
- * every specific mock after it.
+ * The shared mock (fixtures/backend.ts): `menu` replaces the slim menu,
+ * `kioskSettings` merges over its START ORDER / ideal_time settings.
  */
-async function mockKioskBackend(
+const mockKioskBackend = (
   page: Page,
-  { menu = slimMenu as unknown, kioskSettings = {} }: { menu?: unknown; kioskSettings?: Record<string, unknown> } = {},
-) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // The print agent is cross-origin: the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    }),
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) => r.fulfill({ json: { skin_id: "skin_1" } }));
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    }),
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: { start_order_text_primary: "START ORDER", ideal_time: "180", ...kioskSettings },
-    }),
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    }),
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: menu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } }),
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    }),
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard and land on /menu (copied from pack.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+  { menu, kioskSettings = {} }: { menu?: unknown; kioskSettings?: Record<string, unknown> } = {},
+) => mockBackend(page, { menu, settings: kioskSettings });
 
 /** Menu card tap → the item's PDP. */
 async function openPdp(page: Page, itemId: string) {
