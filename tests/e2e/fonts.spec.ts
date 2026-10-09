@@ -102,9 +102,10 @@ test("Archivo faces: two variable faces (latin-ext only on demand, for ₹), key
   await context.addCookies([
     { name: "token", value: "e2e-device-token", url: APP_ORIGIN },
   ]);
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
+  // The shared mock, not "**/api/**": that glob matched every origin (the print
+  // agent included), so the harness never saw a stray call. This walk makes one
+  // call, the version report, which the mock's catch-all answers {} as before.
+  await mockKioskBackend(page);
   await page.goto("/");
   await page.getByTestId("start-screen").click();
   await expect(page.getByTestId("second-screen")).toBeVisible();
