@@ -484,7 +484,7 @@ export default function BuyStageSheet({
               data-testid="buy-stage-back"
               disabled={continuing}
               onClick={onBack}
-              className="tb-display min-h-[84px] shrink-0 rounded-[8px] border-2 border-tb-purple bg-tb-surface px-[56px] text-center text-[24px] leading-[20px] text-tb-purple"
+              className="tb-display min-h-[84px] shrink-0 rounded-[8px] border border-tb-purple bg-tb-surface px-[56px] text-center text-[24px] leading-[20px] text-tb-purple"
             >
               {t("offers.buyStage.back")}
             </button>
