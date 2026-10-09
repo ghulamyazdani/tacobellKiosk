@@ -403,7 +403,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             data-testid={`freebie-dec-${entityIdOf(entry)}`}
             aria-label={t("offers.buyStage.decrease", { name: name(entity) })}
             onClick={() => handleRemoveUnit(entry)}
-            className="flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-[1.72px] border-[#b9b9b9] text-tb-purple"
+            className="flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-[1.72px] border-tb-grey-3 text-tb-purple"
           >
             {/* Minus glyph (Figma icon 3601ce08) — BagItemRow's inline copy. */}
             <svg viewBox="0 0 24 24" className="h-[24px] w-[24px]" aria-hidden="true">
