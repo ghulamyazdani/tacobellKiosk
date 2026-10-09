@@ -1,7 +1,13 @@
 @import "tailwindcss" source("../src");
-/* Scan src only (e2e-harness F4): docs/CLAUDE.md/spec edits no longer push
- * Vite frames into running e2e pages. A class written only outside src is
- * never generated. */
+@source not "./**/__tests__/**";
+@source not "./**/__mocks__/**";
+@source not "./**/*.{test,spec}.{ts,tsx}";
+@source not "./setupTests.ts";
+/* Scan the app's src only (e2e-harness F4, harness-fixes H4): an edit to
+ * docs / CLAUDE.md / a spec, or to a unit test (__tests__, __mocks__,
+ * *.test / *.spec, setupTests), no longer pushes a Vite frame into running
+ * e2e pages. A class written only outside the app's src is never generated.
+ * Guarded by tests/e2e/harness.spec.ts "DEV-SERVER RELOAD (source)". */
 
 /*
  * Type: the Figma file uses GT America (commercial, Grilli Type; the design

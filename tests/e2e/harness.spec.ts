@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import { mockKioskBackend } from "./fixtures/backend";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DINE_IN, holdRequests, mockKioskBackend } from "./fixtures/backend";
+import { mockCheckoutBackend } from "./fixtures/checkout";
 import { expect, test, type Page } from "./fixtures/kiosk";
 
 /**
@@ -86,11 +91,44 @@ test.describe("P9f harness self-check", () => {
     await page.evaluate(() => fetch("/api/e2e-unmocked").catch(() => undefined));
   });
 
+  test("DENIED: a cross-origin call to a path the shared mock names fails the test — its named routes answer the backend only", async ({
+    page,
+  }) => {
+    test.fail();
+    await cleanRegistration(page);
+    await page.evaluate(() => fetch("https://e2e-leak.invalid/api/cx/kiosk/getLanguage").catch(() => undefined));
+  });
+
+  test("DENIED: a cross-origin call to a held path fails the test — holdRequests parks the backend's calls only", async ({
+    page,
+  }) => {
+    test.fail();
+    await cleanRegistration(page);
+    await holdRequests(page, "**/api/cx/kiosk/getMenu");
+    // Parked instead, this fetch never settles: the test times out, never failing on the deny.
+    await page.evaluate(() => fetch("https://e2e-leak.invalid/api/cx/kiosk/getMenu").catch(() => undefined));
+  });
+
   test("RECS SEAM: tenant recommendations are off unless the spec sets the seam — a .env URL never reaches the deny", async ({
     page,
   }) => {
     await cleanRegistration(page);
     expect(await page.evaluate(() => (window as unknown as { __TB_RECS_URL__?: unknown }).__TB_RECS_URL__)).toBe("");
+  });
+
+  test("HOUSE ORDER: the checkout mock keeps the pipelines a spec gave the shared mock — it re-routes them only for its tabType", async ({
+    page,
+  }) => {
+    const pipelines = () =>
+      page.evaluate(() => fetch("/api/cx/kiosk/getPipelines", { method: "POST" }).then((r) => r.json()));
+    const own = [{ ...DINE_IN, primary_name: "E2E Probe" }];
+    await mockKioskBackend(page, { pipelines: own });
+    await mockCheckoutBackend(page);
+    await page.goto("/");
+    await expect(page.getByTestId("registration-screen")).toBeVisible();
+    expect(await pipelines()).toEqual(own);
+    await mockCheckoutBackend(page, { tabType: "table" });
+    expect(await pipelines()).toEqual([{ ...DINE_IN, tab_type: "table", primary_name: "Table Service" }]);
   });
 
   test("PAGE ERROR: an uncaught page error fails the test", async ({ page }) => {
@@ -205,4 +243,26 @@ test.describe("P9f harness self-check", () => {
       }
     });
   }
+
+  // @tailwindcss/vite 4.3 watches every file its scanner reads for index.css: a write to one pushes an
+  // index.css frame into every open page. The plugin's own compile + Scanner, called as it calls them —
+  // resolved THROUGH the plugin (they are its pinned dependencies, not ours), so the guard runs exactly
+  // the pair the dev server runs.
+  test("DEV-SERVER RELOAD (source): Tailwind's scan for src/index.css reads no unit-test file", async () => {
+    const fromPlugin = createRequire(createRequire(import.meta.url).resolve("@tailwindcss/vite"));
+    const { compile } = fromPlugin("@tailwindcss/node") as typeof import("@tailwindcss/node");
+    const { Scanner } = fromPlugin("@tailwindcss/oxide") as typeof import("@tailwindcss/oxide");
+    const css = fileURLToPath(new URL("../../src/index.css", import.meta.url));
+    const { root, sources } = await compile(readFileSync(css, "utf8"), {
+      base: dirname(css),
+      onDependency: () => undefined,
+    });
+    // The scan root is source("…"); without one, the whole Vite root (the repo).
+    const scanRoot = root ?? { base: dirname(dirname(css)), pattern: "**/*" };
+    const scanner = new Scanner({ sources: [...(scanRoot === "none" ? [] : [{ ...scanRoot, negated: false }]), ...sources] });
+    scanner.scan();
+    expect(scanner.files).toContain(`${dirname(css)}/App.tsx`);
+    const unitTest = /\/(__tests__|__mocks__)\/|\.(test|spec)\.[cm]?[jt]sx?$|\/setupTests\.ts$/;
+    expect(scanner.files.filter((file) => unitTest.test(file))).toEqual([]);
+  });
 });

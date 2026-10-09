@@ -82,13 +82,15 @@ function backendOrigins(): string[] {
   return origins;
 }
 
+/** Any /api/ call to the kiosk backend: the shared mock's catch-all. A partner's origin never matches. */
+export const isBackendApi = (url: URL) => backendOrigins().includes(url.origin) && url.pathname.startsWith("/api/");
+/** One named endpoint: the glob `**\/api/<path>` (the URL ends there), on the backend origins only. */
+const backendPath = (path: string) => (url: URL) =>
+  backendOrigins().includes(url.origin) && url.href.endsWith(`/api/${path}`);
+
 export async function mockKioskBackend(page: Page, opts: KioskBackendOptions = {}) {
-  const backend = backendOrigins();
-  await page.route(
-    (url) => backend.includes(url.origin) && url.pathname.startsWith("/api/"),
-    (r) => r.fulfill({ json: {} }),
-  );
-  const json = (path: string, body: unknown) => page.route(`**/api/${path}`, (r) => r.fulfill({ json: body }));
+  await page.route(isBackendApi, (r) => r.fulfill({ json: {} }));
+  const json = (path: string, body: unknown) => page.route(backendPath(path), (r) => r.fulfill({ json: body }));
   await json("cx/kiosk/getLanguage", {
     primary_language: { name: "English", code: "en", dir: "ltr" },
     secondary_language: opts.arabic ? { name: "العربية", code: "ar", dir: "rtl" } : {},
@@ -110,7 +112,7 @@ export async function mockKioskBackend(page: Page, opts: KioskBackendOptions = {
   await json("cx/kiosk/getPipelines", opts.pipelines ?? [DINE_IN]);
   await json("cx/kiosk/getMenu", opts.menu ?? fixtureJson("slim-menu.json"));
   await json("cx/kiosk/get_out_of_stock", opts.outOfStock ?? []);
-  await page.route("**/api/tenants/getServerTime", (r) =>
+  await page.route(backendPath("tenants/getServerTime"), (r) =>
     r.fulfill({ json: { serverTime: new Date().toISOString() } }),
   );
   await json("cx/get_cx_valid_offers", opts.offers ?? []);
@@ -126,12 +128,14 @@ export async function mockKioskBackend(page: Page, opts: KioskBackendOptions = {
 
 /** The offer list a test swaps in mid-setup (offerAutoApply/offerBuyStage/offerFreebieCustomize copies). */
 export const routeOffers = (page: Page, offers: unknown[]) =>
-  page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: offers }));
+  page.route(backendPath("cx/get_cx_valid_offers"), (r) => r.fulfill({ json: offers }));
 
 /**
  * A hung backend or a late answer: parks matching requests while armed (up to `times`), never answers
  * them; release() hands them to the OLDER route with fallback(). Register AFTER the route it shadows.
  * Superset of recovery.holdRequests / idle.parkRequests / bag-recommendations + menu-arabic parkRequests.
+ * Parks the backend origins' requests only (the app's chunks included): a glob or RegExp matches every
+ * origin, and a parked partner call never reaches the deny.
  */
 export interface Held {
   readonly count: number;
@@ -149,7 +153,8 @@ export async function holdRequests(
   const routes: Route[] = [];
   let isArmed = armed;
   await page.route(url, (route) => {
-    if (!isArmed || routes.length >= times) return route.fallback();
+    const foreign = !backendOrigins().includes(new URL(route.request().url()).origin);
+    if (foreign || !isArmed || routes.length >= times) return route.fallback();
     routes.push(route);
     return undefined;
   });

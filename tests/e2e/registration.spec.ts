@@ -2,7 +2,7 @@ import { test, expect, type Page } from "./fixtures/kiosk";
 import { APP_ORIGIN } from "./fixtures/origin";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { LOGIN_OK, mockKioskBackend } from "./fixtures/backend";
+import { LOGIN_OK, isBackendApi, mockKioskBackend } from "./fixtures/backend";
 
 /**
  * Boot/auth flows with a MOCKED backend — the posistKiosk-parity behavior:
@@ -92,9 +92,11 @@ test.describe("registration + boot (mocked backend)", () => {
     await context.addCookies([
       { name: "token", value: "stale-or-fake", url: APP_ORIGIN },
     ]);
-    // Every API call rejects with 401 — the transport's onAuthFailure must
-    // clear the token and land on Registration (posistKiosk parity).
-    await page.route("**/api/**", (r) => r.fulfill({ status: 401, json: {} }));
+    // Every backend API call rejects with 401 — the transport's onAuthFailure
+    // must clear the token and land on Registration (posistKiosk parity).
+    // Backend origins only: "**/api/**" matched every origin, so a partner
+    // call got a 401 too and the harness never saw it.
+    await page.route(isBackendApi, (r) => r.fulfill({ status: 401, json: {} }));
 
     await page.goto("/LoadingResources");
 
@@ -230,8 +232,10 @@ test.describe("operator activity center", () => {
       { name: "token", value: "e2e-device-token", url: APP_ORIGIN },
     ]);
     // Background shell calls (PWAUpdateHandler version report) must not
-    // reach a real backend and 401 the fake token mid-test.
-    await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
+    // reach a real backend and 401 the fake token mid-test. The shared mock,
+    // not "**/api/**": that glob matched every origin, so the harness never
+    // saw a stray call. Its catch-all answers the version report {} as before.
+    await mockKioskBackend(page);
     await page.goto("/start");
     await expect(page.getByTestId("start-screen")).toBeVisible();
 
