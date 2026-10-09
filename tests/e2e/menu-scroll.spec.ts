@@ -1,6 +1,7 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import { mockKioskBackend as mockBackend, SIDE_ORDERS, DREAM_BOX, LARGE_FRIES } from "./fixtures/backend";
+import { stageBox } from "./fixtures/a11y";
+import { bootRegisteredToMenu } from "./pages/boot";
 
 /**
  * Post-P9 item 26: the Figma "Scroll bar" (1:5263) on /menu and the PDP,
@@ -28,48 +29,25 @@ import { fileURLToPath } from "node:url";
  * (PROGRESS).
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
- * House order (idle.spec.ts / ada.spec.ts): the `**\/api/**` catch-all
- * FIRST, the print agent aborted, the Xeno revoke routed, then the specific
- * mocks (newest wins). `accessibility_mode: true` puts the ADA toggle in
- * the footer. Boot helpers and stageBox are copied from ada.spec.ts (house
- * precedent).
+ * The harness house order (newest route wins): the shared mock
+ * (fixtures/backend.ts) with `accessibility_mode: true`, which puts the ADA
+ * toggle in the footer; nothing is routed over it. The print agent and the
+ * Xeno revoke are other origins: the harness denies either by name if it is
+ * ever called. The boot and stageBox are the shared pages/boot.ts and
+ * fixtures/a11y.ts.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
-/** Pack PDP: four `_combo` slot cards + the Snacks group; overflows. */
-const DREAM_BOX = "68dd79409030ed3064aee28c";
+// SIDE_ORDERS; DREAM_BOX (pack PDP: four `_combo` slot cards + the Snacks group; overflows);
+// LARGE_FRIES (one one-option addon group: its PDP fits the stage) — fixtures/backend.ts.
 /**
  * Drinks slot (min 1, six options — the one CHOICE slot: the one-option slots
  * are pre-selected, D5): picking it auto-scrolls the PDP to the next group.
  */
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
-/** One one-option addon group: its PDP fits the stage. */
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 
 // ---- Mirrors src/components/stage/KioskStage.tsx (ada.spec.ts) ----
-const STAGE_HEIGHT = 1920;
 const ADA_BRAND_ZONE_HEIGHT = 798;
 
 /** Track boxes (stage px): x = 1080 − right 12 − width 11. */
@@ -78,82 +56,8 @@ const MENU_BAR_ADA = { x: 1057, y: ADA_BRAND_ZONE_HEIGHT + 170, width: 11, heigh
 const PDP_BAR = { x: 1057, y: 703, width: 11, height: 790 };
 const PDP_BAR_ADA = { x: 1057, y: ADA_BRAND_ZONE_HEIGHT + 488, width: 11, height: 394 };
 
-async function mockKioskBackend(page: Page) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them (header).
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) =>
-    r.fulfill({ json: { status: "success" } })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        accessibility_mode: true,
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard, then splash → order type → /menu. */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+/** The shared mock (fixtures/backend.ts), ADA available. */
+const mockKioskBackend = (page: Page) => mockBackend(page, { settings: { accessibility_mode: true } });
 
 /** Menu card tap → its PDP. */
 async function openPdp(page: Page, itemId: string) {
@@ -161,30 +65,6 @@ async function openPdp(page: Page, itemId: string) {
   await card.scrollIntoViewIfNeeded();
   await card.click();
   await expect(page.getByTestId("customization-screen")).toBeVisible();
-}
-
-interface StageBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** The element's box in stage DESIGN px (KioskStage scale divided out), to 1px. */
-function stageBox(locator: Locator): Promise<StageBox> {
-  return locator.evaluate((el, stageHeight) => {
-    const stage = document.querySelector('[data-testid="kiosk-stage"]');
-    if (!stage) throw new Error("kiosk-stage is not mounted");
-    const s = stage.getBoundingClientRect();
-    const k = s.height / stageHeight;
-    const b = el.getBoundingClientRect();
-    return {
-      x: Math.round((b.left - s.left) / k),
-      y: Math.round((b.top - s.top) / k),
-      width: Math.round(b.width / k),
-      height: Math.round(b.height / k),
-    };
-  }, STAGE_HEIGHT);
 }
 
 /** The menu's scroll pane: the parent of the category sections. */

@@ -1,7 +1,17 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Page, type Route, dexieRows } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  SKIP_CRM,
+  CHEESE_BURGER,
+  GREEK_SALAD,
+  LARGE_FRIES,
+  EXTRA_PICKLES,
+} from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
 
 /**
  * P7a — My Bag (cart) vertical: BagSheet over the Menu on /cart, remove-item
@@ -9,8 +19,10 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  * order (full session reset), Dexie crash recovery, the Complete-Your-Meal
  * rail (source 2, isCartRecommended engine) and the PAY preflight into the
  * /checkout stub. Same registered-device mocked-backend pattern as
- * pack.spec.ts — mockKioskBackend/bootRegisteredToMenu are copied from there
- * (that file does not export them; copy is the established precedent).
+ * pack.spec.ts, on the P9f harness: the shared mock (fixtures/backend.ts)
+ * and the shared boot / bag steps (pages/boot.ts, pages/order.ts);
+ * mockKioskBackend, addCheeseBurgerViaPdp, addGreekSaladOneTap and
+ * dexieCartQuantities keep their names as thin adapters over them.
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json, P7a edits applied):
  * - Cheese Burger (5dd10936712f5b622a66aab7, £8) carries 3 addon groups with
@@ -42,44 +54,12 @@ import { mockCheckoutBackend } from "./fixtures/checkout";
  * would be the UB1 fallback, i.e. a lost currency.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-const en = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/translation.json", import.meta.url)),
-    "utf-8"
-  )
-);
+const slimMenu = fixtureJson("slim-menu.json");
+const en = locale("en");
 /** The bag-pdp lane's copy (rendered only by lazy chunks — src/i18n/lazyCopy.ts). */
-const enLazy = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../src/i18n/locales/en/lazy.json", import.meta.url)),
-    "utf-8"
-  )
-);
+const enLazy = locale("en", "lazy");
 
-// ---- Fixture ids (see header) ----
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
-const GREEK_SALAD = "5dd1093829754a432f2c32e2";
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
-const EXTRA_PICKLES = "5dd1093f188e72ce1b3eb36e"; // +£1, group ..._1573980469_addons
+// ---- Fixture ids (see header; CHEESE_BURGER, GREEK_SALAD, LARGE_FRIES, EXTRA_PICKLES: fixtures/backend.ts) ----
 const ADD_CHEESE = "5dd1093f188e72ce1b3eb36f"; // +£1, group ..._1686482941_addons
 /** Kiddie Meal Beef Burger, re-shaped by sizedMenu() into a sized item. */
 const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
@@ -123,11 +103,11 @@ function sizedMenu({ largeGroups = false, requiredGroup = false } = {}) {
 }
 
 /**
- * Boot + menu mocks (copied from pack.spec.ts). Order matters: Playwright
- * matches routes newest-first, so the catch-all is registered FIRST and
- * every specific mock after it.
+ * The shared mock (fixtures/backend.ts) with this spec's switches: the MIAM
+ * gate, the sized menu (`sizeGroups`: Large carries Extra Pickles;
+ * "required" makes that group min 1) and the pay-at-counter fan-out.
  */
-async function mockKioskBackend(
+const mockKioskBackend = (
   page: Page,
   {
     comboUpsell = false,
@@ -141,151 +121,39 @@ async function mockKioskBackend(
     /** PAY → /payment (checkout.spec's pay-at-counter walk) instead of /phone. */
     skipCRM?: boolean;
   } = {}
-) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // The print agent is cross-origin: the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        ...(comboUpsell ? { enable_combo_upsell: true } : {}),
-        ...(skipCRM ? { skip_crm_page: true, pay_at_counter: "pay_at_counter" } : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) =>
-    r.fulfill({
-      json: sized
-        ? sizedMenu({ largeGroups: sizeGroups !== false, requiredGroup: sizeGroups === "required" })
-        : slimMenu,
-    })
-  );
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard and land on /menu (copied from pack.spec.ts). */
-async function bootRegisteredToMenu(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+) =>
+  mockBackend(page, {
+    settings: { ...(comboUpsell ? { enable_combo_upsell: true } : {}), ...(skipCRM ? SKIP_CRM : {}) },
+    menu: sized
+      ? sizedMenu({ largeGroups: sizeGroups !== false, requiredGroup: sizeGroups === "required" })
+      : undefined,
+  });
 
 /**
  * Menu card tap → modifiers intent → customization PDP → (optional addon
  * pick) → commit → dismiss the added modal (customized adds always confirm).
  */
-async function addCheeseBurgerViaPdp(
+const addCheeseBurgerViaPdp = (
   page: Page,
   { addonId, expectedCta }: { addonId?: string; expectedCta: string }
-) {
-  const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
-  await burger.scrollIntoViewIfNeeded();
-  await burger.click();
-  await expect(page.getByTestId("customization-screen")).toBeVisible();
-  if (addonId) {
-    await page.getByTestId(`pdp-option-${addonId}`).click();
-  }
-  await expect(page.getByTestId("pdp-add-to-bag")).toContainText(expectedCta);
-  await page.getByTestId("pdp-add-to-bag").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("product-added-modal")).toBeVisible();
-  await page.getByTestId("added-continue").click();
-  await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
-}
+) => addViaPdp(page, CHEESE_BURGER, { addonId, expectedCta });
 
 /**
  * Plain one-tap add: Greek Salad has no modifiers, no variants and no
  * recommendedItems → lands straight in the cart with no added modal.
  */
-async function addGreekSaladOneTap(page: Page, expectedCount: string) {
-  const salad = page.getByTestId(`item-${GREEK_SALAD}`);
-  await salad.scrollIntoViewIfNeeded();
-  await salad.click();
-  await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
-}
+const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
+  addOneTap(page, GREEK_SALAD, expectedCount);
 
-/**
- * VIEW MY BAG → /cart renders the Menu page with the bag sheet open.
- *
- * P7d: the pre-cart upsell (/forYou) now sits on this edge — it is the only
- * forward menu→cart transition, and its gate is opt-OUT. It deliberately is
- * NOT switched off here: `enable_cart_upsell_screen: false` is read by
- * useCartUpsell's single `shouldShowUpsell`, which also gates the in-bag
- * Complete-Your-Meal rail that this file asserts visible at
- * :433 — so disabling it
- * would trade one broken assertion for another and stop this suite testing the
- * default configuration. The helper walks through the screen instead.
- *
- * markCartUpsellSeen() fires on the upsell's forward exits, so only the first
- * openBag() of a session meets it; later ones land on /cart directly. Settling
- * on whichever of the two arrived keeps that deterministic with no sleep.
- * Declining mutates no cart state, so every assertion downstream is unchanged
- * — and both original assertions below are kept verbatim. The gate's own
- * behaviour is owned by tests/e2e/forYou.spec.ts.
+/*
+ * openBag (pages/order.ts) walks through the P7d pre-cart upsell (/forYou) on
+ * a session's first open. It deliberately is NOT switched off here:
+ * `enable_cart_upsell_screen: false` is read by useCartUpsell's single
+ * `shouldShowUpsell`, which also gates the in-bag Complete-Your-Meal rail this
+ * file asserts visible (RAIL), so disabling it would trade one broken
+ * assertion for another and stop this suite testing the default
+ * configuration. Declining mutates no cart state; forYou.spec.ts owns the gate.
  */
-async function openBag(page: Page) {
-  await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
-  await expect(page.getByTestId("bag-sheet")).toBeVisible();
-  await expect(page).toHaveURL(/\/cart$/);
-}
-
-const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
 
 /** Cart row ids (itemId) are runtime-generated — read them off the testid. */
 async function firstBagRowItemId(page: Page): Promise<string> {
@@ -313,31 +181,8 @@ async function openEditHowManyOnBurgerTimesThree(page: Page): Promise<string> {
 }
 
 /** The Dexie cart mirror's row quantities (KioskDB.cartItems) — what a reload restores. */
-function dexieCartQuantities(page: Page): Promise<number[]> {
-  return page.evaluate(
-    () =>
-      new Promise<number[]>((resolve, reject) => {
-        const open = indexedDB.open("KioskDB");
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const db = open.result;
-          const request = db.transaction("cartItems", "readonly").objectStore("cartItems").getAll();
-          request.onsuccess = () => {
-            db.close();
-            resolve(
-              (request.result as { quantity?: number }[])
-                .map((row) => Number(row.quantity))
-                .sort((a, b) => a - b)
-            );
-          };
-          request.onerror = () => {
-            db.close();
-            reject(request.error);
-          };
-        };
-      })
-  );
-}
+const dexieCartQuantities = async (page: Page): Promise<number[]> =>
+  (await dexieRows(page)).map((row) => Number(row.quantity)).sort((a, b) => a - b);
 
 test.describe("P7a My Bag (bag sheet on /cart)", () => {
   test("BAG BASICS: PDP add lands a £8.00 row; stepper doubles to £16.00 (cta-total agrees) and back", async ({

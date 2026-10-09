@@ -1,6 +1,13 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  locale,
+  SIDE_ORDERS,
+  MEALS_COMBOS as MEALS,
+  GREEK_SALAD,
+  CHEESE_BURGER,
+} from "./fixtures/backend";
+import { registerToStart, startOrderTo } from "./pages/boot";
 
 /**
  * audit-fixes U1 (PAR-05) — the veg / non-veg marks and the VEG / NON-VEG
@@ -17,43 +24,19 @@ import { fileURLToPath } from "node:url";
  * session reset clears it (CANCEL ORDER → /start → the next guest's menu is
  * whole). ADA: the chips sit in the rail inside the reach zone.
  *
- * House mock order (bag.spec / ada.spec): the `**\/api/**` catch-all FIRST,
- * the cross-origin print agent aborted and the Xeno revoke answered, every
- * specific mock after it (newest wins); item photos are served locally.
- * Helpers are copied, not imported (no spec exports helpers).
+ * Harness house order (P9f, newest route wins): the shared mock
+ * (fixtures/backend.ts) with this spec's settings. The item photos are the
+ * harness's local 1×1 stub (no internet in the walk); the print agent and
+ * the Xeno revoke are other origins the harness denies by name. Boot steps
+ * are the shared pages/boot.ts.
  */
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
-
-const readJson = (relative: string) =>
-  JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8"));
-const slimMenu = readJson("./fixtures/slim-menu.json");
-const en = readJson("../../src/i18n/locales/en/translation.json") as {
+const en = locale("en") as {
   menu: { veg: string; nonVeg: string; filters: string };
 };
 
-/** 1×1 PNG: the item photos are answered locally (no internet in the walk). */
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-  "base64"
-);
-
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json) ----
-const SIDE_ORDERS = "5dd1092ecc7088762eee2659";
-const MEALS = "5dd10932188e72ce1b3eb354";
-const GREEK_SALAD = "5dd1093829754a432f2c32e2"; // non-veg
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7"; // veg
+// SIDE_ORDERS, MEALS (MEALS_COMBOS), GREEK_SALAD (non-veg), CHEESE_BURGER (veg): fixtures/backend.ts.
 const NON_VEG_ITEMS = [
   GREEK_SALAD,
   "5dd10938eb1ccee31ca352fa", // Large Fries
@@ -82,86 +65,19 @@ interface MockOptions {
   hideFilter?: boolean;
 }
 
-async function mockKioskBackend(page: Page, opts: MockOptions = {}) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // Cross-origin, so the catch-all above never sees them.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("https://xeno.in:2223/**", (r) => r.fulfill({ json: { status: "success" } }));
-  await page.route("https://itemsposistnet.s3.ap-south-1.amazonaws.com/**", (r) =>
-    r.fulfill({ body: PNG, contentType: "image/png" })
-  );
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        secondary_language: {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) => r.fulfill({ json: { skin_id: "skin_1" } }));
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        ideal_time: "180",
-        // The footer shows ADA DISPLAY.
-        accessibility_mode: true,
-        ...(opts.hideVegNonVeg ? { hide_veg_non_veg: true } : {}),
-        ...(opts.hideFilter ? { hide_filter: true } : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [{ _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" }],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
-
-/** Register on the on-screen keyboard and land on the splash. */
-async function registerToStart(page: Page) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-}
+/** The shared mock (fixtures/backend.ts) with this spec's settings. */
+const mockKioskBackend = (page: Page, opts: MockOptions = {}) =>
+  mockBackend(page, {
+    settings: {
+      // The footer shows ADA DISPLAY.
+      accessibility_mode: true,
+      ...(opts.hideVegNonVeg ? { hide_veg_non_veg: true } : {}),
+      ...(opts.hideFilter ? { hide_filter: true } : {}),
+    },
+  });
 
 /** Splash → /second → Dine In → /menu. */
-async function startToMenu(page: Page) {
-  await page.getByTestId("start-screen").click();
-  await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-}
+const startToMenu = (page: Page) => startOrderTo(page, "menu-screen");
 
 const cards = (page: Page) => page.locator('[data-testid^="item-"]');
 const cardMarks = (page: Page) =>

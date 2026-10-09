@@ -1,6 +1,13 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
+import {
+  mockKioskBackend as mockBackend,
+  fixtureJson,
+  locale,
+  DREAM_BOX,
+  LARGE_FRIES,
+  CHEESE_BURGER,
+} from "./fixtures/backend";
+import { registerToStart } from "./pages/boot";
 
 /**
  * P6c — Order-a-Pack (slot cards + SELECT sheet + tier-2 nested customize)
@@ -34,140 +41,50 @@ import { fileURLToPath } from "node:url";
  * the group names from the fixture's `ar` aliases: names and interpolated
  * values are FSI…PDI isolates in RTL, so Arabic is only ever matched as a
  * substring, or after stripping the isolates (P9f), never exactly.
+ *
+ * Harness (P9f): the shared mock (fixtures/backend.ts) is mockKioskBackend's
+ * body; a test's own getMenu route is registered after it (newest wins).
  */
 
-const readJson = (relative: string) =>
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8")
-  );
-const en = readJson("../../src/i18n/locales/en/translation.json");
-const ar = readJson("../../src/i18n/locales/ar/translation.json");
-const enLazy = readJson("../../src/i18n/locales/en/lazy.json");
-const arLazy = readJson("../../src/i18n/locales/ar/lazy.json");
+const en = locale("en");
+const ar = locale("ar");
+const enLazy = locale("en", "lazy");
+const arLazy = locale("ar", "lazy");
 
-const LOGIN_OK = {
-  licenseDetails: {
-    login_code: "mock-device-token",
-    expiry_date: "2099-01-01T00:00:00.000Z",
-  },
-  deploymentDetails: {
-    _id: "dep1",
-    brand_id: "brand1",
-    tenant_id: "tenant1",
-    cluster_id: "cluster1",
-  },
-};
+const slimMenu = fixtureJson("slim-menu.json");
 
-const slimMenu = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("./fixtures/slim-menu.json", import.meta.url)),
-    "utf-8"
-  )
-);
-
-// ---- Fixture ids (see header) ----
-const DREAM_BOX = "68dd79409030ed3064aee28c";
+// ---- Fixture ids (see header; DREAM_BOX, LARGE_FRIES, CHEESE_BURGER: fixtures/backend.ts) ----
 const G_SANDWICH = `${DREAM_BOX}_1_combo`;
 const G_SIDES = `${DREAM_BOX}_2_combo`;
 const G_DRINKS = `${DREAM_BOX}_3_combo`;
 const G_NUGGETS = `${DREAM_BOX}_5_combo`;
 const G_SNACKS = `${DREAM_BOX}_6_combo`;
-const LARGE_FRIES = "5dd10938eb1ccee31ca352fa";
 const FRIES_ADDON_GROUP = `${LARGE_FRIES}_1573980470_addons`;
 const WITHOUT_SALT = "5dff2ea756bc05b83f9e34cd";
 const PEPSI_SMALL = "5dd27b527973647b693e428b";
 const SEVEN_UP_SMALL = "5dd27b6e9a6dc93557275a17";
-const CHEESE_BURGER = "5dd10936712f5b622a66aab7";
 /** Snacks' two options: +£5 each (min 0 / max 2). */
 const CHILI_NUGGETS = "696df06f5a77225b771e978a";
 const SMOKY_DONUTS = "696df0a73173e810122fe276";
 const SMOKY_DONUTS_NAME = "3 pcs Mini Smoky Cheese Donuts.";
 
 /**
- * Boot + menu mocks. Order matters: Playwright matches routes newest-first,
- * so the catch-all is registered FIRST and every specific mock after it.
- * `comboUpsell` adds the top-level `enable_combo_upsell` flag to the
- * get_kiosk_settings payload — the exact field useAddEntityToCart's upsell
- * gate reads out of state.appSettings.kiosk_settings.
+ * The shared mock (fixtures/backend.ts). `comboUpsell` adds the top-level
+ * `enable_combo_upsell` flag to the get_kiosk_settings payload — the exact
+ * field useAddEntityToCart's upsell gate reads out of
+ * state.appSettings.kiosk_settings. `arabic` offers the secondary language
+ * (menu-arabic.spec.ts), with its splash text: a secondary language without
+ * it fails the boot.
  */
-async function mockKioskBackend(
-  page: Page,
-  { comboUpsell = false, arabic = false } = {}
-) {
-  await page.route("**/api/**", (r) => r.fulfill({ json: {} }));
-  // The print agent is cross-origin: the catch-all above never sees it.
-  await page.route("https://localhost:65505/**", (r) => r.abort("failed"));
-  await page.route("**/api/cx/kiosk/getLanguage", (r) =>
-    r.fulfill({
-      json: {
-        primary_language: { name: "English", code: "en", dir: "ltr" },
-        // `arabic` offers the secondary language (menu-arabic.spec.ts).
-        secondary_language: arabic ? { name: "العربية", code: "ar", dir: "rtl" } : {},
-      },
-    })
-  );
-  await page.route("**/api/cx/getCxSkinData", (r) =>
-    r.fulfill({ json: { skin_id: "skin_1" } })
-  );
-  await page.route("**/api/cx/kiosk/get_theme", (r) =>
-    r.fulfill({
-      json: {
-        theme_color: [
-          { key: "button_text_border_icon", color_hex: "#501098" },
-          { key: "button_background", color_hex: "#ffffff" },
-        ],
-        primary_color_shades: [],
-      },
-    })
-  );
-  await page.route("**/api/cx/get_kiosk_settings", (r) =>
-    r.fulfill({
-      json: {
-        start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
-        ...(arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
-        ideal_time: "180",
-        ...(comboUpsell ? { enable_combo_upsell: true } : {}),
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/getPipelines", (r) =>
-    r.fulfill({
-      json: [
-        { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" },
-      ],
-    })
-  );
-  await page.route("**/api/cx/kiosk/getMenu", (r) => r.fulfill({ json: slimMenu }));
-  await page.route("**/api/cx/kiosk/get_out_of_stock", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/tenants/getServerTime", (r) =>
-    r.fulfill({ json: { serverTime: new Date().toISOString() } })
-  );
-  await page.route("**/api/cx/get_cx_valid_offers", (r) => r.fulfill({ json: [] }));
-  await page.route("**/api/cx/kiosk/get_data", (r) =>
-    r.fulfill({
-      json: {
-        charges: [],
-        deployment: { countryCode: "GB", currencySettings: { currency: "GBP", text: "£" } },
-      },
-    })
-  );
-  await page.route("**/api/cx/kiosk/login", (r) => r.fulfill({ json: LOGIN_OK }));
-}
+const mockKioskBackend = (page: Page, { comboUpsell = false, arabic = false } = {}) =>
+  mockBackend(page, { arabic, settings: comboUpsell ? { enable_combo_upsell: true } : {} });
 
 /**
  * Register on the on-screen keyboard and land on /menu (converted fixture).
  * `arabic`: the guest picks العربية on /second first (menu-arabic.spec.ts).
  */
 async function bootRegisteredToMenu(page: Page, { arabic = false } = {}) {
-  await page.goto("/");
-  // Figma keyboard: digits live behind the 123 layer toggle.
-  await page.getByRole("button", { name: "t", exact: true }).click();
-  await page.getByRole("button", { name: "b", exact: true }).click();
-  await page.getByRole("button", { name: /numbers and symbols/i }).click();
-  await page.getByRole("button", { name: "7", exact: true }).click();
-  await page.getByTestId("registration-submit").click();
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+  await registerToStart(page);
   await page.getByTestId("start-screen").click();
   if (arabic) {
     await expect(page.getByTestId("second-screen")).toBeVisible();
