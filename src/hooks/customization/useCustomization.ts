@@ -1727,6 +1727,7 @@ const useCustomization = ({
     isAllowMultiplePunch,
     isStepperRequired,
     getTotalValueWithApplyAddonPrice,
+    notifyGroupMax,
     // testFunction,
     contradictoryItems,
 

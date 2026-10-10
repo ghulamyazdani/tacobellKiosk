@@ -296,6 +296,20 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
   .tb-press-card > button:empty:active {
     scale: calc(1 / var(--tb-press-scale));
   }
+  /* The two-button option card (tb-press-card + tb-select; lane
+   * addon-customize): its squeeze lifts REMOVE 4.6 px into the gap under a
+   * held finger. So the pressed overlay sits above the buttons, and the card
+   * springs back AT ONCE (the squeeze-in still eases): a tap hit-tested just
+   * after release finds REMOVE back in place. */
+  .tb-press-card.tb-select {
+    transition: none;
+  }
+  .tb-press-card.tb-select:has(> button:empty:active) {
+    transition: scale var(--tb-dur-press) var(--tb-ease-press);
+  }
+  .tb-press-card.tb-select > button:empty:active {
+    z-index: 20;
+  }
   /* A ONE-button card (OptionCard's grid card) squeezes itself, so the same
    * counter-scaled hit area rides on its ::before: a press held on the outer
    * band still lands on the card (lane addon-cta). Needs a positioned card. */
@@ -343,6 +357,12 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
     animation: tb-bump var(--tb-dur-bump) var(--tb-ease-out);
   }
   .tb-select:is([aria-pressed="true"], [aria-checked="true"], [aria-current="true"]) {
+    animation: tb-select var(--tb-dur-select) var(--tb-ease-spring) backwards;
+  }
+  /* The two-button option card (lane addon-customize): its controls are its
+   * buttons, so the card's own select state rides on data-selected (the
+   * radio), not aria-pressed. */
+  .tb-select[data-selected="true"] {
     animation: tb-select var(--tb-dur-select) var(--tb-ease-spring) backwards;
   }
   .tb-shake {

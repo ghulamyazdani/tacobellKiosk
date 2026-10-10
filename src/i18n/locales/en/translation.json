@@ -148,7 +148,12 @@
     "discardKeep": "Keep editing",
     "discardConfirm": "Discard",
     "groupCount": "{{count}} of {{max}}",
-    "groupMaxReached": "You can choose up to {{max}} {{group}}"
+    "groupMaxReached": "You can choose up to {{max}} {{group}}",
+    "keepItem": "No, keep it",
+    "removeThisItem": "Remove this item",
+    "replaceTitle": "Replace {{name}} in your meal?",
+    "replaceConfirm": "Yes, replace item",
+    "selected": "Selected"
   },
   "pack": {
     "selectGroup": "Select {{name}}",

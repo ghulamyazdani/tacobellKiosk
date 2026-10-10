@@ -8,6 +8,7 @@ import {
   selectMinMaxErroredBaseItems,
   selectUpdatedBaseItems,
 } from "@cx-sdk/catalog/state/Menu.slice";
+import { computeShowAddonPrices } from "@cx-sdk/ordering/customization/nestedCardLogic";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -179,13 +180,20 @@ export default function BagItemRow({
     decreaseItemQuantityById(row?.itemId, "ITEM", "itemId");
   };
 
+  // An add-on's OWN picks (the nested lines) are charged only under the
+  // row's truthy applyAddonsPrice (pricing / orderBuilder), so their "+£"
+  // shows only then — the fork's display rule, computeShowAddonPrices (lane
+  // addon-customize). The add-on's own line is always charged.
+  const nestedPriced = Boolean(computeShowAddonPrices(true, row));
+
   // "{qty} x Name +£0.60" — price suffix only when > 0, qty prefix only
   // when !== 1 (contract A2). Render helper, NOT a component.
   const renderLine = (line: any, nested = false) => {
     const price = Number(line?.price ?? 0);
     const prefix =
       line?.quantity !== 1 ? `${t("bag.lineQty", { qty: line?.quantity })} ` : "";
-    const suffix = price > 0 ? ` +${currency}${price.toFixed(2)}` : "";
+    const suffix =
+      price > 0 && (!nested || nestedPriced) ? ` +${currency}${price.toFixed(2)}` : "";
     return (
       <p
         key={`${nested ? "sub-" : ""}${line?.id ?? line?.name}`}
