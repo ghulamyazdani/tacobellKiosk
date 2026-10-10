@@ -263,6 +263,217 @@ describe("OptionCard (Menu-Item_Medium)", () => {
   });
 });
 
+/*
+  Lane addon-customize (Figma 1:5332 / 1:5333 / 1:5334): an option whose item
+  has options of its own gets TWO real sibling buttons — CUSTOMIZE (a pick
+  only) above CHOOSE / REMOVE — and a pointer-only body overlay (no name, out
+  of the tab order): CHOOSE's action unpicked, CUSTOMIZE's on a pick. The
+  card's own select state rides on data-selected (index.css tb-select).
+*/
+describe("OptionCard — the two-button card (lane addon-customize)", () => {
+  const customize = (onClick?: () => void) => ({
+    label: "Customize",
+    ariaLabel: "Customize Large Fries",
+    testId: "card-customize",
+    description: "Selected",
+    onClick,
+  });
+  const lower = (label: string, onClick = vi.fn()) => ({
+    label,
+    ariaLabel: `${label} Large Fries`,
+    testId: "card-cta",
+    onClick,
+  });
+  const renderCard = (props: Partial<Parameters<typeof OptionCard>[0]> = {}) =>
+    render(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Large Fries"
+        meta="+£3.00"
+        radio="on"
+        selectTestId="card-open"
+        onSelect={vi.fn()}
+        {...props}
+      />
+    );
+
+  it("picked: the container carries the testid, tb-press-card, tb-select and data-selected; exactly CUSTOMIZE then REMOVE, each to its own handler", () => {
+    const onCustomize = vi.fn();
+    const onRemove = vi.fn();
+    const onSelect = vi.fn();
+    renderCard({ customize: customize(onCustomize), cta: lower("Remove", onRemove), onSelect });
+    const card = screen.getByTestId("card");
+
+    expect(card.tagName).toBe("DIV");
+    expect(card).toHaveClass("tb-press-card", "tb-select");
+    expect(card).toHaveAttribute("data-selected", "true");
+    expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Customize Large Fries",
+      "Remove Large Fries",
+    ]);
+    expect(screen.getByTestId("card-customize")).toHaveAccessibleName("Customize Large Fries");
+    expect(screen.getByTestId("card-customize")).toHaveAccessibleDescription("Selected +£3.00");
+    expect(screen.getByTestId("card-customize")).toHaveTextContent(/^Customize$/);
+    expect(screen.getByTestId("card-cta")).toHaveAccessibleDescription("+£3.00");
+    expect(screen.getByTestId("card-cta")).not.toHaveAttribute("aria-pressed");
+
+    fireEvent.click(screen.getByTestId("card-customize"));
+    expect([onCustomize.mock.calls.length, onRemove.mock.calls.length, onSelect.mock.calls.length]).toEqual([1, 0, 0]);
+    fireEvent.click(screen.getByTestId("card-cta"));
+    expect([onCustomize.mock.calls.length, onRemove.mock.calls.length, onSelect.mock.calls.length]).toEqual([1, 1, 0]);
+  });
+
+  it("the body overlay is pointer-only: empty, LAST, aria-hidden, tabIndex −1, no name — on a pick it is CUSTOMIZE, unpicked it is onSelect", () => {
+    const onCustomize = vi.fn();
+    const onSelect = vi.fn();
+    const { rerender } = renderCard({ customize: customize(onCustomize), cta: lower("Remove"), onSelect });
+    const overlay = screen.getByTestId("card-open");
+
+    expect(screen.getByTestId("card").lastElementChild).toBe(overlay);
+    expect(overlay).toBeEmptyDOMElement();
+    expect(overlay).toHaveAttribute("aria-hidden", "true");
+    expect(overlay).toHaveAttribute("tabindex", "-1");
+    expect(overlay).not.toHaveAttribute("aria-label");
+    expect(screen.getAllByRole("button")).not.toContain(overlay);
+    fireEvent.click(overlay);
+    expect([onCustomize.mock.calls.length, onSelect.mock.calls.length]).toEqual([1, 0]);
+
+    rerender(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Large Fries"
+        meta="+£3.00"
+        radio="off"
+        selectTestId="card-open"
+        onSelect={onSelect}
+        customize={customize()}
+        cta={lower("Choose")}
+      />
+    );
+    fireEvent.click(screen.getByTestId("card-open"));
+    expect([onCustomize.mock.calls.length, onSelect.mock.calls.length]).toEqual([1, 1]);
+    expect(screen.getByTestId("card")).not.toHaveAttribute("data-selected");
+  });
+
+  it("unpicked (customize without onClick): exactly one button, CHOOSE — no CUSTOMIZE and no 'Selected'", () => {
+    renderCard({ radio: "off", customize: customize(), cta: lower("Choose") });
+
+    expect(screen.getAllByRole("button")).toEqual([screen.getByTestId("card-cta")]);
+    expect(screen.getByTestId("card-cta")).toHaveAccessibleName("Choose Large Fries");
+    expect(screen.queryByTestId("card-customize")).toBeNull();
+    expect(screen.getByTestId("card")).not.toHaveTextContent("Selected");
+  });
+
+  it("a swap group's pick (no lower button): CUSTOMIZE plus the invisible reserved box", () => {
+    renderCard({ customize: customize(vi.fn()) });
+
+    expect(screen.getAllByRole("button")).toEqual([screen.getByTestId("card-customize")]);
+    const box = screen.getByTestId("card").querySelector("span.invisible");
+    expect(box).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveClass("min-h-[60px]", "w-full");
+  });
+
+  it("the two buttons sit in ONE wrapper (16 px apart), never a button inside a button", () => {
+    renderCard({ customize: customize(vi.fn()), cta: lower("Remove") });
+    const up = screen.getByTestId("card-customize");
+    const down = screen.getByTestId("card-cta");
+
+    expect(up.parentElement).toBe(down.parentElement);
+    expect(up.parentElement).toHaveClass("mt-auto", "flex", "w-full", "flex-col", "gap-[16px]");
+    expect(screen.getByTestId("card").querySelectorAll("button button")).toHaveLength(0);
+  });
+
+  it("tall: 476 / 210 instead of 400 / 134 — the one-button card and the two-button card alike", () => {
+    const contentBox = (card: HTMLElement, size: number) => card.querySelector(`.min-h-\\[${size}px\\]`);
+    const { unmount } = renderCard({ tall: true, customize: customize(vi.fn()), cta: lower("Remove") });
+    let card = screen.getByTestId("card");
+    expect(card).toHaveClass("min-h-[476px]");
+    expect(card).not.toHaveClass("min-h-[400px]");
+    expect(contentBox(card, 210)).not.toBeNull();
+    expect(contentBox(card, 134)).toBeNull();
+    unmount();
+
+    render(<OptionCard testId="card" image={null} name="Chips" radio="off" onSelect={vi.fn()} selectLabel="Chips" tall cta={{ label: "Choose", testId: "cta" }} />);
+    card = screen.getByTestId("card");
+    expect(card.tagName).toBe("BUTTON");
+    expect(card).toHaveClass("min-h-[476px]");
+    expect(card).not.toHaveClass("min-h-[400px]");
+    expect(contentBox(card, 210)).not.toBeNull();
+    expect(contentBox(card, 134)).toBeNull();
+  });
+
+  it("stable DOM: picking keeps the same lower-button node (CUSTOMIZE is inserted above it)", () => {
+    const { rerender } = renderCard({ radio: "off", customize: customize(), cta: lower("Choose") });
+    const before = screen.getByTestId("card-cta");
+
+    rerender(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Large Fries"
+        meta="+£3.00"
+        radio="on"
+        selectTestId="card-open"
+        onSelect={vi.fn()}
+        customize={customize(vi.fn())}
+        cta={lower("Remove")}
+      />
+    );
+    expect(screen.getByTestId("card-cta")).toBe(before);
+    expect(before).toHaveTextContent("Remove");
+  });
+
+  it("scope of aria-hidden: PackSlotCard's overlay card (cta.onClick, no customize) keeps a NAMED, focusable overlay and no data-selected", () => {
+    render(
+      <OptionCard
+        testId="card"
+        image={null}
+        name="Large Fries"
+        radio="on"
+        cta={{ label: "Customize", onClick: vi.fn(), testId: "card-cta" }}
+        onSelect={vi.fn()}
+        selectLabel="Large Fries"
+        selectTestId="card-open"
+      />
+    );
+    const overlay = screen.getByTestId("card-open");
+
+    expect(overlay).toHaveAccessibleName("Large Fries");
+    expect(overlay).not.toHaveAttribute("aria-hidden");
+    expect(overlay).not.toHaveAttribute("tabindex");
+    expect(screen.getByTestId("card")).not.toHaveAttribute("data-selected");
+    expect(screen.getByTestId("card")).not.toHaveClass("tb-select");
+  });
+
+  // Fixer pass (review-figma-a11y-i18n F1 / F3 / F4); the held-touch geometry is e2e E13.
+  it("both foot buttons keep their whole hit area while pressed (tb-press-hit): a held press on REMOVE's edge never falls through to the overlay's CUSTOMIZE", () => {
+    renderCard({ customize: customize(vi.fn()), cta: lower("Remove") });
+
+    expect(screen.getByTestId("card-customize")).toHaveClass("tb-press-hit", "relative");
+    expect(screen.getByTestId("card-cta")).toHaveClass("tb-press-hit", "relative");
+  });
+
+  it("unpicked, CUSTOMIZE's box is kept (hidden, no button): picking never moves a wrapping name or the row", () => {
+    renderCard({ radio: "off", customize: customize(), cta: lower("Choose") });
+    const box = screen.getByTestId("card-cta").parentElement?.firstElementChild;
+
+    expect(box).not.toBe(screen.getByTestId("card-cta"));
+    expect(box?.tagName).toBe("SPAN");
+    expect(box).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveClass("invisible", "min-h-[60px]", "w-full");
+    expect(box).toBeEmptyDOMElement();
+  });
+
+  it("'Selected' is CUSTOMIZE's description only — hidden, never read again as stray text after REMOVE", () => {
+    renderCard({ customize: customize(vi.fn()), cta: lower("Remove") });
+
+    expect(screen.getByText("Selected")).not.toBeVisible();
+    expect(screen.getByTestId("card-customize")).toHaveAccessibleDescription("Selected +£3.00");
+  });
+});
+
 describe("OptionRow (Cards/Item/Old) — D6: the trash glyph only at quantity 1", () => {
   const renderRow = (qty: number, onDecrease = vi.fn(), onIncrease = vi.fn()) => {
     const view = render(

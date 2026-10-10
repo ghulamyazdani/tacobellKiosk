@@ -23,6 +23,12 @@ import {
   getEffectiveMax,
   getEffectiveMin,
 } from "@cx-sdk/ordering/customization/selectionRules";
+import {
+  isPackSlotGroup as isSlotGroup,
+  planAddonTap,
+  resolveAddonCustomize,
+  type AddonCustomizeTarget,
+} from "@cx-sdk/ordering/customization/addonCustomize";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import PackSlotCard from "../../components/customization/PackSlotCard";
@@ -41,6 +47,7 @@ import FooterBar from "../../components/chrome/FooterBar";
 import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
+import ErrorModal from "../../components/common/ErrorModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
@@ -51,14 +58,28 @@ import { ErrorBoundary } from "../../ErrorBoundary";
 import { loadedPdpParts, loadPdpLazyParts } from "./loadPdpLazyParts";
 
 // ---- Pack presentation (P6c brief): `_combo` groups with min===1 &&
-// max===1 render as slot cards + one SELECT sheet; every other group
-// (addons, BYO-shaped combos) keeps the generic renderGroup path. Module
-// scope: the init effect seeds one-option slots (D5) before render reaches
-// the consts below the early return. ----
-const isSlotGroup = (group: any) =>
-  String(group?._id ?? "").includes("_combo") &&
-  Number(group?.min) === 1 &&
-  Number(group?.max) === 1;
+// max===1 render as slot cards + one SELECT sheet (isSlotGroup — the SDK's
+// isPackSlotGroup, which the add-on planner shares); every other group
+// (addons, BYO-shaped combos) keeps the generic renderGroup path. ----
+
+/**
+ * D13 (lane addon-customize): the PDP swallows taps for this long after the
+ * tier-2 page or an add-on prompt CLOSES. The page's BACK overlaps the PDP's
+ * BACK by 92 px, and a prompt's YES / NO sit over the option grid, so the
+ * second tap of a double tap would leave the PDP or pick the card under it.
+ */
+const TAP_GUARD_MS = 500;
+
+type AddonTapInput = Parameters<typeof planAddonTap>[0];
+/** An add-on prompt: decision 5's remove confirm, or the fork's replace-item. */
+interface AddonPrompt {
+  kind: "remove" | "replace";
+  group: AddonTapInput["group"];
+  item: AddonTapInput["item"];
+  target: AddonCustomizeTarget | null;
+  nextGroup: unknown;
+  current?: AddonTapInput["item"];
+}
 
 /** Σ quantities picked in a group (the "count of max" label, 1:4911). */
 const pickedCount = (selection: ReadonlyArray<{ quantity?: unknown } | null>) =>
@@ -164,6 +185,7 @@ export default function Customization({
     increaseQuantity1,
     decreaseQuantity1,
     isAllowMultiplePunch,
+    notifyGroupMax,
   } = useCustomization({
     cartRef,
     isOpenBottomSheet,
@@ -188,6 +210,27 @@ export default function Customization({
   // Item 23: each failed ADD TO BAG (re)mounts the completion warning (0 = closed).
   const [incompleteTap, setIncompleteTap] = useState(0);
   const initialisedFor = useRef<string | null>(null);
+
+  // ---- Lane addon-customize: the add-on prompts (D9) and the tap guard
+  // (D13), armed on a CLOSE edge of either layer — the page or a prompt —
+  // never on an open edge (adjust state while rendering, DetourTapGuard's
+  // pattern). ----
+  const [addonPrompt, setAddonPrompt] = useState<AddonPrompt | null>(null);
+  const promptOpen = addonPrompt !== null;
+  const [prevLayers, setPrevLayers] = useState({ tier2Open, promptOpen });
+  const [tapGuard, setTapGuard] = useState(false);
+  if (prevLayers.tier2Open !== tier2Open || prevLayers.promptOpen !== promptOpen) {
+    setPrevLayers({ tier2Open, promptOpen });
+    if ((prevLayers.tier2Open && !tier2Open) || (prevLayers.promptOpen && !promptOpen)) {
+      setTapGuard(true);
+    }
+  }
+  // Rule 5: the guard's timer never outlives it (or the PDP).
+  useEffect(() => {
+    if (!tapGuard) return;
+    const id = window.setTimeout(() => setTapGuard(false), TAP_GUARD_MS);
+    return () => window.clearTimeout(id);
+  }, [tapGuard]);
 
   const isVariantFlow = isOpenBottomSheet?.type === "variant";
   const isEditMode = isOpenBottomSheet?.openType === "edit";
@@ -420,6 +463,77 @@ export default function Customization({
     setTier2BottomSheetInRdx(true, "customizableItem", "new");
   };
 
+  /*
+    Lane addon-customize — a tap on a grid option card: CUSTOMIZE
+    ("customize") or CHOOSE / REMOVE / the card body ("select"). The SDK's
+    planAddonTap decides (the fork card's planCustomizationSelect mapped onto
+    the two buttons); this applies it. Plain cards come through here too:
+    their plan is today's tap, except a swap away from a customized pick,
+    which asks first. A throw does nothing (Rule 2).
+  */
+  const onCardTap = (
+    action: "customize" | "select",
+    group: AddonTapInput["group"],
+    item: AddonTapInput["item"],
+    target: AddonCustomizeTarget | null,
+    nextGroup: unknown,
+    replaceConfirmed = false
+  ) => {
+    try {
+      // No ring reset here: a tap that lands clears it in the hook
+      // (handleSinglePunch); a refusal, a prompt or the page keeps it.
+      const plan = planAddonTap({
+        action,
+        customizations: selectedCustomizations,
+        group,
+        item,
+        target,
+        allowMultiplePunch: isAllowMultiplePunch(),
+        fetchModifierProperties,
+        generateUniqueId: (id) => `${Date.now()}_${String(id)}`,
+        replaceConfirmed,
+      });
+      if (plan.kind === "list") addCustomizations(group, plan.item, null, nextGroup, false);
+      else if (plan.kind === "refuse") notifyGroupMax(group);
+      else if (plan.kind === "confirm-remove") setAddonPrompt({ kind: "remove", group, item, target, nextGroup });
+      else if (plan.kind === "confirm-replace")
+        setAddonPrompt({ kind: "replace", group, item, target, nextGroup, current: plan.current });
+      else if (plan.kind === "open-new") {
+        dispatch(setTier1SelectedCustomization(plan.tier1));
+        openTier2New(group, item, target?.variant);
+      } else if (plan.kind === "open-edit") {
+        dispatch(setTier1SelectedCustomization(plan.tier1));
+        dispatch(
+          openTier2EditModal({
+            customizations: { selectedEntity: plan.entity, selectedCustomizations: plan.selections },
+            bottomSheet: { isOpen: true, type: "customizableItem", openType: "edit" },
+            groupId: group._id,
+            currentCustomizations: { selectedCustomizations: plan.tier1, group },
+            // Cast: handleSlotCustomize's — the reducer types this payload as any/void.
+          } as any)
+        );
+      }
+    } catch {
+      // Rule 2: a malformed menu map never takes the PDP down; the tap does nothing.
+    }
+  };
+
+  /** A prompt's YES: REMOVE drops every row of the id; a replace re-plans the same tap, confirmed. */
+  const confirmAddonPrompt = () => {
+    const prompt = addonPrompt;
+    setAddonPrompt(null);
+    if (!prompt) return;
+    if (prompt.kind === "replace") {
+      onCardTap("select", prompt.group, prompt.item, prompt.target, prompt.nextGroup, true);
+      return;
+    }
+    try {
+      addCustomizations(prompt.group, prompt.item, null, prompt.nextGroup, false);
+    } catch {
+      // Rule 2: the pick stays.
+    }
+  };
+
   const handleSlotSave = (group: any, item: any) => {
     const variant = findAppropriateVariantForSelectedItem(item);
     const tier2Capable = !!variant && Object.keys(variant).length > 0;
@@ -484,6 +598,12 @@ export default function Customization({
   // button, one select), so it says what the SDK does with that tap: CHOOSE,
   // REMOVE, or none on a swap group's pick (optionCta) — whose box stays
   // (reserveCta), so picking never moves the card's name or the row.
+  // Lane addon-customize (user decisions 2026-10-09): a card whose item has
+  // options of its own (resolveAddonCustomize — any card group, `_combo` and
+  // `_addons` alike) is Figma 1:5332's two-button card: CUSTOMIZE on a pick
+  // only (1:5333) above that CTA as a real button (1:5334 unpicked), its body
+  // CHOOSE unpicked and CUSTOMIZE on a pick; every card of its group is 476
+  // px (decision 4). Every card's tap runs the fork's flow (onCardTap).
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
     const items: any[] = (group?.constituentItems ?? []).filter(
@@ -502,6 +622,18 @@ export default function Customization({
     const oneOfOne = minPicks === 1 && maxPicks === 1;
     const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
+    // From the menu, never the selection: a tap never moves anything.
+    const targets = stepper
+      ? []
+      : items.map((item: any) =>
+          resolveAddonCustomize({
+            group,
+            item,
+            allowMultiplePunch: amp,
+            resolveVariant: findAppropriateVariantForSelectedItem,
+          })
+        );
+    const tall = targets.some(Boolean);
 
     return (
       <section
@@ -545,8 +677,11 @@ export default function Customization({
           // minmax: an errored section's 16 px padding must not push the
           // third 328 px card out of the ring.
           <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
-            {items.map((item: any) => {
+            {items.map((item: any, i: number) => {
               const selected = isSelected(group, item);
+              const target = targets[i];
+              const select = () => onCardTap("select", group, item, target, nextGroup);
+              const cta = optionCta(group, amp, selected, t, `pdp-option-cta-${item.id}`);
               return (
                 <OptionCard
                   key={item.id}
@@ -555,10 +690,24 @@ export default function Customization({
                   name={name(item)}
                   meta={formatOptionMeta(item, currency, t)}
                   radio={selected ? "on" : "off"}
-                  onSelect={() => addCustomizations(group, item, null, nextGroup, false)}
+                  onSelect={select}
                   selectLabel={name(item)}
-                  cta={optionCta(group, amp, selected, t, `pdp-option-cta-${item.id}`)}
-                  reserveCta
+                  tall={tall}
+                  {...(target
+                    ? {
+                        selectTestId: `pdp-option-select-${item.id}`,
+                        cta: cta && { ...cta, onClick: select, ariaLabel: `${cta.label} ${name(item)}` },
+                        customize: {
+                          label: t("pack.customize"),
+                          ariaLabel: `${t("pack.customize")} ${name(item)}`,
+                          testId: `pdp-option-customize-${item.id}`,
+                          description: t("pdp.selected"),
+                          onClick: selected
+                            ? () => onCardTap("customize", group, item, target, nextGroup)
+                            : undefined,
+                        },
+                      }
+                    : { cta, reserveCta: true })}
                 />
               );
             })}
@@ -812,6 +961,40 @@ export default function Customization({
         ) : (
           tier2Scrim
         ))}
+
+      {/* D13: over the page (z-60) and the PDP; the add-on prompts sit above at z-80. */}
+      {tapGuard && (
+        <div aria-hidden="true" data-testid="pdp-tier2-tap-guard" className="absolute inset-0 z-[61]" />
+      )}
+
+      {/* Lane addon-customize: REMOVE on a customized add-on (decision 5)
+          and a swap away from a customized pick (the fork's replace-item) ask
+          first — RemoveItemModal's ErrorModal shell (inert scrim, focus on
+          the primary). The fork's words: Are you sure? / Remove this item;
+          Replace {name} in your meal? / Yes, replace item. */}
+      {addonPrompt && (
+        <ErrorModal
+          testId={addonPrompt.kind === "remove" ? "pdp-addon-remove" : "pdp-addon-replace"}
+          icon={false}
+          title={
+            addonPrompt.kind === "remove"
+              ? t("pdp.discardTitle")
+              : t("pdp.replaceTitle", { name: name(addonPrompt.current) })
+          }
+          message={t("pdp.discardBody")}
+          secondary={{
+            label: t("pdp.keepItem"),
+            testId: `pdp-addon-${addonPrompt.kind}-cancel`,
+            onClick: () => setAddonPrompt(null),
+          }}
+          primary={{
+            label: addonPrompt.kind === "remove" ? t("pdp.removeThisItem") : t("pdp.replaceConfirm"),
+            testId: `pdp-addon-${addonPrompt.kind}-confirm`,
+            onClick: confirmAddonPrompt,
+            danger: addonPrompt.kind === "remove",
+          }}
+        />
+      )}
 
       {/* Completion warning — Figma Modal 1:945 (no icon, one full-width
           GOT IT); z-80 over the PDP, embedded hosts included. Closing it is

@@ -24,10 +24,13 @@ import {
   setTier1SelectedCustomization,
   setTier2CustomizationModalForConfirmation,
   setTier2SelectedCustomization,
+  tier1CustomizationSelectedEntity,
   tier2CustomizationSelectedEntity,
   tier2MIAMGroupID,
   tier2SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
+import { isPackSlotGroup } from "@cx-sdk/ordering/customization/addonCustomize";
+import { computeShowAddonPrices } from "@cx-sdk/ordering/customization/nestedCardLogic";
 import {
   selectHidePlusIconFromItem,
 } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -72,10 +75,18 @@ const generateUniqueId = (id: any) => `${Date.now()}_${id}`;
 /**
  * Tier-2 (nested) customization — the full-screen CUSTOMIZE page (item 42,
  * D4: Figma 1:2984 / 1:5051 family) reached from a pack slot's SELECT sheet
- * or CUSTOMIZE (new), or from an already-customized slot pick (edit): the
- * Hero/Customize band, the PDP's group sections, BACK + UPDATE. Lazy: it
- * rides in bagLazyParts (+ the SDK tier2Logic only it imports) and the PDP
- * mounts it only while MIAMTier2Open — each open is a fresh mount.
+ * or CUSTOMIZE (new), or from an already-customized slot pick (edit) — and
+ * (lane addon-customize) from a PDP option card whose item has options of
+ * its own: a required CHOOSE or a replace YES (new), CUSTOMIZE or a body tap
+ * on a pick (edit). The Hero/Customize band, the PDP's group sections,
+ * BACK + UPDATE. Lazy: it rides in bagLazyParts (+ the SDK tier2Logic only
+ * it imports) and the PDP mounts it only while MIAMTier2Open — each open is
+ * a fresh mount.
+ * A session whose parent group is NOT a pack slot follows the fork's tier-2
+ * card: every own group is toggle cards (the fork forces item max 1 on
+ * tier-2), and own-pick prices plus the amount show only under the PDP
+ * parent's truthy applyAddonsPrice (computeShowAddonPrices). Its own cards
+ * never carry CUSTOMIZE (no tier 3).
  * BLOCKED, never faked: NONE / REGULAR / EXTRA levels, REMOVED / ADD,
  * RECOMMENDED, UNAVAILABLE and an upgrade card's CUSTOMIZE (no data; no
  * tier-3).
@@ -109,6 +120,7 @@ export default function Tier2CustomizationSheet() {
   const selectedCustomizations = useSelector(tier2SelectedCustomization);
   const groupIdTier2 = useSelector(tier2MIAMGroupID);
   const parentMeta = useSelector(selectCurrentTier1Customizations);
+  const tier1Entity = useSelector(tier1CustomizationSelectedEntity);
   const tier1SessionLive = useSelector(makeItAMealTier1Customization);
   const hidePlusButton = useSelector(selectHidePlusIconFromItem);
   const discardPromptOpen = useSelector(
@@ -483,8 +495,13 @@ export default function Tier2CustomizationSheet() {
   const entityCal = (() => {
     const cal = SelectedEntity?.calorieCount;
     const value = typeof cal === "object" ? cal?.value : cal;
-    return value ? ` | ${t("pack.cal", { value })}` : "";
+    return value ? t("pack.cal", { value }) : "";
   })();
+  // Lane addon-customize: a session opened from a PDP option card (its parent
+  // is not a pack slot) prices own picks the fork's way — only under the PDP
+  // parent's truthy applyAddonsPrice; pack-slot sessions are unchanged.
+  const addonSession = !isPackSlotGroup(parentMeta?.group);
+  const showPrices = !addonSession || Boolean(computeShowAddonPrices(true, tier1Entity));
 
   const selectionFor = (group: any): any[] =>
     (selectedCustomizations ?? {})[group?._id] ?? [];
@@ -496,7 +513,8 @@ export default function Tier2CustomizationSheet() {
   // The PDP's building blocks with this session's handlers: radio cards
   // (the PDP's CTA on every card — optionCta + reserveCta, user report
   // 2026-10-09; no badges) for one-per-tap groups, stepper rows for
-  // multi-punch ones.
+  // multi-punch ones — on a pack-slot session only: a PDP option card's
+  // session is toggle cards throughout (one unit per tap, the fork's tier-2).
   // Section id={group._id} — the hook's error AutoScroll targets it inside
   // #scrollCustomizableItem2.
   const renderGroup = (group: any, index: number) => {
@@ -513,7 +531,7 @@ export default function Tier2CustomizationSheet() {
     const minPicks = Number(getEffectiveMin(group, amp));
     const maxPicks = Number(getEffectiveMax(group, amp));
     const oneOfOne = minPicks === 1 && maxPicks === 1;
-    const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
+    const stepper = !addonSession && Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
 
     return (
@@ -574,7 +592,7 @@ export default function Tier2CustomizationSheet() {
                   testId={`tier2-option-${item.id}`}
                   image={resolveEntityImage(item)}
                   name={name(item)}
-                  meta={formatOptionMeta(item, currency, t)}
+                  meta={formatOptionMeta(showPrices ? item : { ...item, price: 0 }, currency, t)}
                   radio={selected ? "on" : "off"}
                   onSelect={() =>
                     addCustomizations(group, item, null, nextGroup, false)
@@ -685,9 +703,9 @@ export default function Tier2CustomizationSheet() {
               data-testid="tier2-price-line"
               className="text-[20px] leading-[20px] text-tb-ink-purple"
             >
-              {currency}
-              {total.toFixed(2)}
-              {entityCal}
+              {showPrices
+                ? `${currency}${total.toFixed(2)}${entityCal && ` | ${entityCal}`}`
+                : entityCal}
             </p>
           </div>
         </div>

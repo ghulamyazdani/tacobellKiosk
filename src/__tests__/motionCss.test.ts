@@ -247,6 +247,14 @@ describe("press (§3.1)", () => {
     });
     expect(rule(".tb-press-hit:active::before").decl).toEqual({ scale: "calc(1 / var(--tb-press-scale))" });
   });
+
+  it("the two-button option card (tb-press-card + tb-select) springs back AT ONCE and its pressed overlay sits on top: a held press in the gap never lands on the REMOVE its squeeze lifted (lane addon-customize; e2e E13)", () => {
+    expect(rule(".tb-press-card.tb-select").decl).toEqual({ transition: "none" });
+    expect(rule(".tb-press-card.tb-select:has(> button:empty:active)").decl).toEqual({
+      transition: "scale var(--tb-dur-press) var(--tb-ease-press)",
+    });
+    expect(rule(".tb-press-card.tb-select > button:empty:active").decl).toEqual({ "z-index": "20" });
+  });
 });
 
 describe("route entrances (§2)", () => {
@@ -266,6 +274,12 @@ describe("route entrances (§2)", () => {
 
   it("tb-select plays only while aria-pressed / aria-checked / aria-current is true", () => {
     expect(rule('.tb-select:is([aria-pressed="true"], [aria-checked="true"], [aria-current="true"])').decl).toEqual({
+      animation: "tb-select var(--tb-dur-select) var(--tb-ease-spring) backwards",
+    });
+  });
+
+  it("…and on the two-button option card, whose select state is data-selected (lane addon-customize)", () => {
+    expect(rule('.tb-select[data-selected="true"]').decl).toEqual({
       animation: "tb-select var(--tb-dur-select) var(--tb-ease-spring) backwards",
     });
   });

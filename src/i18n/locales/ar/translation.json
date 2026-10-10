@@ -148,7 +148,12 @@
     "discardKeep": "متابعة التعديل",
     "discardConfirm": "تجاهل",
     "groupCount": "{{count}} من {{max}}",
-    "groupMaxReached": "يمكنك اختيار {{max}} من {{group}} كحد أقصى"
+    "groupMaxReached": "يمكنك اختيار {{max}} من {{group}} كحد أقصى",
+    "keepItem": "لا، احتفظ بالعنصر الحالي",
+    "removeThisItem": "إزالة هذا العنصر",
+    "replaceTitle": "استبدال {{name}} في وجبتك؟",
+    "replaceConfirm": "نعم، استبدل العنصر",
+    "selected": "تم الاختيار"
   },
   "pack": {
     "selectGroup": "اختر {{name}}",

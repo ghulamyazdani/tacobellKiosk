@@ -32,14 +32,25 @@ export interface OptionCardProps {
   /**
    * With onClick: a nested control → the overlay-button pattern (see below).
    * Without: the LABEL of the card's own tap (optionCta) — a span inside the
-   * ONE card button, so a tap on it selects exactly once.
+   * ONE card button, so a tap on it selects exactly once. `ariaLabel` names
+   * a nested one ("Choose <item>").
    */
-  cta?: { label: string; onClick?: () => void; testId: string };
+  cta?: { label: string; onClick?: () => void; testId: string; ariaLabel?: string };
   /**
    * No CTA, but keep its box (hidden): a grid card whose CTA comes and goes
    * (optionCta — a swap group's pick has none) never moves its name or row.
    */
   reserveCta?: boolean;
+  /**
+   * The two-button card (Figma 1:5332 / 1:5333; lane addon-customize): an
+   * option whose item has options of its own. CUSTOMIZE renders above the
+   * CTA only with onClick (a pick), described by `description` ("Selected");
+   * the body overlay turns pointer-only and runs CUSTOMIZE on a pick,
+   * onSelect otherwise.
+   */
+  customize?: { label: string; ariaLabel: string; testId: string; description: string; onClick?: () => void };
+  /** The whole group holds a two-button card: 476 px (1:5332), else 400. */
+  tall?: boolean;
   onSelect?: () => void;
   selectLabel?: string;
   /** Testid of the overlay select button (PackSlotCard's pack-slot-open-*). */
@@ -105,7 +116,7 @@ const CTA =
   "tb-display relative z-10 mt-auto flex min-h-[60px] w-full items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-center text-[18px] leading-[16px] text-tb-purple";
 
 const CARD =
-  "relative flex h-full min-h-[400px] w-full flex-col justify-between gap-[24px] rounded-[8px] bg-tb-grey-6 p-[24px] text-left";
+  "relative flex h-full w-full flex-col justify-between gap-[24px] rounded-[8px] bg-tb-grey-6 p-[24px] text-left";
 
 /**
  * Menu-Item_Medium: a 172 px image box, then the name / meta and an optional
@@ -120,10 +131,17 @@ const CARD =
  * still lands — the overlay's trick. With a nested CTA (onClick), the P9f
  * overlay-button pattern: the container keeps the testid, the CTA sits above
  * at z-10, the named overlay goes LAST in the DOM.
+ * With `customize` (the two-button card, 1:5332): CUSTOMIZE (a pick only; its
+ * box kept, hidden, unpicked) and the CTA are two real SIBLING buttons in one
+ * foot wrapper (60 + 16 + 60 — CUSTOMIZE at card y 316, the CTA at 392 in a
+ * 476 card); the overlay stays last and empty but pointer-only (aria-hidden,
+ * out of the tab order): its action is CHOOSE unpicked and CUSTOMIZE on a
+ * pick, each also a real button.
  * Motion (lane motion): the button card bumps when it turns selected
- * (tb-select, driven by aria-pressed); the overlay card squeezes while its
- * overlay is pressed (tb-press-card); the check pops in; an errored card
- * shakes once with its ring (a selected one keeps tb-select — accepted).
+ * (tb-select, driven by aria-pressed — data-selected on the two-button card);
+ * the overlay card squeezes while its overlay is pressed (tb-press-card); the
+ * check pops in; an errored card shakes once with its ring (a selected one
+ * keeps tb-select — accepted).
  */
 export default function OptionCard({
   testId,
@@ -134,13 +152,15 @@ export default function OptionCard({
   dimmed = false,
   cta,
   reserveCta = false,
+  customize,
+  tall = false,
   onSelect,
   selectLabel,
   selectTestId,
   errored = false,
 }: OptionCardProps) {
   const id = useId();
-  const className = `${CARD} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
+  const className = `${CARD} ${tall ? "min-h-[476px]" : "min-h-[400px]"} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
   const content = (
     <>
       <span className="flex h-[172px] w-full shrink-0 items-center justify-center">
@@ -156,8 +176,9 @@ export default function OptionCard({
           under the photo at card y 242 with or without a CTA, and the CTA
           is pinned to the foot. Only a 2-line name + meta + CTA (or its
           reserved box) outgrows it (156 px: the name rises 22 px, as Figma's
-          bottom-anchored name box would). */}
-      <span className="flex min-h-[134px] w-full flex-col gap-[24px]">
+          bottom-anchored name box would). A tall card's box is 210 px
+          (1:5332: name + meta + CUSTOMIZE + CTA), the name still at 242. */}
+      <span className={`flex ${tall ? "min-h-[210px]" : "min-h-[134px]"} w-full flex-col gap-[24px]`}>
         <span className="flex flex-col gap-[4px]">
           <span className="block text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
             {name}
@@ -168,7 +189,47 @@ export default function OptionCard({
             </span>
           )}
         </span>
-        {cta ? (
+        {customize ? (
+          // The two-button foot: CUSTOMIZE (a pick) above the CTA, each else
+          // its hidden box — a pick never moves a wrapping name or the row.
+          // tb-press-hit: a held press on a button's edge stays on it.
+          <span className="mt-auto flex w-full flex-col gap-[16px]">
+            {customize.onClick ? (
+              <button
+                type="button"
+                data-testid={customize.testId}
+                aria-label={customize.ariaLabel}
+                aria-describedby={[`${id}-picked`, meta && `${id}-meta`].filter(Boolean).join(" ")}
+                onClick={customize.onClick}
+                className={`${CTA} tb-press-hit`}
+              >
+                {customize.label}
+              </button>
+            ) : (
+              <span aria-hidden="true" className={`${CTA} invisible`} />
+            )}
+            {cta?.onClick ? (
+              <button
+                type="button"
+                data-testid={cta.testId}
+                aria-label={cta.ariaLabel}
+                aria-describedby={meta ? `${id}-meta` : undefined}
+                onClick={cta.onClick}
+                className={`${CTA} tb-press-hit`}
+              >
+                {cta.label}
+              </button>
+            ) : (
+              <span aria-hidden="true" className={`${CTA} invisible`} />
+            )}
+            {/* hidden: a description only (aria-describedby still reads it). */}
+            {customize.onClick && (
+              <span id={`${id}-picked`} hidden>
+                {customize.description}
+              </span>
+            )}
+          </span>
+        ) : cta ? (
           cta.onClick ? (
             <button type="button" data-testid={cta.testId} onClick={cta.onClick} className={CTA}>
               {cta.label}
@@ -197,7 +258,7 @@ export default function OptionCard({
     </>
   );
 
-  if (onSelect && !cta?.onClick) {
+  if (onSelect && !cta?.onClick && !customize) {
     // A CTA here is label-only: its span carries `${id}-cta`.
     const describedBy = [meta && `${id}-meta`, cta && `${id}-cta`].filter(Boolean).join(" ");
     return (
@@ -214,15 +275,22 @@ export default function OptionCard({
       </button>
     );
   }
+  // The two-button card's select state is its radio (no aria-pressed control).
   return (
-    <div data-testid={testId} className={`tb-press-card ${className}`}>
+    <div
+      data-testid={testId}
+      data-selected={customize && radio === "on" ? "true" : undefined}
+      className={`tb-press-card ${customize ? "tb-select " : ""}${className}`}
+    >
       {content}
       {onSelect && (
         <button
           type="button"
           data-testid={selectTestId}
-          aria-label={selectLabel}
-          onClick={onSelect}
+          aria-label={customize ? undefined : selectLabel}
+          aria-hidden={customize ? true : undefined}
+          tabIndex={customize ? -1 : undefined}
+          onClick={customize?.onClick ?? onSelect}
           className="absolute inset-0 h-full w-full rounded-[8px]"
         />
       )}
