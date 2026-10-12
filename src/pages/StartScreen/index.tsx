@@ -80,7 +80,7 @@ export default function StartScreen() {
   // the session. Never reset-then-navigate from a screen with guard effects
   // (hazard H1): RR7's BrowserRouter runs navigate inside startTransition, so
   // the emptied store renders on the OLD route first and the /cart, /tent,
-  // /payment, /forYou, /customization guards re-navigate to /menu instead.
+  // /payment, /customization guards re-navigate to /menu instead.
   // Callers that already reset (Menu/CustomerName cancel, OrderSuccess) are
   // harmless: their reset cleared the claim, so the revoke below no-ops.
   // Ref-latched: StrictMode re-runs mount effects with the SAME closure (claim

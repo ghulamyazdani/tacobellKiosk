@@ -351,13 +351,10 @@ async function addCheeseBurgerViaPdp(page: Page) {
   await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
 }
 
-/** VIEW MY BAG → /cart, through the once-per-session /forYou upsell. */
+/** VIEW MY BAG → /cart. */
 async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
 }
 

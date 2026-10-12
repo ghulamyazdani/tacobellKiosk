@@ -81,17 +81,14 @@ async function orderAs(page: Page, pipelineId: string) {
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** One Greek Salad, then VIEW MY BAG (through the session's /forYou upsell). */
+/** One Greek Salad, then VIEW MY BAG. */
 async function bagOneSalad(page: Page) {
   const salad = page.getByTestId(`item-${GREEK_SALAD}`);
   await salad.scrollIntoViewIfNeeded();
   await salad.click();
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
   await expect(page.getByTestId("bag-subtotal")).toContainText("£17.00");
 }

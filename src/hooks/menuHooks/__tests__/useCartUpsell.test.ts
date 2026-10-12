@@ -8,17 +8,15 @@ import { store } from "../../../redux/app/store";
 import useCartUpsell from "../useCartUpsell";
 
 /*
-  The gate that decides whether the cart-upsell surfaces exist at all — the
-  bag's Complete-Your-Meal rail AND the /forYou screen both hang off
-  `shouldShowUpsell`.
+  The gate that decides whether the bag's Complete-Your-Meal rail exists at
+  all — it hangs off `shouldShowUpsell`.
 
   It is OPT-OUT, and that is the whole point of this suite.
   `enable_cart_upsell_screen` is not a field the settings API sends today, so a
-  `=== true` check would keep both surfaces dark on every live kiosk while
-  looking perfectly correct in review. `!== false` means the flagged items
-  alone are enough — and a tenant can still switch the feature off by config
-  once the flag is plumbed, which is the escape hatch that makes shipping an
-  unsigned-off screen reversible.
+  `=== true` check would keep the rail dark on every live kiosk while looking
+  perfectly correct in review. `!== false` means the flagged items alone are
+  enough — and a tenant can still switch the rail off by config once the flag
+  is plumbed.
 */
 
 /** Converted-menu entityMap — only `isCartRecommended: true` entities count. */
@@ -94,8 +92,8 @@ describe("useCartUpsell — the opt-OUT gate", () => {
 
     const { current } = upsell();
     expect(current.shouldShowUpsell).toBe(false);
-    // The ITEMS are unchanged — only the gate closed. /forYou's mount guard
-    // and Menu's forward edge both read the gate, not the list.
+    // The ITEMS are unchanged — only the gate closed. The bag rail reads the
+    // gate; the rewards sheet's suggested rail reads the list.
     expect(current.items).toHaveLength(2);
   });
 
@@ -137,21 +135,5 @@ describe("useCartUpsell — the opt-OUT gate", () => {
     const { current } = upsell();
     expect(current.shouldShowUpsell).toBe(true);
     expect(current.items).toHaveLength(1);
-  });
-
-  it("reports why flagged items did not make it, for the suppression event", () => {
-    // Menu's closed branch sends this straight to analytics, so the shape has
-    // to be a flat numeric bag.
-    loadMenu();
-    const breakdown = upsell().current.getBreakdown();
-
-    expect(breakdown.flagged).toBe(3);
-    expect(breakdown.excluded_inactive).toBe(1);
-    expect(breakdown.eligible).toBe(2);
-    expect(breakdown.above_fold).toBe(2);
-    expect(breakdown.hidden_over_capacity).toBe(0);
-    Object.values(breakdown).forEach((value) =>
-      expect(typeof value).toBe("number"),
-    );
   });
 });

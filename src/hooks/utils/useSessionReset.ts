@@ -4,7 +4,6 @@ import useOrderIndexDb from "../indexedDb/useOrderIndexDb";
 import {
   emptyCart,
   removeCartOffer,
-  resetCartUpsellSeen,
   setCartInstructions,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { emptyOrder } from "@cx-sdk/ordering/state/order.slice";
@@ -123,9 +122,6 @@ const useSessionReset = () => {
     // The confirmation modal can stay open indefinitely, so a reset must
     // clear it too.
     dispatch(mutateAddToCartModal(false));
-    // The pre-cart upsell is shown at most once per CUSTOMER, and the flag
-    // deliberately survives emptyCart, so only the session reset clears it.
-    dispatch(resetCartUpsellSeen());
     // A detour flag left set by an abandoned customization would suppress
     // the next customer's first recommendation strip.
     dispatch(setRecommendationDetour(false));

@@ -71,7 +71,7 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.clock.install();
   });
 
-  test("A ENTRY + BROWSE: registration, splash, order type, language, menu (with an unavailable card), MIAM, PDP, added, repeat, pack + slot sheet, For You, bag + rail, remove, order-type confirm, global error, cancel order", async ({
+  test("A ENTRY + BROWSE: registration, splash, order type, language, menu (with an unavailable card), MIAM, PDP, added, repeat, pack + slot sheet, bag + rail, remove, order-type confirm, global error, cancel order", async ({
     page,
   }) => {
     await mockKioskBackend(page, {
@@ -135,11 +135,9 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible();
 
-    // The session's first VIEW MY BAG: the upsell, then the bag with its Complete-your-meal rail.
+    // VIEW MY BAG: the bag with its Complete-your-meal rail.
     await page.getByTestId("cta-view-bag").click();
-    await expect(page).toHaveURL(/\/forYou$/);
-    await expectA11y(page, "a-12-for-you", "foryou-back");
-    await page.getByTestId("foryou-primary").click();
+    await expect(page).toHaveURL(/\/cart$/);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     await expect(page.getByTestId("bag-rail")).toBeVisible();
     await expectA11y(page, "a-13-bag", "bag-close");

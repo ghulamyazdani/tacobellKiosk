@@ -247,6 +247,23 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     );
   });
 
+  it("ghost-tap guard: the bag OPENING (the menu's VIEW MY BAG overlaps PAY) covers the CTA bar briefly, then clears", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    const { rerender, onClose } = renderSheet(false);
+    rerender(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <BagSheet open onClose={onClose} />
+        </MemoryRouter>
+      </Provider>
+    );
+    expect(screen.getByTestId("bag-cta-tap-guard")).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.queryByTestId("bag-cta-tap-guard")).not.toBeInTheDocument(),
+      { timeout: 1500 }
+    );
+  });
+
   it("applied offer: applied row with Save line and −£X, Discounts bill line, and the ORDER & PAY CTA (real bill figures)", () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }]));
     store.dispatch(applyOffer({ offer: FLAT_OFFER }));

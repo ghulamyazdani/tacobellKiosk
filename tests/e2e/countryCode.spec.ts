@@ -227,10 +227,7 @@ test.describe("UB5: the country-code picker", () => {
     await salad.click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await page.getByTestId("cta-view-bag").click();
-    await page.waitForURL(/\/(forYou|cart)$/);
-    if (new URL(page.url()).pathname === "/forYou") {
-      await page.getByTestId("foryou-primary").click();
-    }
+    await page.waitForURL(/\/cart$/);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     await page.getByTestId("bag-ordertype-takeout").click();
     await expect(page.getByTestId("bag-ordertype-confirm")).toBeVisible();
@@ -294,10 +291,7 @@ test.describe("UB5: the country-code picker", () => {
     await salad.click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await page.getByTestId("cta-view-bag").click();
-    await page.waitForURL(/\/(forYou|cart)$/);
-    if (new URL(page.url()).pathname === "/forYou") {
-      await page.getByTestId("foryou-primary").click();
-    }
+    await page.waitForURL(/\/cart$/);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
 
     deploymentCountry = { name: "United Arab Emirates", dial_code: "+971", code: "AE" };

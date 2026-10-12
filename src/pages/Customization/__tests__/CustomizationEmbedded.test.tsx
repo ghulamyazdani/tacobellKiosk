@@ -269,7 +269,7 @@ describe("Customization — the route entrance (lane motion)", () => {
     pushed.unmount();
 
     notePath("/customization");
-    notePath("/forYou");
+    notePath("/cart");
     mountPushed(false, "/customization");
     expect(root()).toHaveAttribute("data-enter", "back");
   });

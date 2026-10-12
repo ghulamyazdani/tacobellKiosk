@@ -148,9 +148,10 @@ const InstructionsSheet = lazy(async () => ({
 
 /**
  * How long the CTA bar swallows taps after a rewards / picker / buy-stage
- * sheet closes (ReachZone's exit-guard pattern). SAVE, CONFIRM and CONTINUE
- * sit over PAY / LOG-IN and close instantly, so the second tap of a double
- * tap would start checkout.
+ * sheet closes, or the bag opens (ReachZone's exit-guard pattern). SAVE,
+ * CONFIRM and CONTINUE sit over PAY / LOG-IN and close instantly, and the
+ * menu's VIEW MY BAG overlaps PAY, so the second tap of a double tap would
+ * start checkout.
  */
 const CTA_TAP_GUARD_MS = 500;
 
@@ -359,6 +360,13 @@ export default function BagSheet({
   if (prevSheetOpen !== sheetOpen) {
     setPrevSheetOpen(sheetOpen);
     setCtaTapGuard(!sheetOpen);
+  }
+  // …and on the bag's own open edge: the menu's VIEW MY BAG overlaps PAY by
+  // 4–5 px, so a double tap there would start checkout.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    setCtaTapGuard(open);
   }
   useEffect(() => {
     if (!ctaTapGuard) return;

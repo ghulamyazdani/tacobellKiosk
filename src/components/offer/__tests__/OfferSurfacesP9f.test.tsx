@@ -44,7 +44,7 @@ const NACHOS = { id: "nachos", name: "Nachos", price: 20, aliases: AR(AR_NACHOS)
 // importOriginal: RewardsSheet also reads selectMenuSellableEntityMap (UB6).
 vi.mock("../../../hooks/menuHooks/useCartUpsell", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  default: () => ({ items: [NACHOS], shouldShowUpsell: true, getBreakdown: () => ({}) }),
+  default: () => ({ items: [NACHOS], shouldShowUpsell: true }),
 }));
 
 type Row = { id?: string; name?: string; isGetItem?: boolean };

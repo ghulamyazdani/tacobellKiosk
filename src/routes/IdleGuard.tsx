@@ -38,7 +38,7 @@ const ACTIVITY_EVENTS = DEFAULT_EVENTS.filter((event) => event !== "focus");
  * nothing else; /start's MOUNT owns revoke-then-resetSession("full").
  * Resetting here first would be a bug: RR7's BrowserRouter wraps navigate
  * in startTransition, so the emptied store renders on the OLD route first
- * and the empty-state guard effects of /cart, /tent, /payment, /forYou and
+ * and the empty-state guard effects of /cart, /tent, /payment and
  * /customization re-navigate to /menu — the kiosk would park on an empty
  * menu instead of Splash. `endedRef` latches the exit, so a tap and onIdle
  * landing together tear down once.

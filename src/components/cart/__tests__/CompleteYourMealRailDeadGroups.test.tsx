@@ -102,14 +102,17 @@ describe.each([
 });
 
 describe("the same menu on the other surfaces that share these selectors (UB6)", () => {
-  it("the flagged source's suppression telemetry (getBreakdown) counts what the menu sells", () => {
+  it("the flagged source (useCartUpsell's items) offers what the menu sells", () => {
     seedBag(false);
     const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
 
     const { result } = renderHook(() => useCartUpsell(), { wrapper });
 
     // fries (one-tap) + burger (live group); the dead pack is not on the menu.
-    expect(result.current.getBreakdown()).toMatchObject({ flagged: 2, eligible: 2, needs_customization: 1 });
+    expect(result.current.items.map((item) => [item.id, item.isDirectlyAddable])).toEqual([
+      ["fries", true],
+      ["burger", false],
+    ]);
   });
 
   it("the PDP You Might Like rail offers the dead-group item as the menu's one-tap add, never the dead pack", () => {

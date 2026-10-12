@@ -121,10 +121,6 @@
     "bestValue": "أفضل قيمة",
     "continue": "متابعة"
   },
-  "customization": {
-    "comingSoon": "التخصيص قادم قريباً",
-    "backToMenu": "العودة إلى القائمة"
-  },
   "keyboard": {
     "shift": "تبديل الأحرف",
     "backspace": "حذف",
@@ -173,11 +169,6 @@
     "accept": "نعم، اجعلها وجبة",
     "decline": "ليس اليوم",
     "save": "وفر {{amount}}"
-  },
-  "upsell": {
-    "anythingElse": "أكمل وجبتك",
-    "notToday": "ليس اليوم",
-    "proceedToOrder": "المتابعة إلى الطلب"
   },
   "bag": {
     "title": "حقيبتي",

@@ -400,8 +400,28 @@ async function pdpRailIds(page: Page): Promise<string[]> {
     );
 }
 
-/** The in-cart count pill: the card's only purple span (forYou.spec quantityPill). */
+/** The in-cart count pill: the card's only purple span. */
 const quantityPill = (card: Locator) => card.locator("span.bg-tb-purple");
+
+/** The first text of a card that its in-cart count pill covers ("" = none). */
+const textUnderPill = (card: Locator) =>
+  card.evaluate((el) => {
+    const pill = el.querySelector("span.bg-tb-purple");
+    if (!pill) return "no pill";
+    const p = pill.getBoundingClientRect();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (pill.contains(n) || !n.textContent?.trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        if (r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top) {
+          return n.textContent.trim();
+        }
+      }
+    }
+    return "";
+  });
 
 /** Cart rows as [id, quantity] (DEV-only window.__kioskStore). */
 const cartRows = (page: Page) =>
@@ -457,6 +477,8 @@ test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, pe
 
     await sauce.click();
     await expect(quantityPill(sauce)).toHaveText("1");
+    // The count pill (top-left, on the photo) covers none of the card's text.
+    expect(await textUnderPill(sauce)).toBe("");
     await expect(page).toHaveURL(/\/customization$/);
     await expect(page.getByTestId("customization-screen")).toBeVisible();
     await expect(page.getByTestId("product-added-modal")).toHaveCount(0);

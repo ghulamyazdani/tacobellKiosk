@@ -44,14 +44,14 @@ interface CompleteYourMealRailProps {
  * and carries returnTo:"cart" so a customization detour returns to /cart
  * (trap 7), never dumping the customer on /menu.
  *
- * P7d: the tile itself now lives in `./ForYouCard`, lifted out of what used to
- * be this file's private `renderCard` helper so the pre-cart /forYou grid and
- * this rail render the SAME component — one card, one set of geometry
+ * P7d: the tile itself lives in `./ForYouCard`, lifted out of what used to
+ * be this file's private `renderCard` helper so this rail and the PDP's You
+ * Might Like rail render the SAME component — one card, one set of geometry
  * constants, one accessible-name rule. The rail keeps everything that is
  * genuinely its own: the gate, the in-cart filter, the tap routing and the
  * section chrome. `bag-rail` and `bag-rail-item-<id>` are unchanged — the
- * card takes its testid from the consumer precisely so both suites keep the
- * ids they already address.
+ * card takes its testid from the consumer precisely so each suite keeps the
+ * ids it already addresses.
  */
 export default function CompleteYourMealRail({
   onDetour,

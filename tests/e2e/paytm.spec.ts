@@ -205,12 +205,8 @@ async function burgerToPayment(page: Page) {
   });
   await page.getByTestId("added-continue").click();
 
-  // The P7d upsell may sit on the first VIEW MY BAG (forYou.spec.ts).
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("bag-pay")).toContainText("9.00");
   await page.getByTestId("bag-pay").click();

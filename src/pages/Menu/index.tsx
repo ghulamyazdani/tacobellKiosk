@@ -23,15 +23,10 @@ import {
   selectLoyaltyItemsModal,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
-import {
-  cartQuantity,
-  selectCartUpsellSeen,
-  setCartUpsellEntryQuantity,
-} from "@cx-sdk/ordering/state/cart.slice";
+import { cartQuantity } from "@cx-sdk/ordering/state/cart.slice";
 
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import useCartUpsell from "../../hooks/menuHooks/useCartUpsell";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useSessionReset from "../../hooks/utils/useSessionReset";
@@ -152,17 +147,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   // (written by /phone, or by the login modal when the guest skipped it).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
   const customerPhone = useSelector(selectPhoneNumber) as any;
-  /**
-   * P7d pre-cart upsell gate — UNITS, not ROWS.
-   *
-   * `cartQuantity` is `state.cart.totalQuantity`, the same read BagSheet makes.
-   * The CTA bar's own "(n)" is deliberately a ROW count (`cartItems.length`)
-   * and stays that way — but a cart holding two of one item is ONE row and TWO
-   * units, so gating or baselining on rows would make /forYou's "Proceed to
-   * Order" flip on the wrong event for every multi-quantity cart.
-   */
   const totalQuantity = Number(useSelector(cartQuantity) ?? 0);
-  const cartUpsellSeen = Boolean(useSelector(selectCartUpsellSeen));
 
   const [languageOpen, setLanguageOpen] = useState(false);
   const [sizeEntity, setSizeEntity] = useState<any | null>(null);
@@ -180,11 +165,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const tabId = useSelector(selectTabId);
   const ada = useAdaActive();
   const { name } = useLocalized();
-  const {
-    items: upsellItems,
-    shouldShowUpsell,
-    getBreakdown,
-  } = useCartUpsell();
   const paneRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
@@ -328,7 +308,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    *                availableCombos) → <MakeItAMealPrompt />
    * The last two render NOTHING here: both overlays are mounted once for the
    * whole in-session subtree by AppRoutes' InSessionOverlays layout route, so
-   * the same tap works from /forYou and /customization too. Do NOT re-mount
+   * the same tap works from /customization and the bag too. Do NOT re-mount
    * them on this page.
    *
    * B3 events (fork ItemCard parity): ItemClicked on a card tap (never the
@@ -509,56 +489,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     navigate("/start");
   };
 
-  /* ------------------------------------------------------------------ *
-   * P7d — the ONE forward Menu -> Cart edge                             *
-   * ------------------------------------------------------------------ */
-
-  /**
-   * Every OTHER navigate("/cart") in this app is a BACKWARD return —
-   * CustomerName, Checkout, and the bag sheet's own close — and must never
-   * be upsold. Re-offering "complete your meal" to somebody reversing OUT of
-   * the cart is the worst outcome available, so the upsell hangs off this
-   * handler alone.
-   *
-   * Three-factor AND, evaluated HERE rather than on /forYou so the customer
-   * never sees a screen flash up and redirect itself away:
-   *   1. the cart holds something,
-   *   2. this menu actually has an upsell worth showing (useCartUpsell —
-   *      opt-out setting AND a non-empty item list; a gate that can render an
-   *      empty surface is a broken gate), and
-   *   3. this session has not already been offered one.
-   *
-   * `cartUpsellSeen` is redux, NOT location.state: router state belongs to a
-   * single history entry, so it is lost the moment the customer navigates
-   * anywhere that does not re-supply it — including /forYou's own mount guards,
-   * which redirect with `replace` and no state — and the screen then reappears
-   * later in the same session.
-   *
-   * Not reachable from behind the bag: BagSheet renders `absolute inset-0
-   * z-40` over the whole page, so the /cart mount of this same component
-   * cannot re-enter the gate while the sheet is open.
-   */
+  /** VIEW MY BAG → the bag (Complete Your Meal is its rail, Figma 1:3171). */
   const handleViewBag = () => {
-    if (totalQuantity <= 0) return;
-    const showUpsell = shouldShowUpsell && !cartUpsellSeen;
-    if (showUpsell) {
-      captureKioskEvent(KioskEventName.CartUpsellViewed, {
-        item_count: upsellItems.length,
-      });
-      // A VISIT to the upsell screen starts here and ONLY here. That screen's
-      // "Proceed to Order" flip is cartQuantity minus this baseline, so it has
-      // to be captured before the customer can add anything there — and it
-      // must NOT be recaptured when a customization detour navigates back to
-      // /forYou with the just-added item already counted. Hence redux (the
-      // screen unmounts during the detour) and hence the seed-once guard on
-      // the far side.
-      dispatch(setCartUpsellEntryQuantity(totalQuantity));
-    } else {
-      // Why the gate closed, per reason, so a tenant whose flagged items are
-      // all out of stock / tag-filtered can see it rather than guess.
-      captureKioskEvent(KioskEventName.CartUpsellSuppressed, getBreakdown());
-    }
-    navigate(showUpsell ? "/forYou" : "/cart");
+    if (totalQuantity > 0) navigate("/cart");
   };
 
   return (

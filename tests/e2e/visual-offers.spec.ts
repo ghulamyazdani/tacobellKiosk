@@ -14,14 +14,13 @@ import { clippedText } from "./fixtures/clippedText";
  * so every shot is still taken) and the targeted checks the fonts lane's
  * fixes need: the least-value stage brings the 70-character bowl's tile on
  * screen for the probe (its name meets the buy-stage tile's two-line box —
- * line-clamp-2, not a sliced third line), and /forYou checks that an in-cart
- * card's count pill covers none of the card's text.
+ * line-clamp-2, not a sliced third line).
  *
  * Covered: /second with the operator ticker copy and the language sheet; /menu
  * (rail, hero, grid, scroll indicator, top and scrolled) with the Arabic item
  * and category names; Select-a-Size (a variant item); the product-added modal
  * with its You Might Like strip; the MIAM prompt with the operator headline;
- * the repeat sheet; the pack slot sheets; /forYou; the bag with the tenant
+ * the repeat sheet; the pack slot sheets; the bag with the tenant
  * Complete-Your-Meal rail, its totals and the remove confirm; the rewards
  * sheet (locked nudge, eligible rows, the suggested rail) and its ADD ITEMS
  * rows, the offer-applied celebration and the applied row; the group-mode
@@ -423,15 +422,10 @@ async function addBurger(page: Page) {
   await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
 }
 
-/** VIEW MY BAG → /cart, through the once-per-session /forYou upsell. */
-async function openBag(page: Page, onUpsell?: () => Promise<void>) {
+/** VIEW MY BAG → /cart. */
+async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await expect(page.getByTestId("foryou-screen")).toBeVisible();
-    if (onUpsell) await onUpsell();
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
 }
 
@@ -498,26 +492,6 @@ async function capture(page: Page, name: string) {
   await shot(page, name);
   expect.soft(await clippedText(page), `${name}: text the layout cuts off`).toEqual([]);
 }
-
-/** The first text of a card that its in-cart count pill covers ("" = none). */
-const textUnderPill = (card: Locator) =>
-  card.evaluate((el) => {
-    const pill = el.querySelector("span.bg-tb-purple");
-    if (!pill) return "no pill";
-    const p = pill.getBoundingClientRect();
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      if (pill.contains(n) || !n.textContent?.trim()) continue;
-      const range = document.createRange();
-      range.selectNodeContents(n);
-      for (const r of range.getClientRects()) {
-        if (r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top) {
-          return n.textContent.trim();
-        }
-      }
-    }
-    return "";
-  });
 
 /**
  * The bell placeholders under `root` (spans masked with the bell SVG): how
@@ -641,7 +615,7 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await capture(page, `offers-${mode}-11-slot-sheet-drinks`);
     });
 
-    test(`BAG (${mode}): /forYou, the bag with its tenant Complete-Your-Meal rail (1:3171/1:3236), its totals, the remove confirm (1:4533)`, async ({
+    test(`BAG (${mode}): the bag with its tenant Complete-Your-Meal rail (1:3171/1:3236), its totals, the remove confirm (1:4533)`, async ({
       page,
     }) => {
       test.slow();
@@ -653,18 +627,7 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await hero.click();
       await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
 
-      await openBag(page, async () => {
-        await capture(page, `offers-${mode}-12-foryou`);
-        // An in-cart suggestion's count pill sits clear of every glyph of
-        // the card (at the top-left it hid the name's first letters).
-        const pills = page.locator('[data-testid^="foryou-card-"]').filter({
-          has: page.locator("span.bg-tb-purple"),
-        });
-        await expect(pills).toHaveCount(2);
-        for (const card of await pills.all()) {
-          expect.soft(await textUnderPill(card), "text under the count pill").toBe("");
-        }
-      });
+      await openBag(page);
       await expect(bagRow(page, GREEK_SALAD)).toBeVisible();
       await capture(page, `offers-${mode}-13-bag`);
       const rail = page.getByTestId("bag-rail");

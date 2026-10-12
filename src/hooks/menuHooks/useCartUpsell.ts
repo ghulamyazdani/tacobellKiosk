@@ -4,10 +4,8 @@ import { selectEntityMap, selectModifierMap } from "@cx-sdk/catalog/state/Menu.s
 import { selectOutOfStockItems } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
 import {
-  buildCartUpsellBreakdown,
   collectCartUpsellEntities,
   MIN_CART_UPSELL_ITEMS,
-  type CartUpsellBreakdown,
 } from "./cartUpsellUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import {
@@ -78,34 +76,21 @@ const selectCartUpsellItems = createSelector(
   collectCartUpsellEntities,
 );
 
-const selectCartUpsellBreakdown = createSelector(
-  [
-    selectMenuSellableEntityMap,
-    selectOutOfStockItems,
-    selectFilters,
-    selectComboUpsellEnabled,
-  ],
-  buildCartUpsellBreakdown,
-);
-
 export interface CartUpsellState {
   items: RecommendedEntity[];
   /** Whether the cart upsell surface has anything worth showing. */
   shouldShowUpsell: boolean;
-  /** Per-reason exclusion counts, for the suppression telemetry event. */
-  getBreakdown: () => CartUpsellBreakdown;
 }
 
 /**
  * The single source of the cart-upsell decision (the bag's Complete-Your-Meal
- * rail, and the pre-cart upsell screen when that ports).
+ * rail; the rewards sheet's suggested rail reads its items).
  *
  * The setting is necessary but NOT sufficient — a gate that can render an empty
  * surface is a broken gate, so the item count is part of the condition.
  */
 const useCartUpsell = (): CartUpsellState => {
   const items = useSelector(selectCartUpsellItems) as RecommendedEntity[];
-  const breakdown = useSelector(selectCartUpsellBreakdown);
   const settings = useSelector(selectKioskSettings);
 
   return {
@@ -121,7 +106,6 @@ const useCartUpsell = (): CartUpsellState => {
     shouldShowUpsell:
       settings?.enable_cart_upsell_screen !== false &&
       items.length >= MIN_CART_UPSELL_ITEMS,
-    getBreakdown: () => breakdown,
   };
 };
 

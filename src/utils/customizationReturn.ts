@@ -10,13 +10,15 @@
  * and ConfirmCustomization.tsx twice (discard / cancel).
  *
  * Two destinations is not enough once customization can be entered from a
- * screen that is neither the menu nor the cart. The pre-cart upsell is exactly
- * that: sending someone forward to the cart when they CANCELLED a customization
- * is wrong — they never added anything and did not ask to move on.
+ * screen that is neither the menu nor the cart: sending someone forward to the
+ * cart when they CANCELLED a customization is wrong — they never added anything
+ * and did not ask to move on.
  *
  * `returnPath` carries an explicit destination and takes precedence. When it is
  * absent the original binary behaviour applies unchanged, so every existing
- * caller keeps working.
+ * caller keeps working. No screen here sets it since the pre-cart upsell was
+ * dropped (2026-10-11); it stays for the SDK's add intent (addIntent.ts
+ * buildReturnNavigationState), and a unit test pins it.
  */
 export interface CustomizationReturnState {
   direction?: string;

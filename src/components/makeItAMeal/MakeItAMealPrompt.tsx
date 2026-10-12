@@ -129,7 +129,7 @@ const savingsFor = (combo: unknown): number | null => {
  * MIAM upsell prompt — "Would you like to make it a meal?".
  *
  * Presentation follows Figma frame 1:3070 (mislabelled "Upsell" in
- * docs/FIGMA_UI_GUIDE.md, which assumed a pre-cart /forYou screen): a 680px
+ * docs/FIGMA_UI_GUIDE.md, which assumed a pre-cart upsell screen): a 680px
  * card over the purple backdrop — grey meal panel on top (optional SAVE
  * badge, 285px image, name + price|cal), white panel below with the heading
  * and the two CTAs. The frame shows exactly ONE meal; CX can return several,

@@ -60,8 +60,8 @@ export interface ForYouCardProps {
    */
   customizeLabel: string;
   /**
-   * `bag-rail-item-<id>` on the bag rail, `foryou-card-<id>` on /forYou. The
-   * two surfaces are addressed by different suites, so the id is the
+   * `bag-rail-item-<id>` on the bag rail, `pdp-rail-item-<id>` on the PDP
+   * rail. The surfaces are addressed by different suites, so the id is the
    * consumer's to choose — the card never invents one.
    */
   testId: string;
@@ -76,7 +76,7 @@ export interface ForYouCardProps {
 
 /**
  * ONE suggestion tile, shared by the bag's Complete-Your-Meal rail and the
- * pre-cart /forYou grid.
+ * PDP's You Might Like rail (`imageTop`).
  *
  * Extracted from `CompleteYourMealRail.renderCard` (P7d) — the Figma
  * "Menu-Item" card as it appears on the bag rail (mybag 1:3171 / node
@@ -87,12 +87,11 @@ export interface ForYouCardProps {
  * props-only — NO redux, and no hook beyond `useTranslation` for the calorie
  * unit. Both consumers own their own store reads and hand the results down.
  *
- * FIXED SIZE, NOT CONTENT SIZE. The width/height come from the same constants
- * the /forYou capacity math uses (cartUpsellUtils), applied inline rather than
- * as Tailwind classes: if the two ever disagreed the grid would overflow a
- * page that cannot scroll, taking its buttons off screen. The name box is two
- * lines tall whether the name needs one or two, so a long name can never make
- * one card taller than the one beside it.
+ * FIXED SIZE, NOT CONTENT SIZE. The width/height are the cartUpsellUtils
+ * constants (the rewards sheet's suggested rail sizes its cards from them
+ * too), applied inline rather than as Tailwind classes, so the rails cannot
+ * drift apart. The name box is two lines tall whether the name needs one or
+ * two, so a long name can never make one card taller than the one beside it.
  *
  * The WHOLE tile is the tap target (240x277) — an order of magnitude past the
  * 44px floor (Rule 4) — so the circle-plus is decorative and `aria-hidden`.
@@ -194,8 +193,8 @@ function ForYouCardBase({
 }
 
 /**
- * Memoized: /forYou renders a whole grid of these and the cart quantity moves
- * under them on every add, so only the tile whose `quantity` actually changed
+ * Memoized: a rail renders a row of these and the cart quantity moves under
+ * them on every add, so only the tile whose `quantity` actually changed
  * should re-render. Every prop is a primitive or a stable entity reference.
  */
 const ForYouCard = memo(ForYouCardBase);

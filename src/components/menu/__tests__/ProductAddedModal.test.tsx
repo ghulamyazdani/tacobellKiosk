@@ -245,7 +245,7 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(onQuickAdd).toHaveBeenCalledTimes(1);
   });
 
-  // Review UIA-2 — ForYouCard's convention (the bag rail, /forYou): a tile
+  // Review UIA-2 — ForYouCard's convention (the bag and PDP rails): a tile
   // that adds in place is "Quick add <name>"; one that needs a choice LEAVES
   // the modal (Select a Size / the PDP / the repeat sheet) and is named
   // "Customize <name>", the only warning a screen reader gives of that.

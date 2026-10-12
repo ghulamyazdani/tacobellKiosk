@@ -14,7 +14,7 @@ export const STAGE_HEIGHT = 1920;
  * physical — ADA 2010 §308 puts the high forward reach at 48 in above the
  * floor — so the right value depends on the cabinet's panel size and mounting
  * height. Retune only this one; the reach zone, the overlay caps and the
- * flex pages (Menu, PDP, ForYou) follow it. LOWERING it is always safe.
+ * flex pages (Menu, PDP) follow it. LOWERING it is always safe.
  * RAISING it past 816 is not: the frameless pages' ADA tops are tuned to the
  * 1122 zone (CustomerPhone's skip meets the footer above 816, Tent 822,
  * CustomerName 837 — see their `ponytail:` notes) and must be re-derived.
