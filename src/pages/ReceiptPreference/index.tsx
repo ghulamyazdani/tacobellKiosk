@@ -224,6 +224,10 @@ export default function ReceiptPreferenceScreen() {
             >
               {t("payment.placingOrder")}
             </h2>
+            {/* The house indeterminate sweep (motion-v2 MV3): no silent wait. */}
+            <div aria-hidden className="mx-auto mt-[32px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac">
+              <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+            </div>
           </div>
         </div>
       )}

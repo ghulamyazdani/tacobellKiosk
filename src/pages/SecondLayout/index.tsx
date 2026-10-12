@@ -112,7 +112,11 @@ export default function SecondLayout() {
   const scrollRow = pipelines.length > (ada ? 2 : 4);
   const twoRows = !scrollRow && pipelines.length > 2;
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
+  // The menu fetch's status layer: "late" (.tb-reveal-late, motion-v2 MV4)
+  // over the cards; "now" in place of the error dialog (TRY AGAIN), whose
+  // scrim unmounts in the same commit — a late layer would leave /second
+  // bright, and dead to taps, for 300 ms (motion-v2 review F1).
+  const [fetching, setFetching] = useState<"late" | "now" | null>(null);
   // The pipeline whose menu failed to load — drives the error dialog.
   const [failedPipeline, setFailedPipeline] = useState<Pipeline | null>(null);
   const isProcessing = useRef(false);
@@ -139,9 +143,9 @@ export default function SecondLayout() {
    * error dialog's TRY AGAIN, so a retry re-runs ONLY the fetches (no second
    * PipelineSelected/OrderTypeSelected event, no re-dispatch).
    */
-  const loadMenuAndEnter = async (pipeline: Pipeline) => {
+  const loadMenuAndEnter = async (pipeline: Pipeline, reveal: "late" | "now") => {
     setFailedPipeline(null);
-    setIsFetching(true);
+    setFetching(reveal);
     try {
       const menu = await fetchMenu(pipeline.tab_id, false, false, pipeline);
       // Rule 1: the fetch is not idle-held, so the session can end (idle →
@@ -158,7 +162,7 @@ export default function SecondLayout() {
       }
       navigate(getIsLoyaltyOn() ? "/phone" : "/menu");
     } finally {
-      setIsFetching(false);
+      setFetching(null);
     }
   };
 
@@ -171,7 +175,7 @@ export default function SecondLayout() {
       // only a success rewrites the stored charges — skip it and the bill
       // carries the last good pipeline's charges (money, Rule 3).
       getChargesCountryDataApi(failedPipeline.tab_id);
-      await loadMenuAndEnter(failedPipeline);
+      await loadMenuAndEnter(failedPipeline, "now");
     } finally {
       isProcessing.current = false;
     }
@@ -205,7 +209,7 @@ export default function SecondLayout() {
       dispatch(setTabType(pipeline.tab_type));
       dispatch(resetCategorySelection());
 
-      await loadMenuAndEnter(pipeline);
+      await loadMenuAndEnter(pipeline, "late");
     } finally {
       isProcessing.current = false;
     }
@@ -321,10 +325,13 @@ export default function SecondLayout() {
         )}
       </div>
 
-      {isFetching && (
+      {/* A status overlay: over the cards it reveals late (motion-v2 MV4) —
+          a fast fetch never flashes it — in place of the error dialog it
+          shows at once; it blocks taps from its first frame. */}
+      {fetching && (
         <div
           data-testid="menu-fetching"
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 bg-tb-purple/90"
+          className={`${fetching === "late" ? "tb-reveal-late " : ""}absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 bg-tb-purple/90`}
         >
           <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
             {/* Indeterminate sweep (motion §3.7), clipped by the track. */}

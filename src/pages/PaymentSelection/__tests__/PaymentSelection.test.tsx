@@ -552,6 +552,25 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
+    // motion-v2 MV3: the 3 s window was a still card; it shows the house sweep,
+    // a sibling of CANCEL (never in or around the button).
+    it("the window shows the house indeterminate sweep between the title and CANCEL", () => {
+      mount();
+      tap("payment-counter");
+
+      const sweep = buffer()?.querySelectorAll(".tb-indeterminate") ?? [];
+      expect(sweep).toHaveLength(1);
+      const track = sweep[0].parentElement as HTMLElement;
+      expect(track).toHaveClass("overflow-hidden", "bg-tb-lilac", "mb-[40px]");
+      expect(track).toHaveAttribute("aria-hidden");
+      expect(track.previousElementSibling).toHaveAttribute("id", "payment-buffer-title");
+      expect(track.previousElementSibling).toHaveClass("mb-[32px]");
+      expect(track.nextElementSibling).toBe(screen.getByTestId("payment-buffer-cancel"));
+      expect(sweep[0].closest("button")).toBeNull();
+      // CANCEL shows at once: the window never reveals late (motion-v2 MV4 "NOT on").
+      expect(screen.getByTestId("payment-buffer-cancel").closest(".tb-reveal-late")).toBeNull();
+    });
+
     it("hands over to the receipt step after the buffer elapses", () => {
       mount();
       tap("payment-counter");

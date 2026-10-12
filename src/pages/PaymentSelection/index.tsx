@@ -377,12 +377,17 @@ export default function PaymentSelection() {
           <div className="tb-modal-enter absolute left-1/2 top-1/2 w-[676px] rounded-[12px] bg-tb-surface px-[44px] pb-[44px] pt-[56px] text-center">
             <h2
               id="payment-buffer-title"
-              className="tb-display mb-[40px] text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
+              className="tb-display mb-[32px] text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
             >
               {armedType === PAY_AT_COUNTER_PAYMENT_TYPE
                 ? t("payment.placingOrder")
                 : t("paytm.redirecting")}
             </h2>
+            {/* The house indeterminate sweep (motion-v2 MV3): a sibling of
+                CANCEL, never in or around a button. */}
+            <div aria-hidden className="mx-auto mb-[40px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac">
+              <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+            </div>
             <button
               type="button"
               data-testid="payment-buffer-cancel"

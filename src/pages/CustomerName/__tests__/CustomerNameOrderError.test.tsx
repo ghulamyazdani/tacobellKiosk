@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
+import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import CustomerName from "../index";
@@ -19,6 +20,35 @@ const pay = vi.hoisted(() => ({
   onTimeout: false,
   retry: vi.fn(),
   dismissError: vi.fn(),
+}));
+
+// The CRM prefill's network edge (only this screen imports it): each lookup
+// stays in flight until the test answers it; abort() rejects it, as RTK does.
+const crm = vi.hoisted(() => ({
+  abort: vi.fn(),
+  lookups: [] as { answer: (body: unknown) => void; aborted: () => boolean }[],
+}));
+vi.mock("@cx-sdk/core/customer/services/customerInfo", () => ({
+  useGetCustomerNameByNumberMutation: () => [
+    () => {
+      let answer!: (body: unknown) => void;
+      let fail!: (error: Error) => void;
+      let aborted = false;
+      const done = new Promise((resolve, reject) => {
+        answer = resolve;
+        fail = reject;
+      });
+      crm.lookups.push({ answer, aborted: () => aborted });
+      return {
+        unwrap: () => done,
+        abort: () => {
+          aborted = true;
+          crm.abort();
+          fail(new Error("Aborted"));
+        },
+      };
+    },
+  ],
 }));
 
 vi.mock("../../../hooks/paymentsHooks/usePayAtCounter", () => ({
@@ -155,5 +185,69 @@ describe("/customerName — the route entrance (lane motion)", () => {
     for (const id of ["customer-name-back", "footer-cancel", "order-error"]) {
       expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
     }
+  });
+});
+
+/*
+  motion-v2 MV3: the CRM prefill wait (it mounts with the page) shows the
+  house sweep above its label — it was a still line.
+*/
+describe("/customerName — the CRM lookup wait", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    pay.failed = false;
+    pay.onTimeout = false;
+    crm.abort.mockReset();
+    crm.lookups.length = 0;
+  });
+
+  it("a phone with no stored name: the loading layer stacks the house sweep above its label; leaving aborts the lookup", () => {
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+    const view = mount();
+
+    const loading = screen.getByTestId("customer-name-loading");
+    expect(loading).toHaveClass("flex-col", "gap-[32px]");
+    const sweep = loading.querySelectorAll(".tb-indeterminate");
+    expect(sweep).toHaveLength(1);
+    const track = sweep[0].parentElement as HTMLElement;
+    expect(track).toHaveClass("overflow-hidden");
+    expect(track.nextElementSibling).toHaveTextContent(i18n.t("customerName.loading"));
+    expect(loading.querySelector("button")).toBeNull();
+    // It mounts with the page, under the entering keyboard: never revealed late (motion-v2 MV4 "NOT on").
+    expect(loading.closest(".tb-reveal-late")).toBeNull();
+
+    view.unmount();
+    expect(crm.abort).toHaveBeenCalled();
+  });
+
+  // StrictMode (every dev build) runs the mount effect twice: the first lookup
+  // is aborted on the way to the second. Its stale settle used to end the wait
+  // while the live lookup still ran (and forgot it, so leaving never aborted it).
+  it("StrictMode's re-run: the aborted first lookup neither ends the wait nor forgets the live one", async () => {
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+    const view = render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/customerName"]}>
+          <CustomerName />
+        </MemoryRouter>
+      </Provider>,
+      { reactStrictMode: true }
+    );
+    expect(crm.lookups.map((lookup) => lookup.aborted())).toEqual([true, false]);
+    await act(async () => {}); // the aborted lookup settles
+    expect(screen.getByTestId("customer-name-loading")).toBeInTheDocument();
+
+    view.unmount(); // leaving still aborts the live lookup
+    expect(crm.lookups[1].aborted()).toBe(true);
+  });
+
+  it("the live lookup's answer ends the wait (and prefills the name)", async () => {
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+    mount();
+    await act(async () => {
+      crm.lookups[0].answer([{ firstname: "Ana", updated: "2026-10-01T00:00:00Z" }]);
+    });
+    expect(screen.queryByTestId("customer-name-loading")).not.toBeInTheDocument();
+    expect(screen.getByTestId("customer-name-input")).toHaveTextContent("Ana");
   });
 });

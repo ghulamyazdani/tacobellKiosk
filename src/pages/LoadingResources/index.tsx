@@ -151,7 +151,8 @@ export default function LoadingResources() {
       {!failure && (
         <>
           <div className="h-[8px] w-[520px] overflow-hidden rounded-full bg-tb-surface/20">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-tb-pink" />
+            {/* The house indeterminate sweep (motion-v2 MV3), clipped by the track. */}
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-pink" />
           </div>
           <p className="text-2xl text-tb-cream">{t("loading.preparing")}</p>
         </>

@@ -14,7 +14,7 @@ import {
   type KioskBackendOptions,
 } from "./fixtures/backend";
 import { settle } from "./fixtures/capture";
-import { PIPELINES_URL, mockCheckoutBackend, type CheckoutMockOptions } from "./fixtures/checkout";
+import { PIPELINES_URL, PLACE_ORDER_URL, mockCheckoutBackend, type CheckoutMockOptions } from "./fixtures/checkout";
 import {
   PNG_1X1,
   PROMPT_AFTER_MS,
@@ -26,13 +26,13 @@ import {
   type Locator,
   type Page,
 } from "./fixtures/kiosk";
-import { PAYTM_EDC_ENTITY, PAYTM_ENDPOINTS, mockPaytmBackend } from "./fixtures/paytm";
-import { bootRegisteredToMenu, pickPipelineToMenu, registerToStart, startToSecond } from "./pages/boot";
+import { EDC_BUSY, PAYTM_EDC_ENTITY, PAYTM_ENDPOINTS, mockPaytmBackend } from "./fixtures/paytm";
+import { bootRegisteredToMenu, pickPipelineToMenu, registerToStart, startToSecond, submitLicence } from "./pages/boot";
 import { payAtCounter } from "./pages/checkout";
 import { addOneTap, openBag, typeDigits } from "./pages/order";
 
 /**
- * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M16), the ONE place real motion is proven: the
+ * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M15–M17), the ONE place real motion is proven: the
  * functional suite runs under `reducedMotion: "reduce"` (playwright.config, D-M5), this file under
  * "no-preference" (M9 switches to reduce itself).
  *
@@ -202,6 +202,38 @@ async function loops(page: Page): Promise<string[]> {
     else expect(a.button, `M8: ${a.name} on ${a.on} has no button ancestor or descendant`).toBe(false);
   }
   return infinite.map((a) => a.name);
+}
+
+/**
+ * motion-v2 MV4, read under slow motion right after the overlay mounted: its root's own tb-fade-in waits 300 ms
+ * (the backwards fill holds opacity 0 — a fast wait never flashes), then runs 200 ms.
+ */
+async function expectLateReveal(page: Page, testId: string) {
+  const reveal = named(await animations(page, `[data-testid="${testId}"]`), "tb-fade-in").filter(
+    (a) => a.on === testId && a.cls.split(" ").includes("tb-reveal-late")
+  );
+  expect(
+    reveal.map(({ delay, duration }) => ({ delay, duration })),
+    `${testId} reveals late`
+  ).toEqual([{ delay: 300, duration: 200 }]);
+  expect(
+    await page.getByTestId(testId).evaluate((el) => getComputedStyle(el).opacity),
+    `${testId} is invisible through the delay`
+  ).toBe("0");
+}
+
+/**
+ * motion-v2 review F1, read under slow motion right after a dialog's button: a status layer that REPLACES the dialog
+ * never reveals late (the dialog's scrim unmounts in the same commit) — no tb-fade-in on its root, on screen at once.
+ */
+async function expectAtOnce(page: Page, testId: string) {
+  await expect(page.getByTestId(testId)).toBeAttached();
+  const reveal = named(await animations(page, `[data-testid="${testId}"]`), "tb-fade-in").filter((a) => a.on === testId);
+  expect(reveal.map(({ delay, duration }) => ({ delay, duration })), `${testId}: no late reveal`).toEqual([]);
+  expect(
+    await page.getByTestId(testId).evaluate((el) => getComputedStyle(el).opacity),
+    `${testId} is on screen at once`
+  ).toBe("1");
 }
 
 /** A loop's period and its angle (whole degrees, 0–359) at fractions of it: paused, seeked, read, resumed. */
@@ -941,7 +973,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
   });
 
-  test("M8 LOOPS: the splash prompt pulses, the ticker scrolls, the menu fetch sweeps — the only infinite animations, none a transform loop on or around a tap target", async ({
+  test("M8 LOOPS: the splash prompt pulses, the ticker scrolls, the menu fetch sweeps — the only infinite animations, none a transform loop on or around a tap target; the menu-fetch overlay reveals late (motion-v2 MV4)", async ({
     page,
   }) => {
     await mockBackend(page);
@@ -950,10 +982,15 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     expect(await loops(page), "/start").toContain("tb-attract");
     await startToSecond(page);
     expect(await loops(page), "/second").toContain("tb-marquee");
+    await settle(page);
+    const rate = await slowMotion(page);
+    await rate(0.1); // the late reveal's 300 ms delay holds while it is read
     menuFetch.arm();
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-fetching")).toBeVisible();
+    await expectLateReveal(page, "menu-fetching");
     expect(await loops(page), "menu fetching").toContain("tb-indeterminate");
+    await rate(1);
     await menuFetch.release();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await loops(page);
@@ -1234,6 +1271,95 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await rate(1);
   });
 
+  test("M15 WAITS (motion-v2 MV3): every silent wait shows the house sweep — the boot, /customerName's CRM lookup, the /payment window and /receipt's PLACING — a loop on no tap target", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.clock.install(); // the /payment window is stepped, never slept through
+    await mockBackend(page, { settings: { skip_crm_page: false } }); // PAY → /phone → /customerName
+    const boot = await holdRequests(page, "**/api/cx/kiosk/getLanguage", { times: 1 }); // the boot's first call
+    const crm = await holdRequests(page, "**/api/cx/kiosk/getCustomerNameByNumber");
+    const push = await holdRequests(page, PLACE_ORDER_URL);
+
+    await submitLicence(page);
+    await expect(page.getByTestId("loading-resources")).toBeVisible();
+    await expect.poll(() => boot.count).toBe(1);
+    expect(await loops(page), "the boot").toContain("tb-indeterminate");
+    await boot.release();
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
+
+    await startToSecond(page);
+    await pickPipelineToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+    await typeDigits(page, "1234567890"); // GB: exactly 10 digits
+    await page.getByTestId("phone-continue").click();
+    await expect(page.getByTestId("customer-name-loading")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => crm.count).toBe(1);
+    expect(await loops(page), "/customerName's CRM lookup").toContain("tb-indeterminate");
+    await crm.release();
+    await expect(page.getByTestId("customer-name-loading")).toHaveCount(0);
+    await page.getByRole("button", { name: "t", exact: true }).click();
+    await page.getByTestId("customer-name-continue").click();
+
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await freezeClock(page); // the 3 s window holds while it is read
+    await page.getByTestId("payment-counter").click();
+    await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
+    expect(await loops(page), "the /payment window").toContain("tb-indeterminate");
+    await page.clock.runFor(3_000);
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await page.clock.resume();
+
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("payment-buffer")).toBeVisible();
+    await expect.poll(() => push.count).toBe(1);
+    expect(await loops(page), "/receipt PLACING").toContain("tb-indeterminate");
+    await push.release();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("M15 LATE REVEAL (motion-v2 MV4): PleaseWait over the Paytm initiate is invisible for its first 300 ms (tb-fade-in after 300 ms, over 200 ms) yet takes a repeat tap from its first frame — exactly one initiate", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { settings: SKIP_CRM });
+    await mockCheckoutBackend(page, { extraDeviceSettings: [PAYTM_EDC_ENTITY] });
+    const paytm = await mockPaytmBackend(page); // LAST of the three: its routes beat checkout's forbidden gateways
+    const initiate = await holdRequests(page, PAYTM_ENDPOINTS.edcInit); // EVERY initiate parks: a second would count
+    await bootRegisteredToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+    await page.getByTestId("bag-pay").click();
+    await page.getByTestId("payment-card").click();
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await settle(page);
+    const none = await page.getByTestId("receipt-none").boundingBox();
+    if (!none) throw new Error("no receipt-none");
+    const at = { x: none.x + none.width / 2, y: none.y + none.height / 2 };
+
+    const rate = await slowMotion(page);
+    await rate(0.1); // the 300 ms delay holds while it is read
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("paytm-preparing")).toBeAttached();
+    await expectLateReveal(page, "paytm-preparing");
+    expect(
+      await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.closest("[data-testid]")?.getAttribute("data-testid"),
+        at
+      ),
+      "what a tap on NO THANKS hits now"
+    ).toBe("paytm-preparing");
+    await page.mouse.click(at.x, at.y); // the guest taps again while nothing shows yet
+    await expect.poll(() => initiate.count).toBe(1);
+    await initiate.release();
+    await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
+    expect(paytm.counts.edcInit, "exactly one initiate reached Paytm").toBe(1);
+    await rate(1);
+  });
+
   test("M16 CONFORMANCE (motion-v2 MV8): the /second card squeezes to the house .97 and a mouse hold 3 px inside its top edge still lands; the idle START AGAIN fill slides (transform, never width); tier-2 enters like a page with no inline <style> or animation", async ({
     page,
   }) => {
@@ -1282,5 +1408,67 @@ test.describe("motion (contract §5.3, no-preference)", () => {
       ]),
       "no inline style on the page, no inline animation inside it"
     ).toEqual([null, 0]);
+  });
+
+  test("M17 HAND-OFF (motion-v2 MV4, review F1): a status layer that REPLACES a dialog shows at once — the bag's order-type switch after YES, PleaseWait after /receipt's TRY AGAIN and after the EDC cancel's YES — never a bright, dead screen while the late reveal waits", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockBackend(page, {}, { extraDeviceSettings: [PAYTM_EDC_ENTITY] });
+    const paytm = await mockPaytmBackend(page, { edcInit: () => EDC_BUSY }); // LAST: its routes beat checkout's gateways
+    await page.route(PIPELINES_URL, (route) => route.fulfill({ json: [DINE_IN, TAKE_AWAY] }));
+    const menu = await holdRequests(page, "**/api/cx/kiosk/getMenu", { armed: false });
+    const initiate = await holdRequests(page, PAYTM_ENDPOINTS.edcInit, { armed: false });
+    const voids = await holdRequests(page, PAYTM_ENDPOINTS.edcCancel);
+    const rate = await slowMotion(page);
+
+    // 1. The bag: EAT IN → TAKE OUT, YES. The switch layer is only ever entered from a dialog.
+    await bootRegisteredToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+    await page.getByTestId("bag-ordertype-takeout").click();
+    await expect(page.getByTestId("bag-ordertype-confirm")).toBeVisible();
+    await settle(page);
+    menu.arm();
+    await rate(0.1); // a late reveal's 300 ms would hold for 3 s here
+    await page.getByTestId("bag-ordertype-confirm-yes").click();
+    await expect(page.getByTestId("bag-ordertype-confirm")).toHaveCount(0);
+    await expectAtOnce(page, "bag-ordertype-switching");
+    await rate(1);
+    await expect.poll(() => menu.count).toBeGreaterThan(0);
+    await menu.release();
+    await expect(page.getByTestId("bag-ordertype-switching")).toHaveCount(0, { timeout: 15_000 });
+
+    // 2. /receipt: the terminal is busy; TRY AGAIN replaces the failure dialog with PleaseWait.
+    await page.getByTestId("bag-pay").click();
+    await page.getByTestId("payment-card").click();
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("paytm-initiate-failed")).toBeVisible({ timeout: 15_000 });
+    await settle(page);
+    delete paytm.script.edcInit; // the retry is answered (once released)
+    initiate.arm();
+    await rate(0.1);
+    await page.getByTestId("paytm-initiate-retry").click();
+    await expect(page.getByTestId("paytm-initiate-failed")).toHaveCount(0);
+    await expectAtOnce(page, "paytm-preparing");
+    await rate(1);
+    await expect.poll(() => initiate.count).toBe(1);
+    await initiate.release();
+    await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
+
+    // 3. /paymentPolling: CANCEL PAYMENT → YES replaces the confirm with PleaseWait (cancelling; the void parks).
+    await page.getByTestId("paytm-cancel").click();
+    await expect(page.getByTestId("paytm-cancel-confirm")).toBeVisible();
+    await settle(page);
+    await rate(0.1);
+    await page.getByTestId("paytm-cancel-yes").click();
+    await expect(page.getByTestId("paytm-cancel-confirm")).toHaveCount(0);
+    await expectAtOnce(page, "paytm-confirming");
+    await rate(1);
+    await expect.poll(() => voids.count).toBe(1);
+    await voids.release();
+    await expect(page.getByTestId("paytm-terminal-prompt")).toBeVisible({ timeout: 15_000 });
+    expect(paytm.counts.edcInit, "the busy initiate + the retry").toBe(2);
   });
 });

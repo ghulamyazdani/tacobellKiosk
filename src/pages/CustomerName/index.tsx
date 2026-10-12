@@ -191,6 +191,10 @@ export default function CustomerName() {
       })
       .finally(() => {
         window.clearTimeout(timeout);
+        // Only the CURRENT lookup ends the wait: StrictMode's dev re-run
+        // aborts the first one on its way to a second, and that stale
+        // settle must neither drop the sweep nor forget the live request.
+        if (crmRequest.current !== request) return;
         crmRequest.current = null;
         setLoadingCRM(false);
       });
@@ -381,8 +385,12 @@ export default function CustomerName() {
       {loadingCRM && (
         <div
           data-testid="customer-name-loading"
-          className="absolute inset-0 z-50 flex items-center justify-center bg-tb-ink-purple/40"
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-[32px] bg-tb-ink-purple/40"
         >
+          <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
+            {/* Indeterminate sweep (motion §3.7), clipped by the track. */}
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-pink" />
+          </div>
           <p className="tb-display text-[32px] leading-[36px] text-tb-surface">
             {t("customerName.loading")}
           </p>

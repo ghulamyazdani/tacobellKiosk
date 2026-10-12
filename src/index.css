@@ -154,8 +154,9 @@
 }
 
 /* Opacity-only fade — position-neutral, so it is safe on any positioned /
- * translated box: FullscreenGate, NetworkStatus and PleaseWait. (The splash
- * carousel it was written for shifts on tb-carousel-in since lane motion.) */
+ * translated box: FullscreenGate, NetworkStatus and .tb-reveal-late (the
+ * full-screen status overlays). (The splash carousel it was written for
+ * shifts on tb-carousel-in since lane motion.) */
 @keyframes tb-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -230,6 +231,8 @@
   --tb-dur-attract: 2000ms;
   --tb-dur-card-tilt: 3120ms; /* Figma 1:5603 GIF loop */
   --tb-dur-hourglass: 3960ms; /* Figma 1:6301 GIF loop */
+  --tb-dur-reveal: 200ms;
+  --tb-reveal-delay: 300ms; /* a wait under it never shows a loader (NN/g: < 1 s needs none) */
   --tb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --tb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --tb-ease-press: cubic-bezier(0.2, 0, 0.38, 0.9);
@@ -378,6 +381,15 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
 
   .tb-carousel-in {
     animation: tb-carousel-in var(--tb-dur-carousel) var(--tb-ease-out) backwards;
+  }
+  /* A full-screen STATUS overlay (motion-v2 MV4: PleaseWait, the menu fetch)
+   * stays invisible for its first 300 ms, so a fast wait never flashes a
+   * loader; it is mounted, and takes taps, from t = 0. Never a tap-to-close
+   * scrim (those never animate), and never in place of a dialog, whose scrim
+   * unmounts at once: the screen would show bright, and dead to taps, for
+   * those 300 ms (review F1 — the order-type switch never reveals late). */
+  .tb-reveal-late {
+    animation: tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) var(--tb-reveal-delay) backwards;
   }
   /* Infinite loops: never a transform loop on/around a tap target. */
   .tb-attract {

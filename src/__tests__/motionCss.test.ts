@@ -378,3 +378,17 @@ describe("keyframes and classes (§1.5, §4)", () => {
     });
   });
 });
+
+describe("lane motion-v2", () => {
+  // A wait under 1 s needs no indicator (NN/g): a full-screen status overlay stays invisible for its
+  // first 300 ms, then fades in over 200 ms. `backwards` holds opacity 0 through the delay; the
+  // overlay is mounted (and takes taps) from t = 0. Reduce zeroes the delay (the global block).
+  it("MV4: .tb-reveal-late = tb-fade-in, 200 ms, after 300 ms, backwards fill — in the motion components layer", () => {
+    expect(rule(".tb-reveal-late")).toEqual({
+      depth: 1,
+      decl: { animation: "tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) var(--tb-reveal-delay) backwards" },
+    });
+    expect(TOKENS).toMatchObject({ "--tb-dur-reveal": "200ms", "--tb-reveal-delay": "300ms" });
+    expect(keyframes("tb-fade-in")).toMatch(/from \{ opacity: 0; \}/);
+  });
+});

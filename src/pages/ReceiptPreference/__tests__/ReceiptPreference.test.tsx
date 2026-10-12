@@ -165,6 +165,24 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
     expect(title).toMatch(/\p{Script=Arabic}/u);
     expect(screen.getByRole("alertdialog", { name: title })).toBe(panel());
   });
+
+  // motion-v2 MV3: the PLACING wait was a still card; it shows the house sweep.
+  it("PLACING shows the house indeterminate sweep in a clipping track under its title — no button near it", async () => {
+    mockPushOrder.mockReturnValue(new Promise(() => {})); // the push is in flight
+    mount();
+    await placeOrder();
+
+    const placing = screen.getByTestId("payment-buffer");
+    const sweep = placing.querySelectorAll(".tb-indeterminate");
+    expect(sweep).toHaveLength(1);
+    const track = sweep[0].parentElement as HTMLElement;
+    expect(track).toHaveClass("overflow-hidden", "bg-tb-lilac");
+    expect(track).toHaveAttribute("aria-hidden");
+    expect(track.previousElementSibling).toBe(screen.getByRole("heading", { name: i18n.t("payment.placingOrder") }));
+    expect(placing.querySelector("button")).toBeNull();
+    // The push cannot be recalled: PLACING shows at once (motion-v2 MV4 "NOT on").
+    expect(placing.closest(".tb-reveal-late")).toBeNull();
+  });
 });
 
 /*
