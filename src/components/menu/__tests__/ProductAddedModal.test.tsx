@@ -28,8 +28,7 @@ import i18n from "../../../i18n";
   1:4571 / modal 1:4589: a 680 card on a tb-purple/80 scrim, up to three
   You-Might-Like tiles (2-line names, "£x | N Cal" with the calories only
   when > 0, a 36 px quick add on a 44 px hit area), the Total and ONE CTA.
-  The frame has no VIEW MY BAG: the menu's CTA bar keeps that edge (and its
-  upsell gate).
+  The frame has no VIEW MY BAG: the menu's CTA bar keeps that edge.
 
   posistKiosk parity (user report 2026-10-12): the modal STAGES. A tile tap
   goes to Menu (onQuickAdd), which stages a one-tap item or sends a choice

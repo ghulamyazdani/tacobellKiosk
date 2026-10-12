@@ -57,7 +57,7 @@ interface LiveCart {
  * them. ADD TO ORDER buys them; X and the scrim throw them away. With nothing
  * to buy the same button only closes and says so: NO THANKS over a strip,
  * GOT IT without one (posistKiosk's "No, Thanks" / "Okay"). The frame has no
- * VIEW MY BAG; the menu's CTA bar keeps that edge and its upsell gate.
+ * VIEW MY BAG; the menu's CTA bar keeps that edge.
  *
  * Opens via the fork contract: useCartHook.addItemToCart dispatches
  * mutateAddToCartModal when the added item has recommendations (or was a
