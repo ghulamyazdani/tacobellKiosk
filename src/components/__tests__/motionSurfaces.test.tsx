@@ -6,7 +6,7 @@ import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setTags } from "@cx-sdk/catalog/state/Menu.slice";
 import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setFilters } from "@cx-sdk/catalog/state/filter.slice";
-import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
+import { openLoyaltyModal, setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { store } from "../../redux/app/store";
 import i18n from "../../i18n";
 import CategoryRail from "../menu/CategoryRail";
@@ -19,6 +19,7 @@ import SlotSelectionSheet from "../customization/SlotSelectionSheet";
 import ForYouCard from "../cart/ForYouCard";
 import KioskKeyboard from "../keyboard/KioskKeyboard";
 import KioskNumpad from "../keyboard/KioskNumpad";
+import LoyaltySuccessModal from "../loyalty/LoyaltySuccessModal";
 
 /*
   Lane motion, per-surface wiring (motion contract §3). jsdom has no animation
@@ -349,5 +350,24 @@ describe("press (§3.1)", () => {
       expect(screen.getByTestId(id)).toHaveClass("active:bg-tb-grey-3");
       expect(screen.getByTestId(id)).not.toHaveClass("active:bg-tb-purple-press");
     }
+  });
+});
+
+describe("celebrations (motion-v2 MV5)", () => {
+  // Pop and burst together, as on Order Complete. No delay: tb-pop-in's backwards fill would hide the seal
+  // and its pieces for the delay, and the front-loaded burst (--d 0–180 ms from mount) would fly unseen.
+  it("the loyalty-unlock seal pops in with no delay and bursts once from inside it (28 pieces)", () => {
+    store.dispatch(openLoyaltyModal({ isOpen: true, item: { id: "reward" } }));
+    render(<LoyaltySuccessModal />, { wrapper });
+
+    const popping = screen.getByTestId("loyalty-success").querySelectorAll(".tb-pop-in");
+    expect(popping).toHaveLength(1);
+    const seal = popping[0] as HTMLElement;
+    expect(seal).toHaveClass("relative", "h-[356px]", "w-[356px]");
+    expect(seal).toHaveAttribute("aria-hidden", "true");
+    expect(seal.className).not.toMatch(/delay/);
+    expect(seal.style.animationDelay).toBe("");
+    expect(seal.querySelectorAll(".tb-confetti-piece")).toHaveLength(28);
+    expect(screen.getByTestId("loyalty-success").querySelectorAll(".tb-confetti-piece")).toHaveLength(28);
   });
 });
