@@ -401,11 +401,11 @@ function expectInside(
 }
 
 test.describe("motion (contract §5.3, no-preference)", () => {
-  test("M0 WALK: splash → /second → menu → PDP → ADD → bag → PAY AT COUNTER → receipt → Order Complete, then PLACE NEW ORDER's next customer — every arrival plays its §2.7 blocks forward and every control takes its tap with no test-side waits; Order Complete pops its number, bursts once and drains its bar by sliding; a reload replays none of it", async ({
+  test("M0 WALK: splash → /second → menu → PDP → ADD → bag → PAY AT COUNTER → receipt → Order Complete, then the 20 s exit and the next guest — every arrival plays its §2.7 blocks forward and every control takes its tap with no test-side waits; Order Complete pops its number and bursts once; a reload replays none of it", async ({
     page,
   }) => {
     test.slow();
-    await page.clock.install(); // the 3 s PAY AT COUNTER window and the countdown are stepped, never slept through
+    await page.clock.install(); // the 3 s PAY AT COUNTER window and Order Complete's 20 s exit are stepped, never slept through
     await mockBackend(page);
     await registerToStart(page);
     const rate = await slowMotion(page);
@@ -421,43 +421,17 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await arrives(page, rate, "payment-screen", 3, () => page.getByTestId("bag-pay").click());
     await arrives(page, rate, "receipt-screen", 2, () => payAtCounter(page));
     const success = page.getByTestId("order-success");
-    await arrives(page, rate, "order-success", 4, () => page.getByTestId("receipt-none").click(), async () => {
-      const number = named(await animations(page, '[data-testid="order-number"]'), "tb-pop-in");
-      expect(number.map((a) => a.on), "the order number pops in").toEqual(["order-number"]);
+    await arrives(page, rate, "order-success", 2, () => page.getByTestId("receipt-none").click(), async () => {
+      const pops = named(await animations(page, '[data-testid="order-success"]'), "tb-pop-in");
+      expect(pops.map((a) => a.on), "only the order number pops (loyalty off: no unlock pitch)").toEqual(["order-number"]);
     });
     // The in-session arrival celebrates once (a reload never does: the burst needs data-enter).
     await expect(page.getByTestId("order-number").locator(".tb-confetti-piece")).toHaveCount(28);
 
-    // The countdown fill drains by SLIDING inside its clipping track, eased over each 1 s tick — never squashed.
-    const bar = () =>
-      success.getByRole("progressbar").evaluate((track) => {
-        const fill = track.firstElementChild as HTMLElement;
-        return {
-          now: Number(track.getAttribute("aria-valuenow")),
-          transform: fill.style.transform,
-          width: Math.round(fill.getBoundingClientRect().width),
-          track: Math.round(track.getBoundingClientRect().width),
-          easing: fill
-            .getAnimations()
-            .filter((a) => a instanceof CSSTransition && a.transitionProperty === "transform")
-            .map((a) => Number(a.effect?.getComputedTiming().duration)),
-        };
-      });
-    await freezeClock(page);
-    const start = await bar();
-    await page.clock.runFor(5_000);
-    const later = await bar();
-    expect(later.now - start.now, "five 1 Hz ticks of a 20 s countdown").toBe(25);
-    expect(later.transform, "the fill slides (translateX)").toBe(`translateX(${later.now - 100}%)`);
-    expect(later.easing, "each step glides over 1 s").toEqual([1000]);
-    expect([start.width, later.width], "full width at every step: the 6 px cap is never squashed").toEqual([
-      start.track,
-      later.track,
-    ]);
-    await page.clock.resume();
-
-    // PLACE NEW ORDER chains the next customer past the splash: a NEW trail, so Order Complete arrives fwd again.
-    await page.getByTestId("order-success-neworder").click();
+    // Its 20 s timer hands the next customer the splash: a NEW trail, so Order Complete arrives fwd again.
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("start-screen").click();
     await expect(page.getByTestId("second-screen")).toHaveAttribute("data-enter", "fwd");
     await pickPipelineToMenu(page);
     await addOneTap(page, GREEK_SALAD, "(1)");
@@ -465,7 +439,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await page.getByTestId("bag-pay").click();
     await payAtCounter(page);
     // The 2nd customer's Order Complete arrives forward.
-    await arrives(page, rate, "order-success", 4, () => page.getByTestId("receipt-none").click());
+    await arrives(page, rate, "order-success", 2, () => page.getByTestId("receipt-none").click());
 
     // A reload (POP) on Order Complete replays nothing: no entrance, no burst.
     await page.reload();

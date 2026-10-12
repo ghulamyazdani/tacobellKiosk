@@ -94,8 +94,8 @@ export function identifyKiosk(
 }
 
 /**
- * A new PostHog session for the next guest (audit-fixes B3): the splash tap
- * and Place New Order. reset() drops the previous guest's session, then the
+ * A new PostHog session for the next guest (audit-fixes B3): the splash
+ * tap. reset() drops the previous guest's session, then the
  * kiosk re-identifies with the SAME six fields (PROGRESS: identify payload
  * kept as is) — never an anonymous guest. Same queue and kill switch as every
  * call here; never throws.

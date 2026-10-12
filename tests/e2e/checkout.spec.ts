@@ -15,8 +15,8 @@ import {
  * Covers the whole pay-at-counter vertical end to end: the bag's PAY
  * preflight landing on its real destination (no more /checkout stub), the
  * /tent table-number step, /payment's method choice and its cancel window,
- * the /receipt preference step, the guarded push, /orderSuccess and both of
- * its exits — plus the retry ladder on a failing push.
+ * the /receipt preference step, the guarded push, /orderSuccess and its one
+ * exit (its 20 s timer) — plus the retry ladder on a failing push.
  *
  * ── ⛔ THE SAFETY SPEC (brief §SAFETY) ──────────────────────────────────
  * This vertical must be incapable of reaching a payment gateway, a terminal
@@ -87,7 +87,7 @@ import {
  *     never one big jump. "No fifth attempt" is proven over 15 s of fake time
  *     (`runFor(15_000)`, then the count); a 5 s poll passed on its first
  *     sample and proved nothing.
- * ⚠️ /orderSuccess runs a 20s countdown that auto-resets to /start, so every
+ * ⚠️ /orderSuccess leaves for /start 20 s after it opens, so every
  * assertion on that screen must be made promptly — do not add waits there.
  */
 
@@ -546,7 +546,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("ORDER COMPLETE: Place New Order resets to /second with an empty bag", async ({
+  test("ORDER COMPLETE: 20 s after it opens it goes to /start, whose mount resets; the next guest's bag is empty", async ({
     page,
   }) => {
     test.slow();
@@ -562,12 +562,17 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
       timeout: 20_000,
     });
 
-    // ⚠️ The screen auto-resets after 20s — act promptly, never wait here.
-    await page.getByTestId("order-success-neworder").click();
-    await expect(page).toHaveURL(/\/second$/, { timeout: 10_000 });
+    // No control (Figma 1:5932): its own 20 s timer takes the kiosk to the
+    // splash, whose mount runs the FULL reset.
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page).toHaveURL(/\/start$/);
 
-    // "nextCustomer" keeps the menu loaded, so /second is instant — but every
-    // customer-scoped datum, the cart included, has to be gone.
+    // The next guest starts with an empty bag.
+    await page.getByTestId("start-screen").click();
+    await expect(page).toHaveURL(/\/second$/, { timeout: 10_000 });
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({
       timeout: 15_000,
@@ -609,32 +614,6 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page).toHaveURL(/\/orderSuccess$/);
     await expect(page.getByTestId("order-success")).toBeVisible();
     await expect(page.getByTestId("receipt-screen")).toHaveCount(0);
-
-    expect(checkout.placeOrderCount).toBe(1);
-    expectNothingDangerousWasContacted(checkout);
-  });
-
-  test("ORDER COMPLETE: Start Over resets the session all the way back to /start", async ({
-    page,
-  }) => {
-    test.slow();
-    const checkout = await bootToBagWithOneBurger(page);
-
-    await page.getByTestId("bag-pay").click();
-    await expect(page.getByTestId("payment-screen")).toBeVisible({
-      timeout: 15_000,
-    });
-    await payAtCounterThroughBuffer(page);
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("order-success")).toBeVisible({
-      timeout: 20_000,
-    });
-
-    await page.getByTestId("order-success-startover").click();
-    await expect(page.getByTestId("start-screen")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page).toHaveURL(/\/start$/);
 
     expect(checkout.placeOrderCount).toBe(1);
     expectNothingDangerousWasContacted(checkout);

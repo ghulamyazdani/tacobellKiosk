@@ -404,14 +404,9 @@
     "thankYou": "شكرًا لطلبك",
     "orderHeading": "الطلب",
     "proceedToCounter": "توجه إلى الكاشير",
-    "rewardsHeadline": "اجمع النقاط على وجبتك",
-    "rewardsSub": "استبدل نقاطك بهدايا مجانية",
-    "promoHeadline": "تابع إصدارات الثلاثاء القادمة",
-    "promoSub": "منتجات حصرية من مجموعة ديكيدز",
-    "autoResetLabel": "الوقت المتبقي قبل إعادة ضبط الكشك",
-    "autoReset": "العودة إلى شاشة البداية خلال {{seconds}} ثانية",
-    "startOver": "البدء من جديد",
-    "newOrder": "طلب جديد"
+    "unlockTop": "احصل على",
+    "unlockFreebies": "هدايا مجانية",
+    "unlockBottom": "بالنقاط"
   },
   "orderError": {
     "title": "تعذر إرسال طلبك",

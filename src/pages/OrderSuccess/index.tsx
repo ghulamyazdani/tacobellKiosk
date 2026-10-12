@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { currentOrder, selectOrderId } from "@cx-sdk/ordering/state/order.slice";
 import { netAmount as selectNetAmount } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCustomerPhone } from "@cx-sdk/core/customer/customerInfo.slice";
+import { emptyPayment } from "@cx-sdk/payments/state/payment.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
-import useSessionReset, {
-  type SessionResetScope,
-} from "../../hooks/utils/useSessionReset";
 import usePrintUtility from "../../hooks/utils/usePrintUtility";
 import { useIdleHold } from "../../hooks/utils/useIdleTimeout";
 import useAdaActive from "../../hooks/utils/useAdaActive";
@@ -18,73 +16,106 @@ import type {
   OrderSuccessLocationState,
   ReceiptPreference,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
-import {
-  captureKioskEvent,
-  KioskEventName,
-  resetAnalyticsSession,
-} from "../../utils/analytics";
-import bgTexture from "../../assets/splash/bg-texture.png";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import panelGuest from "../../assets/order-complete/panel-guest.webp";
+import panelLoyalty from "../../assets/order-complete/panel-loyalty.webp";
+import unlockArrow from "../../assets/order-complete/unlock-arrow.svg";
 
 /**
- * /orderSuccess — Order Complete. Figma 1:5932 (guest) and 1:3437
- * (logged-in), laid out in design pixels on the 1080x1920 KioskStage.
+ * /orderSuccess — Order Complete, as Figma draws it: 1:5932 "No Loyalty"
+ * (a guest) and 1:3437 "Has Loyalty" (a customer who identified themselves
+ * this session), laid out in design pixels on the 1080x1920 KioskStage.
  *
  * REDUX ONLY — this screen makes NO network call of its own. The order it
- * shows was placed by usePayAtCounter before the navigation; the only side
- * effect here is the optional, gated, fire-and-forget receipt print.
+ * shows was placed before the navigation (usePayAtCounter, or the backend
+ * for Paytm); the only side effect here is the optional, gated,
+ * fire-and-forget receipt print.
  *
- * ── DECISIONS / DIVERGENCES FROM THE FORK ───────────────────────────────
- * 1. COUNTDOWN. The fork declares 20s in `stepDurations`, seeds the timer
- *    with 10, and computes the bar as `((30 - timer) / 40) * 100` — three
- *    different numbers, so the bar sweeps 50% -> 75% and never reaches
- *    either end. Here there is ONE number
- *    ({@link ORDER_SUCCESS_COUNTDOWN_SECONDS} = 20) and the bar is derived
- *    from it honestly: elapsed / total, 0% -> 100%.
- * 2. THREE-STEP THEATRE DEFERRED. The fork opens on "Verifying payment" ->
- *    "Placing order" -> success, but only when `enable_printing_via_pos` is
- *    on; with it off it opens straight on success. P8a has no payment to
- *    verify and the order is already placed before we arrive, so only the
- *    success step exists. The two POS steps are deferred with the POS
- *    printing vertical.
- * 3. SESSION RESET. The fork hand-rolls two different ad-hoc clear lists
- *    (one per exit) and misses several customer-scoped slices. This uses
- *    TB's canonical useSessionReset, whose two scopes are a superset:
- *    "full" for Start Over (-> /start) and "nextCustomer" for Place New
- *    Order (-> /second, keeping the menu loaded). The reset runs AFTER the
- *    print, because it clears the order the ticket is built from.
+ * ── FIGMA-EXACT (lane order-success, user 2026-10-11) ───────────────────
+ * The "Gradient" (#18081D 0 → #451DCD 46 → #6426D9 63 → #D746C7 94.363 %,
+ * unbound in Figma; .tb-order-gradient) under the plastic_2 sheen at 50 %
+ * (the splash's crop of it: the frames' own crop puts the scratches
+ * 90–150 px higher and ~3.5 % larger, and reaches past this bitmap's
+ * bottom edge, so it needs its own asset — client sign-off);
+ * the bell at (490, 128); the text block at 345 — a guest's 48/44 "THANK
+ * YOU / FOR YOUR ORDER" over the 116/98 number, a loyalty customer's ONE
+ * 116/98 "ORDER #NNNNN" block — and Figma's one "PROCEED TO FRONT COUNTER"
+ * for every payment (a payment-dependent line is client sign-off P8b-11);
+ * the 412×900 r56 photo panel at x 334, top 792 (guest) / 725 (loyalty),
+ * each frame's own photo (the 20 % purple tint baked in); and the guest's
+ * UNLOCK / FREEBIES / WITH POINTS with its arrow, drawn AFTER the panel so
+ * the arrowhead paints over the photo as in the frame.
  *
- * ── MISSING DATA CONTRACTS (flagged, deliberately NOT faked) ────────────
- * - The QR codes in both frames have no CX data source: nothing in the
- *   kiosk state, the order payload or the loyalty slice produces a URL for
- *   them. The panel is rendered with the frames' geometry and message, but
- *   with NO QR image — a placeholder QR that scans to nothing is worse than
- *   none. Same class of gap as the MIAM SAVE badge.
- * - The guest frame's "SCAN TO EARN 110 POINTS" number is likewise
- *   sourceless (it is neither the customer's balance nor a published earn
- *   rate), so the copy here drops both the number and the "scan" verb until
- *   the contract exists. Restore the frame's exact wording with the QR.
- * - The lifestyle/merch photography inside the panel is Figma comp imagery
- *   with no media endpoint behind it; the panel uses the brand mark instead.
+ * ── OMITTED, deliberately NOT faked (BACKEND_CONTRACT_PROPOSALS §2) ─────
+ * | Figma                               | here                            |
+ * | QR (both frames)                    | none — the drawn one scans to a |
+ * |                                     | brewery; no CX source exists    |
+ * | "SCAN TO EARN 110 POINTS…" + arrow  | none — needs the QR and a       |
+ * |                                     | points figure (contract A)      |
+ * | "EXCLUSIVE DECADES MERCH" + arrow,  | none — a dated campaign with no |
+ * | "CHECKOUT NEXT TUESDAY DROPS"       | source (contract B)             |
+ * | "UNLOCK FREEBIES WITH POINTS"       | a guest on a loyalty deployment |
+ * |                                     | only: without loyalty a points  |
+ * |                                     | pitch is false                  |
  *
- * ── ADA (P9c, design-language, flagged — neither frame has an ADA variant)
- * The 1122px reach zone cannot hold the 700px promo panel, so ADA drops it
- * together with the bell: the panel has no QR and no data behind it (see
- * above), and the brand zone carries the mark. The countdown and the two
- * buttons keep their bottom distances (389 / 190px), i.e. the SAME physical
- * position as in the full view (countdown 672–733, buttons 812–932); the
- * heading block sits on a 120px gap above the countdown (bottom edge 552).
- * The countdown itself is unchanged in ADA (P9c scope: only the loyalty
- * rewards auto-dismiss is lifted) — flagged with the WCAG 2.2.1 question.
+ * ── ONE EXIT (Rule 1; user decision 2026-10-12) ─────────────────────────
+ * Neither frame has a control or a countdown, so neither does this screen.
+ * ORDER_SUCCESS_COUNTDOWN_SECONDS after it opens (a touch does not extend
+ * it) it returns to Splash (/start) — the only exit, and Rule 2's "never
+ * hang". Rule 1's "a way BACK" does not apply to a placed order: the guest's
+ * exit is the timer (the next guest may wait up to 20 s on a screen with no
+ * control). The idle clock is held (useIdleHold) and a reload restarts the
+ * timer at mount. The exit only navigates (after the last-chance print):
+ * /start's mount runs the FULL reset, as for every other way to the splash.
+ * Never reset-then-navigate here (hazard H1): RR7 navigates in a
+ * transition, so the emptied store would commit — and paint — on THIS
+ * route first (a blank number; the guest frame for an identified customer;
+ * the full stage under ADA; English under Arabic). Only the payment slice
+ * is emptied first — nothing on screen shows it, and the print that reads
+ * its type has run — because /start's Paytm release must find no open
+ * session for an order that is already paid.
+ *
+ * ── ADA (P9c, design language — neither frame has an ADA variant) ───────
+ * The 1122 px reach zone cannot hold the 900 px panel: ADA drops the bell,
+ * hides the panel and the unlock with `invisible` (never unmounted, never
+ * `hidden` — either would replay their entrance on the ADA exit, D-M6) and
+ * centres the text block in the zone.
+ *
+ * ── DIVERGENCES FROM THE FORK ───────────────────────────────────────────
+ * - The fork's timer seeds 10, declares 20 and draws (30 - t) / 40: here
+ *   ONE number, and no bar (Figma draws none).
+ * - The fork's "Verifying payment" → "Placing order" theatre is deferred
+ *   with the POS printing vertical: the order is placed before we arrive.
+ * - The fork hand-rolls its clear lists here; TB's canonical
+ *   useSessionReset("full") runs in /start's teardown instead (H1 above).
  */
 
-/** Single source of truth for the auto-reset countdown AND the bar. */
+/** The auto exit, in seconds from arrival — its single source of truth. */
 export const ORDER_SUCCESS_COUNTDOWN_SECONDS = 20;
 
 /** Only the fields this screen reads off `order.currentOrder`. */
 interface CurrentOrderSnapshot {
   orderId?: string;
 }
+
+/** 1:5932 "with points" / "unlock" (Bd 28.601/1.1, white). */
+const UNLOCK_BODY =
+  "rotate-15 whitespace-nowrap text-[28.601px] font-bold uppercase leading-[1.1] text-tb-surface";
+/**
+ * 1:5932 nodes 1:6281-1:6283, reading order: each box is the rotated
+ * line's frame, centred on its Figma x (-translate-x-1/2).
+ */
+const UNLOCK_LINES = [
+  ["success.unlockTop", "left-[875.22px] top-[1367.53px] h-[61.261px] w-[124.9px]", UNLOCK_BODY],
+  [
+    "success.unlockFreebies",
+    "left-[866.49px] top-[1384.21px] h-[86.847px] w-[193.62px]",
+    "tb-display font-bold rotate-15 whitespace-nowrap text-[28.601px] leading-[38.134px] text-tb-yellow",
+  ],
+  ["success.unlockBottom", "left-[859.72px] top-[1418.77px] h-[79.119px] w-[191.549px]", UNLOCK_BODY],
+] as const;
 
 export default function OrderSuccess() {
   const enter = usePageEnter();
@@ -100,14 +131,14 @@ export default function OrderSuccess() {
   const netAmountRdx = Number(useSelector(selectNetAmount) ?? 0);
   const phoneRdx = (useSelector(selectCustomerPhone) as string | undefined) ?? "";
 
+  const dispatch = useDispatch();
   const { getIsLoyaltyOn } = useAppSettings();
-  const { resetSession } = useSessionReset();
   const { printOrderTicket } = usePrintUtility();
 
-  // This screen owns its exit (the countdown below). A push that outlived
+  // This screen owns its exit (the 20 s timer below). A push that outlived
   // IDLE_HOLD_MAX_MS left an idle period running from the cap, and a route
   // change is not activity — unheld, that period could prompt over this
-  // confirmation or end the session before leave() sends its analytics.
+  // confirmation or end the session before the exit sends its analytics.
   // Taking a hold also closes a prompt that is already open.
   useIdleHold(true);
 
@@ -122,20 +153,16 @@ export default function OrderSuccess() {
   // thank-you. Loyalty being ON is not enough — the customer must actually
   // have identified themselves this session.
   const isLoggedIn = getIsLoyaltyOn() && phoneRdx.length > 0;
+  // The guest frame's points pitch is true only where loyalty exists (D8).
+  const showUnlock = !isLoggedIn && getIsLoyaltyOn();
 
   // Last 5 characters of order.orderId — the number called out at the
   // counter, and the same slice the printed ticket puts in big type.
   const orderNumber = orderIdRdx.slice(-5);
 
-  const [remaining, setRemaining] = useState(ORDER_SUCCESS_COUNTDOWN_SECONDS);
-  const elapsed = ORDER_SUCCESS_COUNTDOWN_SECONDS - remaining;
-  const progress = Math.min(
-    100,
-    Math.max(0, (elapsed / ORDER_SUCCESS_COUNTDOWN_SECONDS) * 100),
-  );
-
-  // One exit only — a countdown that lands on the same tick as a tap must
-  // not reset the session twice or navigate twice.
+  // One exit only: the route changes in a transition, so this screen renders
+  // again before it unmounts (the emptied payment type reaches it through
+  // usePrintUtility), and that render must not exit twice.
   const exitedRef = useRef(false);
   const printedRef = useRef(false);
   const viewedRef = useRef(false);
@@ -173,87 +200,67 @@ export default function OrderSuccess() {
     printReceiptOnce();
   }, [printReceiptOnce]);
 
-  const leave = useCallback(
-    (scope: SessionResetScope, to: string) => {
-      if (exitedRef.current) return;
-      exitedRef.current = true;
-      // Belt and braces: the mount effect has normally printed already, and
-      // the per-order latch makes this a no-op — but the reset below wipes
-      // the order, so the last chance to print is here.
-      printReceiptOnce();
-      captureKioskEvent(KioskEventName.OrderCompleted, { order_id: orderIdRdx });
-      captureKioskEvent(KioskEventName.SessionEnd, {
-        order_id: orderIdRdx,
-        net_amount: netAmountRdx,
-      });
-      captureKioskEvent(KioskEventName.AccountSignoutSuccess, {
-        reason: "order_complete",
-      });
-      resetSession(scope);
-      navigate(to);
-      // Place New Order skips the splash tap, where a guest's analytics
-      // session normally starts (audit-fixes B3) — after this guest's
-      // closing events above. Start Over's next guest taps the splash.
-      if (scope === "nextCustomer") resetAnalyticsSession();
-    },
-    [navigate, netAmountRdx, orderIdRdx, printReceiptOnce, resetSession],
-  );
-
-  const handleStartOver = useCallback(() => {
-    captureKioskEvent(KioskEventName.startOverFromOrderSuccessClicked, {
-      order_id: orderIdRdx,
-    });
-    leave("full", "/start");
-  }, [leave, orderIdRdx]);
-
-  const handleNewOrder = useCallback(() => {
-    // "nextCustomer" keeps the menu/settings loaded so /second is instant,
-    // while every customer-scoped datum (cart, identity, loyalty, offers)
-    // still clears.
-    leave("nextCustomer", "/second");
-  }, [leave]);
-
-  // 1Hz tick. Cleared on unmount (Rule 5 — no timer outlives its screen).
+  // ONE timer that flips state, armed at mount and cleared on unmount
+  // (Rule 5): a re-created callback never restarts it.
+  const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setRemaining((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => window.clearInterval(id);
+    const id = window.setTimeout(
+      () => setTimedOut(true),
+      ORDER_SUCCESS_COUNTDOWN_SECONDS * 1000,
+    );
+    return () => window.clearTimeout(id);
   }, []);
 
-  // Unattended kiosk: nobody tapped, so take the full reset back to Splash.
+  // The exit: back to Splash, whose mount runs the full reset (header, H1).
+  // The next guest's splash tap starts their analytics session (audit-fixes
+  // B3).
   useEffect(() => {
-    if (remaining > 0) return;
-    if (exitedRef.current) return;
+    if (!timedOut || exitedRef.current) return;
+    exitedRef.current = true;
     captureKioskEvent(
       KioskEventName.startOverFromOrderSuccessTimeoutTriggered,
       { order_id: orderIdRdx },
     );
-    leave("full", "/start");
-  }, [leave, orderIdRdx, remaining]);
+    // Belt and braces: the mount effect has normally printed already, and
+    // the per-order latch makes this a no-op — but /start's reset wipes the
+    // order, so the last chance to print is here.
+    printReceiptOnce();
+    captureKioskEvent(KioskEventName.OrderCompleted, { order_id: orderIdRdx });
+    captureKioskEvent(KioskEventName.SessionEnd, {
+      order_id: orderIdRdx,
+      net_amount: netAmountRdx,
+    });
+    captureKioskEvent(KioskEventName.AccountSignoutSuccess, {
+      reason: "order_complete",
+    });
+    // A paid Paytm session is settled: /start's release must not read it.
+    dispatch(emptyPayment());
+    navigate("/start");
+  }, [dispatch, navigate, netAmountRdx, orderIdRdx, printReceiptOnce, timedOut]);
 
   return (
-    // Motion §2.7 / §3.5: the heading, the promo panel, the countdown and the
-    // buttons arrive (.tb-enter); the soft-light texture and the bell stay.
+    // Motion §2.7 / MV2: the text block and the panel arrive (.tb-enter),
+    // the number pops (one burst), then the unlock arrow (300 ms) and its
+    // lines (380 ms) pop; the layers and the bell stay.
     <div
       data-testid="order-success"
       data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden"
-      style={{
-        // Tailwind emits only the theme vars some utility uses — all four are used.
-        backgroundImage:
-          "linear-gradient(180deg, var(--color-tb-ink-purple) 0%, var(--color-tb-purple) 28%, var(--color-tb-purple-vibrant) 62%, var(--color-tb-pink) 100%)",
-      }}
     >
-      {/* Same purple texture tile as Splash (1:2185) — one shared asset. */}
+      {/* Stage-registered (bottom-anchored, 1920 tall): in ADA (page = the
+          reach zone) both continue the stage's instead of restarting at the
+          zone's edge. Normal mode: the same box as inset-0. */}
       <div
         aria-hidden
-        className="absolute inset-0 opacity-25 mix-blend-soft-light"
-        style={{
-          backgroundImage: `url(${bgTexture})`,
-          backgroundSize: "240px 240px",
-          backgroundPosition: "top left",
-        }}
+        data-testid="order-success-bg"
+        className="tb-order-gradient absolute bottom-0 left-0 h-[1920px] w-[1080px]"
+      />
+      <img
+        aria-hidden
+        alt=""
+        draggable={false}
+        src={plasticOverlay}
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
       />
 
       {!ada && (
@@ -264,19 +271,18 @@ export default function OrderSuccess() {
         />
       )}
 
-      {/* Text block of 1:5932 / 1:3778, top 345. Guest: the thank-you is
-          Title/H3 (48/44, −1) in the frame's 569 px box (2 lines), 24 above
-          the Title/H1 number. Loyalty: "ORDER" and the number are ONE H1
-          block (both 116/98, −3.27). The wrapper stays 920 wide so a wide
-          number never clips (only the guest h1 takes the 569 box). */}
+      {/* Text block of 1:5932 / 1:3778, top 345 (920 wide so a wide number
+          never clips). Guest: Title/H3 (48/44, −1) on the frame's two
+          lines, 24 above the Title/H1 number. Loyalty: "ORDER" and the
+          number are ONE H1 block (both 116/98, −3.27). */}
       <div
-        className={`tb-enter [--i:0] absolute left-1/2 ${ada ? "bottom-[570px]" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
+        className={`tb-enter [--i:0] absolute left-1/2 ${ada ? "top-1/2 -translate-y-1/2" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
       >
         <h1
           className={`tb-display text-tb-surface ${
             isLoggedIn
               ? "text-[116px] leading-[98px] tracking-[-3.27px]"
-              : "mx-auto w-[569px] text-[48px] leading-[44px] tracking-[-1px]"
+              : "whitespace-pre-line text-[48px] leading-[44px] tracking-[-1px]"
           }`}
         >
           {isLoggedIn ? t("success.orderHeading") : t("success.thankYou")}
@@ -292,82 +298,56 @@ export default function OrderSuccess() {
           {orderNumber ? `#${orderNumber}` : ""}
           {enter && <ConfettiBurst />}
         </p>
-        {/* Title/H4 of 1:5932: Cm Bd 34/38. */}
-        <p className="tb-compressed mt-[24px] text-[34px] leading-[38px] text-tb-surface">
+        {/* Title/H4 of 1:5932 / 1:3780: Cm Bd 34/38 — one line for every
+            payment (Figma's double space is a typo). */}
+        <p
+          data-testid="order-success-proceed"
+          className="tb-compressed mt-[24px] text-[34px] leading-[38px] text-tb-surface"
+        >
           {t("success.proceedToCounter")}
         </p>
       </div>
 
-      {/* Promo panel — frame geometry, NO QR (see the header note). Hidden
-          in ADA (header note) with `invisible`, never unmounted or
-          `hidden`: either would replay its entrance on the ADA exit (the
-          mode switch never animates — motion D-M6). */}
+      {/* The frame's photo, NO QR (header). In ADA `invisible`, never
+          unmounted or `hidden`: either would replay its entrance on the ADA
+          exit (the mode switch never animates — motion D-M6). */}
       <div
-        className={`tb-enter [--i:1] absolute left-1/2 top-[700px] flex h-[700px] w-[406px] -translate-x-1/2 flex-col items-center justify-center gap-[28px] overflow-hidden rounded-[24px] bg-tb-ink-purple/35 px-[36px] text-center ${ada ? "invisible" : ""}`}
+        data-testid="order-success-panel"
+        className={`tb-enter [--i:1] absolute left-[334px] ${isLoggedIn ? "top-[725px]" : "top-[792px]"} h-[900px] w-[412px] overflow-hidden rounded-[56px] ${ada ? "invisible" : ""}`}
       >
         <img
-          aria-hidden
           alt=""
-          src={tbBell}
-          className="h-[107px] w-[120px] opacity-90"
+          draggable={false}
+          src={isLoggedIn ? panelLoyalty : panelGuest}
+          className="h-full w-full object-cover"
         />
-        <p className="tb-display text-[34px] leading-[1.05] tracking-[-1px] text-tb-yellow">
-          {isLoggedIn
-            ? t("success.promoHeadline")
-            : t("success.rewardsHeadline")}
-        </p>
-        <p className="text-[24px] font-bold uppercase leading-[1.25] text-tb-cream">
-          {isLoggedIn ? t("success.promoSub") : t("success.rewardsSub")}
-        </p>
       </div>
 
-      {/* Honest countdown: bar position == elapsed/total, both from the
-          same constant. The full-width fill slides in from the left inside
-          the clipping track (motion §3.5): composited, its rounded leading
-          cap intact (a scaleX squashed it), and the 1 s transition turns
-          the 1 Hz steps into one smooth fill (under reduced motion it steps
-          once a second). */}
-      <div
-        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "bottom-[389px]" : "top-[1470px]"} w-[720px] -translate-x-1/2`}
-      >
+      {/* 1:6280 + 1:6284, AFTER the panel: both are absolute with z-index
+          auto, so tree order paints the arrowhead over the photo (x 715–745
+          inside the panel's right edge at 746). Positioned against the
+          root; real text, so not aria-hidden. */}
+      {showUnlock && (
         <div
-          role="progressbar"
-          aria-label={t("success.autoResetLabel")}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(progress)}
-          className="h-[12px] w-full overflow-hidden rounded-[6px] bg-tb-surface/25"
+          data-testid="order-success-unlock"
+          className={ada ? "invisible" : undefined}
         >
-          <div
-            className="h-full w-full rounded-[6px] bg-tb-yellow transition-transform duration-1000 ease-linear"
-            style={{ transform: `translateX(${progress - 100}%)` }}
+          <img
+            alt=""
+            draggable={false}
+            src={unlockArrow}
+            className="tb-pop-in [animation-delay:calc(var(--tb-dur-page)+var(--tb-stagger))] absolute left-[707.75px] top-[1272.6px] h-[63.434px] w-[144.259px] -scale-x-100 rotate-[39.4deg]"
           />
+          {UNLOCK_LINES.map(([key, box, line]) => (
+            <div
+              key={key}
+              className={`tb-pop-in [animation-delay:calc(var(--tb-dur-page)+3*var(--tb-stagger))] absolute flex items-center justify-center -translate-x-1/2 ${box}`}
+            >
+              <span className={line}>{t(key)}</span>
+            </div>
+          ))}
         </div>
-        <p className="mt-[20px] text-center text-[24px] leading-[1.2] text-tb-cream">
-          {t("success.autoReset", { seconds: remaining })}
-        </p>
-      </div>
-
-      <div
-        className={`tb-enter [--i:3] absolute left-1/2 ${ada ? "bottom-[190px]" : "top-[1610px]"} flex w-[920px] -translate-x-1/2 items-stretch justify-center gap-[40px]`}
-      >
-        <button
-          type="button"
-          data-testid="order-success-startover"
-          onClick={handleStartOver}
-          className="tb-display min-h-[120px] w-[440px] rounded-[8px] border-2 border-tb-surface px-[32px] py-[36px] text-[26px] leading-[24px] text-tb-surface"
-        >
-          {t("success.startOver")}
-        </button>
-        <button
-          type="button"
-          data-testid="order-success-neworder"
-          onClick={handleNewOrder}
-          className="tb-display min-h-[120px] w-[440px] rounded-[8px] bg-tb-pink px-[32px] py-[36px] text-[26px] leading-[24px] text-tb-ink-purple"
-        >
-          {t("success.newOrder")}
-        </button>
-      </div>
+      )}
     </div>
   );
 }

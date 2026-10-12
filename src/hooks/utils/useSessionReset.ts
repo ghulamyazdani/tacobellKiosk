@@ -54,10 +54,11 @@ import { resetAppliedBarCelebration } from "../../utils/offerCelebration";
  * Two scopes, matching the two real lifecycles:
  * - "full": StartScreen / cancel-order. Everything clears, INCLUDING menu
  *   data — the loaders refetch all resources immediately after.
- * - "nextCustomer": the fast path to /second (order complete, or start-over
- *   taps that skip /start's loading screen). Menu/settings stay loaded —
- *   that is the point of the fast path — but every CUSTOMER-scoped datum
- *   clears.
+ * - "nextCustomer": a fast path to /second that skips /start's loading
+ *   screen — unused by the app since Order Complete lost PLACE NEW ORDER
+ *   (lane order-success: Figma draws no controls). Menu/settings stay
+ *   loaded — that is the point of the fast path — but every CUSTOMER-scoped
+ *   datum clears.
  *
  * Ordering constraints preserved from the fork:
  * - loyalty revoke (fork IdleTimerModal.checkAndRevokeLoyaltyReward) happens

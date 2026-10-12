@@ -10,7 +10,7 @@ import {
   stepClockTo as stepTo,
 } from "./fixtures/kiosk";
 import { mockKioskBackend as mockBackend, locale, CHEESE_BURGER, CHUNK } from "./fixtures/backend";
-import { submitLicence } from "./pages/boot";
+import { startToSecond, submitLicence } from "./pages/boot";
 import {
   mockCheckoutBackend,
   type CheckoutMockHandle,
@@ -586,9 +586,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       });
     }
 
-    // Order Complete's own exit resets first: /start finds no open session,
-    // so its release sends nothing.
-    await page.getByTestId("order-success-startover").click();
+    // Order Complete's own exit empties the payment first: /start finds no
+    // open session, so its release sends nothing.
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     expect(paytm.total).toBe(4);
     expect(paytm.counts.edcInit + paytm.counts.edcStatus + paytm.counts.edcCancel).toBe(0);
@@ -652,7 +652,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(page).toHaveURL(/\/orderSuccess$/);
     await expect(page.getByTestId("paytm-screen")).toHaveCount(0);
 
-    await page.getByTestId("order-success-startover").click();
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     // The POS prints the Paytm ticket: the kiosk sends nothing (checked after
     // Order Complete's exit, its last chance to print).
@@ -686,7 +686,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     // belt-and-braces print is latched: still one POST.
     await page.goBack();
     await expect(page).toHaveURL(/\/orderSuccess$/);
-    await page.getByTestId("order-success-startover").click();
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     expect(paytm.printBodies).toHaveLength(1);
     expect(paytm.counts.edcStatus).toBe(1);
@@ -907,7 +907,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectEdcReadsCarry(paytm);
     const calls = paytm.total;
 
-    await page.getByTestId("order-success-startover").click();
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     expect(paytm.total).toBe(calls);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
@@ -1271,7 +1271,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     // Order Complete's exit ends the session: nothing is released (already
     // settled) and the QR string is gone from the disk too.
     const calls = paytm.total;
-    await page.getByTestId("order-success-startover").click();
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     await expect.poll(async () => (await persistedPayment(page)).paytmQrCode).toBe("");
     expect((await persistedPayment(page)).posBillNo).toBe("");
@@ -1279,7 +1279,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 1, edcInit: 0 });
   });
 
-  test("E7h NO STALE RESUME: after a Paytm session ENDED (paid → NEW ORDER, the fast path that skips /start), the next guest's /payment renders and stays, and their EDC initiate gets NEW ids — the old order is never read again", async ({
+  test("E7h NO STALE RESUME: after a Paytm session ENDED (paid → Order Complete's 20 s exit to /start), the next guest's /payment renders and stays, and their EDC initiate gets NEW ids — the old order is never read again", async ({
     page,
   }) => {
     test.slow();
@@ -1295,10 +1295,12 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     const callsOfFirst = paytm.total;
     const readsOfFirst = paytm.counts.edcStatus;
 
-    // The next guest walks the kiosk on the flowing clock.
+    // Order Complete's 20 s exit (/start's mount runs the full reset), then
+    // the next guest walks the kiosk on the flowing clock.
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     await page.clock.resume();
-    await page.getByTestId("order-success-neworder").click();
-    await expect(page.getByTestId("second-screen")).toBeVisible({ timeout: 10_000 });
+    await startToSecond(page);
 
     const everPolling = await latchIfEverShown(page, "paytm-screen");
     await page.getByTestId("pipeline-p1").click();

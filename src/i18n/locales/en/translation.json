@@ -401,17 +401,12 @@
     "back": "Back"
   },
   "success": {
-    "thankYou": "Thank you for your order",
+    "thankYou": "Thank you\nfor your order",
     "orderHeading": "Order",
     "proceedToCounter": "Proceed to front counter",
-    "rewardsHeadline": "Earn points on your meal",
-    "rewardsSub": "Unlock freebies with points",
-    "promoHeadline": "Checkout next Tuesday drops",
-    "promoSub": "Exclusive decades merch",
-    "autoResetLabel": "Time left before this kiosk resets",
-    "autoReset": "Returning to the start screen in {{seconds}}s",
-    "startOver": "Start over",
-    "newOrder": "Place new order"
+    "unlockTop": "Unlock",
+    "unlockFreebies": "Freebies",
+    "unlockBottom": "with points"
   },
   "orderError": {
     "title": "We couldn't place your order",
