@@ -1,5 +1,5 @@
 import { test, expect, type Page, stepClockUntil } from "./fixtures/kiosk";
-import { mockKioskBackend as mockBackend, CHEESE_BURGER } from "./fixtures/backend";
+import { mockKioskBackend as mockBackend, CHEESE_BURGER, locale } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
 import { addViaPdp, openBag, bagRows } from "./pages/order";
 import {
@@ -8,6 +8,8 @@ import {
   type CheckoutMockHandle,
   type CheckoutMockOptions,
 } from "./fixtures/checkout";
+
+const en = locale("en");
 
 /**
  * P8a — checkout fan-out → PAY AT COUNTER → order push → Order Complete.
@@ -185,13 +187,13 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     expect(checkout.placeOrderCount).toBe(0);
 
     await payAtCounterThroughBuffer(page);
-    // EMAIL has no data contract and must collect nothing (brief §receipt).
-    await expect(page.getByTestId("receipt-email")).toHaveAttribute(
-      "aria-disabled",
-      "true"
-    );
+    // Print only (user request 2026-10-12): one question, YES / NO — no EMAIL.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(en.receipt.title);
+    await expect(page.getByTestId("receipt-print")).toHaveText(en.receipt.yes);
+    await expect(page.getByTestId("receipt-none")).toHaveText(en.receipt.no);
+    await expect(page.getByTestId("receipt-email")).toHaveCount(0);
 
-    // NO THANKS → the push runs, then /orderSuccess.
+    // NO → the push runs, then /orderSuccess.
     await page.getByTestId("receipt-none").click();
     await expect(page.getByTestId("order-success")).toBeVisible({
       timeout: 20_000,

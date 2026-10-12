@@ -561,10 +561,19 @@ test.describe("lane fonts — payment captures", () => {
       await expect(page.getByTestId("payment-qr")).toBeVisible();
 
       await chooseMethod(page, "payment-card");
-      await expect(page.getByTestId("receipt-email")).toContainText(t.receipt.comingSoon);
+      // Print only (2026-10-12): the question and its YES / NO, no EMAIL.
+      await expect(page.getByTestId("receipt-none")).toContainText(t.receipt.no);
+      await expect(page.getByTestId("receipt-email")).toHaveCount(0);
+      // The longer question must stay clear of the YES / NO row in every mode.
+      const [question, answers] = await Promise.all([
+        page.getByRole("heading", { level: 1 }).boundingBox(),
+        page.getByTestId("receipt-print").boundingBox(),
+      ]);
+      if (!question || !answers) throw new Error("the receipt question or YES has no box");
+      expect(question.y + question.height, "the question ends above YES / NO").toBeLessThan(answers.y);
       await capture(page, `pay-06-receipt-${mode}`);
       await expectCompressed(
-        page.locator('[data-testid="receipt-print"] span, [data-testid="receipt-email"] span:first-child'),
+        page.locator('[data-testid="receipt-print"] span, [data-testid="receipt-none"] span'),
         48,
         44
       );

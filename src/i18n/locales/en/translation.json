@@ -395,11 +395,9 @@
     "unavailableBody": "We can't take payment at this kiosk right now. Please order at the front counter."
   },
   "receipt": {
-    "title": "Do you need the receipt?",
-    "print": "Print",
-    "email": "Email",
-    "none": "No thanks",
-    "comingSoon": "Coming soon",
+    "title": "Do you want to print the receipt?",
+    "yes": "Yes",
+    "no": "No",
     "back": "Back"
   },
   "success": {

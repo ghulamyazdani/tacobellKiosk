@@ -168,10 +168,89 @@ describe("/receipt order-error panel after a failed push (P9b R4)", () => {
 });
 
 /*
+  Print-only (user request 2026-10-12: "we will keep one option only to just
+  print so question should be like do you want to print the receipt … and
+  beneath two boxes should say yes or no"). ONE question and two answers:
+  YES prints (the "print" choice), NO is no receipt ("none"). The EMAIL card
+  and the bottom NO THANKS bar are gone.
+*/
+describe("/receipt — one question, YES / NO (print only)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockPushOrder.mockReset();
+    mockNavigate.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(
+      setCartItems([
+        { id: "cw", itemId: "cw-1", name: "Crunchwrap", quantity: 1, type: "ITEM", total_price: 5 },
+      ])
+    );
+    store.dispatch(setAmount(5));
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("asks 'Do you want to print the receipt?' with YES and NO beneath it — no EMAIL card, no NO THANKS bar; the page's only controls are BACK, YES and NO", () => {
+    mount();
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Do you want to print the receipt?");
+    const yes = screen.getByRole("button", { name: "Yes" });
+    const no = screen.getByRole("button", { name: "No" });
+    expect(yes).toBe(screen.getByTestId("receipt-print"));
+    expect(no).toBe(screen.getByTestId("receipt-none"));
+    // Side by side in the one tile row, YES first (PRINT's slot).
+    expect(no.parentElement).toBe(yes.parentElement);
+    expect(yes.compareDocumentPosition(no)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByTestId("receipt-email")).not.toBeInTheDocument();
+    expect(screen.queryByText(/no thanks|coming soon|email/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toEqual([screen.getByTestId("receipt-back"), yes, no]);
+  });
+
+  it.each([
+    ["YES", "receipt-print", "print"],
+    ["NO", "receipt-none", "none"],
+  ])("%s places the order and carries its choice to /orderSuccess (%s → %s)", async (_label, testId, receipt) => {
+    mockPushOrder.mockResolvedValue({});
+    mount();
+
+    fireEvent.click(screen.getByTestId(testId));
+    await advance(0);
+    await advance(0);
+
+    expect(mockPushOrder).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt } });
+  });
+
+  it("Arabic: the question and both answers are translated", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    mount();
+
+    const question = i18n.t("receipt.title");
+    expect(question).toMatch(/\p{Script=Arabic}/u);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(question);
+    for (const [key, id] of [
+      ["receipt.yes", "receipt-print"],
+      ["receipt.no", "receipt-none"],
+    ]) {
+      expect(i18n.t(key)).toMatch(/\p{Script=Arabic}/u);
+      expect(screen.getByTestId(id)).toHaveAccessibleName(i18n.t(key));
+    }
+  });
+});
+
+/*
   Lane figma-polish S4 #3/#4 (1:3377 / 1:3382): the headline is Title/H2
   (Exp Bl 64/54.4, −3) in the 856 px block (top 666 unchanged), the two CTA
   Cards are the frame's 416 × 416, and the bell sits at 128. ADA keeps its
-  P9c tops (title 120, tiles 292) and drops the bell.
+  P9c tops (title 120, tiles 292) and drops the bell. Print-only
+  (2026-10-12): the cards are YES and NO.
 */
 describe("/receipt — the Figma geometry (S4)", () => {
   const headline = () => screen.getByRole("heading", { level: 1 });
@@ -193,10 +272,10 @@ describe("/receipt — the Figma geometry (S4)", () => {
     expect(headline()).toHaveTextContent(i18n.t("receipt.title"));
     expect(headline()).toHaveClass(...H2, "top-[666px]");
     expect(headline().className).not.toMatch(/text-\[58px\]|w-\[880px\]/);
-    for (const id of ["receipt-print", "receipt-email"]) {
+    for (const id of ["receipt-print", "receipt-none"]) {
       expect(screen.getByTestId(id)).toHaveClass("h-[416px]", "w-[416px]");
+      expect(screen.getByTestId(id).parentElement).toHaveClass("top-[838px]", "gap-[24px]");
     }
-    expect(screen.getByTestId("receipt-print").parentElement).toHaveClass("top-[838px]", "gap-[24px]");
     expect(screen.getByAltText("Taco Bell")).toHaveClass("top-[128px]");
   });
 
@@ -205,8 +284,10 @@ describe("/receipt — the Figma geometry (S4)", () => {
     mount();
 
     expect(headline()).toHaveClass(...H2, "top-[120px]");
-    expect(screen.getByTestId("receipt-print").parentElement).toHaveClass("top-[292px]");
-    expect(screen.getByTestId("receipt-print")).toHaveClass("h-[416px]", "w-[416px]");
+    for (const id of ["receipt-print", "receipt-none"]) {
+      expect(screen.getByTestId(id).parentElement).toHaveClass("top-[292px]");
+      expect(screen.getByTestId(id)).toHaveClass("h-[416px]", "w-[416px]");
+    }
     expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
   });
 });
@@ -215,7 +296,8 @@ describe("/receipt — the Figma geometry (S4)", () => {
   Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
   on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
   the session trail (AppRoutes' notePath; seeded here). Only the title and
-  the tile row carry tb-enter [--i]; BACK, the bell and NONE never move.
+  the tile row (YES and NO) carry tb-enter [--i]; BACK and the bell never
+  move.
 */
 describe("/receipt — the route entrance (lane motion)", () => {
   /** A PUSH from another route: <Navigate> fires after the first commit. */
@@ -258,13 +340,14 @@ describe("/receipt — the route entrance (lane motion)", () => {
     expect(root()).toHaveAttribute("data-enter", "back");
   });
 
-  it("tb-enter [--i] on the title (0) and the tile row (1) — never BACK, the bell or NONE", () => {
+  it("tb-enter [--i] on the title (0) and the YES / NO row (1) — never BACK or the bell", () => {
     mountPushed();
     const blocks = [...root().querySelectorAll(".tb-enter")];
     expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1"]);
     expect(blocks[0]).toBe(screen.getByRole("heading", { level: 1 }));
     expect(blocks[1]).toContainElement(screen.getByTestId("receipt-print"));
-    for (const element of [screen.getByTestId("receipt-back"), screen.getByAltText("Taco Bell"), screen.getByTestId("receipt-none")]) {
+    expect(blocks[1]).toContainElement(screen.getByTestId("receipt-none"));
+    for (const element of [screen.getByTestId("receipt-back"), screen.getByAltText("Taco Bell")]) {
       expect(element.closest(".tb-enter")).toBeNull();
     }
   });

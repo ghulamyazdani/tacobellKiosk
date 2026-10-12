@@ -14,34 +14,31 @@ import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
 /**
- * /receipt — "DO YOU NEED THE RECEIPT?" (Figma 1:3377).
+ * /receipt — "DO YOU WANT TO PRINT THE RECEIPT?" with YES / NO (Figma 1:3377,
+ * print-only since 2026-10-12).
  *
  * TB-design-only: the fork has no receipt-preference screen at all. It sits
  * AFTER the payment-method tap and BEFORE the order push, so the customer
  * answers it while nothing is in flight rather than being held on a spinner
  * after ordering.
  *
+ * PRINT ONLY (user request 2026-10-12): one question and two of the frame's
+ * 416×416 CTA Cards (1:3382) — YES = "print", NO = "none". The frame's EMAIL
+ * card (inert: no email-receipt data contract anywhere in the stack) and its
+ * NO THANKS bar (CTA_Sheet_Fixed 1:3380) are gone. Design language beyond
+ * the frame: client sign-off.
+ *
  * THE CHOICE IS THE SCREEN'S ONLY OUTPUT. It is handed to
  * `confirmAndPush(choice)`, which carries it to /orderSuccess in router state
- * as `location.state.receiptPreference` — see the seam note in
- * usePayAtCounter. The success screen honours "print" only when `print_bill`
- * allows and the POS is not printing the ticket itself.
- *
- * ⚠️ EMAIL IS INERT AND FLAGGED. There is NO data contract for an emailed
- * receipt anywhere in the stack: the fork has no email-receipt path,
- * `customerInfo.email` is never written and never reaches the order payload,
- * and `POST /placeOrder` carries no field for it. Collecting an address we
- * cannot transmit would be a privacy liability for a promise the kiosk cannot
- * keep, so the tile renders with the established coming-soon treatment, is
- * disabled at the DOM level, and collects nothing. Flagged for a data
- * contract before it is enabled.
+ * as `location.state.receipt` — see the seam note in usePayAtCounter. The
+ * success screen honours "print" only when `print_bill` allows and the POS is
+ * not printing the ticket itself.
  *
  * ADA (P9c, design-language, flagged — 1:3377 has no ADA variant): the
  * 1122px reach zone with the bell dropped. BACK stays at 40; title 120–229
- * (3 Arabic lines: 283) · tiles 292–708 · NO THANKS keeps its 18px bottom
- * distance (1012–1104). The headline is Title/H2 (Exp Bl 64/54.4, −3, 856
- * wide) and the tiles the frame's 416×416 CTA Cards (1:3382). The
- * buffer and order-error surfaces are page-relative, so they follow along.
+ * (3 Arabic lines: 283) · YES / NO 292–708. The headline is Title/H2 (Exp Bl
+ * 64/54.4, −3, 856 wide). The buffer and order-error surfaces are
+ * page-relative, so they follow along.
  *
  * P8b PAYTM: when /payment armed a Paytm type, the choice starts the Paytm
  * INITIATE instead (usePaytmCheckout) — the COD path is untouched. While it
@@ -123,8 +120,8 @@ export default function ReceiptPreferenceScreen() {
   }, [dismissError, navigate]);
 
   return (
-    // Motion §2.7: the title and the tile row arrive (.tb-enter); texture,
-    // BACK, bell, NONE and the overlays stay.
+    // Motion §2.7: the title and the YES / NO row arrive (.tb-enter); texture,
+    // BACK, bell and the overlays stay.
     <div
       data-testid="receipt-screen"
       data-enter={enter}
@@ -169,41 +166,27 @@ export default function ReceiptPreferenceScreen() {
       <div
         className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[292px]" : "top-[838px]"} flex -translate-x-1/2 gap-[24px]`}
       >
-        <button
-          type="button"
-          data-testid="receipt-print"
-          onClick={() => choose("print")}
-          className="flex h-[416px] w-[416px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
-        >
-          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
-            {t("receipt.print")}
-          </span>
-        </button>
-
-        {/* EMAIL — INERT (see the header note): no handler, no input, no
-            address collected. */}
-        <div
-          data-testid="receipt-email"
-          aria-disabled="true"
-          className="flex h-[416px] w-[416px] flex-col items-center justify-center gap-[16px] rounded-[10px] bg-tb-surface px-[32px] opacity-50"
-        >
-          <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
-            {t("receipt.email")}
-          </span>
-          <span className="text-center text-[22px] leading-[26px] font-bold uppercase tracking-[1px] text-tb-purple/70">
-            {t("receipt.comingSoon")}
-          </span>
-        </div>
+        {/* The testids keep the choices' names (print / none), which every
+            checkout flow clicks. */}
+        {(
+          [
+            ["receipt-print", "print", "receipt.yes"],
+            ["receipt-none", "none", "receipt.no"],
+          ] as const
+        ).map(([testId, choice, label]) => (
+          <button
+            key={testId}
+            type="button"
+            data-testid={testId}
+            onClick={() => choose(choice)}
+            className="flex h-[416px] w-[416px] items-center justify-center rounded-[10px] bg-tb-surface px-[32px]"
+          >
+            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+              {t(label)}
+            </span>
+          </button>
+        ))}
       </div>
-
-      <button
-        type="button"
-        data-testid="receipt-none"
-        onClick={() => choose("none")}
-        className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
-      >
-        {t("receipt.none")}
-      </button>
 
       {/* Same buffer surface as /payment, WITHOUT the cancel affordance — the
           push has started and cannot be recalled (brief: "once the push
