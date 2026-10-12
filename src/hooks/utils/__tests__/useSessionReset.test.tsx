@@ -160,7 +160,7 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
 
   /*
     P8b F3 (Rule 3): both scopes END a Paytm session — /start's full reset
-    (after the release) and Order Complete's NEW ORDER fast path. Every
+    (after the release) and the nextCustomer fast path (unused today). Every
     Paytm field goes, in memory AND in the copy redux-persist keeps: the
     ids, the type and the QR sit on disk only while a session is open
     (in-session crash recovery), never into the next customer's.
@@ -209,7 +209,7 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
 
   /*
     P9c: the ADA view is the guest's, so the splash's full reset ends it.
-    The nextCustomer fast path ("Place new order") keeps it ON — fork parity,
+    The nextCustomer fast path (unused by the app today) keeps it ON — fork parity,
     flagged for sign-off; changing it is a session-reset decision, so this
     pins it until someone makes that call deliberately.
   */
@@ -246,7 +246,7 @@ describe("useSessionReset (contract C2 — the canonical session reset)", () => 
   /*
     audit-fixes fixer (F3): PAY writes the stock feed's map (A1) — a snapshot
     of THIS guest's bag that the recommendation surfaces filter on. Both
-    scopes end it: Place New Order must not hide items restocked since.
+    scopes end it: a fast-path next guest must not miss items restocked since.
   */
   it.each<SessionResetScope>(["full", "nextCustomer"])(
     'resetSession("%s") clears PAY\'s stock map',

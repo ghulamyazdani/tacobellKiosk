@@ -10,7 +10,7 @@ import {
   EXTRA_PICKLES,
 } from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
-import { bootRegisteredToMenu } from "./pages/boot";
+import { bootRegisteredToMenu, startToSecond } from "./pages/boot";
 import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
 
 /**
@@ -1198,6 +1198,7 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
     page,
   }) => {
     test.slow();
+    await page.clock.install(); // Order Complete's 20 s exit is stepped, never slept through
     await mockKioskBackend(page, { skipCRM: true });
     // MUST come second (newest route wins): the pay-at-counter surface.
     const checkout = await mockCheckoutBackend(page);
@@ -1240,9 +1241,11 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
     });
     expect(checkout.forbiddenUrls).toEqual([]);
 
-    // The next guest starts without it.
-    await page.getByTestId("order-success-neworder").click();
-    await expect(page).toHaveURL(/\/second$/, { timeout: 10_000 });
+    // The next guest starts without it: Order Complete's 20 s exit, then the
+    // splash.
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
+    await startToSecond(page);
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await addGreekSaladOneTap(page, "(1)");

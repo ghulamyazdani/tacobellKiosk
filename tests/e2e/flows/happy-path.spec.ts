@@ -17,12 +17,12 @@ import { payAtCounter } from "../pages/checkout";
 /**
  * Rulebook flow 1 — the happy path as ONE linear English walk (P9f §4.1): splash → a real
  * language round trip → a rail browse → a PDP add and a one-tap add → bag money → PAY AT COUNTER →
- * Order Complete → nobody touches the kiosk → its own 20 s countdown hands the next guest a clean
+ * Order Complete → nobody touches the kiosk → its own 20 s timer hands the next guest a clean
  * session. Screenshots are capture-only (attached to the report).
  * TIME: page.clock is installed before the first goto and RUNS; the 3 s cancel window is stepped
- * with runFor. From the receipt tap on it STANDS STILL, so Order Complete's 1 Hz countdown
- * (OrderSuccess ORDER_SUCCESS_COUNTDOWN_SECONDS = 20) is pinned to the second: up at 19 s, the
- * splash at 20 s. On a running clock an expect's own 10 s wait would pass a countdown of up to ~30 s.
+ * with runFor. From the receipt tap on it STANDS STILL, so Order Complete's 20 s timer
+ * (OrderSuccess ORDER_SUCCESS_COUNTDOWN_SECONDS) is pinned to the step: up at 19 s, the
+ * splash at 20 s. On a running clock an expect's own 10 s wait would pass a timer of up to ~30 s.
  */
 test.use({ strictConsole: true });
 
@@ -99,7 +99,7 @@ test.describe("Flow 1 — happy path", () => {
     await shot(page, "flow1-05-payment");
 
     // 7 — PAY AT COUNTER → no receipt → Order Complete shows the pushed order's last 5. The clock
-    // stops before the tap and steps 100 ms at a time, so the countdown is caught within its 1st second.
+    // stops before the tap and steps 100 ms at a time, so the 20 s timer is caught within its 1st second.
     await payAtCounter(page);
     await freezeClock(page);
     await page.getByTestId("receipt-none").click();

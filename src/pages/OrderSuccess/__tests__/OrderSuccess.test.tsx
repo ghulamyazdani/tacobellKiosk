@@ -15,10 +15,13 @@ import {
 } from "@cx-sdk/ordering/state/order.slice";
 import { turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import { setBillPaymentInfo, setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
+import { readOpenPaytmSession } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import { IdleHoldContext } from "../../../hooks/utils/useIdleTimeout";
 import { notePath } from "../../../hooks/utils/usePageEnter";
+import { PAY_AT_COUNTER_PAYMENT_TYPE } from "../../../hooks/paymentsHooks/usePayAtCounter";
 import OrderSuccess, { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../index";
 import i18n from "../../../i18n";
 
@@ -26,18 +29,19 @@ import i18n from "../../../i18n";
   HOUSE STYLE: real store + Provider + MemoryRouter + RESET_STATE + i18n.
 
   Mocked, and only these:
-  - useNavigate, so the two exits (/start vs /second) are assertable;
+  - useNavigate, so the one exit (the 20 s timer → /start) is assertable;
   - the analytics adapter (pass-through), so the order of the exit events
-    and the per-guest session reset (audit-fixes B3) is assertable;
+    — and that nothing resets the analytics session here (audit-fixes B3:
+    the next guest's splash tap does) — is assertable;
   - usePrintUtility, so "printed exactly once, with the pushed order, BEFORE
-    the reset wiped it" can be asserted by snapshotting the store at call
-    time. The print gate itself is covered by usePrintUtility's own suite —
-    and mocking it here also guarantees this file never reaches the print
-    agent's URL.
+    /start's reset wipes it" can be asserted by snapshotting the store at
+    call time. The print gate itself is covered by usePrintUtility's own
+    suite — and mocking it here also guarantees this file never reaches the
+    print agent's URL.
 
-  useSessionReset is REAL: that is the whole point of the two exit tests. The
-  scopes are told apart by what survives — "full" clears the menu (the loaders
-  refetch it), "nextCustomer" keeps it so /second is instant.
+  Nothing is reset here (hazard H1): the exit empties only the payment slice
+  and navigates — /start's mount runs the full reset (StartScreen's suite) —
+  so what the exit leaves in the store, and on screen, is asserted.
 */
 
 const mockNavigate = vi.fn();
@@ -111,6 +115,17 @@ const seedPlacedOrder = (orderId = ORDER_ID) => {
   store.dispatch(setMenuData({ menu: MENU_FIXTURE }));
 };
 
+/** A loyalty deployment (enable_loyalty + the partner's runtime flag). */
+const loyaltyOn = () => {
+  store.dispatch(setKioskSettings({ enable_loyalty: true }));
+  store.dispatch(turnOnLoyalty({}));
+};
+/** …and a customer who identified themselves this session (frame 1:3437). */
+const signIn = () => {
+  loyaltyOn();
+  store.dispatch(setPhoneNumberRdx("9876543210"));
+};
+
 const mount = (locationState?: unknown) =>
   render(
     <Provider store={store}>
@@ -122,22 +137,21 @@ const mount = (locationState?: unknown) =>
     </Provider>
   );
 
-const tap = (testId: string) => {
-  act(() => {
-    fireEvent.click(screen.getByTestId(testId));
-  });
-};
-
 const tick = (seconds: number) => {
   act(() => {
     vi.advanceTimersByTime(seconds * 1000);
   });
 };
 
+const root = () => screen.getByTestId("order-success");
 const orderNumber = () => screen.getByTestId("order-number").textContent;
-const heading = () => screen.getByTestId("order-success").textContent ?? "";
-const progress = () =>
-  Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"));
+const heading = () => root().textContent ?? "";
+const panel = () => screen.getByTestId("order-success-panel");
+const unlock = () => screen.queryByTestId("order-success-unlock");
+/** The three annotation lines (each a rotated span in its positioned box). */
+const unlockLines = () => [...(unlock()?.querySelectorAll("span") ?? [])];
+/** Figma copy with no data source (QR, points, campaign) and the old panel's promo copy. */
+const OMITTED_COPY = /scan to earn|110 points|for your meal|earn points|decades|merch|tuesday drops/i;
 
 describe("OrderSuccess — Order Complete", () => {
   beforeEach(() => {
@@ -183,25 +197,23 @@ describe("OrderSuccess — Order Complete", () => {
 
       expect(heading()).toContain(i18n.t("success.thankYou"));
       expect(heading()).not.toContain(i18n.t("success.orderHeading"));
-      // Guest panel: the rewards invitation, not the merch promo.
-      expect(heading()).toContain(i18n.t("success.rewardsHeadline"));
+      // Loyalty off: no points pitch at all (D8).
+      expect(unlock()).toBeNull();
     });
 
     it('greets a recognised loyalty customer with the "ORDER" heading', () => {
-      store.dispatch(setKioskSettings({ enable_loyalty: true }));
-      store.dispatch(turnOnLoyalty({}));
-      store.dispatch(setPhoneNumberRdx("9876543210"));
+      signIn();
       mount();
 
       expect(heading()).toContain(i18n.t("success.orderHeading"));
-      expect(heading()).toContain(i18n.t("success.promoHeadline"));
+      // 1:3437 draws no unlock pitch for a customer already in loyalty.
+      expect(unlock()).toBeNull();
     });
 
     it("treats loyalty-on-but-anonymous as a guest", () => {
       // Loyalty being enabled on the deployment is not the same as this
       // customer having identified themselves.
-      store.dispatch(setKioskSettings({ enable_loyalty: true }));
-      store.dispatch(turnOnLoyalty({}));
+      loyaltyOn();
       mount();
 
       expect(heading()).toContain(i18n.t("success.thankYou"));
@@ -215,179 +227,144 @@ describe("OrderSuccess — Order Complete", () => {
     });
 
     it("shows the same order number either way", () => {
-      store.dispatch(setKioskSettings({ enable_loyalty: true }));
-      store.dispatch(turnOnLoyalty({}));
-      store.dispatch(setPhoneNumberRdx("9876543210"));
+      signIn();
       mount();
 
       expect(orderNumber()).toBe("#12345");
     });
   });
 
-  describe("the countdown", () => {
-    it("starts at the full window with an empty bar", () => {
+  /*
+    Figma 1:5932 / 1:3437 draw no control and no countdown: the screen has
+    exactly one exit, its 20 s timer (user decision 2026-10-12 — the Rule 1
+    "way back" exemption of an order confirmation).
+  */
+  describe("no controls (Figma)", () => {
+    it.each([
+      ["a guest", () => undefined],
+      ["a guest on a loyalty deployment", loyaltyOn],
+      ["an identified customer", signIn],
+      ["ADA", () => store.dispatch(toggleAccessibilityMode())],
+    ])("%s: no button, no progress bar, no countdown copy", (_who, seed) => {
+      seed();
       mount();
 
-      expect(progress()).toBe(0);
-      expect(heading()).toContain(
-        i18n.t("success.autoReset", {
-          seconds: ORDER_SUCCESS_COUNTDOWN_SECONDS,
-        })
-      );
+      expect(screen.queryAllByRole("button")).toEqual([]);
+      expect(screen.queryByRole("progressbar")).toBeNull();
+      expect(heading()).not.toMatch(/returning|start over|new order/i);
     });
+  });
 
-    it("runs the bar honestly from 0% to 100% (one constant, not three)", () => {
+  describe("the auto exit", () => {
+    it("is still up at 19 s; at 20 s it goes to Splash ONCE, closing the paid Paytm session on the way — /start's mount runs the full reset (H1)", () => {
+      // A paid EDC session is still in the payment slice on arrival.
+      store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
+      store.dispatch(setBillPaymentInfo({ posBillNo: "17000000000001234", posBillTime: 1_700_000_000_000 }));
+      expect(readOpenPaytmSession(state().payment)).not.toBeNull();
       mount();
 
-      tick(5);
-      expect(progress()).toBe(25);
-
-      tick(5);
-      expect(progress()).toBe(50);
-
-      tick(10);
-      expect(progress()).toBe(100);
-    });
-
-    it("counts the seconds down in the label", () => {
-      mount();
-      tick(3);
-
-      expect(heading()).toContain(
-        i18n.t("success.autoReset", {
-          seconds: ORDER_SUCCESS_COUNTDOWN_SECONDS - 3,
-        })
-      );
-    });
-
-    it("takes the FULL reset back to Splash when nobody taps", () => {
-      mount();
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS - 1);
       expect(mockNavigate).not.toHaveBeenCalled();
 
+      tick(1);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
+      // /start's Paytm release finds nothing to read for an order already paid…
+      expect(readOpenPaytmSession(state().payment)).toBeNull();
+      // …and nothing else is reset here: the order, the bag and the menu are /start's.
+      expect(state().order.orderId).toBe(ORDER_ID);
+      expect(state().cart.cartItems).toHaveLength(1);
+      expect(state().menu.menu).toEqual(MENU_FIXTURE);
+    });
+
+    it("leaves the screen as it is on the way out: an identified customer under ADA keeps the ORDER heading, the number, the 725 panel and the zone (an emptied store would commit the guest frame on the full stage first)", () => {
+      signIn();
+      store.dispatch(toggleAccessibilityMode());
+      mount();
       tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
 
       expect(mockNavigate).toHaveBeenCalledWith("/start");
-      expect(state().cart.cartItems).toEqual([]);
-      expect(state().menu.menu).toEqual({});
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(i18n.t("success.orderHeading"));
+      expect(orderNumber()).toBe("#12345");
+      expect(panel()).toHaveClass("top-[725px]", "invisible");
+      expect(state().customerInfo.customerInfo.customerPhone).toBe("9876543210");
+      expect(state().appSettings.accessibilityMode).toBe(true);
     });
 
-    it("does not fire the timeout twice if the clock keeps running", () => {
+    it("counts from arrival: a tap does not extend it", () => {
       mount();
-      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 10);
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS - 5);
+      fireEvent.pointerDown(root());
+      fireEvent.click(root());
+      tick(5);
+
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
+    });
+
+    it("counts from arrival: a render on the way (the ADA switch at 15 s) never restarts it", () => {
+      mount();
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS - 5);
+      act(() => {
+        store.dispatch(toggleAccessibilityMode());
+      });
+      tick(5);
+
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
+    });
+
+    it("never exits twice, however long the clock keeps running", () => {
+      mount();
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS * 3);
 
       expect(mockNavigate).toHaveBeenCalledTimes(1);
     });
 
-    it("clears its interval on unmount (Rule 5)", () => {
+    it("never exits twice when it renders again on its way out (in the app the emptied payment reaches it through usePrintUtility before the route changes)", () => {
+      mount();
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        store.dispatch(setAmount(30));
+      });
+
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears its timer on unmount (Rule 5)", () => {
       const view = mount();
       view.unmount();
+      // Nothing left pending: a leaked timeout would only set state on an unmounted screen (a no-op).
+      expect(vi.getTimerCount()).toBe(0);
       tick(ORDER_SUCCESS_COUNTDOWN_SECONDS * 2);
 
       expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 
-  describe("the two exits", () => {
-    it('Start Over runs the FULL reset and goes to /start', () => {
-      mount();
-      tap("order-success-startover");
-
-      expect(mockNavigate).toHaveBeenCalledWith("/start");
-      expect(state().cart.cartItems).toEqual([]);
-      expect(state().order.orderId).toBe("");
-      // "full" drops the menu — the loaders refetch it on /start.
-      expect(state().menu.menu).toEqual({});
-    });
-
-    it("Place New Order runs the nextCustomer reset and goes to /second", () => {
-      mount();
-      tap("order-success-neworder");
-
-      expect(mockNavigate).toHaveBeenCalledWith("/second");
-      expect(state().cart.cartItems).toEqual([]);
-      expect(state().order.orderId).toBe("");
-      // The fast path keeps the menu loaded — that IS the fast path.
-      expect(state().menu.menu.categories).toHaveLength(1);
-    });
-
-    it("clears the customer with either scope", () => {
-      store.dispatch(setPhoneNumberRdx("9876543210"));
-      mount();
-      tap("order-success-neworder");
-
-      expect(state().customerInfo.customerInfo.customerPhone).toBe("");
-      expect(state().appSettings.tent).toBeNull();
-      expect(state().payment.paymentType).toBe("");
-    });
-
-    it("takes the first exit only — a second tap is inert", () => {
-      mount();
-      tap("order-success-startover");
-      tap("order-success-neworder");
-
-      expect(mockNavigate).toHaveBeenCalledTimes(1);
-      expect(mockNavigate).toHaveBeenCalledWith("/start");
-    });
-
-    it("a countdown that lands on the same tick as a tap does not double-exit", () => {
-      mount();
-      tap("order-success-neworder");
-      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 5);
-
-      expect(mockNavigate).toHaveBeenCalledTimes(1);
-      expect(mockNavigate).toHaveBeenCalledWith("/second");
-    });
-  });
-
   /*
-    audit-fixes B3 — Place New Order skips the splash tap, where a guest's
-    analytics session normally starts, so it resets the session itself:
-    AFTER this guest's closing events. Start Over and the countdown go to
-    /start, whose splash tap resets for the next guest.
+    audit-fixes B3 — a guest's analytics session starts at the splash tap.
+    The timer's exit goes to /start, so it closes this guest and resets
+    nothing; START OVER's click event is gone with the button.
   */
   describe("the analytics session (audit-fixes B3)", () => {
     beforeEach(() => {
       analyticsLog.length = 0;
     });
 
-    const resets = () => analyticsLog.filter(([kind]) => kind === "reset");
-
-    it("Place New Order: OrderCompleted, SessionEnd and AccountSignoutSuccess, THEN one reset", () => {
+    it("the timer's exit: TimeoutTriggered, OrderCompleted, SessionEnd and AccountSignoutSuccess — once, and no reset", () => {
       mount();
       analyticsLog.length = 0; // the mount's OrderSuccessViewed
-      tap("order-success-neworder");
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 5);
 
       expect(analyticsLog).toEqual([
+        ["capture", KioskEventName.startOverFromOrderSuccessTimeoutTriggered],
         ["capture", KioskEventName.OrderCompleted],
         ["capture", KioskEventName.SessionEnd],
         ["capture", KioskEventName.AccountSignoutSuccess],
-        ["reset"],
       ]);
-    });
-
-    it("Start Over does not reset (the next guest's splash tap does)", () => {
-      mount();
-      tap("order-success-startover");
-
-      expect(analyticsLog).toContainEqual(["capture", KioskEventName.SessionEnd]);
-      expect(resets()).toEqual([]);
-    });
-
-    it("the countdown's exit does not reset either", () => {
-      mount();
-      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
-
-      expect(mockNavigate).toHaveBeenCalledWith("/start");
-      expect(resets()).toEqual([]);
-    });
-
-    it("one exit, one reset: a second tap and the countdown add none", () => {
-      mount();
-      tap("order-success-neworder");
-      tap("order-success-neworder");
-      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 5);
-
-      expect(resets()).toHaveLength(1);
     });
   });
 
@@ -410,8 +387,9 @@ describe("OrderSuccess — Order Complete", () => {
       mount({ receipt: "print" });
       expect(mockPrintOrderTicket).toHaveBeenCalledTimes(1);
 
-      tap("order-success-startover");
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
 
+      expect(mockNavigate).toHaveBeenCalledWith("/start");
       expect(mockPrintOrderTicket).toHaveBeenCalledTimes(1);
     });
 
@@ -451,9 +429,9 @@ describe("OrderSuccess — Order Complete", () => {
   });
 
   describe("idle (P9a)", () => {
-    it("holds the idle clock while up — its own countdown owns the exit", () => {
+    it("holds the idle clock while up — its own 20 s timer owns the exit", () => {
       // A push that outlived the hold cap left an idle period running; unheld,
-      // it could prompt over this screen or end the session before leave()
+      // it could prompt over this screen or end the session before the exit
       // sends its analytics.
       const hold = vi.fn<(delta: 1 | -1) => void>();
       const view = render(
@@ -475,23 +453,139 @@ describe("OrderSuccess — Order Complete", () => {
 });
 
 /*
-  Lane figma-polish S4 #5/#6/#7 — the text block of 1:5932 (guest) and
-  1:3437 / 1:3778 (loyalty) at top 345: a guest gets the Title/H3 thank-you
-  (48/44, −1) in the frame's 569 px box, 24 above the Title/H1 number
-  (116/98, −3.27); a loyalty customer gets ONE H1 block — "ORDER" and the
-  number both 116/98, the number at mt-0. The bell sits at 128; ADA keeps its
-  bottom-570 anchor (P9c) and drops the bell.
+  Lane order-success — Figma 1:5932 (guest) and 1:3437 (identified loyalty
+  customer), drawn where data exists: the "Gradient" + plastic_2 sheen, the
+  photo panel (412×900, r56) at each frame's own top, Figma's one PROCEED
+  line for every payment, and the guest's UNLOCK FREEBIES WITH POINTS only
+  where loyalty is on. The QR, the points figure and the campaign copy have
+  no source and are omitted, never faked.
+*/
+describe("OrderSuccess — the Figma frames (lane order-success)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockNavigate.mockReset();
+    mockPrintOrderTicket.mockReset();
+    store.dispatch({ type: "RESET_STATE" });
+    seedPlacedOrder();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("layers: the 1:5932 gradient and the plastic sheen at 50 %, both stage-registered (bottom-anchored, 1920 tall) — no texture tile, no inline gradient", () => {
+    mount();
+
+    const gradient = screen.getByTestId("order-success-bg");
+    expect(gradient).toHaveClass("tb-order-gradient", "absolute", "bottom-0", "left-0", "h-[1920px]", "w-[1080px]");
+    expect(gradient).toHaveAttribute("aria-hidden", "true");
+    const sheen = root().querySelector('img[src*="plastic-overlay"]');
+    expect(sheen).toHaveClass("opacity-50", "absolute", "bottom-0", "left-0", "h-[1920px]", "w-[1080px]");
+    expect(sheen).toHaveAttribute("alt", "");
+    expect(root().innerHTML).not.toContain("bg-texture");
+    expect(root()).not.toHaveAttribute("style");
+    expect(root()).toHaveClass("relative", "h-full", "w-[1080px]", "overflow-hidden");
+  });
+
+  it.each([
+    ["a guest (1:5932)", () => undefined, "top-[792px]", "top-[725px]", "panel-guest"],
+    ["a guest on a loyalty deployment (1:5932)", loyaltyOn, "top-[792px]", "top-[725px]", "panel-guest"],
+    ["an identified customer (1:3437)", signIn, "top-[725px]", "top-[792px]", "panel-loyalty"],
+  ])("%s: the photo panel — 412×900 at x 334, r56, clipped, its frame's photo and nothing else", (_who, seed, top, otherTop, asset) => {
+    seed();
+    mount();
+
+    const box = panel();
+    expect(box).toHaveClass(top, "absolute", "left-[334px]", "h-[900px]", "w-[412px]", "rounded-[56px]", "overflow-hidden");
+    expect(box).not.toHaveClass(otherTop);
+    const images = box.querySelectorAll("img");
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute("alt", "");
+    expect(images[0]).toHaveAttribute("draggable", "false");
+    expect(images[0].getAttribute("src")).toContain(asset);
+    // No QR (the Figma one scans to a brewery) and no copy on the photo.
+    expect(box.querySelector("svg")).toBeNull();
+    expect(box.textContent).toBe("");
+  });
+
+  it("a guest on a loyalty deployment gets UNLOCK / FREEBIES / WITH POINTS in reading order, FREEBIES yellow, under the mirrored arrow — painted AFTER the panel, so the arrowhead sits over the photo", () => {
+    loyaltyOn();
+    mount();
+
+    const wrap = unlock() as HTMLElement;
+    expect(wrap).toBeInTheDocument();
+    // Real text (contract §3.5): nothing on its way up hides it from assistive tech.
+    expect(wrap.closest('[aria-hidden="true"]')).toBeNull();
+    expect(unlockLines().map((line) => line.textContent)).toEqual([
+      i18n.t("success.unlockTop"),
+      i18n.t("success.unlockFreebies"),
+      i18n.t("success.unlockBottom"),
+    ]);
+    const [top, freebies, bottom] = unlockLines();
+    expect(freebies).toHaveClass("text-tb-yellow", "tb-display", "font-bold", "rotate-15", "whitespace-nowrap");
+    for (const line of [top, bottom]) {
+      expect(line).toHaveClass("text-tb-surface", "font-bold", "uppercase", "rotate-15", "whitespace-nowrap");
+    }
+    expect(top.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[875.22px]", "top-[1367.53px]");
+    expect(freebies.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[866.49px]", "top-[1384.21px]");
+    expect(bottom.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[859.72px]", "top-[1418.77px]");
+
+    const arrow = wrap.querySelector("img") as HTMLImageElement;
+    expect(arrow).toHaveClass("absolute", "left-[707.75px]", "top-[1272.6px]", "h-[63.434px]", "w-[144.259px]", "-scale-x-100", "rotate-[39.4deg]");
+    expect(arrow).toHaveAttribute("alt", "");
+    expect(arrow).toHaveAttribute("draggable", "false");
+    expect(arrow.getAttribute("src")).toContain("unlock-arrow");
+
+    expect(panel().compareDocumentPosition(wrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it.each([
+    ["loyalty is off", () => undefined],
+    ["an identified customer (1:3437)", signIn],
+    ["an identified customer on a loyalty-OFF deployment", () => store.dispatch(setPhoneNumberRdx("9876543210"))],
+  ])("no unlock pitch when %s — and no QR, points or campaign copy anywhere", (_when, seed) => {
+    seed();
+    mount();
+
+    expect(unlock()).toBeNull();
+    expect(heading()).not.toMatch(OMITTED_COPY);
+  });
+
+  it("no QR, points or campaign copy on the guest's loyalty frame either", () => {
+    loyaltyOn();
+    mount();
+
+    expect(heading()).not.toMatch(OMITTED_COPY);
+  });
+
+  it.each([
+    ["pay at counter", PAY_AT_COUNTER_PAYMENT_TYPE],
+    ["a Paytm card payment", "PaytmEdc"],
+    ["a Paytm QR payment", "PaytmDynamicQr"],
+  ])("PROCEED is Figma's one line for %s", (_label, type) => {
+    store.dispatch(setKioskPaymentType({ type }));
+    mount();
+
+    expect(screen.getByTestId("order-success-proceed").textContent).toBe(
+      i18n.t("success.proceedToCounter")
+    );
+  });
+});
+
+/*
+  Lane figma-polish S4 #5/#6/#7, rebuilt by lane order-success — the text
+  block of 1:5932 (guest) and 1:3437 / 1:3778 (loyalty) at top 345: a guest
+  gets the Title/H3 thank-you (48/44, −1) on Figma's two lines ("THANK YOU" /
+  "FOR YOUR ORDER"), 24 above the Title/H1 number (116/98, −3.27); a loyalty
+  customer gets ONE H1 block — "ORDER" and the number both 116/98, the
+  number at mt-0. The bell sits at 128; ADA centres the block in the reach
+  zone and drops the bell.
 */
 describe("OrderSuccess — the Figma text block (S4)", () => {
   const H1 = ["text-[116px]", "leading-[98px]", "tracking-[-3.27px]"];
   const heading = () => screen.getByRole("heading", { level: 1 });
   const block = () => heading().parentElement as HTMLElement;
   const number = () => screen.getByTestId("order-number");
-  const signIn = () => {
-    store.dispatch(setKioskSettings({ enable_loyalty: true }));
-    store.dispatch(turnOnLoyalty({}));
-    store.dispatch(setPhoneNumberRdx("9876543210"));
-  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -505,15 +599,19 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     vi.useRealTimers();
   });
 
-  it("guest: the thank-you is Title/H3 in the 569 px box; the H1 number 24 below it; the block at 345 (920 wide); the bell at 128", () => {
+  it("guest: the thank-you is Title/H3 on Figma's two lines (pre-line, no 569 box); the H1 number 24 below it; the block at 345 (920 wide); the bell at 128", () => {
     mount();
 
-    expect(heading()).toHaveTextContent(i18n.t("success.thankYou"));
-    expect(heading()).toHaveClass("mx-auto", "w-[569px]", "text-[48px]", "leading-[44px]", "tracking-[-1px]");
+    // toHaveTextContent would collapse the copy's line break, not the expected string's.
+    expect(heading().textContent).toBe(i18n.t("success.thankYou"));
+    expect(heading()).toHaveClass("whitespace-pre-line", "text-[48px]", "leading-[44px]", "tracking-[-1px]");
+    expect(heading()).not.toHaveClass("w-[569px]");
+    expect(heading()).not.toHaveClass("mx-auto");
     expect(heading()).not.toHaveClass("text-[116px]");
     expect(number()).toHaveClass(...H1, "mt-[24px]");
     expect(block()).toHaveClass("top-[345px]", "w-[920px]");
-    expect(block().className).not.toContain("top-[300px]");
+    expect(block()).not.toHaveClass("top-1/2");
+    expect(screen.getByTestId("order-success-proceed")).toHaveClass("tb-compressed", "mt-[24px]", "text-[34px]", "leading-[38px]");
     expect(screen.getAllByAltText("Taco Bell")[0]).toHaveClass("top-[128px]");
   });
 
@@ -530,29 +628,29 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     expect(block()).toHaveClass("top-[345px]");
   });
 
-  it("ADA keeps the bottom-570 anchor (never the 345 top) and drops the bell; the classes follow the same split", () => {
+  it("ADA centres the block in the reach zone (never the 345 top) and drops the bell; the classes follow the same split", () => {
     store.dispatch(toggleAccessibilityMode());
     mount();
 
-    expect(block()).toHaveClass("bottom-[570px]");
+    expect(block()).toHaveClass("top-1/2", "-translate-y-1/2", "-translate-x-1/2");
     expect(block()).not.toHaveClass("top-[345px]");
-    expect(heading()).toHaveClass("w-[569px]", "text-[48px]");
+    expect(block().className).not.toContain("bottom-[");
+    expect(heading()).toHaveClass("whitespace-pre-line", "text-[48px]");
     expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
   });
 });
 
 /*
-  Lane motion. The promo panel is a .tb-enter block under the page's latched
-  data-enter: mounting it (or flipping display: none → flex) after the
-  arrival would START its entrance on a live page — the ADA exit did (D-M6:
-  the mode switch never animates). ADA hides it with `invisible`, which
-  restarts nothing. The countdown fill is a compositor-only translateX of a
-  full-width rounded fill (a scaleX squashed its 6 px leading cap).
+  Lane motion, rebuilt by lane order-success (MV2). The text block and the
+  photo panel are .tb-enter blocks under the page's latched data-enter; the
+  unlock arrow pops 300 ms in and its three lines 380 ms in (tokens, never
+  raw ms); the number pops with ONE burst on an in-session arrival. Mounting
+  a block (or flipping display: none → block) after the arrival would START
+  its entrance on a live page — the ADA exit did (D-M6: the mode switch never
+  animates). ADA hides the panel and the unlock with `invisible`, which
+  restarts nothing.
 */
 describe("OrderSuccess — motion (lane motion)", () => {
-  const panel = () =>
-    screen.getByText(i18n.t("success.rewardsHeadline")).parentElement as HTMLElement;
-
   beforeEach(() => {
     vi.useFakeTimers();
     mockNavigate.mockReset();
@@ -564,41 +662,41 @@ describe("OrderSuccess — motion (lane motion)", () => {
     vi.useRealTimers();
   });
 
-  it("the ADA switch never remounts or un-displays the promo panel (D-M6)", () => {
+  it("the ADA switch never remounts or un-displays the panel or the unlock (D-M6)", () => {
+    loyaltyOn();
     store.dispatch(toggleAccessibilityMode());
     mount();
-    const inAda = panel();
-    expect(inAda).toHaveClass("tb-enter", "invisible");
+    const inAda = [panel(), unlock() as HTMLElement];
+    expect(inAda[0]).toHaveClass("tb-enter", "invisible");
+    expect(inAda[1]).toHaveClass("invisible");
 
     act(() => {
       store.dispatch(toggleAccessibilityMode()); // the brand-panel exit
     });
-    expect(panel()).toBe(inAda);
-    expect(inAda).not.toHaveClass("invisible");
-    expect(inAda).not.toHaveClass("hidden");
+    expect(panel()).toBe(inAda[0]);
+    expect(unlock()).toBe(inAda[1]);
+    for (const element of inAda) {
+      expect(element).not.toHaveClass("invisible");
+      expect(element).not.toHaveClass("hidden");
+    }
   });
 
-  it("the countdown fill slides in from the left (translateX), never scaleX", () => {
+  it("the unlock arrow pops 300 ms in and each line box 380 ms in — on the motion tokens, never raw ms", () => {
+    loyaltyOn();
     mount();
-    const fill = screen.getByRole("progressbar").firstElementChild as HTMLElement;
-    expect(fill.style.transform).toBe("translateX(-100%)");
+    const wrap = unlock() as HTMLElement;
 
-    tick(5);
-    expect(fill.style.transform).toBe("translateX(-75%)");
-  });
-
-  it("the fill is a full-width transform with a 1 s linear transition — never a width — and aria-valuenow still reports the progress", () => {
-    mount();
-    const bar = screen.getByRole("progressbar");
-    const fill = bar.firstElementChild as HTMLElement;
-    expect(fill).toHaveClass("w-full", "transition-transform", "duration-1000", "ease-linear");
-    expect(fill.style.width).toBe("");
-    expect(fill.style.transform).not.toMatch(/scale/);
-
-    tick(5);
-    expect(progress()).toBe(25);
-    expect(fill.style.transform).toBe(`translateX(${progress() - 100}%)`);
-    expect(fill.style.width).toBe("");
+    expect(wrap.querySelector("img")).toHaveClass(
+      "tb-pop-in",
+      "[animation-delay:calc(var(--tb-dur-page)+var(--tb-stagger))]"
+    );
+    const boxes = unlockLines().map((line) => line.parentElement);
+    expect(boxes).toHaveLength(3);
+    for (const box of boxes) {
+      expect(box).toHaveClass("tb-pop-in", "[animation-delay:calc(var(--tb-dur-page)+3*var(--tb-stagger))]");
+    }
+    // The wrapper itself is static: the pops are the only motion in it.
+    expect(wrap.className).not.toMatch(/tb-(enter|pop-in)/);
   });
 
   /** A PUSH from another route: <Navigate> fires after the first commit. */
@@ -613,7 +711,6 @@ describe("OrderSuccess — motion (lane motion)", () => {
         </MemoryRouter>
       </Provider>
     );
-  const root = () => screen.getByTestId("order-success");
   const pieces = () => document.querySelectorAll(".tb-confetti-piece");
 
   it("a reload (POP) is still and never bursts; an in-session arrival (PUSH) is fwd with ONE 28-piece burst on the number", () => {
@@ -637,24 +734,17 @@ describe("OrderSuccess — motion (lane motion)", () => {
     expect(orderNumber()).toBe("#12345"); // empty pieces: the called-out number is intact
   });
 
-  it("the next customer's Order Complete (PLACE NEW ORDER chains them) arrives fwd and bursts again", () => {
-    notePath("/orderSuccess"); // the previous customer
-    for (const path of ["/second", "/menu", "/cart", "/payment", "/receipt"]) notePath(path);
-    mountPushed();
-
-    expect(root()).toHaveAttribute("data-enter", "fwd");
-    expect(pieces()).toHaveLength(28);
-  });
-
-  it("tb-enter [--i] on the heading, the promo panel, the countdown and the buttons (0–3) — never the bell", () => {
+  it("tb-enter [--i] on the text block and the panel (0–1) — never the bell, the layers or the unlock", () => {
+    loyaltyOn(); // the unlock is on screen
     notePath("/start");
     mountPushed();
     const blocks = [...root().querySelectorAll(".tb-enter")];
-    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3"]);
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1"]);
     expect(blocks[0]).toContainElement(screen.getByTestId("order-number"));
+    expect(blocks[0]).toContainElement(screen.getByTestId("order-success-proceed"));
     expect(blocks[1]).toBe(panel());
-    expect(blocks[2]).toContainElement(screen.getByRole("progressbar"));
-    expect(blocks[3]).toContainElement(screen.getByTestId("order-success-neworder"));
     expect(screen.getByAltText("Taco Bell").closest(".tb-enter")).toBeNull();
+    expect(unlock()?.closest(".tb-enter")).toBeNull();
+    expect(screen.getByTestId("order-success-bg").closest(".tb-enter")).toBeNull();
   });
 });

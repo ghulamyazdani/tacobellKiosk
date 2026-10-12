@@ -702,10 +702,10 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     // C4b: the 1:5932 gradient reads the four tb-* tokens — an undeclared
     // token would void the whole declaration (no gradient at all).
     await expect
-      .soft(page.getByTestId("order-success"))
+      .soft(page.getByTestId("order-success-bg"))
       .toHaveCSS(
         "background-image",
-        /^linear-gradient\((180deg, )?rgb\(27, 7, 38\) 0%, rgb\(80, 16, 152\) 28%, rgb\(154, 35, 248\) 62%, rgb\(240, 122, 222\) 100%\)$/
+        /^linear-gradient\((180deg, )?rgb\(24, 8, 29\) 0%, rgb\(69, 29, 205\) 46%, rgb\(100, 38, 217\) 63%, rgb\(215, 70, 199\) 94\.363%\)$/
       );
   });
 

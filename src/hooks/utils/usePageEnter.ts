@@ -13,9 +13,10 @@ let trail: string[] = [];
 
 /**
  * AppRoutes, once per committed pathname. The splash and Order Complete start
- * a new, EMPTY trail: PLACE NEW ORDER chains the next customer from Order
- * Complete without visiting /start, so a trail that kept /orderSuccess would
- * read that customer's Order Complete as a return ("back").
+ * a new, EMPTY trail. Order Complete's one exit is the splash today, so its
+ * reset is harmless belt and braces: should an exit ever skip /start again,
+ * a trail that kept /orderSuccess would read the next customer's Order
+ * Complete as a return ("back").
  */
 export function notePath(path: string): void {
   if (path === "/start" || path === "/orderSuccess") {

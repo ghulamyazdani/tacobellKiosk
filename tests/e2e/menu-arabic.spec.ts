@@ -211,10 +211,11 @@ interface PushedOrder {
 }
 
 test.describe("Post-P9 names + operator copy in the guest's language", () => {
-  test("ARABIC: the guest's language drives the pipeline name, the ticker, the menu, MIAM, the PDP and the bag — the order push stays English (Rule 3) — and Start Over brings English back with no isolate left", async ({
+  test("ARABIC: the guest's language drives the pipeline name, the ticker, the menu, MIAM, the PDP and the bag — the order push stays English (Rule 3) — and Order Complete's 20 s exit brings English back with no isolate left", async ({
     page,
   }) => {
     test.setTimeout(120_000);
+    await page.clock.install(); // Order Complete's 20 s exit is stepped, never slept through
     await mockKioskBackend(page, {
       pipeline_text_primary: TICKER_EN,
       pipeline_text_secondary: TICKER_AR,
@@ -359,9 +360,9 @@ test.describe("Post-P9 names + operator copy in the guest's language", () => {
     expect(JSON.stringify(pushed.items)).toContain("Extra Pickles");
     expect(pushed.source?.name).toContain(PIPELINE.primary_name);
 
-    // Start Over: /start's mount resets the language — English names and
-    // copy again, and no isolate anywhere.
-    await page.getByTestId("order-success-startover").click();
+    // Order Complete's 20 s exit: /start's mount resets the
+    // language — English names and copy again, and no isolate anywhere.
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expectNoIsolate(page);

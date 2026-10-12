@@ -139,7 +139,7 @@ const ids = () => store.dispatch(setBillPaymentInfo({ posBillNo: BILL, posBillTi
 const QR = "upi://pay?pa=tb@paytm";
 const qr = () => store.dispatch(setPaytmQrCode(QR));
 
-/** The app's own session end (StartScreen "full", Order Complete's NEW ORDER "nextCustomer"). */
+/** The app's own session end (StartScreen "full"; "nextCustomer", the fast path no screen takes today). */
 const reset = (scope: SessionResetScope) => {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <Provider store={store}>
@@ -186,8 +186,8 @@ describe("PaytmResumeGuard — /payment and /receipt", () => {
     ["a session /paymentPolling already ended (emptyPayment)", () => { arm("PaytmEdc"); ids(); store.dispatch(emptyPayment()); }],
     // FINISH / idle on an end panel → /start, whose teardown resets.
     ["a session /start's teardown ended (resetSession full)", () => { arm("PaytmEdc"); ids(); reset("full"); }],
-    // Paid → Order Complete → NEW ORDER: the fast path that skips /start.
-    ["a paid session Order Complete's NEW ORDER ended (resetSession nextCustomer)", () => {
+    // Paid → the fast path that skips /start (no screen takes it today).
+    ["a paid session the nextCustomer fast path ended (resetSession nextCustomer)", () => {
       arm("PaytmDynamicQr");
       ids();
       qr();

@@ -478,7 +478,7 @@ test.describe("P9c ADA reach-zone view", () => {
     await expectAdaLayout(page);
   });
 
-  test("REACH (checkout): toggled on /second, the view carries through /tent (range error above the display), /phone, /customerName, /payment and its buffer, /receipt and /orderSuccess — and START OVER lands on a full-stage splash", async ({
+  test("REACH (checkout): toggled on /second, the view carries through /tent (range error above the display), /phone, /customerName, /payment and its buffer, /receipt and /orderSuccess — and Order Complete's 20 s exit lands on a full-stage splash", async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -553,11 +553,13 @@ test.describe("P9c ADA reach-zone view", () => {
 
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
     await expectAdaLayout(page);
-    await expectReachable(page);
+    // Figma draws no control on Order Complete: nothing to reach (a reach
+    // pass would find no control at all), and the exit is its timer.
+    await expect(reachZone(page).getByRole("button")).toHaveCount(0);
 
-    // START OVER resets ("full" closes the view) then navigates.
+    // The 20 s exit navigates; /start's mount resets ("full" closes the view).
     const splashInZone = await watchSplashNeverInZone(page);
-    await page.getByTestId("order-success-startover").click();
+    await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
     await expectFullLayout(page);
     expect(await splashInZone()).toBe("");

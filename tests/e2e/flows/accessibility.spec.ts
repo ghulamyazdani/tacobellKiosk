@@ -237,7 +237,8 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await expectA11y(page, "c-06-order-error", "order-error-back", "order-error-retry");
     await page.getByTestId("order-error-retry").click();
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
-    await expectA11y(page, "c-07-order-success", "order-success-startover");
+    // No exits to check: Figma draws no control; the screen leaves on its 20 s timer.
+    await expectA11y(page, "c-07-order-success");
   });
 
   test("D PAYTM: the card-machine screen, its cancel confirm, the not-paid panel", async ({ page }) => {

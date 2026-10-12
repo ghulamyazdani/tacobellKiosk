@@ -54,7 +54,7 @@ describe("notePath — the session trail", () => {
     expect(pageEnterDirection("/second", Push)).toBe("back");
 
     notePath("/orderSuccess");
-    expect(pageEnterDirection("/second", Push)).toBe("fwd"); // NEW ORDER
+    expect(pageEnterDirection("/second", Push)).toBe("fwd"); // a next guest past the splash
     expect(pageEnterDirection("/menu", Push)).toBe("fwd");
 
     notePath("/menu");
@@ -62,10 +62,10 @@ describe("notePath — the session trail", () => {
     expect(pageEnterDirection("/menu", Push)).toBe("fwd");
   });
 
-  it("PLACE NEW ORDER chains customers: every customer's Order Complete arrives fwd", () => {
+  it("customers chained past the splash: every customer's Order Complete arrives fwd", () => {
     const checkout = ["/second", "/menu", "/cart", "/payment", "/receipt"];
     for (const customer of [1, 2, 3]) {
-      checkout.forEach((path) => notePath(path)); // NEW ORDER pushes /second, never /start
+      checkout.forEach((path) => notePath(path)); // the chain pushes /second, never /start
       expect(pageEnterDirection("/orderSuccess", Push), `customer ${customer}`).toBe("fwd");
       notePath("/orderSuccess");
     }
