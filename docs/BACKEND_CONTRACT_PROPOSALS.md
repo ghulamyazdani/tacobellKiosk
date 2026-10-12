@@ -15,7 +15,7 @@
 | 1 | Email receipt (1:3377, 1:3383) | No field for an address, and nothing sends receipts | `enable_email_receipt` setting + a `receipt` block on placeOrder | EMAIL tile is inert |
 | 2 | Order Complete QR codes (1:5932 guest, 1:3437 promo) | No source for the URL or the points | placeOrder response `order_complete.earn` + getMedia slot `order_complete` | Panel ships without a QR |
 | 3 | Make-it-a-meal (MIAM) "SAVE £X" badge (1:3070) | No was-price in the menu | getMenu `comparePrice` on meal entities | Badge built but hidden |
-| 4 | Bag rail vs `/forYou` | One flag controls both | get_kiosk_settings `enable_cart_upsell_rail` | One flag for both |
+| 4 | ~~Bag rail vs `/forYou`~~ **Withdrawn 2026-10-11** | — (`/forYou` dropped; the flag now hides the bag rail and the PDP rail) | — | `/forYou` redirects to `/cart` |
 | 5 | Activity Center passcode | A static passcode in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
 | 6 | Xeno SCAN APP login (1:5881) | No QR format and no lookup | `TBR1.` app token + `check_loyalty_balance_by_token` event | Tab inert, no scanner |
 | 7 | Resend OTP (reward redemption) | No endpoint | `resend_redemption_otp` event | No resend button |
@@ -97,15 +97,15 @@
 - **Guest frame (1:5932):** "SCAN TO EARN 110 POINTS", for claiming points on this order.
 - **Logged-in frame (1:3437):** a campaign panel with a photo, the headline "CHECKOUT NEXT TUESDAY DROPS" and a QR.
 
-Nothing in the kiosk state, the order response or the loyalty data provides a URL, a points figure or a photo. The panel therefore ships without a QR and without the number, and shows the brand mark where the photo should be.
+Nothing in the kiosk state, the order response or the loyalty data provides a URL, a points figure or a photo. The panel therefore ships without a QR and without the number, and shows the frame's photo without QR, points or campaign copy (lane order-success, 2026-10-12).
 
 **Plugs into**
 - `src/pages/OrderSuccess/index.tsx`:
-  - `:51-62`: the note on the missing data.
-  - `:117`: the guest vs logged-in check.
-  - `:269-288`: the panel.
-  - `:76`: the 20 s auto-reset.
-  - `:27-29`: the screen makes no network call of its own.
+  - `:51-61`: the note on the omitted data.
+  - `:151-157`: the guest vs logged-in check and the unlock's loyalty gate.
+  - `:311-350`: the photo panel and the guest's UNLOCK FREEBIES WITH POINTS.
+  - `:96`, `:203-239`: the 20 s auto exit (the only exit; /start's mount runs the reset).
+  - `:31-34`: the screen makes no network call of its own.
 - `src/hooks/menuHooks/useOrderHook.ts:177-180`: the placeOrder response body is thrown away today.
 - `src/hooks/paymentsHooks/usePayAtCounter.ts:330-333`: the push hands over to `/orderSuccess` through router state.
 - `src/hooks/utils/useLoaders.ts:186-199` and `sdk/catalog/src/media/splashMedia.ts:23-35`: getMedia is already fetched at boot, but only `home_screen` is kept.
@@ -130,7 +130,7 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
 | Field | Type | Notes |
 |---|---|---|
 | `key` | `"order_complete"` | New slot. |
-| `url` | image URL | The panel photo. The design panel is 406×700. |
+| `url` | image URL | The panel photo. The Figma panel is 412×900 (r56). |
 | `text` / `subtext` | string ≤ 40 / ≤ 60 | Headline and sub-line. |
 | `qr_url` | https URL | The campaign link the QR encodes. |
 | `audience` | `"loyalty"`, `"guest"` or `"all"`, optional | Defaults to `"loyalty"`, as in frame 1:3437. |
@@ -149,7 +149,7 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
 - **Which panel shows:**
   - A guest with loyalty on and a valid `earn.url` sees the QR and "SCAN TO EARN {points} POINTS", which restores the frame's wording.
   - Otherwise, a live campaign entry for that audience shows, if there is one.
-  - Otherwise, today's brand-mark panel shows.
+  - Otherwise, today's panel shows: the frame's photo without a QR (plus, for a guest on a loyalty deployment, UNLOCK FREEBIES WITH POINTS).
 - The QR is drawn on the device from the URL string, using `react-qr-code` (the fork's QR component, which arrives with the P8b Paytm QR work). The success screen downloads no images for it.
 - **The `earn` data:**
   - The kiosk reads `earn` from the placeOrder 2xx body and passes it to the success screen with the receipt choice, in router state only (not redux, not storage).
@@ -160,8 +160,8 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
   - If the campaign photo fails to load, the panel shows the text and QR without it. It is never blank.
   - The entry is stored as part of the boot's single atomic commit. If getMedia fails, the last known entry is kept.
 - Two decisions belong to the client, not the backend:
-  - The ADA view drops the panel today (P9c).
-  - The 20 s auto-reset is short for a guest to scan with a phone camera.
+  - The ADA view hides the panel today (P9c, invisible).
+  - The 20 s auto-reset is short for a guest to scan with a phone camera, and since lane order-success no control can extend it.
 
 **Privacy / security**
 - Whoever holds the claim URL can claim the points, so the token must be single-use, short-lived and bound to the order on the server, served over https on a brand domain. Points should be credited only after the order is settled at the POS, because pay-at-counter orders are pushed unpaid.
@@ -176,7 +176,7 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
 3. Can `points` be computed at push time from the earn rules?
 4. Should the printed ticket carry the same claim QR?
 
-**Kiosk-side status: not started**, apart from the panel without a QR (P8a). Still to build: reading the response, drawing the QR, and the getMedia slot.
+**Kiosk-side status: not started**, apart from the panel without a QR (P8a; the frame's photo since lane order-success, 2026-10-12). Still to build: reading the response, drawing the QR, and the getMedia slot.
 
 ---
 
@@ -227,52 +227,10 @@ The kiosk computes the saving as `comparePrice − price`, so this example shows
 
 ---
 
-## 4. Separate flag for the in-bag Complete-Your-Meal rail
+## 4. Separate flag for the in-bag Complete-Your-Meal rail — Withdrawn 2026-10-11
 
-**Problem.** `enable_cart_upsell_screen` controls two surfaces through a single `shouldShowUpsell` value:
-- the full-screen `/forYou` "Complete Your Meal" step after VIEW MY BAG, which has no Figma frame (design-language);
-- the in-bag Complete-Your-Meal rail, which is the design's own surface (1:3171).
+**Withdrawn 2026-10-11.** The user dropped the `/forYou` screen: VIEW MY BAG always opens the bag, and a stale `/forYou` URL redirects to `/cart`. The interstitial this flag was to be split from is gone, so no new field is needed. `enable_cart_upsell_screen: false` still hides two rails together: the bag's Complete-Your-Meal rail (both of its sources, the `isCartRecommended` items and the tenant list) and the PDP's You Might Like rail. The rewards sheet's Suggested rail and the product-added strip are not gated by it. The section number is kept so the references to §5–§12 stay valid.
 
-So a tenant cannot keep the rail and drop the interstitial.
-
-**Plugs into**
-- `src/hooks/menuHooks/useCartUpsell.ts:92-102`: `shouldShowUpsell = enable_cart_upsell_screen !== false && items ≥ 1`.
-- Where it is read:
-  - the rail: `src/components/cart/CompleteYourMealRail.tsx:52, :70`;
-  - the interstitial: `src/pages/Menu/index.tsx:354` and `src/pages/ForYou/index.tsx:141`.
-- `src/hooks/utils/useLoaders.ts:386-390, :406`: get_kiosk_settings is fetched at boot and stored whole. It is persisted (`src/redux/app/store.ts:68-72`).
-
-**Contract.** One new optional boolean in the get_kiosk_settings response:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `enable_cart_upsell_rail` | boolean, optional | Turns the in-bag rail on or off. If absent, it follows `enable_cart_upsell_screen`, as today. |
-| `enable_cart_upsell_screen` | boolean (existing) | Narrowed to control `/forYou` only. |
-
-```json
-{ "enable_cart_upsell_screen": false, "enable_cart_upsell_rail": true }
-```
-
-| `…_screen` | `…_rail` | `/forYou` | Bag rail |
-|---|---|---|---|
-| absent | absent | on | on (today) |
-| `false` | absent | off | off (today) |
-| `false` | `true` | off | **on** |
-| absent or `true` | `false` | on | **off** |
-
-Both surfaces still need at least one in-stock `isCartRecommended` item.
-
-**Kiosk behaviour.** This is pure config, with no request. A change applies at the next boot-data load and never mid-order. That load happens on the scheduled refresh (at most 6 h), on an FCM brand push, or on the Activity Center's "Reload resources". A non-boolean value counts as absent.
-
-**Privacy / security.** None.
-
-**Backward compatibility.** If the field is absent, the kiosk behaves exactly as today.
-
-**Open questions**
-1. Does Cockpit expose `enable_cart_upsell_screen` today? A kiosk code comment says the API does not send it (`useCartUpsell.ts:92-96`), so both toggles may need Cockpit UI.
-2. The request sends `brand_id` and `tenant_id`, so these settings are brand-wide. Is a per-store override needed?
-
-**Kiosk-side status: not started.** It is a small change: split `shouldShowUpsell` into one value per surface, plus tests.
 
 ---
 
