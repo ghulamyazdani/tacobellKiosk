@@ -576,6 +576,7 @@ test.describe("visual capture — ordering screens", () => {
 
     // The Arabic calorie label wraps a rail card's price line: its photo gives way.
     await openBag(page);
+    await expect(page.getByTestId("bag-rail")).toBeVisible();
     await capture(page, "order-24-ar-bag");
     await page.getByTestId("bag-rewards-entry").click();
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();

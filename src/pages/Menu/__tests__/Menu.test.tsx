@@ -173,6 +173,7 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
   // item is what used to open that screen (MIN_CART_UPSELL_ITEMS is 1).
   it("VIEW MY BAG goes to /cart, never /forYou, even with a cart-recommended item; an empty bag stays put", () => {
     mockNavigate.mockReset();
+    mockCapture.mockClear();
     store.dispatch(
       setEntityMap({
         entityMap: {
@@ -195,6 +196,9 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
     fireEvent.click(screen.getByTestId("cta-view-bag"));
     expect(mockNavigate).toHaveBeenLastCalledWith("/cart");
     expect(mockNavigate.mock.calls.map(([to]) => to)).not.toContain("/forYou");
+    // The dropped screen's analytics stop with it: no cart_upsell_* event.
+    const upsellEvents = mockCapture.mock.calls.filter(([event]) => String(event).startsWith("cart_upsell_"));
+    expect(upsellEvents).toEqual([]);
   });
 });
 

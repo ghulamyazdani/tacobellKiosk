@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route, dexieRows } from "./fixtures/kiosk";
+import { test, expect, type Page, type Route, dexieRows, freezeClock } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   fixtureJson,
@@ -621,10 +621,13 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     await expect(page.getByTestId("bag-rail")).toBeVisible();
 
+    const entries = await page.evaluate(() => window.history.length);
     await pushPath("/forYou");
     await expect(page).toHaveURL(/\/cart$/);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     await expect(bagRows(page)).toHaveCount(1);
+    // The redirect REPLACES /forYou: only the pop's own entry was added.
+    expect(await page.evaluate(() => window.history.length)).toBe(entries + 1);
 
     // A chunk-error reload of the current URL (chunkRecovery) — a full load.
     await expect.poll(() => dexieCartQuantities(page)).toEqual([1]);
@@ -632,6 +635,50 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page).toHaveURL(/\/cart$/, { timeout: 15_000 });
     await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
     await expect(bagRows(page)).toHaveCount(1);
+  });
+
+  test("DOUBLE TAP on VIEW MY BAG where it overlaps PAY: the bag opens and the CTA bar's guard swallows the second tap — checkout never starts", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.clock.install(); // frozen below, so the 0.5 s guard never races a loaded machine
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    await addGreekSaladOneTap(page, "(1)");
+    const viewBag = await page.getByTestId("cta-view-bag").boundingBox();
+    await page.getByTestId("cta-view-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    const pay = await page.getByTestId("bag-pay").boundingBox();
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    // The URL moves before the close commits (a navigation is a transition):
+    // wait for the commit, so the first open's guard timer is gone before
+    // the freeze (pauseAt's jump would fire it into the next open).
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    if (!viewBag || !pay) throw new Error("VIEW MY BAG / PAY are not laid out");
+    // VIEW MY BAG's lower edge lies over PAY's top (a 4–5 px band).
+    const left = Math.max(viewBag.x, pay.x);
+    const right = Math.min(viewBag.x + viewBag.width, pay.x + pay.width);
+    const top = Math.max(viewBag.y, pay.y);
+    const bottom = Math.min(viewBag.y + viewBag.height, pay.y + pay.height);
+    expect(right - left).toBeGreaterThan(0);
+    expect(bottom - top).toBeGreaterThan(0);
+    const point = { x: (left + right) / 2, y: (top + bottom) / 2 };
+
+    await freezeClock(page);
+    await page.mouse.click(point.x, point.y);
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    expect(
+      await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("data-testid"),
+        point
+      )
+    ).toBe("bag-cta-tap-guard");
+    await page.mouse.click(point.x, point.y);
+    await page.clock.resume();
+    await expect(page.getByTestId("bag-cta-tap-guard")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/cart$/);
   });
 
   test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total", async ({
