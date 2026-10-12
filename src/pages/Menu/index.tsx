@@ -58,11 +58,14 @@ import LoyaltySuccessModal from "../../components/loyalty/LoyaltySuccessModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { scrollBehavior } from "../../utils/autoScroll";
 import {
-  mutateAddToCartModal,
   selectAddToCartModal,
   setRecommendationDetour,
+  stageUpsellItem,
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { ErrorBoundary } from "../../ErrorBoundary";
+
+/** Suggestions and a chosen size never get the repeat sheet. */
+const NEW_CUSTOMIZATION = { forceNewCustomization: true } as const;
 
 // D9 — the Xeno rewards sheet rides the ONE lazy UI chunk (bagLazyParts: a
 // second dynamic entry grows the boot path). `await import()`, never
@@ -163,6 +166,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
 
   const [languageOpen, setLanguageOpen] = useState(false);
   const [sizeEntity, setSizeEntity] = useState<any | null>(null);
+  /** Select a Size → the PDP under way (handleSizeContinue): CONTINUE is spent. */
+  const sizeHandoff = useRef(false);
   const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
   const [loyaltyLoginOpen, setLoyaltyLoginOpen] = useState(false);
   const { getAddIntent, addEntity } = useAddEntityToCart();
@@ -371,49 +376,54 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   };
 
   /**
-   * A product-added suggestion that needs a choice LEAVES the modal: close it
-   * first (BACK on the PDP must never bring it back) and mark the detour, so
-   * the add it ends in confirms WITHOUT another strip (one hop; fork
-   * YouMightLikeStrip.handleAdd). useCartHook's next modal open consumes it.
-   */
-  const leaveAddedModal = () => {
-    dispatch(setRecommendationDetour(true));
-    dispatch(mutateAddToCartModal(false));
-  };
-
-  /**
-   * A suggestion tap does what the same item's menu "+" does: a sized item
-   * → Select a Size; options / pack → the PDP; already in the bag (repeat
-   * on) → the repeat sheet — each after leaveAddedModal. A plain add lands
-   * in place and the modal stays open (the tile counts it).
-   * ponytail: a MIAM prompt abandoned after a suggestion keeps the flag until
-   * the next menu tap, PDP exit, modal open or reset (one strip lost at
-   * worst); unreachable today — raw upsellItems are ids (Q5). Clear it on the
-   * prompt's X if suggestions ever offer the meal.
+   * A product-added suggestion tap — STAGED, as in posistKiosk: nothing
+   * reaches the bag until the modal's ADD TO ORDER. A one-tap item is
+   * PICKED on its tile. One that needs a choice opens what the same item's
+   * menu "+" opens — Select a Size, or the PDP for options / a pack; never
+   * the repeat sheet, whose "+" writes to the bag — with recommendationDetour
+   * set: the modal hides (still open, its picks kept), the add the chooser
+   * ends in is parked with them (useCartHook), and every chooser exit clears
+   * the flag, which brings the modal back.
+   * ponytail: a MIAM prompt from a suggestion keeps the flag — the modal
+   * hidden — until the next menu tap, modal open or reset; unreachable today
+   * (raw upsellItems are ids, Q5). Clear it on the prompt's X if suggestions
+   * ever offer the meal.
    */
   const handleSuggestionAdd = (entity: RecommendedEntity) => {
-    if (getAddIntent(entity) === "variant") {
-      leaveAddedModal();
+    const intent = getAddIntent(entity, NEW_CUSTOMIZATION);
+    if (intent === "unavailable") return;
+    if (intent === "add") {
+      dispatch(stageUpsellItem({ id: entity.id, delta: 1 }));
+      return;
+    }
+    const detour = () => dispatch(setRecommendationDetour(true));
+    if (intent === "variant") {
+      detour();
       setSizeEntity(entity);
       return;
     }
-    if (addEntity(entity, { suppressAddedModal: true, onBeforeLeave: leaveAddedModal })) {
-      trackAdded(entity, entity?.price, entity?.type);
-    }
+    addEntity(entity, { ...NEW_CUSTOMIZATION, onBeforeLeave: detour });
   };
 
   const handleSizeContinue = (variant: any) => {
     const parent = sizeEntity;
-    setSizeEntity(null);
-    if (!parent) return;
+    if (!parent || sizeHandoff.current) return;
     if (variant?.modifiers?.length) {
       // Size chosen but the variant carries modifier groups → the PDP, through
       // the card tap's own tier-1 variant session (a bare navigate had none,
       // so the PDP bounced back), with the chosen size already confirmed.
+      // Select a Size stays up as the cover until the PDP's route replaces
+      // this page: RR7 navigates inside a transition, and a sheet closed
+      // first left the bare menu under the finger — a suggestion's modal
+      // hidden, its detour still set, nothing to arm DetourTapGuard — so a
+      // double tap's second half added the card beneath or opened the bag.
+      sizeHandoff.current = true;
       trackItem(KioskEventName.CustomizationOpened, parent, { source: "menu" });
-      addEntity(parent, { preselectedVariantId: variant.id });
+      // The size is chosen: never the repeat sheet (it would drop it).
+      addEntity(parent, { preselectedVariantId: variant.id, ...NEW_CUSTOMIZATION });
       return;
     }
+    setSizeEntity(null);
     // B5 (CX-07): the PDP's commit builder — one money shape. The PDP's own
     // SelectedEntity (buildVariantTierPayload) and no modifiers, so the row
     // carries baseItem / baseItemPrice / variantPrice / customizations like
@@ -431,8 +441,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       }),
       "VARIANT"
     );
-    // After a suggestion's Select a Size: the modal this add opened already
-    // consumed the detour; a DP-cap refusal must not leave it set.
+    // After a suggestion's Select a Size the add was parked (useCartHook):
+    // ending the detour brings the modal back — a DP-cap refusal too.
     dispatch(setRecommendationDetour(false));
     if (landed) trackAdded(parent, variant?.price, "VARIANT");
   };
@@ -663,6 +673,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         <SelectSizeModal
           entity={sizeEntity}
           onClose={() => {
+            sizeHandoff.current = false;
             setSizeEntity(null);
             dispatch(setRecommendationDetour(false));
           }}

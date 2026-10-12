@@ -7,12 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { selectShowErrorModalGlobal, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
 import {
   mutateAddToCartModal,
   setOutOfStockItems,
+  setRecommendationDetour,
+  stageConfiguredUpsellItem,
+  stageUpsellItem,
+  type StagedCartRow,
+  type UpsellStaging,
 } from "../../../redux/features/menuSelections/menuSelections.slice";
 import ProductAddedModal from "../ProductAddedModal";
 import i18n from "../../../i18n";
@@ -21,9 +27,15 @@ import i18n from "../../../i18n";
   audit-fixes B4 (F09, closes X04) — "YOUR PRODUCT HAS BEEN ADDED" per Figma
   1:4571 / modal 1:4589: a 680 card on a tb-purple/80 scrim, up to three
   You-Might-Like tiles (2-line names, "£x | N Cal" with the calories only
-  when > 0, a 36 px quick add on a 44 px hit area), the Total (the menu
-  bar's live subTotal) and ONE CTA — ADD TO ORDER closes it. The frame has
-  no VIEW MY BAG: the menu's CTA bar keeps that edge (and its upsell gate).
+  when > 0, a 36 px quick add on a 44 px hit area), the Total and ONE CTA.
+  The frame has no VIEW MY BAG: the menu's CTA bar keeps that edge (and its
+  upsell gate).
+
+  posistKiosk parity (user report 2026-10-12): the modal STAGES. A tile tap
+  goes to Menu (onQuickAdd), which stages a one-tap item or sends a choice
+  item through Select a Size / the PDP, whose add is PARKED back here
+  (useCartHook). Nothing reaches the bag until ADD TO ORDER; X and the scrim
+  throw the picks away.
 */
 
 const TACO = { id: "r-taco", name: "Crunchy Taco", price: 4, calorieCount: 0 };
@@ -51,7 +63,23 @@ const open = (item: Record<string, unknown>) =>
   });
 const isOpen = () =>
   (store.getState() as any).menuSelections.addToCartModal.isOpen as boolean;
-const tiles = () => screen.queryAllByTestId(/^added-rec-(?!add-)/);
+const tiles = () => screen.queryAllByTestId(/^added-rec-(?!add-|remove-)/);
+const state = () =>
+  store.getState() as unknown as {
+    menuSelections: { upsellStaging: UpsellStaging };
+    cart: { cartItems: Record<string, unknown>[]; subTotal: number };
+  };
+const staging = () => state().menuSelections.upsellStaging;
+const cartItems = () => state().cart.cartItems;
+const stage = (id: string, units = 1) =>
+  act(() => {
+    for (let i = 0; i < units; i += 1) store.dispatch(stageUpsellItem({ id, delta: 1 }));
+  });
+/** A chooser's finished row as useCartHook parks it (buildCartItemContent's shape). */
+const park = (row: StagedCartRow) =>
+  act(() => {
+    store.dispatch(stageConfiguredUpsellItem(row));
+  });
 
 describe("ProductAddedModal (Figma 1:4589)", () => {
   beforeEach(() => {
@@ -179,7 +207,7 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(overlay).toHaveClass("absolute", "inset-0");
     const plus = screen.getByTestId(`added-rec-add-${BURRITO.id}`);
     expect(Array.from(card.children).slice(-3)).toEqual([within(card).getByRole("status"), overlay, plus]);
-    // The tile's only controls — no undo stepper (sign-off Q3: removing stays in the bag).
+    // Nothing picked yet: the tile's only controls (its "−" comes with a pick).
     expect(within(card).getAllByRole("button", { hidden: true })).toEqual([overlay, plus]);
 
     fireEvent.click(overlay);
@@ -242,35 +270,24 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
   });
 
   /*
-    RC2: the tile counts that item in the order — the cart's own read
-    (doesItemExistInCart: paid rows of that id; free get-items and loyalty
-    rewards excluded), live. ForYouCard's imageTop pill at 12/12: it pops in
+    The pill counts what the guest is ADDING — one-tap units plus parked
+    chooser rows of that id — never what the bag already holds (posistKiosk:
+    "how many you are adding", so it starts at zero even for an item in the
+    bag). ForYouCard's pill, centred between the "−" and the "+": it pops in
     (tb-pop-in), each change re-keys the number so it bumps (tb-bump). The
-    digits are aria-hidden; an always-mounted status speaks "N in your order".
+    digits are aria-hidden; an always-mounted status speaks "N selected".
   */
-  it("the count pill: paid rows of that id (free / loyalty excluded), live; the number re-keys inside the same pill; a status speaks it (EN, AR)", async () => {
-    const row = (id: string, itemId: string, quantity: number, extra: Record<string, unknown> = {}) => ({
-      id,
-      itemId,
-      name: id,
-      quantity,
-      type: "ITEM",
-      price: 1,
-      total_price: 1,
-      ...extra,
-    });
-    const rows = [
-      row(BURRITO.id, "b-1", 2),
-      row(BURRITO.id, "b-2", 1),
-      row(TACO.id, "t-free", 1, { isGetItem: true }),
-      row(TACO.id, "t-reward", 1, { isLoyaltyItem: true }),
-    ];
-    store.dispatch(setCartItems(rows));
+  it("the count pill: the STAGED count (one-tap units + parked rows of that id), never the bag's; the number re-keys inside the same pill; a status speaks 'N selected' (EN, AR)", async () => {
+    store.dispatch(
+      setCartItems([{ id: TACO.id, itemId: "t-1", name: "Taco", quantity: 2, type: "ITEM", price: 4, total_price: 4 }])
+    );
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id, BURRITO.id, QUESADILLA.id] });
+    expect(screen.queryByTestId(`added-count-${TACO.id}`)).toBeNull();
 
+    stage(BURRITO.id, 2);
     const pill = screen.getByTestId(`added-count-${BURRITO.id}`);
-    expect(pill).toHaveTextContent(/^3$/);
+    expect(pill).toHaveTextContent(/^2$/);
     expect(pill).toHaveAttribute("aria-hidden", "true");
     expect(pill).toHaveClass(
       "tb-pop-in",
@@ -288,30 +305,74 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(screen.queryByTestId(`added-count-${TACO.id}`)).toBeNull();
     expect(screen.queryByTestId(`added-count-${QUESADILLA.id}`)).toBeNull();
 
-    // Every tile carries its status at the pill's corner (empty at 0).
+    // Every tile carries its status, centred on the "−" / "+" row (empty at 0).
     const statuses = tiles().map((tile) => within(tile).getByRole("status"));
     expect(statuses).toHaveLength(3);
-    statuses.forEach((s) => expect(s).toHaveClass("absolute", "left-[12px]", "top-[12px]"));
+    statuses.forEach((s) => expect(s).toHaveClass("absolute", "inset-x-0", "top-[9px]", "justify-center"));
     expect(statuses[0]).toBeEmptyDOMElement();
     expect(statuses[1]).toContainElement(pill);
     const spoken = () => statuses[1].querySelector(".sr-only")?.textContent;
-    expect(spoken()).toBe(i18n.t("added.inOrder", { value: 3 }));
+    expect(spoken()).toBe("2 selected");
 
-    act(() => {
-      store.dispatch(setCartItems([...rows, row(BURRITO.id, "b-3", 1)]));
-    });
+    // A parked chooser row of that id counts its whole quantity.
+    park({ id: BURRITO.id, itemId: "p-1", name: BURRITO.name, type: "CUSTOMIZABLE", quantity: 2, total_price: 6 });
     expect(screen.getByTestId(`added-count-${BURRITO.id}`)).toBe(pill);
     expect(pill).toHaveTextContent(/^4$/);
     expect(pill.firstElementChild).not.toBe(number);
     expect(pill.firstElementChild).toHaveClass("tb-bump");
-    const english = i18n.t("added.inOrder", { value: 4 });
-    expect(spoken()).toBe(english);
+    expect(spoken()).toBe("4 selected");
+    // Staging never touches the bag.
+    expect(cartItems()).toEqual([expect.objectContaining({ id: TACO.id, quantity: 2 })]);
 
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
-    expect(spoken()).toBe(i18n.t("added.inOrder", { value: 4 }));
-    expect(spoken()).not.toBe(english);
+    expect(spoken()).toBe(i18n.t("added.selected", { value: 4 }));
+    expect(spoken()).not.toBe("4 selected");
+  });
+
+  /*
+    posistKiosk's "−": shown only while the tile has picks — the trash glyph
+    at 1, "−" from 2 (D6, OptionRow) — on the "+"'s circle at the mirrored
+    corner. Each tap takes ONE pick back: one-tap units first (one tap puts a
+    unit back; a configuration cost a trip through a chooser), then the most
+    recent parked row.
+  */
+  it("'−': only while picked — trash at 1, minus from 2, 'Remove one <name>' on a 44 px hit area; each tap takes back one unit, then the most recent parked row", () => {
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [BURRITO.id] });
+    expect(screen.queryByTestId(`added-rec-remove-${BURRITO.id}`)).toBeNull();
+
+    stage(BURRITO.id, 2);
+    park({ id: BURRITO.id, itemId: "p-old", type: "CUSTOMIZABLE", quantity: 1, total_price: 6 });
+    park({ id: BURRITO.id, itemId: "p-new", type: "CUSTOMIZABLE", quantity: 1, total_price: 7 });
+    const remove = screen.getByRole("button", { name: "Remove one Crispy Chicken Burrito" });
+    expect(remove).toHaveAttribute("data-testid", `added-rec-remove-${BURRITO.id}`);
+    expect(remove).toHaveClass("absolute", "left-[7px]", "top-[5px]", "z-10", "h-[44px]", "w-[44px]");
+    expect(remove.firstElementChild).toHaveClass("h-[36px]", "w-[36px]", "rounded-full", "bg-tb-surface");
+    const glyph = () => remove.querySelector("img")?.getAttribute("src") ?? "";
+    const count = () => screen.queryByTestId(`added-count-${BURRITO.id}`)?.textContent ?? null;
+    expect(count()).toBe("4");
+    expect(glyph()).toContain("qty-minus");
+
+    fireEvent.click(remove);
+    expect(count()).toBe("3");
+    expect(staging().pending).toEqual({ [BURRITO.id]: 1 });
+    fireEvent.click(remove);
+    expect(count()).toBe("2");
+    expect(staging().pending).toEqual({});
+    expect(staging().pendingCustom.map((row) => row.itemId)).toEqual(["p-old", "p-new"]);
+    fireEvent.click(remove);
+    expect(count()).toBe("1");
+    expect(staging().pendingCustom.map((row) => row.itemId)).toEqual(["p-old"]);
+    expect(glyph()).toContain("trash");
+    expect(glyph()).not.toContain("qty-minus");
+    fireEvent.click(remove);
+
+    expect(count()).toBeNull();
+    expect(screen.queryByTestId(`added-rec-remove-${BURRITO.id}`)).toBeNull();
+    expect(staging()).toEqual({ pending: {}, pendingCustom: [] });
+    expect(isOpen()).toBe(true);
   });
 
   /*
@@ -408,7 +469,7 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     });
   });
 
-  it("Total = the menu bar's subTotal; ONE CTA — ADD TO ORDER closes; no VIEW MY BAG", () => {
+  it("nothing picked over a strip: Total = the menu bar's subTotal; the ONE CTA reads NO THANKS and just closes; no VIEW MY BAG", () => {
     store.dispatch(setCartItems(CART));
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id] });
@@ -420,44 +481,189 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(screen.queryByText(i18n.t("menu.viewMyBag"))).toBeNull();
 
     const cta = screen.getByTestId("added-continue");
-    expect(cta).toHaveTextContent(i18n.t("added.addToOrder"));
+    expect(cta).toHaveTextContent("No thanks");
     expect(cta).toHaveClass("tb-display", "h-[60px]", "w-full", "rounded-[4px]", "bg-tb-purple", "text-tb-surface");
     fireEvent.click(cta);
 
     expect(isOpen()).toBe(false);
     expect(screen.queryByTestId("product-added-modal")).toBeNull();
+    expect(cartItems()).toEqual(CART);
+  });
+
+  it("Total = the bag's subTotal + the picks: one-tap price × units, parked total_price × quantity (a parked row counts even without its tile)", () => {
+    store.dispatch(setCartItems(CART));
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
+    const total = screen.getByTestId("added-total");
+
+    stage(TACO.id);
+    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £16.00`);
+    stage(BURRITO.id, 2);
+    // 12 + 4 + 2 × 5.59
+    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £27.18`);
+    park({ id: "r-elsewhere", itemId: "p-1", type: "VARIANT", quantity: 2, total_price: 7 });
+    // + 2 × 7
+    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £41.18`);
+    expect(cartItems()).toEqual(CART);
+  });
+
+  /*
+    ADD TO ORDER is the ONE write: one per product carrying the whole
+    quantity (the cart writers' DP check then sees the true total — a loop of
+    +1s each checked the same stale cart), onto the row the menu "+" bumps
+    (the first paid row of that id) or a new one; parked rows are replayed
+    as built. Then it closes and the picks are gone.
+  */
+  it("ADD TO ORDER writes the picks — the menu '+'s row bumped by its units in one write, a new row with the whole quantity, the parked rows replayed — then closes with nothing left picked", () => {
+    store.dispatch(
+      setCartItems([{ id: TACO.id, itemId: "t-1", name: TACO.name, quantity: 1, type: "ITEM", price: 4, total_price: 4 }])
+    );
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
+    stage(TACO.id, 2);
+    stage(BURRITO.id, 3);
+    park({
+      id: QUESADILLA.id,
+      itemId: "p-1",
+      uniqueItemId: "p-1",
+      name: QUESADILLA.name,
+      type: "CUSTOMIZABLE",
+      quantity: 1,
+      price: 5.59,
+      total_price: 6.59,
+    });
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+
+    expect(isOpen()).toBe(false);
+    expect(screen.queryByTestId("product-added-modal")).toBeNull();
+    const rows = cartItems();
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ id: TACO.id, itemId: "t-1", quantity: 3 });
+    expect(rows[1]).toMatchObject({ id: BURRITO.id, type: "ITEM", quantity: 3, total_price: 5.59 });
+    expect(rows[2]).toMatchObject({ id: QUESADILLA.id, type: "CUSTOMIZABLE", quantity: 1, total_price: 6.59 });
+    // 3 × 4 + 3 × 5.59 + 6.59
+    expect(state().cart.subTotal).toBeCloseTo(35.36, 2);
+    expect(staging()).toEqual({ pending: {}, pendingCustom: [] });
+  });
+
+  /*
+    Two parked rows of ONE product (two sizes of it, say) replay in one
+    handler: restamped, both would get the same "<ms>_<id>" itemId — one cart
+    key for two rows, and the Dexie mirror (keyed by itemId) would drop the
+    second. Each keeps the itemId it was parked with (separate chooser trips).
+  */
+  it("ADD TO ORDER replays two parked rows of one product with the itemIds they were parked with — never one restamped key for both", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+      open({ id: "added", recommendedItems: [BURRITO.id] });
+      park({ id: BURRITO.id, itemId: "p-regular", uniqueItemId: "p-regular", type: "VARIANT", quantity: 1, total_price: 5 });
+      park({ id: BURRITO.id, itemId: "p-large", uniqueItemId: "p-large", type: "VARIANT", quantity: 1, total_price: 7 });
+
+      fireEvent.click(screen.getByTestId("added-continue"));
+
+      expect(cartItems().map((row) => row.itemId)).toEqual(["p-regular", "p-large"]);
+      expect(isOpen()).toBe(false);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("a refused write (the DP cap — its error is up) keeps the modal open with only the refused pick; what landed is no longer picked", () => {
+    store.dispatch(setCurrentSession({ _id: "dp-lunch", sessionName: "Lunch", _extras: { maxQtyItem: "1" } }));
+    store.dispatch(setEntityMap({ entityMap: { ...ENTITY_MAP, [TACO.id]: { ...TACO, isDpItem: true } } }));
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
+    stage(TACO.id, 2); // 2 DP units against a cap of 1
+    stage(BURRITO.id);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
+    expect(isOpen()).toBe(true);
+    expect(cartItems()).toEqual([expect.objectContaining({ id: BURRITO.id, quantity: 1 })]);
+    expect(staging()).toEqual({ pending: { [TACO.id]: 2 }, pendingCustom: [] });
+    expect(screen.getByTestId(`added-count-${TACO.id}`)).toHaveTextContent(/^2$/);
+    expect(screen.queryByTestId(`added-count-${BURRITO.id}`)).toBeNull();
+    // Something is still picked, so the CTA still offers to buy it.
+    expect(screen.getByTestId("added-continue")).toHaveTextContent("Add to order");
   });
 
   it.each([
     ["the X", 1],
     ["the scrim", 0],
-  ])("%s closes it too", (_what, index) => {
+  ])("%s throws the picks away: closed, the bag unchanged, nothing left picked", (_what, index) => {
+    store.dispatch(setCartItems(CART));
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id] });
+    stage(TACO.id, 2);
+    park({ id: BURRITO.id, itemId: "p-1", type: "CUSTOMIZABLE", quantity: 1, total_price: 6 });
     // DOM order: the scrim, then the card's X.
     const closers = screen.getAllByRole("button", { name: i18n.t("language.close") });
     expect(closers).toHaveLength(2);
 
     fireEvent.click(closers[index]);
     expect(isOpen()).toBe(false);
+    expect(cartItems()).toEqual(CART);
+    expect(staging()).toEqual({ pending: {}, pendingCustom: [] });
   });
 
-  it("suppressRecommendations (a suggestion-detour add) → no strip: the title, the Total and the CTA only", () => {
+  it("every open starts with nothing picked: a new add's modal never inherits the last one's picks", () => {
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id] });
+    stage(TACO.id);
+    park({ id: BURRITO.id, itemId: "p-1", type: "CUSTOMIZABLE", quantity: 1, total_price: 6 });
+
+    open({ id: "added-again", recommendedItems: [TACO.id] });
+
+    expect(staging()).toEqual({ pending: {}, pendingCustom: [] });
+    expect(screen.queryByTestId(`added-count-${TACO.id}`)).toBeNull();
+  });
+
+  /*
+    A choice suggestion's detour (Select a Size / the PDP) HIDES the modal —
+    it stays open, so its picks survive — and every chooser exit clears the
+    flag, which brings it back with the chooser's parked row counted.
+  */
+  it("hidden while a suggestion's chooser detour is up (still open, picks kept); back when it ends", () => {
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
+    stage(TACO.id);
+
+    act(() => {
+      store.dispatch(setRecommendationDetour(true));
+    });
+    expect(screen.queryByTestId("product-added-modal")).toBeNull();
+    expect(isOpen()).toBe(true);
+
+    park({ id: BURRITO.id, itemId: "p-1", type: "VARIANT", quantity: 1, total_price: 7 });
+    act(() => {
+      store.dispatch(setRecommendationDetour(false));
+    });
+    expect(screen.getByTestId("product-added-modal")).toBeInTheDocument();
+    expect(screen.getByTestId(`added-count-${TACO.id}`)).toHaveTextContent(/^1$/);
+    expect(screen.getByTestId(`added-count-${BURRITO.id}`)).toHaveTextContent(/^1$/);
+    expect(cartItems()).toEqual([]);
+  });
+
+  it("suppressRecommendations (a suggestion-detour add) → no strip: the title, the Total and the CTA only — GOT IT, nothing to add", () => {
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id, BURRITO.id], suppressRecommendations: true });
 
     expect(tiles()).toHaveLength(0);
     expect(screen.queryByText(i18n.t("added.youMightLike"))).toBeNull();
     expect(screen.getByTestId("added-total")).toBeInTheDocument();
-    expect(screen.getByTestId("added-continue")).toBeInTheDocument();
+    expect(screen.getByTestId("added-continue")).toHaveTextContent("GOT IT");
   });
 
-  it("no suggestion survives (all sold out) → no strip", () => {
+  it("no suggestion survives (all sold out) → no strip, and the CTA reads GOT IT", () => {
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [SOLD_OUT.id] });
 
     expect(tiles()).toHaveLength(0);
     expect(screen.queryByText(i18n.t("added.youMightLike"))).toBeNull();
+    expect(screen.getByTestId("added-continue")).toHaveTextContent("GOT IT");
   });
 
   it("Arabic: the copy and the 'Cal' label are translated; the price keeps its £", async () => {
@@ -468,11 +674,50 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     open({ id: "added", recommendedItems: [BURRITO.id] });
 
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(i18n.t("added.title"));
-    expect(screen.getByTestId("added-continue")).toHaveTextContent(i18n.t("added.addToOrder"));
     const tile = screen.getByTestId(`added-rec-${BURRITO.id}`);
     expect(tile).toHaveTextContent(`£5.59 | ${i18n.t("pack.cal", { value: 360 })}`, {
       normalizeWhitespace: false,
     });
     expect(tile).not.toHaveTextContent("Cal");
+    // The CTA's words, in Arabic: posistKiosk's "No, Thanks" until a pick, then ADD TO ORDER.
+    const cta = screen.getByTestId("added-continue");
+    expect(cta).toHaveTextContent("لا، شكرًا");
+    stage(BURRITO.id);
+    expect(cta).toHaveTextContent("أضف إلى الطلب");
+  });
+
+  /*
+    The ONE CTA says what its tap does (user report 2026-10-12: "why add to
+    order button is coming when there is no item to add to order"). It buys
+    exactly what ADD TO ORDER walks — a one-tap pick on a live tile, or any
+    parked row — so that is when it reads ADD TO ORDER. With nothing to buy
+    it only closes, in posistKiosk's words: "No, Thanks" over a strip, its
+    "Okay" (TB's GOT IT, the app's acknowledgement) without one. Same filled
+    button, same place: only the words change.
+  */
+  it("the CTA names its tap: NO THANKS over a strip with nothing picked, ADD TO ORDER once something is picked, back on the last '−'; a pick whose tile sold out is not bought — GOT IT; a parked row alone still reads ADD TO ORDER", () => {
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id] });
+    const cta = () => screen.getByTestId("added-continue");
+    expect(cta()).toHaveTextContent("No thanks");
+
+    stage(TACO.id);
+    expect(cta()).toHaveTextContent("Add to order");
+    expect(cta()).toHaveClass("bg-tb-purple", "text-tb-surface");
+
+    fireEvent.click(screen.getByTestId(`added-rec-remove-${TACO.id}`));
+    expect(cta()).toHaveTextContent("No thanks");
+
+    // Picked, then sold out: no tile, so ADD TO ORDER would buy nothing.
+    stage(TACO.id);
+    act(() => {
+      store.dispatch(setOutOfStockItems({ [TACO.id]: { _id: TACO.id, inStock: false } }));
+    });
+    expect(tiles()).toHaveLength(0);
+    expect(cta()).toHaveTextContent("GOT IT");
+
+    // A parked row is bought even without its tile.
+    park({ id: "r-elsewhere", itemId: "p-1", type: "VARIANT", quantity: 1, total_price: 7 });
+    expect(cta()).toHaveTextContent("Add to order");
   });
 });

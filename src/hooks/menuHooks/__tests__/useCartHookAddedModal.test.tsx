@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import {
+  mutateAddToCartModal,
   selectAddToCartItem,
   selectAddToCartModal,
   selectRecommendationDetour,
@@ -118,5 +119,58 @@ describe("useCartHook — the added modal opens only onto a strip it can fill (a
     expect(cartItems()).toHaveLength(1);
     expect(modalOpen()).toBe(false);
     expect(detour()).toBe(true);
+  });
+});
+
+/*
+  posistKiosk parity (user report 2026-10-12) — the product-added modal
+  STAGES. A suggestion that needs a choice keeps the modal open (hidden)
+  with the detour set; the add its chooser ends in (Select a Size's
+  CONTINUE, the PDP's ADD TO BAG) is the guest's pick, not a purchase:
+  it is PARKED whole with the modal's other picks, and only ADD TO ORDER
+  writes it.
+*/
+describe("useCartHook — a suggestion chooser's add is parked in the open modal (posistKiosk staging)", () => {
+  const parked = () =>
+    (store.getState() as unknown as { menuSelections: { upsellStaging: { pendingCustom: Record<string, unknown>[] } } })
+      .menuSelections.upsellStaging.pendingCustom;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    seedMenu(true);
+  });
+
+  it("modal open + detour live: the finished row is parked — not in the bag, the same modal still open, true returned", () => {
+    store.dispatch(mutateAddToCartModal({ isOpen: true, item: { id: "salad", name: "Greek Salad" } }));
+    store.dispatch(setRecommendationDetour(true));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    let outcome: unknown;
+    act(() => {
+      outcome = result.current.addItemToCart({ ...BURRITO, total_price: 9 }, "CUSTOMIZABLE");
+    });
+
+    expect(outcome).toBe(true);
+    expect(cartItems()).toEqual([]);
+    expect(parked()).toHaveLength(1);
+    // The row the bag would have got: stamped, typed, quantity defaulted.
+    expect(parked()[0]).toMatchObject({ id: BURRITO.id, type: "CUSTOMIZABLE", quantity: 1, total_price: 9 });
+    expect(parked()[0].itemId).toMatch(/^\d+_burrito$/);
+    expect(modalOpen()).toBe(true);
+    expect(selectAddToCartItem(store.getState())).toEqual({ id: "salad", name: "Greek Salad" });
+    // Ending the detour is the chooser's exit, not the add's.
+    expect(detour()).toBe(true);
+  });
+
+  it("the modal open but no detour (ADD TO ORDER's own writes): the row lands in the bag, nothing parked", () => {
+    store.dispatch(mutateAddToCartModal({ isOpen: true, item: { id: "salad", name: "Greek Salad" } }));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    act(() => {
+      result.current.addItemToCart({ ...BURRITO }, "CUSTOMIZABLE", { suppressAddedModal: true });
+    });
+
+    expect(cartItems()).toEqual([expect.objectContaining({ id: BURRITO.id })]);
+    expect(parked()).toEqual([]);
   });
 });

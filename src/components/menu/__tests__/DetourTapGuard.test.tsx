@@ -6,13 +6,17 @@ import { setRecommendationDetour } from "../../../redux/features/menuSelections/
 import DetourTapGuard from "../DetourTapGuard";
 
 /*
-  Lane added-modal, review R1 — a suggestion that needs a choice closes the
-  product-added modal at once and Select a Size, the PDP or the repeat sheet
-  takes its place under the finger, so the second tap of a double tap ticked
-  a size, picked a paid option, opened a pack slot or closed the repeat sheet.
-  The stage swallows taps for 500 ms from the detour's start
-  (recommendationDetour false → true, set only by Menu.leaveAddedModal) —
-  ReachZone's exit-guard pattern.
+  Lane added-modal, review R1 — a suggestion that needs a choice hides the
+  product-added modal at once and Select a Size or the PDP takes its place
+  under the finger, so the second tap of a double tap ticked a size, picked a
+  paid option or opened a pack slot. The stage swallows taps for 500 ms from
+  the detour's start (recommendationDetour false → true, set only by
+  Menu.handleSuggestionAdd) — ReachZone's exit-guard pattern.
+
+  Staging (2026-10-12): the detour's END brings the modal back in the same
+  frame, under the chooser's CONTINUE / ADD TO BAG / X — and the modal's
+  ADD TO ORDER now buys the picks and its X throws them away. So the end
+  arms the guard too.
 */
 
 const guard = () => screen.queryByTestId("detour-tap-guard");
@@ -63,12 +67,26 @@ describe("DetourTapGuard (review R1)", () => {
     expect(guard()).toBeNull();
   });
 
-  it("never armed by a flag already set at mount, nor by a detour ending", () => {
+  it("never armed by a flag already set at mount", () => {
     store.dispatch(setRecommendationDetour(true));
     mount();
     expect(guard()).toBeNull();
+  });
+
+  it("a detour's END arms it too — the modal comes back under the finger — for 500 ms", () => {
+    store.dispatch(setRecommendationDetour(true));
+    mount();
 
     setDetour(false);
+
+    expect(guard()).toHaveClass("absolute", "inset-0", "z-[58]");
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+    expect(guard()).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(guard()).toBeNull();
   });
 

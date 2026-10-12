@@ -3,26 +3,40 @@
  * in the domain passes. Do not add NEW anys.
  */
 import { useMemo } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { useTranslation } from "react-i18next";
 import {
   mutateAddToCartModal,
   selectOutOfStockItems,
+  selectRecommendationDetour,
+  selectUpsellStaging,
+  stageUpsellItem,
+  unstageConfiguredUpsellItem,
 } from "../../redux/features/menuSelections/menuSelections.slice";
-import { selectCart, selectSubTotal } from "@cx-sdk/ordering/state/cart.slice";
+import { selectSubTotal } from "@cx-sdk/ordering/state/cart.slice";
 import { doesItemExistInCart } from "@cx-sdk/ordering/cart/cartEngine";
+import { buildDirectAddPayload } from "@cx-sdk/ordering/cart/addIntent";
 import { resolveItemRecommendations } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { selectMenuSellableEntityMap } from "../../hooks/menuHooks/useCartUpsell";
+import useCartHook from "../../hooks/menuHooks/useCartHook";
+import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { formatMenuPriceLine } from "./MenuItemCard";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
+import minusIcon from "../../assets/icons/qty-minus.svg?no-inline";
+import trashIcon from "../../assets/icons/trash.svg?no-inline";
 
 interface ProductAddedModalProps {
   onQuickAdd: (entity: RecommendedEntity) => void;
+}
+
+/** The live cart rows ADD TO ORDER writes onto (the cart slice is untyped). */
+interface LiveCart {
+  cart: { cartItems: { itemId: string; quantity: number; [field: string]: unknown }[] };
 }
 
 /**
@@ -32,14 +46,18 @@ interface ProductAddedModalProps {
  * calories only when > 0, a 36 px quick add on a 44 px hit area), the Total
  * and ONE CTA. No suggestions → the title and the bottom block only.
  *
- * The WHOLE tile adds (an empty overlay button, P9f pattern; the "+" above
- * it is its aria-hidden twin) through `onQuickAdd`, at once, and the tile
- * counts that item in the order (the pill + a status for screen readers).
- * A suggestion that needs a choice leaves through Menu's handler, which
- * closes this modal FIRST. So ADD TO ORDER (Figma's label), X and the scrim
- * only confirm and close: every add already happened on the tiles (lane
- * added-modal, sign-off Q1). The frame has no VIEW MY BAG; the menu's CTA
- * bar keeps that edge and its upsell gate.
+ * STAGED, as in posistKiosk: nothing a tile does reaches the bag until ADD
+ * TO ORDER (Figma's label). The WHOLE tile (an empty overlay button, P9f
+ * pattern; the "+" above it is its aria-hidden twin) goes to Menu through
+ * `onQuickAdd`: a one-tap item is PICKED here; one that needs a choice
+ * sends the guest to Select a Size / the PDP with recommendationDetour set,
+ * which hides this modal (still open, its picks kept) and parks the add the
+ * chooser ends in with them (useCartHook). A tile counts its picks (the pill
+ * + a status), its "−" takes one back, and the Total previews the order with
+ * them. ADD TO ORDER buys them; X and the scrim throw them away. With nothing
+ * to buy the same button only closes and says so: NO THANKS over a strip,
+ * GOT IT without one (posistKiosk's "No, Thanks" / "Okay"). The frame has no
+ * VIEW MY BAG; the menu's CTA bar keeps that edge and its upsell gate.
  *
  * Opens via the fork contract: useCartHook.addItemToCart dispatches
  * mutateAddToCartModal when the added item has recommendations (or was a
@@ -52,12 +70,15 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
   const { t } = useTranslation();
   const { name } = useLocalized();
   const dispatch = useDispatch();
+  const store = useStore();
+  const { addItemToCart, updateItemCart } = useCartHook();
   const modal = useSelector(
     (s: any) => s.menuSelections?.addToCartModal ?? { isOpen: false, item: {} }
   );
+  const detour = useSelector(selectRecommendationDetour);
+  const { pending, pendingCustom } = useSelector(selectUpsellStaging);
   const entityMap = useSelector(selectMenuSellableEntityMap);
   const outOfStockItems = useSelector(selectOutOfStockItems);
-  const cartItems = (useSelector(selectCart) as { cartItems?: unknown[] } | undefined)?.cartItems;
   // The menu CTA bar's live subTotal (same "Total" label). netAmount is only
   // mirrored while the bag is open, so it read £0.00 / a stale bill here.
   const cartAmount = useSelector(selectSubTotal) ?? 0;
@@ -71,9 +92,77 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
     [modal, entityMap, outOfStockItems]
   );
 
-  if (!modal?.isOpen) return null;
+  // A suggestion's chooser is up: still open, picks kept, not shown.
+  if (!modal?.isOpen || detour) return null;
 
   const close = () => dispatch(mutateAddToCartModal(false));
+  /** A tile's picks: its one-tap units plus its parked rows. */
+  const picked = (id: string) =>
+    (pending[id] ?? 0) +
+    pendingCustom.reduce((sum, row) => sum + (row.id === id ? row.quantity : 0), 0);
+  // Priced as the bag will price them (Σ total_price × quantity); a parked
+  // row counts even when its tile is gone — ADD TO ORDER still buys it.
+  const pickedTotal =
+    recommendations.reduce((sum, entity) => sum + Number(entity.price ?? 0) * (pending[entity.id] ?? 0), 0) +
+    pendingCustom.reduce((sum, row) => sum + Number(row.total_price ?? 0) * row.quantity, 0);
+  // What ADD TO ORDER would buy — exactly the set addToOrder walks: a one-tap
+  // pick on a live tile, or any parked row (bought even without its tile).
+  // Nothing to buy → the CTA only closes, and says so (posistKiosk's words).
+  const hasPicks =
+    pendingCustom.length > 0 || recommendations.some((entity) => pending[entity.id]);
+
+  /** "−": a one-tap unit first (a tap puts it back), then the latest parked row. */
+  const unpick = (id: string) => {
+    if (pending[id]) {
+      dispatch(stageUpsellItem({ id, delta: -1 }));
+      return;
+    }
+    const row = [...pendingCustom].reverse().find((r) => r.id === id);
+    if (row) dispatch(unstageConfiguredUpsellItem(row.itemId));
+  };
+
+  /**
+   * ADD TO ORDER buys the picks. ONE write per product carrying all its
+   * units — onto the row the menu "+" bumps, else a new row — so the DP
+   * check (which reads the live cart) sees the true total; parked rows are
+   * replayed as their chooser built them. A refused write (the DP cap; its
+   * error is up) keeps the modal open with only what was refused still
+   * picked. ItemAddedToCart (Menu's shape) for each product bought here; a
+   * parked row reported when its chooser confirmed it.
+   */
+  const addToOrder = () => {
+    let refused = false;
+    recommendations.forEach((entity) => {
+      const units = pending[entity.id] ?? 0;
+      if (!units) return;
+      const { cartItems } = (store.getState() as LiveCart).cart;
+      const hit = doesItemExistInCart(entity.id, cartItems);
+      const row = hit.itemExist ? cartItems.find((r) => r.itemId === hit.itemId) : undefined;
+      const landed = row
+        ? updateItemCart({ ...row, quantity: row.quantity + units })
+        : addItemToCart({ ...buildDirectAddPayload(entity), quantity: units }, "ITEM", {
+            suppressAddedModal: true,
+          });
+      if (!landed) {
+        refused = true;
+        return;
+      }
+      dispatch(stageUpsellItem({ id: entity.id, delta: -units }));
+      captureKioskEvent(KioskEventName.ItemAddedToCart, {
+        item_id: entity.id,
+        item_name: entity.name,
+        item_price: entity.price,
+        quantity: units,
+        item_type: entity.type,
+      });
+    });
+    pendingCustom.forEach((row) => {
+      if (addItemToCart(row, row.type, { suppressAddedModal: true, stamped: true })) {
+        dispatch(unstageConfiguredUpsellItem(row.itemId));
+      } else refused = true;
+    });
+    if (!refused) close();
+  };
 
   return (
     <div
@@ -119,9 +208,9 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
             <div className="flex gap-[10px]">
               {recommendations.map((entity) => {
                 const imageUrl = resolveEntityImage(entity);
-                // Paid rows of this id (free / loyalty excluded; size rows
-                // carry the parent id) — the PDP and bag rails' count.
-                const qty = Number(doesItemExistInCart(entity.id, cartItems)?.quantity ?? 0);
+                // What the guest is ADDING, never what the bag holds
+                // (posistKiosk: it starts at zero even for an item in the bag).
+                const qty = picked(entity.id);
                 return (
                   <div
                     key={entity.id}
@@ -141,11 +230,12 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                         {formatMenuPriceLine(entity, currency, t)}
                       </p>
                     </div>
-                    {/* Before the overlay, so a tap on the pill still adds.
-                        ForYouCard's pill (design language, no frame): it
-                        pops in; the re-keyed number bumps on each change.
-                        The status is always mounted so changes are spoken. */}
-                    <span role="status" className="absolute left-[12px] top-[12px]">
+                    {/* Before the overlay, so a tap on the pill still picks.
+                        ForYouCard's pill (design language, no frame),
+                        centred between the "−" and the "+": it pops in; the
+                        re-keyed number bumps on each change. The status is
+                        always mounted so changes are spoken. */}
+                    <span role="status" className="absolute inset-x-0 top-[9px] flex justify-center">
                       {qty > 0 && (
                         <>
                           <span
@@ -157,7 +247,7 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                               {qty}
                             </span>
                           </span>
-                          <span className="sr-only">{t("added.inOrder", { value: qty })}</span>
+                          <span className="sr-only">{t("added.selected", { value: qty })}</span>
                         </>
                       )}
                     </span>
@@ -170,6 +260,22 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                       onClick={() => onQuickAdd(entity)}
                       className="absolute inset-0"
                     />
+                    {/* posistKiosk's "−" on the "+"'s circle at the mirrored
+                        corner (design language, no frame): the trash glyph
+                        at 1, "−" from 2 (D6). */}
+                    {qty > 0 && (
+                      <button
+                        type="button"
+                        data-testid={`added-rec-remove-${entity.id}`}
+                        aria-label={t("added.removeOne", { name: name(entity) })}
+                        onClick={() => unpick(entity.id)}
+                        className="group absolute left-[7px] top-[5px] z-10 flex h-[44px] w-[44px] items-center justify-center"
+                      >
+                        <span className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)] group-active:bg-tb-lilac">
+                          <img alt="" src={qty === 1 ? trashIcon : minusIcon} className="h-[16px] w-[16px]" />
+                        </span>
+                      </button>
+                    )}
                     {/* The overlay's visual twin: one accessible control per
                         tile. A tap must never focus it — a focused aria-hidden
                         button is un-hidden as a nameless one (review UIA-1). */}
@@ -200,15 +306,17 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
             className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
           >
             {t("menu.total")} {currency}
-            {Number(cartAmount).toFixed(2)}
+            {(Number(cartAmount) + pickedTotal).toFixed(2)}
           </p>
           <button
             type="button"
             data-testid="added-continue"
-            onClick={close}
+            onClick={addToOrder}
             className="tb-display h-[60px] w-full rounded-[4px] bg-tb-purple text-[18px] leading-[16px] text-tb-surface"
           >
-            {t("added.addToOrder")}
+            {hasPicks
+              ? t("added.addToOrder")
+              : t(recommendations.length > 0 ? "added.noThanks" : "offers.gotIt")}
           </button>
         </div>
       </div>

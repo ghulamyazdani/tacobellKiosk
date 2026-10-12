@@ -39,7 +39,16 @@ export type { AddIntent, AddEntityOptions };
  */
 export type TbAddEntityOptions = AddEntityOptions & {
   preselectedVariantId?: string;
+  /**
+   * Never the repeat sheet, even for an item already in the bag — a fresh
+   * chooser instead (posistKiosk). For the product-added modal's suggestions
+   * (the sheet's "+" writes to the bag past ADD TO ORDER) and for a size
+   * already chosen in Select a Size (the sheet would drop it).
+   */
+  forceNewCustomization?: boolean;
 };
+
+type AddIntentOptions = Pick<TbAddEntityOptions, "forceNewCustomization">;
 
 /**
  * Only the slices this hook reads. The store itself is untyped, so declaring
@@ -89,10 +98,11 @@ const useAddEntityToCart = () => {
    * the right affordance ("+" vs "customize") before the customer commits.
    */
   const getAddIntent = useCallback(
-    (entity: RecommendedEntity): AddIntent =>
+    (entity: RecommendedEntity, intentOptions: AddIntentOptions = {}): AddIntent =>
       classifyAddIntent(entity, {
         doesItemExistInCart,
-        showRepeatCustomization: showRepeatCustomizationRdx,
+        showRepeatCustomization:
+          !intentOptions.forceNewCustomization && showRepeatCustomizationRdx,
         comboUpsellEnabled: kioskSettingsRdx?.enable_combo_upsell,
         blackListedItems: blackListedItemsMIAM,
         isShowGridViewEnabled,
@@ -114,7 +124,7 @@ const useAddEntityToCart = () => {
    */
   const addEntity = useCallback(
     (entity: RecommendedEntity, options: TbAddEntityOptions = {}): boolean => {
-      const intent = getAddIntent(entity);
+      const intent = getAddIntent(entity, options);
       const {
         onBeforeLeave,
         suppressAddedModal,

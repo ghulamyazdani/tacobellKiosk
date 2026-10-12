@@ -15,6 +15,29 @@ export interface OrderTypeSwitchNotice {
   removed: unknown[];
 }
 
+/** A chooser's finished cart row, parked as addItemToCart built it. */
+export interface StagedCartRow {
+  id: string;
+  itemId: string;
+  type: string;
+  quantity: number;
+  total_price?: number;
+  [field: string]: unknown;
+}
+
+/**
+ * The product-added modal's picks — nothing here has touched the bag; only
+ * its ADD TO ORDER writes them (posistKiosk's staged selection). `pending`:
+ * one-tap units by entity id (a zero is deleted). `pendingCustom`: rows a
+ * suggestion's chooser (Select a Size / the PDP) finished, replayed whole.
+ */
+export interface UpsellStaging {
+  pending: Record<string, number>;
+  pendingCustom: StagedCartRow[];
+}
+
+const emptyStaging = (): UpsellStaging => ({ pending: {}, pendingCustom: [] });
+
 const menuSelections = createSlice({
   name: "menuSelections",
   initialState: {
@@ -26,6 +49,7 @@ const menuSelections = createSlice({
       isOpen: false,
       item: {},
     },
+    upsellStaging: emptyStaging(),
 
     //isBottomSheetOpen
     bottomSheet: {
@@ -42,18 +66,11 @@ const menuSelections = createSlice({
     outOfStockItems: {},
 
     /*
-      A tap in the "You Might Like" strip has handed the customer off to the
-      customization flow, and the add it produces must NOT be offered another
-      strip.
-
-      Without this the feature recurses: strip -> customizable item ->
-      /customization -> addItemToCart(obj, "CUSTOMIZABLE") -> confirmation modal
-      -> strip again -> another customizable item -> ... The `suppressAddedModal`
-      option cannot cover it, because the add happens later from
-      useCustomization.ts:1851, which passes no options and cannot know where the
-      customer came from.
-
-      Set at the moment of the detour, CONSUMED by the next modal open.
+      A tap in the "You Might Like" strip has handed the customer off to a
+      chooser (Select a Size / the PDP). While it is set the modal stays open
+      but HIDDEN, and the add the chooser ends in is parked with its picks
+      (useCartHook) — so it never opens another strip either. Every chooser
+      exit clears it, which brings the modal back.
     */
     recommendationDetour: false,
 
@@ -116,9 +133,12 @@ const menuSelections = createSlice({
      * - Accepts either a boolean (true/false) OR an object { isOpen: boolean, item?: {...} }
      * - If boolean: toggles isOpen; when closing (false) it clears item.
      * - If object: sets isOpen and optional item.
+     * Either way the picks go: a new add starts with none, and a close that
+     * is not ADD TO ORDER throws them away.
      */
     mutateAddToCartModal: (state: any, action: any) => {
       const payload = action.payload;
+      state.upsellStaging = emptyStaging();
       if (typeof payload === "boolean") {
         state.addToCartModal.isOpen = payload;
         if (!payload) {
@@ -139,6 +159,27 @@ const menuSelections = createSlice({
       } else {
         // fallback: do nothing
       }
+    },
+    /** One one-tap unit picked (+1) or put back (−1). */
+    stageUpsellItem: (state, action: PayloadAction<{ id: string; delta: number }>) => {
+      const { id, delta } = action.payload;
+      const units = (state.upsellStaging.pending[id] ?? 0) + delta;
+      if (units > 0) state.upsellStaging.pending[id] = units;
+      else delete state.upsellStaging.pending[id];
+    },
+    /**
+     * A suggestion's chooser finished: park its row instead of buying it.
+     * Bounded: one row per chooser round trip, and every modal open, close
+     * and session reset (mutateAddToCartModal) empties the list.
+     */
+    stageConfiguredUpsellItem: (state, action: PayloadAction<StagedCartRow>) => {
+      state.upsellStaging.pendingCustom = [...state.upsellStaging.pendingCustom, action.payload];
+    },
+    /** Drop one parked row (by its unique itemId). */
+    unstageConfiguredUpsellItem: (state, action: PayloadAction<string>) => {
+      state.upsellStaging.pendingCustom = state.upsellStaging.pendingCustom.filter(
+        (row) => row.itemId !== action.payload,
+      );
     },
   },
 });
@@ -204,9 +245,13 @@ export const selectAddToCartItem = (state: any) =>
 export const selectOutOfStockItems = (state: any) =>
   state.menuSelections.outOfStockItems;
 
-/** True while a strip tap is mid-handoff to the customization flow. */
+/** True while a strip tap is mid-handoff to a chooser (the modal hidden). */
 export const selectRecommendationDetour = (state: any) =>
   state.menuSelections.recommendationDetour;
+
+export const selectUpsellStaging = (state: {
+  menuSelections: { upsellStaging: UpsellStaging };
+}): UpsellStaging => state.menuSelections.upsellStaging;
 
 /** Null-safe on a store without the slice (tests mounting partial stores). */
 export const selectOrderTypeSwitchNotice = (state: {
@@ -214,8 +259,13 @@ export const selectOrderTypeSwitchNotice = (state: {
 }): OrderTypeSwitchNotice | null =>
   state?.menuSelections?.orderTypeSwitchNotice ?? null;
 
-export const { setOrderTypeSwitchNotice, clearOrderTypeSwitchNotice } =
-  menuSelections.actions;
+export const {
+  setOrderTypeSwitchNotice,
+  clearOrderTypeSwitchNotice,
+  stageUpsellItem,
+  stageConfiguredUpsellItem,
+  unstageConfiguredUpsellItem,
+} = menuSelections.actions;
 
 export const {
   setSelectedCustomizations,

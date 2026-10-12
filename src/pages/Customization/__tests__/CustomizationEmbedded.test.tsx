@@ -21,6 +21,7 @@ import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendati
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import { setRecommendationDetour } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import Customization from "../index";
 import "../../../i18n";
@@ -159,6 +160,25 @@ describe("Customization embedded (in-bag PDP for offer tier sessions)", () => {
     renderPdp(true, "/cart");
     expect(screen.getByTestId("customization-screen")).toHaveAttribute("data-embedded", "true");
     expect(screen.queryByTestId("pdp-rail")).not.toBeInTheDocument();
+  });
+
+  /*
+    One hop (product-added staging, 2026-10-12): a PDP opened FROM a
+    product-added suggestion shows no rail of its own. The modal behind it is
+    hidden, not closed, so a rail tap would be parked there unseen (or, for an
+    item already in the bag, bumped into the bag past its ADD TO ORDER).
+  */
+  it("the route PDP shows no rail while a product-added suggestion's detour is up — one hop", () => {
+    seedSuggestion();
+    seedTier(BURGER);
+    store.dispatch(setRecommendationDetour(true));
+    renderPdp(false, "/customization");
+    expect(screen.getByTestId("customization-screen")).toBeInTheDocument();
+    expect(screen.queryByTestId("pdp-rail")).not.toBeInTheDocument();
+
+    // The same PDP outside a detour (the control below) shows it.
+    act(() => void store.dispatch(setRecommendationDetour(false)));
+    expect(within(screen.getByTestId("pdp-rail")).getByTestId("pdp-rail-item-fries")).toBeInTheDocument();
   });
 
   it("control: the route PDP shows the same suggestion on its rail, inside the scroller after the groups", () => {

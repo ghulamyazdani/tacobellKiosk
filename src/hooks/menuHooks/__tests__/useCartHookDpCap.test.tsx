@@ -131,6 +131,30 @@ describe("useCartHook — the DP session cap raises translated copy (G1)", () =>
     expect(cartItems()).toHaveLength(2);
     expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
   });
+
+  /*
+    The product-added modal's ADD TO ORDER writes several rows in ONE
+    handler. The check must read the LIVE cart: this render's copy predates
+    the first write, so each write would be measured against it and the pair
+    would hold one unit over the cap.
+  */
+  it("checks the LIVE cart: two writes in one handler never pass the cap together — the second sees the first", () => {
+    store.dispatch(setCurrentSession({ ...LUNCH, _extras: { maxQtyItem: "3" } }));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    let first: unknown;
+    let second: unknown;
+    act(() => {
+      first = result.current.addItemToCart({ ...BURRITO }, "ITEM", { suppressAddedModal: true });
+      second = result.current.addItemToCart({ ...BURRITO, id: "burrito-2" }, "ITEM", { suppressAddedModal: true });
+    });
+
+    // 2 tacos + 1 burrito = 3 ≤ 3; a second burrito would make 4.
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(cartItems()).toHaveLength(2);
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
+  });
 });
 
 /*

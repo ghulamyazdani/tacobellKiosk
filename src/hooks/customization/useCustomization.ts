@@ -475,7 +475,8 @@ const useCustomization = ({
   const closeModalStates = async () => {
     try {
       // Every PDP exit ends a suggestion detour (BACK, "−" at 1, ADD TO BAG
-      // after the modal open consumed it, a DP refusal). Never an (un)mount
+      // after its row was parked with the modal's picks, a DP refusal) —
+      // which brings the product-added modal back. Never an (un)mount
       // effect: StrictMode's re-mount would clear it before ADD TO BAG.
       dispatch(setRecommendationDetour(false));
       if (isForceOpenMakeItAMealModal) {

@@ -49,6 +49,7 @@ import { selectCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice
 import {
   mutateAddToCartModal,
   setRecommendationDetour,
+  stageConfiguredUpsellItem,
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import i18n from "../../i18n";
@@ -85,12 +86,26 @@ import {
 export type { AddItemToCartOptions };
 
 /**
- * The two slices the recommendation lookup reads out of the untyped store (the
- * menu's maps through selectMenuSellableEntityMap).
+ * TB-local: `stamped` — the item is a row this function already built (a
+ * product-added pick parked by its chooser): keep its itemId. Restamped, two
+ * rows of one product replayed in the same millisecond would get the same
+ * "<ms>_<id>" key, and the reducer would merge them into one row.
+ */
+export type TbAddItemToCartOptions = AddItemToCartOptions & { stamped?: boolean };
+
+/**
+ * What this hook reads out of the untyped store on demand: the recommendation
+ * lookup (the menu's maps through selectMenuSellableEntityMap), the live cart
+ * (the DP check) and the product-added modal's detour (the parking guard).
  */
 interface RecommendationLookupState {
   menu?: { entityMap?: EntityMap; modifiersMap?: ModifierGroupMap };
-  menuSelections?: { outOfStockItems?: OutOfStockMap };
+  menuSelections?: {
+    outOfStockItems?: OutOfStockMap;
+    addToCartModal?: { isOpen?: boolean };
+    recommendationDetour?: boolean;
+  };
+  cart?: { cartItems?: unknown[] };
 }
 
 function useCartHook() {
@@ -120,8 +135,14 @@ function useCartHook() {
     replaceIndexedDbCart,
   } = useCartIndexedDb();
 
+  // The LIVE cart, not this render's: ProductAddedModal's ADD TO ORDER writes
+  // several rows in one handler, and each check must count the ones before it.
   const isDpMaxQuantityValid = (item: any) =>
-    isDpMaxQuantityValidEngine(item, cart?.cartItems, currentSessionRdx);
+    isDpMaxQuantityValidEngine(
+      item,
+      (store.getState() as RecommendationLookupState)?.cart?.cartItems,
+      currentSessionRdx,
+    );
 
   // Translated here (the SDK's English buildDpMaxQuantityErrorMessage stays
   // for the fork); i18n.t, not useTranslation: this hook is instantiated by
@@ -143,14 +164,26 @@ function useCartHook() {
   const addItemToCart = (
     item: any,
     itemType: any,
-    options: AddItemToCartOptions = {},
+    options: TbAddItemToCartOptions = {},
   ) => {
     if (!isDpMaxQuantityValid(item)) {
       showDpMaxQuantityError();
       return false;
     }
 
-    const itemContent = buildCartItemContent(item, itemType);
+    const itemContent = options.stamped ? item : buildCartItemContent(item, itemType);
+
+    // The tail of a product-added suggestion's chooser (Select a Size / the
+    // PDP): the guest picked it but has not pressed ADD TO ORDER, so it is
+    // parked with the modal's other picks — above the cart write, Dexie and
+    // CartModified, which are what "added" means. ADD TO ORDER replays it.
+    const selections = (store.getState() as RecommendationLookupState)
+      ?.menuSelections;
+    if (selections?.addToCartModal?.isOpen && selections?.recommendationDetour) {
+      dispatch(stageConfiguredUpsellItem(itemContent));
+      return true;
+    }
+
     dispatch(addItemToCartRdx(itemContent));
     addToIndexedDbCart(itemContent);
     captureKioskEvent(KioskEventName.CartModified, {

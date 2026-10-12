@@ -112,7 +112,9 @@
     "title": "Your product has been added",
     "youMightLike": "You Might Like",
     "addToOrder": "Add to order",
-    "inOrder": "{{value}} in your order"
+    "noThanks": "No thanks",
+    "selected": "{{value}} selected",
+    "removeOne": "Remove one {{name}}"
   },
   "size": {
     "title": "Select a size",

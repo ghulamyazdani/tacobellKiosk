@@ -49,6 +49,7 @@ import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import ErrorModal from "../../components/common/ErrorModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
+import { selectRecommendationDetour } from "../../redux/features/menuSelections/menuSelections.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
@@ -142,6 +143,8 @@ export default function Customization({
   const SelectedEntity = useSelector(tier1CustomizationSelectedEntity);
   const selectedCustomizations = useSelector(tier1SelectedCustomization);
   const tier2Open = Boolean(useSelector(MIAMTier2Open));
+  // Opened from a product-added suggestion: one hop, so no rail of its own.
+  const suggestionDetour = Boolean(useSelector(selectRecommendationDetour));
   const currency = useCurrencySymbol();
 
   // ---- The lazy parts (the completion warning, the tier-2 page, the
@@ -879,9 +882,11 @@ export default function Customization({
               )}
             </div>
             {/* "You Might Like" (1:2657 / 1:5867) — after the groups; hidden
-                when there is nothing to suggest, in the bag and under the
-                size picker. */}
-            {!embedded && (
+                when there is nothing to suggest, in the bag, under the size
+                picker and on a product-added suggestion's detour (the modal
+                behind is hidden, not closed: a rail tap would park there
+                unseen, or bump an in-bag row past its ADD TO ORDER). */}
+            {!embedded && !suggestionDetour && (
               <ErrorBoundary fallback={null}>
                 <YouMightLikeRail entityId={SelectedEntity?.id} />
               </ErrorBoundary>

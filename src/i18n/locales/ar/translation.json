@@ -112,7 +112,9 @@
     "title": "تمت إضافة منتجك",
     "youMightLike": "قد يعجبك أيضاً",
     "addToOrder": "أضف إلى الطلب",
-    "inOrder": "{{value}} في طلبك"
+    "noThanks": "لا، شكرًا",
+    "selected": "تم اختيار {{value}}",
+    "removeOne": "أزل واحدًا من {{name}}"
   },
   "size": {
     "title": "اختر الحجم",

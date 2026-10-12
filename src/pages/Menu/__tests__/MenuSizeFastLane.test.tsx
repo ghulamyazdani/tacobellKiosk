@@ -182,7 +182,7 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     the PDP's no-session guard bounced straight back) — with the chosen size
     carried as preselectedVariantId.
   */
-  it("CONTINUE on a size with modifiers calls addEntity(parent, {preselectedVariantId}) — no bare navigate, nothing in the cart", () => {
+  it("CONTINUE on a size with modifiers calls addEntity(parent, {preselectedVariantId, forceNewCustomization}) — no bare navigate, nothing in the cart", () => {
     render(<Menu />, { wrapper });
 
     fireEvent.click(screen.getByTestId("quick-add-e-box"));
@@ -190,9 +190,10 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     fireEvent.click(screen.getByTestId("size-continue"));
 
     expect(mocks.addEntity).toHaveBeenCalledTimes(1);
+    // The size is chosen: never the repeat sheet (it would drop the size).
     expect(mocks.addEntity).toHaveBeenCalledWith(
       expect.objectContaining({ id: "e-box", hasVariant: true }),
-      { preselectedVariantId: "b-large" }
+      { preselectedVariantId: "b-large", forceNewCustomization: true }
     );
     // The ONE navigation is addEntity's own (path + its state slot), never a
     // bare navigate("/customization") without a session.
@@ -206,7 +207,11 @@ describe("Select-a-Size fast lane (money: VARIANT rows carry variantPrice)", () 
     });
     expect(tier1CustomizationSelectedEntity(store.getState())).toMatchObject({ id: "e-box" });
     expect((store.getState() as any).cart.cartItems).toEqual([]);
-    expect(screen.queryByTestId("select-size-modal")).not.toBeInTheDocument();
+    // The sheet stays up as the cover until the PDP's route replaces this page
+    // (navigate is a spy here, so it never does); a second CONTINUE does nothing.
+    expect(screen.getByTestId("select-size-modal")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("size-continue"));
+    expect(mocks.addEntity).toHaveBeenCalledTimes(1);
     // B3: the PDP opens from the menu; nothing landed yet.
     expect(mocks.capture).toHaveBeenCalledWith("customization_opened", {
       item_id: "e-box",

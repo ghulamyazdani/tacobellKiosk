@@ -949,7 +949,7 @@ describe("Menu — the funnel events (B3)", () => {
     expect(eventCalls("item_added_to_cart")).toHaveLength(0);
   });
 
-  it("the product-added '+' that lands reports ItemAddedToCart", () => {
+  it("a product-added suggestion reports ItemAddedToCart when ADD TO ORDER buys it (with its quantity) — never at the tap that picks it", () => {
     store.dispatch(setEntityMap({ entityMap: { [PLAIN.id]: PLAIN } }));
     renderMenu();
     act(() => {
@@ -958,6 +958,10 @@ describe("Menu — the funnel events (B3)", () => {
     mockCapture.mockClear();
 
     fireEvent.click(screen.getByTestId(`added-rec-add-${PLAIN.id}`));
+    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
+    expect(cartRows()).toEqual([]);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
 
     expect(mockCapture).toHaveBeenCalledWith("item_added_to_cart", {
       item_id: "e-fries",
@@ -1095,17 +1099,20 @@ describe("Menu — motion (lane motion)", () => {
   });
 });
 
+
 /*
-  Lane added-modal (user report 2026-10-09: "item recommendation add and then
-  add to order is not working"). A suggestion tap ends in exactly one of:
-  (a) it lands in place and its tile counts it; (b) the DP cap refuses it
-  with the global error and nothing changes; (c) the modal CLOSES FIRST and
-  what the menu '+' opens for that item takes over — Select a Size (sized),
-  the PDP (options), the repeat sheet (already in the bag) — with
-  recommendationDetour set, so the add it ends in confirms WITHOUT another
-  strip (one hop). Every exit that does not add clears the flag.
+  posistKiosk parity (user report 2026-10-12: "when item is clicked its
+  directly adding to the cart"). The product-added modal STAGES — nothing
+  reaches the bag until ADD TO ORDER. A suggestion tap ends in exactly one of:
+  (a) a one-tap item is PICKED on its tile (the pill and the Total count it);
+  (b) an item that needs a choice HIDES the modal — still open, its picks
+  kept — with recommendationDetour set, and what the menu '+' opens for it
+  takes over (Select a Size / the PDP; never the repeat sheet, whose '+'
+  writes to the bag); the add that chooser ends in is PARKED back in the
+  modal, and every exit clears the flag, which brings the modal back.
+  ADD TO ORDER writes the picks (the DP cap can refuse them); X discards.
 */
-describe("Menu — product-added suggestions (lane added-modal)", () => {
+describe("Menu — product-added suggestions are staged (posistKiosk parity)", () => {
   const PLAIN = { id: "e-fries", name: "Large Fries", price: 2.5, outOfStock: false };
   const OPTIONS = { id: "e-burger", name: "Cheese Burger", price: 8, modifiers: ["g-extras"], outOfStock: false };
   const SIZED = {
@@ -1135,6 +1142,7 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
   type Selections = {
     addToCartModal: { isOpen: boolean; item: Record<string, unknown> };
     recommendationDetour: boolean;
+    upsellStaging: { pending: Record<string, number>; pendingCustom: Record<string, unknown>[] };
   };
   const selections = () => (store.getState() as unknown as { menuSelections: Selections }).menuSelections;
   const cartRows = () =>
@@ -1148,8 +1156,14 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
       );
     });
   const tapPlus = (id: string) => fireEvent.click(screen.getByTestId(`added-rec-add-${id}`));
-  const expectLeft = () => {
-    expect(selections().addToCartModal.isOpen).toBe(false);
+  const pill = (id: string) => screen.queryByTestId(`added-count-${id}`)?.textContent ?? null;
+  const sizeX = () =>
+    fireEvent.click(
+      within(screen.getByTestId("select-size-modal")).getAllByRole("button", { name: i18n.t("language.close") })[1]
+    );
+  /** A chooser is up: the modal is still open (its picks kept) but not on screen. */
+  const expectHidden = () => {
+    expect(selections().addToCartModal.isOpen).toBe(true);
     expect(screen.queryByTestId("product-added-modal")).toBeNull();
     expect(selections().recommendationDetour).toBe(true);
   };
@@ -1169,20 +1183,130 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     );
   });
 
-  it("options → the modal closes FIRST and the detour is marked, then the PDP", () => {
+  it("a plain suggestion is PICKED, not bought — no row, no event, no detour; the pill and the Total count it; ADD TO ORDER lands it in one write and reports it once", () => {
     renderMenu();
-    openAdded([OPTIONS.id]);
+    openAdded([PLAIN.id]);
+    mockCapture.mockClear();
+
+    tapPlus(PLAIN.id);
+
+    expect(selections().addToCartModal).toMatchObject({ isOpen: true, item: { id: "e-salad" } });
+    expect(selections().recommendationDetour).toBe(false);
+    expect(cartRows()).toEqual([]);
+    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
+    expect(pill(PLAIN.id)).toBe("1");
+    // The Total previews the order with the pick (the bag is still empty).
+    expect(screen.getByTestId("added-total")).toHaveTextContent("£2.50");
+
+    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${PLAIN.name}` }));
+    expect(pill(PLAIN.id)).toBe("2");
+    expect(screen.getByTestId("added-total")).toHaveTextContent("£5.00");
+    expect(cartRows()).toEqual([]);
+
+    // ADD TO ORDER is the purchase: both units in ONE row, ONE event.
+    fireEvent.click(screen.getByTestId("added-continue"));
+    expect(selections().addToCartModal.isOpen).toBe(false);
+    expect(screen.queryByTestId("product-added-modal")).toBeNull();
+    expect(cartRows()).toEqual([expect.objectContaining({ id: PLAIN.id, quantity: 2, total_price: 2.5 })]);
+    expect(eventCalls("item_added_to_cart")).toEqual([
+      [
+        "item_added_to_cart",
+        { item_id: PLAIN.id, item_name: PLAIN.name, item_price: 2.5, quantity: 2, item_type: undefined },
+      ],
+    ]);
+    expect(selections().recommendationDetour).toBe(false);
+  });
+
+  it("X throws the picks away — the bag untouched", () => {
+    renderMenu();
+    openAdded([PLAIN.id]);
+    tapPlus(PLAIN.id);
+
+    // DOM order: the scrim, then the card's X.
+    fireEvent.click(
+      within(screen.getByTestId("product-added-modal")).getAllByRole("button", { name: i18n.t("language.close") })[1]
+    );
+
+    expect(selections().addToCartModal.isOpen).toBe(false);
+    expect(cartRows()).toEqual([]);
+    expect(selections().upsellStaging).toEqual({ pending: {}, pendingCustom: [] });
+  });
+
+  // Test stage — no chain: a one-tap suggestion with suggestions of its own
+  // is picked on the first item's strip and bought with suppressAddedModal,
+  // so it never opens the modal on itself.
+  it("no chain: a one-tap suggestion with suggestions of its own is picked on the first item's strip; ADD TO ORDER opens no modal on it", () => {
+    store.dispatch(setEntityMap({ entityMap: { [PLAIN.id]: PLAIN, [CHAINED.id]: CHAINED } }));
+    renderMenu();
+    openAdded([CHAINED.id]);
+
+    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${CHAINED.name}` }));
+
+    expect(selections().addToCartModal).toMatchObject({ isOpen: true, item: { id: "e-salad" } });
+    expect(pill(CHAINED.id)).toBe("1");
+    expect(screen.queryByTestId(`added-rec-${PLAIN.id}`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+    expect(cartRows()).toEqual([expect.objectContaining({ id: CHAINED.id, quantity: 1 })]);
+    expect(selections().addToCartModal.isOpen).toBe(false);
+  });
+
+  it("a DP suggestion over the cap is picked, but ADD TO ORDER is refused — the global error, nothing added, the modal stays with it still picked, no event", () => {
+    store.dispatch(setCurrentSession(DP_SESSION));
+    store.dispatch(setCartItems([HELD_DP_ROW]));
+    renderMenu();
+    openAdded([DP_PLAIN.id]);
+    mockCapture.mockClear();
+
+    tapPlus(DP_PLAIN.id);
+    expect(pill(DP_PLAIN.id)).toBe("1");
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
+    expect(cartRows()).toEqual([HELD_DP_ROW]);
+    expect(selections().addToCartModal.isOpen).toBe(true);
+    expect(pill(DP_PLAIN.id)).toBe("1");
+    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
+  });
+
+  // The menu '+''s row (already in the bag) takes the picked units in ONE
+  // write, so the cap check sees the true total.
+  it("a pick of an item already in the bag bumps that row in one write — refused as a whole at the cap, the row unchanged", () => {
+    const DP_ROW = { id: DP_PLAIN.id, itemId: "dp-1", name: DP_PLAIN.name, quantity: 1, type: "ITEM", isDpItem: true, price: 3, total_price: 3 };
+    store.dispatch(setCurrentSession(DP_SESSION));
+    store.dispatch(setCartItems([DP_ROW]));
+    renderMenu();
+    openAdded([DP_PLAIN.id]);
+    // The pill is what the guest is adding, not what the bag holds.
+    expect(pill(DP_PLAIN.id)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${DP_PLAIN.name}` }));
+    fireEvent.click(screen.getByTestId("added-continue"));
+
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
+    expect(cartRows()).toEqual([DP_ROW]);
+    expect(pill(DP_PLAIN.id)).toBe("1");
+    expect(selections().addToCartModal.isOpen).toBe(true);
+  });
+
+  it("options → the PDP, the detour marked; the modal stays OPEN but hidden, the picks kept, nothing in the bag", () => {
+    renderMenu();
+    openAdded([PLAIN.id, OPTIONS.id]);
+    tapPlus(PLAIN.id);
 
     tapPlus(OPTIONS.id);
 
     expect(mockNavigate).toHaveBeenCalledWith("/customization", undefined);
-    expectLeft();
+    expectHidden();
+    expect(selections().upsellStaging.pending).toEqual({ [PLAIN.id]: 1 });
     expect(cartRows()).toEqual([]);
   });
 
   // T4, a pack (test stage): what the menu '+' opens for it — the PDP on its
   // own tier-1 (slot) session — from a tap ANYWHERE on the card.
-  it("a pack (a live _combo group) → the modal closes first, the detour is marked, then the PDP on the pack's session — from the card itself", () => {
+  it("a pack (a live _combo group) → the PDP on the pack's session — from the card itself; the modal hidden", () => {
     store.dispatch(
       setModifiersMap({
         modifiersMap: {
@@ -1201,11 +1325,11 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/customization", undefined);
     expect(tier1CustomizationSelectedEntity(store.getState())).toMatchObject({ id: PACK.id, quantity: 1 });
-    expectLeft();
+    expectHidden();
     expect(cartRows()).toEqual([]);
   });
 
-  it("already in the bag (repeat on) → the modal closes first, then the repeat sheet over the plain menu", () => {
+  it("already in the bag (repeat on) → still the PDP, never the repeat sheet (its '+' would write to the bag past ADD TO ORDER)", () => {
     store.dispatch(setShowRepeatCustomization(true));
     store.dispatch(
       setCartItems([{ id: OPTIONS.id, itemId: "b-1", name: OPTIONS.name, quantity: 1, type: "CUSTOMIZABLE", price: 8, total_price: 8 }])
@@ -1215,30 +1339,28 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
 
     tapPlus(OPTIONS.id);
 
-    expect(repeatItemBottomSheetData(store.getState())).toMatchObject({
-      isOpen: true,
-      baseItem: expect.objectContaining({ id: OPTIONS.id }),
-    });
-    expectLeft();
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(repeatItemBottomSheetData(store.getState())?.isOpen).toBeFalsy();
+    expect(mockNavigate).toHaveBeenCalledWith("/customization", undefined);
+    expectHidden();
   });
 
-  it("sized → the modal closes first, then the menu '+''s own Select a Size (no PDP); its X ends the detour", () => {
+  it("sized → the menu '+''s Select a Size (no PDP), the modal hidden; its X ends the detour and brings the modal back with its picks, nothing added", () => {
     renderMenu();
-    openAdded([SIZED.id]);
+    openAdded([PLAIN.id, SIZED.id]);
+    tapPlus(PLAIN.id);
 
     tapPlus(SIZED.id);
 
     expect(screen.getByTestId("select-size-modal")).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
-    expectLeft();
+    expectHidden();
 
-    // Its X (the scrim is the first closer, the card's X the second).
-    fireEvent.click(
-      within(screen.getByTestId("select-size-modal")).getAllByRole("button", { name: i18n.t("language.close") })[1]
-    );
+    sizeX();
     expect(screen.queryByTestId("select-size-modal")).toBeNull();
     expect(selections().recommendationDetour).toBe(false);
+    expect(screen.getByTestId("product-added-modal")).toBeInTheDocument();
+    expect(pill(PLAIN.id)).toBe("1");
+    expect(pill(SIZED.id)).toBeNull();
     expect(cartRows()).toEqual([]);
   });
 
@@ -1251,11 +1373,8 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     tapPlus(SIZED.id);
     fireEvent.click(screen.getByTestId("size-v-large"));
     expect(screen.getByTestId("size-v-large")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(
-      within(screen.getByTestId("select-size-modal")).getAllByRole("button", { name: i18n.t("language.close") })[1]
-    );
+    sizeX();
 
-    openAdded([SIZED.id]);
     tapPlus(SIZED.id);
 
     expect(screen.getByTestId("size-v-large")).toHaveAttribute("aria-pressed", "false");
@@ -1263,8 +1382,8 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     expect(cartRows()).toEqual([]);
   });
 
-  it("a size-only CONTINUE commits a VARIANT row and confirms WITHOUT a strip — the one hop is spent", () => {
-    // Test stage: suggestions of its own, so only the spent hop keeps the strip away.
+  it("a size-only CONTINUE PARKS its VARIANT row — the bag unchanged — and the same modal is back with it counted (no second strip); ADD TO ORDER lands it", () => {
+    // Test stage: suggestions of its own, so a chained strip would show them.
     store.dispatch(
       setEntityMap({ entityMap: { [PLAIN.id]: PLAIN, [SIZED.id]: { ...SIZED, recommendedItems: [PLAIN.id] } } })
     );
@@ -1275,27 +1394,31 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     fireEvent.click(screen.getByTestId("size-v-regular"));
     fireEvent.click(screen.getByTestId("size-continue"));
 
+    expect(cartRows()).toEqual([]);
     // variantPrice: the bill prices a VARIANT row by it (never `price`).
-    expect(cartRows()).toEqual([
+    expect(selections().upsellStaging.pendingCustom).toEqual([
       expect.objectContaining({ id: SIZED.id, type: "VARIANT", quantity: 1, variantPrice: 4 }),
     ]);
-    expect(selections().addToCartModal).toMatchObject({
-      isOpen: true,
-      item: { id: SIZED.id, suppressRecommendations: true },
-    });
-    expect(screen.queryAllByTestId(/^added-rec-(?!add-)/)).toHaveLength(0);
+    expect(selections().addToCartModal).toMatchObject({ isOpen: true, item: { id: "e-salad" } });
     expect(selections().recommendationDetour).toBe(false);
+    expect(screen.getByTestId("product-added-modal")).toBeInTheDocument();
+    expect(pill(SIZED.id)).toBe("1");
+    expect(screen.queryByTestId(`added-rec-${PLAIN.id}`)).toBeNull();
+    expect(screen.getByTestId("added-total")).toHaveTextContent("£4.00");
+    // The chooser's own confirm reports the item (the PDP's ADD TO BAG does too).
     expect(eventCalls("item_added_to_cart")).toEqual([
       ["item_added_to_cart", expect.objectContaining({ item_id: SIZED.id, item_price: 4, item_type: "VARIANT" })],
     ]);
 
-    // A later strip that offers it again counts that size row (it carries
-    // the parent's id).
-    openAdded([SIZED.id]);
-    expect(screen.getByTestId(`added-count-${SIZED.id}`)).toHaveTextContent(/^1$/);
+    fireEvent.click(screen.getByTestId("added-continue"));
+    expect(cartRows()).toEqual([
+      expect.objectContaining({ id: SIZED.id, type: "VARIANT", quantity: 1, variantPrice: 4 }),
+    ]);
+    expect(selections().addToCartModal.isOpen).toBe(false);
+    expect(eventCalls("item_added_to_cart")).toHaveLength(1);
   });
 
-  it("a CONTINUE the DP cap refuses ends the detour too, and the global error says why", () => {
+  it("a CONTINUE the DP cap refuses parks nothing and ends the detour — the global error says why, the modal back", () => {
     store.dispatch(setCurrentSession(DP_SESSION));
     store.dispatch(setCartItems([HELD_DP_ROW]));
     renderMenu();
@@ -1307,12 +1430,22 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
 
     expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
     expect(cartRows()).toEqual([HELD_DP_ROW]);
-    expect(selections().addToCartModal.isOpen).toBe(false);
+    expect(selections().upsellStaging.pendingCustom).toEqual([]);
+    expect(selections().addToCartModal.isOpen).toBe(true);
     expect(selections().recommendationDetour).toBe(false);
     expect(eventCalls("item_added_to_cart")).toHaveLength(0);
   });
 
-  it("CONTINUE on a size with groups goes on to the PDP — the detour and its flag carry on", () => {
+  it.each([
+    ["not in the bag", false],
+    ["in the bag with repeat on", true],
+  ])("CONTINUE on a size with groups (%s) goes on to the PDP — never the repeat sheet; the detour carries on, the modal hidden", (_case, inBag) => {
+    if (inBag) {
+      store.dispatch(setShowRepeatCustomization(true));
+      store.dispatch(
+        setCartItems([{ id: SIZED.id, itemId: "t-1", name: SIZED.name, quantity: 1, type: "VARIANT", price: 4, total_price: 4 }])
+      );
+    }
     renderMenu();
     openAdded([SIZED.id]);
     tapPlus(SIZED.id);
@@ -1321,101 +1454,35 @@ describe("Menu — product-added suggestions (lane added-modal)", () => {
     fireEvent.click(screen.getByTestId("size-continue"));
 
     expect(mockNavigate).toHaveBeenCalledWith("/customization", undefined);
-    expect(selections().recommendationDetour).toBe(true);
-    expect(selections().addToCartModal.isOpen).toBe(false);
+    expect(repeatItemBottomSheetData(store.getState())?.isOpen).toBeFalsy();
+    expectHidden();
+    expect(cartRows()).toHaveLength(inBag ? 1 : 0);
+  });
+
+  /*
+    Leak sweep (2026-10-12): the hand-off from Select a Size to the PDP. RR7
+    navigates inside a transition, so this page stays on screen until the
+    PDP renders; closing the sheet first left the BARE menu under the finger
+    — the modal hidden, the detour still set, and no edge to arm
+    DetourTapGuard — so a double tap's second half added the menu card
+    beneath (or opened the bag). The sheet stays up as the cover until the
+    route change unmounts this page (navigate is a spy here, so it never
+    does), and a second CONTINUE does nothing.
+  */
+  it("CONTINUE on a size with groups keeps Select a Size up as the cover until the PDP replaces the page; a second CONTINUE does nothing", () => {
+    renderMenu();
+    openAdded([SIZED.id]);
+    tapPlus(SIZED.id);
+    fireEvent.click(screen.getByTestId("size-v-large"));
+
+    fireEvent.click(screen.getByTestId("size-continue"));
+    fireEvent.click(screen.getByTestId("size-continue"));
+
+    expect(screen.getByTestId("select-size-modal")).toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(eventCalls("customization_opened")).toHaveLength(1);
+    expectHidden();
     expect(cartRows()).toEqual([]);
-  });
-
-  // Guard for the add-in-place behaviour; the pill (and the card tap) are new.
-  it("guard: a plain suggestion lands in place — the modal stays on the same item, no detour, ItemAddedToCart; the pill counts it, the card adds another", () => {
-    renderMenu();
-    openAdded([PLAIN.id]);
-    mockCapture.mockClear();
-
-    tapPlus(PLAIN.id);
-
-    expect(selections().addToCartModal).toMatchObject({ isOpen: true, item: { id: "e-salad" } });
-    expect(selections().recommendationDetour).toBe(false);
-    expect(cartRows()).toEqual([expect.objectContaining({ id: PLAIN.id, quantity: 1 })]);
-    expect(eventCalls("item_added_to_cart")).toEqual([
-      [
-        "item_added_to_cart",
-        { item_id: PLAIN.id, item_name: PLAIN.name, item_price: 2.5, quantity: 1, item_type: undefined },
-      ],
-    ]);
-    expect(screen.getByTestId(`added-count-${PLAIN.id}`)).toHaveTextContent(/^1$/);
-    // The Total moves with it (the menu bar's live subTotal).
-    expect(screen.getByTestId("added-total")).toHaveTextContent("£2.50");
-
-    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${PLAIN.name}` }));
-    expect(cartRows()).toEqual([expect.objectContaining({ id: PLAIN.id, quantity: 2 })]);
-    expect(screen.getByTestId(`added-count-${PLAIN.id}`)).toHaveTextContent(/^2$/);
-    expect(screen.getByTestId("added-total")).toHaveTextContent("£5.00");
-    expect(eventCalls("item_added_to_cart")).toHaveLength(2);
-    expect(selections().addToCartModal.isOpen).toBe(true);
-
-    // The user's report (RC3): ADD TO ORDER finishes — it closes, and the
-    // order keeps exactly what the tiles added (it adds nothing itself).
-    fireEvent.click(screen.getByTestId("added-continue"));
-    expect(selections().addToCartModal.isOpen).toBe(false);
-    expect(screen.queryByTestId("product-added-modal")).toBeNull();
-    expect(cartRows()).toEqual([expect.objectContaining({ id: PLAIN.id, quantity: 2 })]);
-    expect(eventCalls("item_added_to_cart")).toHaveLength(2);
-    expect(selections().recommendationDetour).toBe(false);
-  });
-
-  // Test stage — no chain: a one-tap suggestion's add is suppressAddedModal,
-  // so even an item with suggestions of its own never re-opens the modal on
-  // itself; the strip stays the first item's and the tile counts the add.
-  it("guard: a one-tap suggestion with suggestions of its own lands in place — the modal stays on the first item (no chain)", () => {
-    store.dispatch(setEntityMap({ entityMap: { [PLAIN.id]: PLAIN, [CHAINED.id]: CHAINED } }));
-    renderMenu();
-    openAdded([CHAINED.id]);
-
-    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${CHAINED.name}` }));
-
-    expect(cartRows()).toEqual([expect.objectContaining({ id: CHAINED.id, quantity: 1 })]);
-    expect(selections().addToCartModal).toMatchObject({ isOpen: true, item: { id: "e-salad" } });
-    expect(screen.getByTestId(`added-count-${CHAINED.id}`)).toHaveTextContent(/^1$/);
-    expect(screen.queryByTestId(`added-rec-${PLAIN.id}`)).toBeNull();
-    expect(selections().recommendationDetour).toBe(false);
-  });
-
-  it("guard: a plain suggestion the DP cap refuses — the global error, nothing added, no pill, the modal stays, no ItemAddedToCart", () => {
-    store.dispatch(setCurrentSession(DP_SESSION));
-    store.dispatch(setCartItems([HELD_DP_ROW]));
-    renderMenu();
-    openAdded([DP_PLAIN.id]);
-    mockCapture.mockClear();
-
-    tapPlus(DP_PLAIN.id);
-
-    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
-    expect(cartRows()).toEqual([HELD_DP_ROW]);
-    expect(screen.queryByTestId(`added-count-${DP_PLAIN.id}`)).toBeNull();
-    expect(selections().addToCartModal.isOpen).toBe(true);
-    expect(selections().recommendationDetour).toBe(false);
-    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
-  });
-
-  // Test stage: the same refusal on a tile that already counts (the
-  // increase path) — the pill keeps its number.
-  it("guard: a counted DP suggestion the cap refuses — the global error, the pill keeps its count, nothing added", () => {
-    const DP_ROW = { id: DP_PLAIN.id, itemId: "dp-1", name: DP_PLAIN.name, quantity: 1, type: "ITEM", isDpItem: true, price: 3, total_price: 3 };
-    store.dispatch(setCurrentSession(DP_SESSION));
-    store.dispatch(setCartItems([DP_ROW]));
-    renderMenu();
-    openAdded([DP_PLAIN.id]);
-    expect(screen.getByTestId(`added-count-${DP_PLAIN.id}`)).toHaveTextContent(/^1$/);
-    mockCapture.mockClear();
-
-    fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${DP_PLAIN.name}` }));
-
-    expect(selectShowErrorModalGlobal(store.getState())).toBe(true);
-    expect(cartRows()).toEqual([DP_ROW]);
-    expect(screen.getByTestId(`added-count-${DP_PLAIN.id}`)).toHaveTextContent(/^1$/);
-    expect(selections().addToCartModal.isOpen).toBe(true);
-    expect(eventCalls("item_added_to_cart")).toHaveLength(0);
   });
 
   it.each([

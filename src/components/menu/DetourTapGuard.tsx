@@ -8,16 +8,18 @@ interface DetourRootState {
 
 /**
  * How long the stage swallows taps once a product-added suggestion LEAVES the
- * modal (ReachZone's exit-guard pattern, review R1). The modal closes at once
- * and Select a Size, the PDP or the repeat sheet takes its place under the
- * finger, so the second tap of a double tap would tick a size, pick a paid
- * option, open a pack slot or close the repeat sheet.
+ * modal (ReachZone's exit-guard pattern, review R1). The modal hides at once
+ * and Select a Size or the PDP takes its place under the finger, so the
+ * second tap of a double tap would tick a size, pick a paid option or open a
+ * pack slot. The way BACK is the same: the detour's end brings the modal
+ * back under the chooser's CONTINUE / ADD TO BAG / X, and its ADD TO ORDER
+ * buys the picks while its X throws them away.
  */
 const DETOUR_TAP_GUARD_MS = 500;
 
 /**
- * Armed on recommendationDetour's false → true edge — only
- * Menu.leaveAddedModal sets it, in the same render that swaps the surface.
+ * Armed on each recommendationDetour edge — Menu.handleSuggestionAdd sets it,
+ * in the same render that swaps the surface; each chooser exit clears it.
  * Mounted once in AppRoutes' InSessionOverlays, so it outlives the
  * /menu → /customization switch. z-[58]: over every page (the PDP, Select a
  * Size at 40), MIAM (45) and the repeat sheet (55); under the loyalty modals
@@ -27,13 +29,13 @@ export default function DetourTapGuard() {
   const detour = useSelector((state: DetourRootState) =>
     Boolean(state.menuSelections?.recommendationDetour)
   );
-  // Arm on the edge (adjust state while rendering); a detour that ends
-  // inside the window leaves it up.
+  // Arm on either edge (adjust state while rendering). An end inside the
+  // window keeps the first timer — no tap can end a detour that early.
   const [prevDetour, setPrevDetour] = useState(detour);
   const [guard, setGuard] = useState(false);
   if (prevDetour !== detour) {
     setPrevDetour(detour);
-    if (detour) setGuard(true);
+    setGuard(true);
   }
   // Rule 5: the guard's timer never outlives it (or the host).
   useEffect(() => {
