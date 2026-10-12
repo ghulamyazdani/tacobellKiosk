@@ -167,6 +167,35 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
     renderMenu();
     expect(screen.getByText(/menu is loading/i)).toBeInTheDocument();
   });
+
+  // The /forYou drop (user, 2026-10-11) — THE guard: /forYou now redirects to
+  // /cart, so a URL-only e2e cannot see VIEW MY BAG regress to it. A flagged
+  // item is what used to open that screen (MIN_CART_UPSELL_ITEMS is 1).
+  it("VIEW MY BAG goes to /cart, never /forYou, even with a cart-recommended item; an empty bag stays put", () => {
+    mockNavigate.mockReset();
+    store.dispatch(
+      setEntityMap({
+        entityMap: {
+          "e-plain": { id: "e-plain", name: "Large Fries", price: 2.5, isActive: true, isCartRecommended: true },
+        },
+      })
+    );
+    renderMenu();
+
+    fireEvent.click(screen.getByTestId("cta-view-bag"));
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    act(() => {
+      store.dispatch(
+        setCartItems([
+          { id: "e-plain", itemId: "lf-1", name: "Large Fries", quantity: 1, type: "ITEM", price: 2.5, total_price: 2.5 },
+        ])
+      );
+    });
+    fireEvent.click(screen.getByTestId("cta-view-bag"));
+    expect(mockNavigate).toHaveBeenLastCalledWith("/cart");
+    expect(mockNavigate.mock.calls.map(([to]) => to)).not.toContain("/forYou");
+  });
 });
 
 /*

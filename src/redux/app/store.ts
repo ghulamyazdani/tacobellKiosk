@@ -137,11 +137,6 @@ const persistence: PersistencePolicy = {
         "redeemedLoyalty",
       ],
     },
-    // DO NOT add "cartUpsellSeen" or "cartUpsellEntryQuantity" here. Both are
-    // scoped to one CUSTOMER, not one device — persisting them would carry a
-    // stuck flag (permanently suppressing the pre-cart upsell on that machine)
-    // and a stale entry baseline (mis-colouring the button for the next
-    // customer) across a kiosk reboot.
     {
       slice: "cart",
       scope: "customer",

@@ -36,16 +36,10 @@ export async function addViaPdp(
   await expect(page.getByTestId("product-added-modal")).not.toBeVisible();
 }
 
-/**
- * VIEW MY BAG → /cart. The first open of a session may meet the P7d upsell (/forYou);
- * declining it mutates no cart state (forYou.spec owns the gate).
- */
+/** VIEW MY BAG → /cart. */
 export async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
   await expect(page).toHaveURL(/\/cart$/);
 }

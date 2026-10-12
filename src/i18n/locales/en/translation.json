@@ -119,10 +119,6 @@
     "bestValue": "Best value",
     "continue": "Continue"
   },
-  "customization": {
-    "comingSoon": "Customization arrives in P6b",
-    "backToMenu": "Back to menu"
-  },
   "keyboard": {
     "shift": "Shift",
     "backspace": "Backspace",
@@ -171,11 +167,6 @@
     "accept": "Yes, make it a meal",
     "decline": "Not today",
     "save": "Save {{amount}}"
-  },
-  "upsell": {
-    "anythingElse": "Complete Your Meal",
-    "notToday": "Not Today",
-    "proceedToOrder": "Proceed to Order"
   },
   "bag": {
     "title": "My Bag",

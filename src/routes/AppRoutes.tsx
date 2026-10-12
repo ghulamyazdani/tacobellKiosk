@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import ProtectedRouteIfAuthenticated from "./ProtectedRouteIfAuthenticated";
 import IdleGuard from "./IdleGuard";
@@ -12,7 +12,6 @@ import LoadingResources from "../pages/LoadingResources";
 import CustomerPhone from "../pages/CustomerPhone";
 import Menu from "../pages/Menu";
 import Customization from "../pages/Customization";
-import ForYou from "../pages/ForYou";
 import CustomerName from "../pages/CustomerName";
 import Tent from "../pages/Tent";
 import PaymentSelection from "../pages/PaymentSelection";
@@ -36,13 +35,13 @@ import { notePath } from "../hooks/utils/usePageEnter";
  * useAddEntityToCart answers an "upsell" or a "repeat" card tap by
  * DISPATCHING that state rather than by navigating, so the tap is only alive
  * on a screen that has a renderer mounted. Both used to be mounted inside
- * <Menu> alone, which made every upsell/repeat tap on the standalone /forYou
- * screen a DEAD TAP — and left the modal state open, so the sheet later
+ * <Menu> alone, which made an upsell/repeat tap on any standalone screen a
+ * DEAD TAP — and left the modal state open, so the sheet later
  * surfaced over the bag on /cart (which is <Menu bagOpen />, and therefore
  * did render them) for an item tapped two screens earlier.
  *
  * As a layout route these stay mounted across every navigation inside the
- * protected subtree (/menu -> /forYou -> /customization -> /cart), so an
+ * protected subtree (/menu -> /customization -> /cart), so an
  * open sheet survives a route change instead of dying with its host page,
  * and they are never mounted on the unauthenticated Registration route.
  *
@@ -113,8 +112,7 @@ function InSessionOverlays() {
  *   /phone       loyalty identity lookup, pre-menu (P7c; only reachable when
  *                getIsLoyaltyOn() — SecondLayout picks the branch)
  *   /cart        Menu with the bag sheet open (P7a locked decision 1)
- *   /forYou      pre-cart upsell (P7d); the ONLY forward menu->cart edge
- *                routes here when the gate opens, and it exits to /cart
+ *   /forYou      redirects to /cart (dropped 2026-10-11)
  *   /customerName checkout-time name capture (P7c; the PAY preflight returns
  *                "customerName" whenever loyalty is on)
  *   /tent        table-tent number capture (P8a; preflight route "tent")
@@ -282,17 +280,9 @@ export function AppRoutes() {
                 (resolveCustomizationReturnPath → "/cart"). */}
             <Route path="/cart" element={<Menu bagOpen />} />
             <Route path="/customization" element={<Customization />} />
-            {/* P7d pre-cart upsell. A genuine STANDALONE page, deliberately a
-                sibling of /customization rather than another <Menu> variant:
-                /cart is <Menu bagOpen />, so mounting the upsell as a Menu
-                skin would bleed the bag sheet and the CTA bar through it. It
-                owns its own chrome and renders no MenuCtaBar and no FooterBar.
-
-                Being a sibling is also what makes the baseline a redux
-                concern: a customization detour from this screen UNMOUNTS it
-                and remounts it on return, so nothing visit-scoped may live in
-                useState/useRef there (cart.slice cartUpsellEntryQuantity). */}
-            <Route path="/forYou" element={<ForYou />} />
+            {/* Dropped 2026-10-11 (user). Kept as a redirect for a stale URL:
+                a chunk-error reload of the current URL, or a typed link. */}
+            <Route path="/forYou" element={<Navigate to="/cart" replace />} />
             <Route path="/customerName" element={<CustomerName />} />
             {/* P8a checkout vertical. All four live INSIDE ProtectedRoute +
                 InSessionOverlays: a repeat/upsell sheet raised from the bag

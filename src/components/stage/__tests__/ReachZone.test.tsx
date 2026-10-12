@@ -26,7 +26,7 @@ import i18n, { DEFAULT_LANGUAGE } from "../../../i18n";
   P9c — the ADA reach-zone view. HOUSE STYLE: real store + Provider +
   MemoryRouter + RESET_STATE + i18n. The route tree is replaced by a Probe
   that stands in for the stateful pages the A2 contract protects (the PDP's
-  tier-1 session, ForYou's frozen snapshot, the OrderSuccess countdown): it
+  tier-1 session, the OrderSuccess countdown): it
   holds local state AND counts its mounts, so a remount fails twice over.
 
   jsdom has no layout, so geometry is asserted on the inline styles ReachZone

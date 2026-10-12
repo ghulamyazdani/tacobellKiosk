@@ -64,13 +64,10 @@ async function addGreekSalad(page: Page) {
   await expect(page.getByTestId("cta-total")).toContainText("₹17.00");
 }
 
-/** The /forYou upsell may sit on the menu → bag edge (opt-out gate). */
+/** VIEW MY BAG → /cart. */
 async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
 }
 

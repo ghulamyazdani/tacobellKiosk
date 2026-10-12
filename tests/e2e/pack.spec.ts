@@ -908,13 +908,9 @@ test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE p
     await expect(page.getByTestId("cta-total")).toContainText("£35.00");
     expect(await groupPicks(page, G_SNACKS, "bag")).toEqual([[CHILI_NUGGETS, 2]]);
 
-    // The bag row says the same: Nuggets ×2, no Donuts (the /forYou upsell
-    // may sit on the menu → bag edge — bag.spec openBag).
+    // The bag row says the same: Nuggets ×2, no Donuts.
     await page.getByTestId("cta-view-bag").click();
-    await page.waitForURL(/\/(forYou|cart)$/);
-    if (new URL(page.url()).pathname === "/forYou") {
-      await page.getByTestId("foryou-primary").click();
-    }
+    await page.waitForURL(/\/cart$/);
     const row = page.locator('[data-testid^="bag-row-"]');
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(

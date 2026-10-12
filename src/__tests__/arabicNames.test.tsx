@@ -3,9 +3,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
-import { setEntityMap, setMenuData, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setMenuData, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
-import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
   setTeir2SelectedEntity,
   setTier1SelectedCustomization,
@@ -25,7 +24,6 @@ import SlotSelectionSheet from "../components/customization/SlotSelectionSheet";
 import Tier2CustomizationSheet from "../components/customization/Tier2CustomizationSheet";
 import BagItemRow from "../components/cart/BagItemRow";
 import LoyaltyRewardsSheet from "../components/loyalty/LoyaltyRewardsSheet";
-import ForYou from "../pages/ForYou";
 import i18n from "../i18n";
 
 /*
@@ -67,7 +65,6 @@ const AR_ONIONS = "بصل إضافي";
 const AR_CHEESE = "جبنة إضافية";
 const AR_PEPSI = "بيبسي";
 const AR_SALAD = "سلطة يونانية";
-const AR_NACHOS = "ناتشوز";
 
 const AR_SESSION = { name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" };
 const EN_SESSION = { name: "English", code: "en", dir: "ltr", type: "primary_language" };
@@ -517,30 +514,5 @@ describe("LoyaltyRewardsSheet", () => {
 
     expect(tile).toHaveTextContent(iso(AR_SALAD), { normalizeWhitespace: false });
     expect(tile).not.toHaveTextContent("Greek Salad");
-  });
-});
-
-describe("ForYou page", () => {
-  const NACHOS = {
-    id: "nachos",
-    name: "Nachos BellGrande",
-    aliases: AR(AR_NACHOS),
-    price: 4,
-    isActive: true,
-    isCartRecommended: true,
-  };
-
-  it("Arabic: the card title is the alias, and the card is named by verb + title (label-in-name)", async () => {
-    await arabicSession();
-    store.dispatch(setEntityMap({ entityMap: { [NACHOS.id]: NACHOS } }));
-    store.dispatch(
-      setCartItems([{ id: "seed", itemId: "seed-1", name: "Row", quantity: 1, type: "ITEM", total_price: 1 }])
-    );
-    render(<ForYou />, { wrapper });
-    const card = screen.getByTestId("foryou-card-nachos");
-
-    expect(card).toHaveTextContent(iso(AR_NACHOS), { normalizeWhitespace: false });
-    expect(card).not.toHaveTextContent("Nachos BellGrande");
-    expect(card).toHaveAccessibleName(`${i18n.t("menu.quickAdd")} ${iso(AR_NACHOS)}`);
   });
 });

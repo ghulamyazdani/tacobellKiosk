@@ -98,7 +98,7 @@ export interface CartUpsellState {
 
 /**
  * The single source of the cart-upsell decision (the bag's Complete-Your-Meal
- * rail, and the pre-cart upsell screen when that ports).
+ * rail; the rewards sheet's suggested rail reads its items).
  *
  * The setting is necessary but NOT sufficient — a gate that can render an empty
  * surface is a broken gate, so the item count is part of the condition.

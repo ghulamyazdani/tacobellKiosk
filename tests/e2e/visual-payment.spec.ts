@@ -362,12 +362,8 @@ async function bootToPayment(page: Page, opts: BootOptions): Promise<PaytmMockHa
   await page.getByTestId("pdp-add-to-bag").click();
   await expect(page.getByTestId("product-added-modal")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("added-continue").click();
-  // The P7d upsell may sit on the first VIEW MY BAG.
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-pay")).toContainText("9.00", { timeout: 10_000 });
   await page.getByTestId("bag-pay").click();
   await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });

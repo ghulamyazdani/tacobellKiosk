@@ -48,7 +48,7 @@ async function expectArabicScreen(page: Page, label: string, screen: string, ara
 test.describe("Flow 5 — multi-language", () => {
   test.beforeEach(() => pendingMet.clear());
 
-  test("EVERY SCREEN IN ARABIC: order type → menu → PDP → For You → bag → payment → receipt → Order Complete, then the next guest is English", async ({
+  test("EVERY SCREEN IN ARABIC: order type → menu → PDP → bag → payment → receipt → Order Complete, then the next guest is English", async ({
     page,
   }) => {
     test.slow();
@@ -76,11 +76,9 @@ test.describe("Flow 5 — multi-language", () => {
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
 
-    // The session's first VIEW MY BAG meets the upsell: a gate change fails here, by name.
+    // VIEW MY BAG opens the bag (no pre-cart screen since 2026-10-11).
     await page.getByTestId("cta-view-bag").click();
-    await expect(page).toHaveURL(/\/forYou$/);
-    await expectArabicScreen(page, "ar-04-for-you", "foryou-screen", ar.upsell.notToday);
-    await page.getByTestId("foryou-primary").click();
+    await expect(page).toHaveURL(/\/cart$/);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     // Prices stay LTR isolates inside the Arabic copy.
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");

@@ -21,9 +21,9 @@ import { clippedText } from "./fixtures/clippedText";
  * audit-fixes U1), the single
  * PDP (long-description clamp + groups), the added modal with its strip, the
  * repeat sheet, the MIAM prompt, the pack PDP with its slot sheet and tier-2
- * sheet, /forYou, the bag (rows with an addon line, totals, rail), the remove
+ * sheet, the bag (rows with an addon line, totals, rail), the remove
  * confirm, the rewards entry / sheet / applied row / freebie picker, the ADA
- * reach-zone view of /menu and the bag, and Arabic /menu, /forYou, bag and
+ * reach-zone view of /menu and the bag, and Arabic /menu, bag and
  * rewards sheet (the Arabic calorie label wraps a card's price line).
  * SelectSizeModal is not reachable: the fixture has no variant item.
  *
@@ -35,7 +35,7 @@ import { clippedText } from "./fixtures/clippedText";
  * description (registration.spec's clamp text) and a "You Might Like" strip
  * on the Cheese Burger's added modal — plus real-length names (the reference
  * TB India menu's median name is 32 characters and a third run past 40): on
- * Large Fries, which lands on the menu grid, /forYou, the bag rail, the added
+ * Large Fries, which lands on the menu grid, the bag rail, the added
  * modal, the tier-2 sheet title and its pack slot; on the Greek Salad hero
  * (a 4-line name, clamped at 3 since UB4 so the photo keeps its 326 px; the
  * rewards rail's 2-line title box); and on two imageless options (a PDP
@@ -266,18 +266,10 @@ async function dismissAddedModal(page: Page) {
   await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
 }
 
-/**
- * VIEW MY BAG → /cart. The first open of a session meets /forYou (bag.spec
- * openBag); `onUpsell` runs while it is up, then NOT TODAY declines it.
- */
-async function openBag(page: Page, onUpsell?: () => Promise<void>) {
+/** VIEW MY BAG → /cart. */
+async function openBag(page: Page) {
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await expect(page.getByTestId("foryou-screen")).toBeVisible();
-    if (onUpsell) await onUpsell();
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
   await expect(page).toHaveURL(/\/cart$/);
 }
@@ -482,7 +474,7 @@ test.describe("visual capture — ordering screens", () => {
     }
   });
 
-  test("BAG: /forYou, the bag (rows with an addon line, rail, totals), the remove confirm", async ({
+  test("BAG: the bag (rows with an addon line, rail, totals), the remove confirm", async ({
     page,
   }) => {
     test.slow();
@@ -492,7 +484,7 @@ test.describe("visual capture — ordering screens", () => {
     await dismissAddedModal(page);
     await quickAddGreekSalad(page, "(2)");
 
-    await openBag(page, () => capture(page, "order-12-foryou"));
+    await openBag(page);
     await expect(bagRows(page)).toHaveCount(2);
     await expect(page.getByTestId("bag-sheet")).toContainText("Extra Pickles");
     await expect(page.getByTestId("bag-rail")).toBeVisible();
@@ -559,7 +551,7 @@ test.describe("visual capture — ordering screens", () => {
     await capture(page, "order-21-ada-bag-totals");
   });
 
-  test("ARABIC: /menu, /forYou, the bag and the rewards sheet after choosing Arabic on /second", async ({
+  test("ARABIC: /menu, the bag and the rewards sheet after choosing Arabic on /second", async ({
     page,
   }) => {
     test.slow();
@@ -582,8 +574,8 @@ test.describe("visual capture — ordering screens", () => {
     await expect(page.getByTestId("footer-language")).toContainText("العربية");
     await capture(page, "order-22-ar-menu");
 
-    // The Arabic calorie label wraps a card's price line: its photo gives way.
-    await openBag(page, () => capture(page, "order-23-ar-foryou"));
+    // The Arabic calorie label wraps a rail card's price line: its photo gives way.
+    await openBag(page);
     await capture(page, "order-24-ar-bag");
     await page.getByTestId("bag-rewards-entry").click();
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();

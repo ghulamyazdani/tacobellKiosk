@@ -325,7 +325,7 @@ async function expectNextSessionStartsOff(page: Page) {
 }
 
 test.describe("P9c ADA reach-zone view", () => {
-  test("TOGGLE + REACH (browse): the /menu footer opens the zone view; /menu, the PDP and its footer strip, the added modal, the repeat sheet, /forYou and the 765px bag are all reachable", async ({
+  test("TOGGLE + REACH (browse): the /menu footer opens the zone view; /menu, the PDP and its footer strip, the added modal, the repeat sheet and the 765px bag are all reachable", async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -376,14 +376,7 @@ test.describe("P9c ADA reach-zone view", () => {
     await page.getByTestId("repeat-sheet-close").click();
     await expect(repeat).toHaveCount(0);
 
-    // First VIEW MY BAG of the session meets the upsell (bag.spec openBag).
     await page.getByTestId("cta-view-bag").click();
-    await expect(page.getByTestId("foryou-screen")).toBeVisible();
-    await expect
-      .poll(() => stageBox(page.getByTestId("foryou-screen")))
-      .toEqual(ZONE_BOX);
-    await expectReachable(page);
-    await page.getByTestId("foryou-primary").click();
 
     // Figma 1:5465: the ADA bag is 765 tall, its top at stage y 1155.
     const bag = page.getByTestId("bag-sheet");

@@ -30,7 +30,7 @@ const ADA_EXEMPT_PATHS = new Set(["/", "/LoadingResources", "/start"]);
  * How long the vacated panel area swallows taps after a tap-to-exit. The
  * switch is instant (no tap delay either: user-scalable=no), so the second
  * tap of a double tap would land on whatever the full-height page now paints
- * there — a ForYou/Menu card adds to the bag, /customerName's CONTINUE
+ * there — a Menu card adds to the bag, /customerName's CONTINUE
  * submits. The fork's 0.5 s height transition absorbed it by accident.
  */
 const EXIT_TAP_GUARD_MS = 500;
@@ -46,8 +46,8 @@ const EXIT_TAP_GUARD_MS = 500;
  * brand zone is a conditional SIBLING ahead of it, which React reconciles
  * positionally (the `false` slot keeps the container at index 1). Never make
  * the container a conditional wrapper and never key it on the mode: either
- * remounts every route on a toggle — the PDP's tier-1 session, ForYou's
- * frozen snapshot, the OrderSuccess countdown/print latch, scroll positions.
+ * remounts every route on a toggle — the PDP's tier-1 session, the
+ * OrderSuccess countdown/print latch, scroll positions.
  *
  * `contain: layout paint` makes the container the containing block for
  * absolute AND fixed descendants (OfferRemovalNotice is `fixed inset-0`), a

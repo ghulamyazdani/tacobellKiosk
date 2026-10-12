@@ -313,10 +313,7 @@ async function openBagWithBurgerTimesThree(page: Page): Promise<string> {
   await addOneTap(page, TORTILLA_SAUCE, "(3)");
 
   await page.getByTestId("cta-view-bag").click();
-  await page.waitForURL(/\/(forYou|cart)$/);
-  if (new URL(page.url()).pathname === "/forYou") {
-    await page.getByTestId("foryou-primary").click();
-  }
+  await page.waitForURL(/\/cart$/);
   await expect(page.getByTestId("bag-sheet")).toBeVisible();
   const row = page.locator(`[data-testid^="bag-row-"][data-testid$="_${CHEESE_BURGER}"]`);
   const itemId = ((await row.getAttribute("data-testid")) ?? "").replace("bag-row-", "");

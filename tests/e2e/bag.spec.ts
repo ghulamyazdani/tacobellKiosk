@@ -145,16 +145,6 @@ const addCheeseBurgerViaPdp = (
 const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
   addOneTap(page, GREEK_SALAD, expectedCount);
 
-/*
- * openBag (pages/order.ts) walks through the P7d pre-cart upsell (/forYou) on
- * a session's first open. It deliberately is NOT switched off here:
- * `enable_cart_upsell_screen: false` is read by useCartUpsell's single
- * `shouldShowUpsell`, which also gates the in-bag Complete-Your-Meal rail this
- * file asserts visible (RAIL), so disabling it would trade one broken
- * assertion for another and stop this suite testing the default
- * configuration. Declining mutates no cart state; forYou.spec.ts owns the gate.
- */
-
 /** Cart row ids (itemId) are runtime-generated — read them off the testid. */
 async function firstBagRowItemId(page: Page): Promise<string> {
   const row = bagRows(page).first();
@@ -603,6 +593,45 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     // round(17 * 1.15) = £20 — exclusive VAT survives the rehydrate too.
     await expect(page.getByTestId("bag-total")).toContainText("£20.00");
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (1)");
+  });
+
+  test("NO /forYou (dropped 2026-10-11): VIEW MY BAG opens the bag directly; a stale /forYou URL lands on the bag (or /menu when it is empty), a full load of it too", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootRegisteredToMenu(page);
+    /** The router follows a script pop (AppRoutes' Back trap passes untrusted pops). */
+    const pushPath = (path: string) =>
+      page.evaluate((to) => {
+        window.history.pushState({}, "", to);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, path);
+
+    // Empty bag: /forYou → /cart → the empty bag closes itself to /menu.
+    await pushPath("/forYou");
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+
+    // The flagged trio is on the default mock: the old gate would open here.
+    await addGreekSaladOneTap(page, "(1)");
+    await page.getByTestId("cta-view-bag").click();
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await expect(page.getByTestId("bag-rail")).toBeVisible();
+
+    await pushPath("/forYou");
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await expect(bagRows(page)).toHaveCount(1);
+
+    // A chunk-error reload of the current URL (chunkRecovery) — a full load.
+    await expect.poll(() => dexieCartQuantities(page)).toEqual([1]);
+    await page.goto("/forYou");
+    await expect(page).toHaveURL(/\/cart$/, { timeout: 15_000 });
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
+    await expect(bagRows(page)).toHaveCount(1);
   });
 
   test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total", async ({

@@ -356,10 +356,7 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
       expect(orderState, `"${text}" written into order state`).not.toContain(text);
     }
     await page.getByTestId("cta-view-bag").click();
-    await page.waitForURL(/\/(forYou|cart)$/);
-    if (new URL(page.url()).pathname === "/forYou") {
-      await page.getByTestId("foryou-primary").click();
-    }
+    await page.waitForURL(/\/cart$/);
     await expect(page.locator('[data-testid^="bag-loyalty-row-"]')).toHaveCount(1);
     await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
