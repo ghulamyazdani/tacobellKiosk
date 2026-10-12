@@ -7,6 +7,7 @@ import {
   setCountryCode,
 } from "@cx-sdk/core/auth/authentication.slice";
 import KioskKeyboard from "../keyboard/KioskKeyboard";
+import CountryFlag from "./CountryFlag";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { isolate, isRtl } from "../../i18n";
 // Lazy-only copy (country.*): registered when this chunk evaluates.
@@ -101,12 +102,13 @@ const comparer = (lang: string): ((a: string, b: string) => number) => {
  *
  * Rows come from the SDK table (COUNTRY_ROWS), labelled in the UI language
  * by `Intl.DisplayNames` (the table name when Intl has none), the selected
- * country first, then A→Z by `Intl.Collator`. No flags: a runtime flag CDN
- * breaks offline (the fork's flagsapi.com). Search is a display box driven by
- * the on-screen keyboard (Rule 5): it matches the localized name, the English
- * name or the dial digits ("971" / "+971"), ignoring case, accents and spaces
- * — so the keyboard needs no space key, and an Arabic session finds a
- * country by typing its English name.
+ * country first, then A→Z by `Intl.Collator`. Each row leads with its round
+ * flag (CountryFlag — restroGo's look, user request 2026-10-12), self-hosted:
+ * the fork's runtime flagsapi.com broke offline. Search is a display box
+ * driven by the on-screen keyboard (Rule 5): it matches the localized name,
+ * the English name or the dial digits ("971" / "+971"), ignoring case,
+ * accents and spaces — so the keyboard needs no space key, and an Arabic
+ * session finds a country by typing its English name.
  *
  * A row tap stores `{code, dialCode, min, max, picked: true}` — the keypad
  * cap, the length check and every Xeno call follow it; `picked` keeps the
@@ -189,8 +191,11 @@ export default function CountryPickerSheet({ onClose }: CountryPickerSheetProps)
         onClick={() => pick(row)}
         className="flex min-h-[96px] w-full items-center gap-[24px] border-t border-tb-grey-4 px-[24px] py-[16px]"
       >
+        {/* restroGo's 52 px row flag, at 56 for TB's 32 px names: 20 px
+            clear of the 96 px row's edges. */}
+        <CountryFlag code={row.code} className="h-[56px] w-[56px]" />
         {/* A shrink-to-fit dir="auto" leaf (P9f S2): an Arabic name keeps
-            the list's left edge instead of hugging the dial code. */}
+            its slot's left edge instead of hugging the dial code. */}
         <span className="min-w-0 flex-1">
           <span
             dir="auto"

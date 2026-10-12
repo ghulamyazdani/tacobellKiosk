@@ -19,6 +19,7 @@ import {
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../keyboard/KioskNumpad";
 import CountryPicker from "../phone/CountryPicker";
+import CountryFlag from "../phone/CountryFlag";
 import LoyaltyErrorModal from "./LoyaltyErrorModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -65,6 +66,7 @@ function LoginBody({ onClose }: LoginBodyProps) {
 
   const maxDigits = Number(countryCode?.max ?? 0) || FALLBACK_MAX_DIGITS;
   const dialCode: string = countryCode?.dialCode ?? "";
+  const countryIso: string = countryCode?.code ?? "";
 
   /** UB5: the same picker as /phone; a pick moves the cap and the check. */
   const openCountryPicker = () => {
@@ -300,9 +302,10 @@ function LoginBody({ onClose }: LoginBodyProps) {
         </p>
 
         {/* The country chip (UB5 — the same picker as /phone, design
-            language) + the masked entry display: Figma's dot row, extended to
-            a phone-length entry — one cell per digit (minimum four), newest
-            digit legible for two seconds. */}
+            language; the selected country's round flag, 48 px in the 88 px
+            chip, as /phone's pill) + the masked entry display: Figma's dot
+            row, extended to a phone-length entry — one cell per digit
+            (minimum four), newest digit legible for two seconds. */}
         <div className="mt-[20px] flex items-center justify-center gap-[12px]">
           <button
             type="button"
@@ -312,6 +315,7 @@ function LoginBody({ onClose }: LoginBodyProps) {
             onClick={openCountryPicker}
             className="flex h-[88px] min-h-[44px] min-w-[120px] shrink-0 items-center justify-center gap-[8px] rounded-[12px] border-2 border-tb-pink px-[16px] text-[24px] font-medium leading-none text-tb-ink-purple"
           >
+            {countryIso && <CountryFlag code={countryIso} className="h-[48px] w-[48px]" />}
             <span dir="ltr">{dialCode}</span>
             {/* chevron-up.svg is white — painted through a mask, turned 180°. */}
             <span
