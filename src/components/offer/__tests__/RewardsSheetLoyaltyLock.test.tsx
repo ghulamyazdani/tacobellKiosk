@@ -30,7 +30,6 @@ vi.mock("../../../hooks/menuHooks/useCartUpsell", async (importOriginal) => ({
   default: () => ({
     items: [{ id: "nachos", name: "Nachos", price: 20 }],
     shouldShowUpsell: true,
-    getBreakdown: () => ({}),
   }),
 }));
 

@@ -136,20 +136,4 @@ describe("useCartUpsell — the opt-OUT gate", () => {
     expect(current.shouldShowUpsell).toBe(true);
     expect(current.items).toHaveLength(1);
   });
-
-  it("reports why flagged items did not make it, for the suppression event", () => {
-    // Menu's closed branch sends this straight to analytics, so the shape has
-    // to be a flat numeric bag.
-    loadMenu();
-    const breakdown = upsell().current.getBreakdown();
-
-    expect(breakdown.flagged).toBe(3);
-    expect(breakdown.excluded_inactive).toBe(1);
-    expect(breakdown.eligible).toBe(2);
-    expect(breakdown.above_fold).toBe(2);
-    expect(breakdown.hidden_over_capacity).toBe(0);
-    Object.values(breakdown).forEach((value) =>
-      expect(typeof value).toBe("number"),
-    );
-  });
 });
