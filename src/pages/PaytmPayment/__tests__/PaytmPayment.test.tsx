@@ -437,4 +437,17 @@ describe("PaytmPayment — motion (lane motion)", () => {
     }
     expect(img(container, creditCard)).toHaveClass("tb-card-tilt");
   });
+
+  // motion-v2 MV6: the UI points at the card machine — the DOWN HERE arrow nudges three times
+  // toward it (a finite run, not a loop) while its label stays still; nothing to tap there.
+  it("EDC: the DOWN HERE arrow nudges (tb-nudge) toward the terminal; its label and CANCEL stay still", () => {
+    mountPushed();
+    const arrow = screen.getByTestId("paytm-down-here-arrow");
+    expect(arrow.tagName).toBe("IMG");
+    expect(arrow).toHaveClass("tb-nudge");
+    expect(arrow).toHaveAttribute("aria-hidden");
+    expect(arrow.closest("button")).toBeNull();
+    expect(root().querySelectorAll(".tb-nudge")).toHaveLength(1);
+    expect(screen.getByText(i18n.t("paytm.instructions.downHere")).closest(".tb-nudge")).toBeNull();
+  });
 });

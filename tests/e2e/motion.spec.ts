@@ -996,7 +996,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await loops(page);
   });
 
-  test("M8 LOOPS: PleaseWait's hourglass flips at the Figma Loader 1 angles (3.96 s) and the EDC card tilts −12° (Figma Credit card 1, 3.12 s), both clear of every tap target; /paymentPolling's content enters", async ({
+  test("M8 LOOPS: PleaseWait's hourglass flips at the Figma Loader 1 angles (3.96 s) and the EDC card tilts −12° (Figma Credit card 1, 3.12 s), both clear of every tap target; /paymentPolling's content enters and the DOWN HERE arrow nudges three times toward the card machine (motion-v2 MV6); under reduce the EDC screen is still", async ({
     page,
   }) => {
     test.slow();
@@ -1019,10 +1019,20 @@ test.describe("motion (contract §5.3, no-preference)", () => {
       period: 3960,
       angles: [0, 200, 180, 20, 0],
     });
-    await arrives(page, await slowMotion(page), "paytm-screen", 1, () => initiate.release());
+    await arrives(page, await slowMotion(page), "paytm-screen", 1, () => initiate.release(), async () => {
+      // MV6, read while the timeline is slow (the run is over by 3.86 s): 3 × 1.2 s after the entrance, no target near.
+      const nudge = named(await animations(page), "tb-nudge");
+      expect(nudge.map(({ on, duration, iterations, delay, button }) => ({ on, duration, iterations, delay, button }))).toEqual([
+        { on: "paytm-down-here-arrow", duration: 1200, iterations: 3, delay: 260, button: false },
+      ]);
+    });
     expect(await loops(page), "the EDC screen").toContain("tb-card-tilt");
     // Figma Credit card 1: 3.12 s, −12° (about the bottom-left corner), held, back.
     expect(await loopAngles(page, "tb-card-tilt", [0.1, 0.4, 0.8])).toEqual({ period: 3120, angles: [0, 348, 0] });
+
+    // The one reduce read on a motion-v2 surface: the EDC screen at rest, at once.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expectReduced(page);
   });
 
   test("M9 REDUCED MOTION: every animation ends in ≤ 1 ms and every transition in 0 s, at once, in one pass (/second, menu, the spring, the bag); no from-frame flashes (the spring, a selection, the carousel start at rest); a held button never squeezes; the spring card rests centred; a rail tap scrolls in the same frame", async ({

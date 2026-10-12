@@ -233,6 +233,7 @@
   --tb-dur-hourglass: 3960ms; /* Figma 1:6301 GIF loop */
   --tb-dur-reveal: 200ms;
   --tb-reveal-delay: 300ms; /* a wait under it never shows a loader (NN/g: < 1 s needs none) */
+  --tb-dur-nudge: 1200ms;
   --tb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --tb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --tb-ease-press: cubic-bezier(0.2, 0, 0.38, 0.9);
@@ -243,6 +244,7 @@
   --tb-dist-modal: 40px;
   --tb-dist-sheet: 80px;
   --tb-dist-shake: 6px;
+  --tb-dist-nudge: 12px;
   --tb-carousel-step: 792px; /* SplashMedia card pitch 992 − 200 */
   --tb-press-scale: 0.97;
   --tb-select-from: 0.94;
@@ -391,6 +393,12 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
   .tb-reveal-late {
     animation: tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) var(--tb-reveal-delay) backwards;
   }
+  /* The EDC screen points at the card machine (motion-v2 MV6): three nudges
+   * toward the bottom-right after the page entrance, over by 3.86 s — a
+   * finite run, not a loop. Only on a decorative image, never a target. */
+  .tb-nudge {
+    animation: tb-nudge var(--tb-dur-nudge) ease-in-out var(--tb-dur-page) 3;
+  }
   /* Infinite loops: never a transform loop on/around a tap target. */
   .tb-attract {
     animation: tb-attract var(--tb-dur-attract) ease-in-out infinite;
@@ -447,6 +455,9 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
 }
 @keyframes tb-carousel-in {
   from { transform: translateX(var(--tb-carousel-step)); }
+}
+@keyframes tb-nudge {
+  50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }
 }
 @keyframes tb-attract {
   50% { opacity: 0.65; }
@@ -509,6 +520,7 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
     --tb-pop-from: 1;
     --tb-chip-from: 1;
     --tb-pulse-from: 1;
+    --tb-dist-nudge: 0px;
   }
   *,
   ::before,

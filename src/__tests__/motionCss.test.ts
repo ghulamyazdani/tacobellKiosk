@@ -391,4 +391,18 @@ describe("lane motion-v2", () => {
     expect(TOKENS).toMatchObject({ "--tb-dur-reveal": "200ms", "--tb-reveal-delay": "300ms" });
     expect(keyframes("tb-fade-in")).toMatch(/from \{ opacity: 0; \}/);
   });
+
+  // The EDC screen points at the card machine (bottom-right): three 1.2 s nudges after the page entrance,
+  // done by 3.86 s — a finite run, not a loop (WCAG 2.2.2 needs none under 5 s). Reduce zeroes the distance.
+  it("MV6: tb-nudge moves only by the distance token, three runs after the page entrance; reduce zeroes it", () => {
+    expect(keyframes("tb-nudge").trim()).toBe(
+      "50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }"
+    );
+    expect(rule(".tb-nudge")).toEqual({
+      depth: 1,
+      decl: { animation: "tb-nudge var(--tb-dur-nudge) ease-in-out var(--tb-dur-page) 3" },
+    });
+    expect(TOKENS).toMatchObject({ "--tb-dur-nudge": "1200ms", "--tb-dist-nudge": "12px", "--tb-dur-page": "260ms" });
+    expect(REDUCE_ROOT["--tb-dist-nudge"]).toBe("0px");
+  });
 });
