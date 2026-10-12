@@ -396,6 +396,30 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
       expect(JSON.stringify(executeEvent.mock.calls[0][0].data)).toContain("+971");
     });
 
+    it("the chip shows the selected country's round flag before the dial code, follows a pick, and stays named by its label", async () => {
+      seedDeployment();
+      renderModal();
+      const chip = () => screen.getByTestId("loyalty-country-code");
+      const flag = () => chip().firstElementChild as HTMLElement;
+
+      expect(flag()).toHaveAttribute("aria-hidden", "true");
+      expect(flag()).toHaveClass("rounded-full");
+      expect(flag().querySelector("img")).toHaveAttribute("src", "/flags/in.png");
+      expect(flag().querySelector("img")).toHaveAttribute("alt", "");
+      expect(flag().nextElementSibling).toHaveTextContent("+91");
+
+      await userEvent.click(chip());
+      const sheet = await screen.findByTestId("country-sheet");
+      const keyboard = within(within(sheet).getByTestId("kiosk-keyboard"));
+      for (const key of "emir") {
+        await userEvent.click(keyboard.getByRole("button", { name: key }));
+      }
+      await userEvent.click(within(sheet).getByTestId("country-AE"));
+
+      expect(flag().querySelector("img")).toHaveAttribute("src", "/flags/ae.png");
+      expect(chip()).toHaveAccessibleName(i18n.t("phone.changeCountry", { dialCode: "+971" }));
+    });
+
     it("the scrim closes the picker and keeps +91", async () => {
       seedDeployment();
       renderModal();

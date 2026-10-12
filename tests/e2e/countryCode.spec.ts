@@ -145,7 +145,7 @@ test.describe("UB5: the country-code picker", () => {
     await pill(page).click();
     await expect(sheet(page)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("dialog", { name: enLazy.country.title })).toBeVisible();
-    // India leads (selected), then A→Z; no flags.
+    // India leads (selected), then A→Z (the flags: countryFlags.spec).
     const rows = countryRows(page);
     await expect(rows.first()).toHaveAttribute("data-testid", "country-IN");
     await expect(rows.first()).toHaveAttribute("aria-pressed", "true");
@@ -370,27 +370,25 @@ test.describe("UB5: the country-code picker", () => {
     await expect(first).toContainText("+91");
     await capture(page, "country-03-sheet-ar");
 
-    // Fixer UI-3 (P9f S2): one-line Arabic names keep the list's left edge
-    // (they hugged the dial code, ~730 px right of it), and the search box's
-    // Arabic placeholder starts at the box's content edge.
+    // Fixer UI-3 (P9f S2): one-line Arabic names keep the name slot's left
+    // edge, right after the row's flag (they hugged the dial code, ~730 px
+    // right of it), and the search box's Arabic placeholder starts at the
+    // box's content edge.
     const offEdge = await countryRows(page).evaluateAll((buttons) =>
       buttons.slice(0, 12).flatMap((button) => {
         const label = button.querySelector('[dir="auto"]');
-        if (!label) return [`${button.getAttribute("data-testid")}: no name leaf`];
+        const slot = label?.parentElement;
+        if (!label || !slot) return [`${button.getAttribute("data-testid")}: no name leaf`];
         const range = document.createRange();
         range.selectNodeContents(label);
         const textLeft = Math.min(...Array.from(range.getClientRects(), (rect) => rect.left));
-        const style = getComputedStyle(button);
-        const contentLeft =
-          button.getBoundingClientRect().left +
-          parseFloat(style.borderLeftWidth) +
-          parseFloat(style.paddingLeft);
-        return Math.abs(textLeft - contentLeft) <= 2
+        const slotLeft = slot.getBoundingClientRect().left;
+        return Math.abs(textLeft - slotLeft) <= 2
           ? []
-          : [`${button.getAttribute("data-testid")}: text at ${textLeft}, content edge ${contentLeft}`];
+          : [`${button.getAttribute("data-testid")}: text at ${textLeft}, name slot edge ${slotLeft}`];
       })
     );
-    expect.soft(offEdge, "Arabic country names off the list's left edge").toEqual([]);
+    expect.soft(offEdge, "Arabic country names off their slot's left edge").toEqual([]);
     const placeholderOffset = await sheet(page)
       .getByTestId("country-search")
       .evaluate((box) => {

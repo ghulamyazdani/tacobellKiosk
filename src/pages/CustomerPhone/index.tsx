@@ -26,6 +26,7 @@ import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import CountryPicker from "../../components/phone/CountryPicker";
+import CountryFlag from "../../components/phone/CountryFlag";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import chevronUp from "../../assets/icons/chevron-up.svg";
@@ -104,7 +105,9 @@ const maskExceptLast = (input: string) =>
  * language, sign-off). A pick drives the digit limits, the keypad cap and the
  * Xeno `country_code`; the typed digits stay (fork parity). It lasts one
  * guest (the session reset restores IN/+91). The keypad ignores a leading
- * "0" (a trunk prefix, fork parity).
+ * "0" (a trunk prefix, fork parity). The pill shows the selected country's
+ * round flag beside the dial code, as restroGo's phone field does (60 px —
+ * restroGo's size; user request 2026-10-12).
  *
  * No Figma frame exists for this screen — TB design language (KioskStage
  * absolute px, tb-* tokens, FooterBar); flagged for client sign-off.
@@ -452,6 +455,9 @@ export default function CustomerPhone() {
           onClick={openCountryPicker}
           className="flex h-[100px] min-w-[140px] items-center justify-center gap-[8px] rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[20px] text-[32px] font-medium text-black"
         >
+          {selectedCountryCode?.code && (
+            <CountryFlag code={selectedCountryCode.code} className="h-[60px] w-[60px]" />
+          )}
           <span dir="ltr">{dialCode}</span>
           {/* chevron-up.svg is white (the footer's) — painted purple through
               a mask and turned 180° to point down. */}

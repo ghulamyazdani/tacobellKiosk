@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
@@ -16,6 +18,9 @@ import i18n from "../../../i18n";
   write nothing. The host (CountryPicker) and the pill's "clicked" event are
   CustomerPhone / LoyaltyLoginModal / CountryPicker suites'.
 */
+
+/** The self-hosted flags (CountryFlag's URL convention). */
+const FLAGS = join(import.meta.dirname, "../../../../public/flags");
 
 const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
 
@@ -80,8 +85,55 @@ describe("CountryPickerSheet (UB5)", () => {
     );
     expect(screen.getByTestId("country-sheet-close")).toHaveAccessibleName(i18n.t("language.close"));
     expect(screen.getByTestId("country-sheet-scrim")).toHaveAccessibleName(i18n.t("language.close"));
-    // No flags: no image per row (a runtime flag CDN breaks offline).
-    expect(within(screen.getByTestId("country-IN")).queryAllByRole("img")).toHaveLength(0);
+  });
+
+  it("every row leads with a decorative round flag, self-hosted at /flags/<code>.png, before the name", () => {
+    mount();
+
+    for (const row of rows()) {
+      const code = (row.dataset.testid ?? "").replace("country-", "");
+      const flag = row.firstElementChild as HTMLElement;
+      expect(flag, code).toHaveAttribute("aria-hidden", "true");
+      expect(flag, code).toHaveClass("rounded-full", "overflow-hidden");
+      expect(flag.querySelector("img"), code).toHaveAttribute("src", `/flags/${code.toLowerCase()}.png`);
+      expect(flag.querySelector("img"), code).toHaveAttribute("alt", "");
+      // The name slot follows the flag.
+      expect(flag.nextElementSibling, code).toContainElement(row.querySelector('[dir="auto"]'));
+    }
+    // Decorative: no image in the accessibility tree, and the row is still
+    // named by its country and dial code alone.
+    const india = screen.getByTestId("country-IN");
+    expect(within(india).queryAllByRole("img")).toHaveLength(0);
+    expect(india).toHaveAccessibleName(/^India\s?\+91$/);
+  });
+
+  it("every row's flag file ships in public/flags as a PNG — AN too (flagcdn's Curaçao: Intl names the row Curaçao)", () => {
+    mount();
+
+    const missing = rows().flatMap((row) => {
+      const code = (row.dataset.testid ?? "").replace("country-", "").toLowerCase();
+      const file = join(FLAGS, `${code}.png`);
+      return existsSync(file) && readFileSync(file).subarray(1, 4).toString("ascii") === "PNG" ? [] : [code];
+    });
+    expect(rows()).toHaveLength(239);
+    expect(missing).toEqual([]);
+    expect(screen.getByTestId("country-AN")).toHaveAccessibleName(/^Curaçao\s?\+599$/);
+  });
+
+  it("a flag that fails to load shows the country code in the same circle — never a broken image — and the row's name is unchanged", () => {
+    mount();
+    const row = screen.getByTestId("country-AE");
+
+    fireEvent.error(row.querySelector("img") as HTMLImageElement);
+
+    const flag = row.firstElementChild as HTMLElement;
+    expect(flag.querySelector("img")).toBeNull();
+    expect(flag).toHaveTextContent(/^AE$/);
+    expect(flag).toHaveAttribute("aria-hidden", "true");
+    expect(flag).toHaveClass("rounded-full");
+    expect(row).toHaveAccessibleName(/^United Arab Emirates\s?\+971$/);
+    // Only that row: its neighbours keep their images.
+    expect(screen.getByTestId("country-IN").querySelector("img")).toHaveAttribute("src", "/flags/in.png");
   });
 
   it("motion: the panel rises (tb-sheet-enter) over a still scrim; only the picked row's check pops in (D-M3, §3.2)", () => {
@@ -98,7 +150,10 @@ describe("CountryPickerSheet (UB5)", () => {
     expect(panel).toContainElement(screen.getByTestId("country-list"));
     expect(sheet.querySelector("style")).toBeNull();
 
-    expect([...sheet.querySelectorAll(".tb-pop-in")]).toEqual([screen.getByTestId("country-AE").querySelector("img")]);
+    // The check is the row's last child (its flag leads the row).
+    expect([...sheet.querySelectorAll(".tb-pop-in")]).toEqual([
+      screen.getByTestId("country-AE").lastElementChild?.querySelector("img"),
+    ]);
     expect(screen.getByTestId("country-AE")).not.toHaveClass("tb-select"); // a full-width row only pops its check
   });
 

@@ -287,6 +287,39 @@ describe("CustomerPhone — the country picker (UB5)", () => {
     );
   });
 
+  it("the pill shows the selected country's round flag before the dial code, follows a pick, and stays named by its label", async () => {
+    mount();
+    const pill = () => screen.getByTestId("phone-country-code");
+    const flag = () => pill().firstElementChild as HTMLElement;
+
+    expect(flag()).toHaveAttribute("aria-hidden", "true");
+    expect(flag()).toHaveClass("rounded-full");
+    expect(flag().querySelector("img")).toHaveAttribute("src", "/flags/in.png");
+    expect(flag().querySelector("img")).toHaveAttribute("alt", "");
+    expect(flag().nextElementSibling).toHaveTextContent("+91");
+
+    await pickUae();
+
+    expect(flag().querySelector("img")).toHaveAttribute("src", "/flags/ae.png");
+    expect(pill()).toHaveAccessibleName(i18n.t("phone.changeCountry", { dialCode: "+971" }));
+  });
+
+  it("a flag that failed shows its code; the next pick tries its own flag again", async () => {
+    mount();
+    const flag = () => screen.getByTestId("phone-country-code").firstElementChild as HTMLElement;
+
+    fireEvent.error(flag().querySelector("img") as HTMLImageElement);
+    expect(flag().querySelector("img")).toBeNull();
+    expect(flag()).toHaveTextContent(/^IN$/);
+    expect(screen.getByTestId("phone-country-code")).toHaveAccessibleName(
+      i18n.t("phone.changeCountry", { dialCode: "+91" })
+    );
+
+    await pickUae();
+
+    expect(flag().querySelector("img")).toHaveAttribute("src", "/flags/ae.png");
+  });
+
   it("the keypad caps at the UAE's 9 digits and 8 digits get the exact-length error", async () => {
     mount();
     await pickUae();

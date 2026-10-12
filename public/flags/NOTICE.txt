@@ -1,0 +1,24 @@
+Country flags: public/flags/<ISO 3166-1 alpha-2 code, lower case>.png
+
+Source   https://flagcdn.com/w160/<code>.png. flagcdn.com is a free flag
+         service by Flagpedia.net, "based on vector files from Wikipedia
+         Commons" (flagcdn.com, read 2026-10-12). It is the same artwork
+         restroGo loads at runtime.
+Fetched  2026-10-12, unmodified: PNG, 160 px wide, height per the flag's own
+         ratio, 239 files, 206,903 bytes: every code the country picker
+         offers (the SDK table's 239 rows). an.png is flagcdn's cw.png:
+         flagcdn has no AN (Netherlands Antilles, a retired code) and the
+         picker names that row Curaçao (Intl maps AN to CW).
+Licence  NOT VERIFIED (client / legal sign-off). flagcdn.com states no
+         licence for its files; its footer reads "© 2008 - 2024
+         Flagpedia.net, All Rights Reserved." It offers them "to keep flags
+         in your projects up-to-date" and says "we appreciate backlink to
+         https://flagpedia.net". That national flag designs are public domain
+         is an assumption here, not a checked fact. Confirm against
+         Flagpedia's Terms of Use (not read) before release.
+Used by  src/components/phone/CountryFlag.tsx, by URL convention (no import
+         map in JS). The service worker precaches them (vite.config.ts
+         globPatterns *.png), so every flag works offline. A flag that fails
+         to load shows its code in the circle.
+Refresh  Download the same URL for each code (cw for an) and keep the file
+         names.
