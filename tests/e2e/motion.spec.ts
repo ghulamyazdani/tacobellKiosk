@@ -1,6 +1,7 @@
 import {
   CHEESE_BURGER,
   DINE_IN,
+  DREAM_BOX,
   EXTRA_PICKLES,
   GREEK_SALAD,
   LARGE_FRIES,
@@ -31,7 +32,7 @@ import { payAtCounter } from "./pages/checkout";
 import { addOneTap, openBag, typeDigits } from "./pages/order";
 
 /**
- * Lane motion — the motion contract's §5.3 cases (M0–M13), the ONE place real motion is proven: the
+ * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M16), the ONE place real motion is proven: the
  * functional suite runs under `reducedMotion: "reduce"` (playwright.config, D-M5), this file under
  * "no-preference" (M9 switches to reduce itself).
  *
@@ -999,6 +1000,18 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await startToSecond(page);
     await expect(page.getByTestId("second-screen")).toHaveAttribute("data-enter", "fwd");
     await expectReduced(page);
+    // motion-v2 MV8a: the /second card takes the house squeeze, which reduce turns off (its own 0.98 never did).
+    const card = page.getByTestId("pipeline-p1");
+    await hold(page, card);
+    expect(await pressed(card), "the /second card: no squeeze under reduce").toEqual({
+      active: true,
+      scale: "1",
+      squeezing: false,
+    });
+    const title = await page.getByTestId("second-screen").locator("h1").boundingBox();
+    if (!title) throw new Error("no /second title");
+    await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2); // released off the card: no tap
+    await page.mouse.up();
     await pickPipelineToMenu(page);
     await expectReduced(page);
 
@@ -1219,5 +1232,55 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await panel.locator(":scope > button").click(); // the ✕ — tappable at opacity 0
     await expect(language).toHaveCount(0);
     await rate(1);
+  });
+
+  test("M16 CONFORMANCE (motion-v2 MV8): the /second card squeezes to the house .97 and a mouse hold 3 px inside its top edge still lands; the idle START AGAIN fill slides (transform, never width); tier-2 enters like a page with no inline <style> or animation", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.clock.install(); // the idle prompt is a fast-forward, never a wait
+    await mockBackend(page);
+    await registerToStart(page);
+    await startToSecond(page);
+    await settle(page);
+
+    // (a) The house squeeze, not a 0.98 of its own; tb-press-hit keeps the squeezed card's hit area whole.
+    const card = page.getByTestId("pipeline-p1");
+    await hold(page, card, 3);
+    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).scale)).toBe("0.97");
+    await expect
+      .poll(() => card.evaluate((el) => el.getAnimations({ subtree: true }).length), { message: "the squeeze settled" })
+      .toBe(0);
+    await page.mouse.up(); // released where it was pressed: outside the squeezed box, inside its hit area
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+
+    // (e) The idle prompt's START AGAIN fill slides: a composited transform, never a width (a relayout per tick).
+    await page.clock.fastForward(PROMPT_AFTER_MS);
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    const fill = page.getByTestId("idle-start-again").locator('[aria-hidden="true"]');
+    expect(await fill.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe(
+      "transform, translate, scale, rotate"
+    );
+    await page.getByTestId("idle-continue").click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+    // (c) Tier-2 enters like a pushed page (its scroll body from the right) — the house class, nothing inline.
+    const box = page.getByTestId(`item-${DREAM_BOX}`);
+    await box.scrollIntoViewIfNeeded();
+    await box.click();
+    await expect(page.getByTestId("pack-slot-grid")).toBeVisible();
+    await settle(page);
+    await arrives(page, await slowMotion(page), "tier2-sheet", 1, () =>
+      page.getByTestId(`pack-slot-customize-${DREAM_BOX}_2_combo`).click()
+    );
+    const tier2 = page.getByTestId("tier2-sheet");
+    await expect(tier2.locator("style")).toHaveCount(0);
+    expect(
+      await tier2.evaluate((root) => [
+        root.getAttribute("style"),
+        [...root.querySelectorAll<HTMLElement>("[style]")].filter((el) => el.style.animation !== "").length,
+      ]),
+      "no inline style on the page, no inline animation inside it"
+    ).toEqual([null, 0]);
   });
 });

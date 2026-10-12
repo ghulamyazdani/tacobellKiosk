@@ -18,9 +18,12 @@ interface IdleTimeoutModalProps {
  * teardown; this never touches Redux or the router.
  *
  * - The frame has NO digits. Its only countdown cue is START AGAIN in the
- *   CTA "Loading" state — a lilac fill growing from the leading edge as the
- *   window runs out. Built as a positioned span on logical `start-0`, not
- *   the frame's gradient, so it mirrors under RTL and can transition.
+ *   CTA "Loading" state — a lilac fill growing from the left edge as the
+ *   window runs out. Built as a full-size span that SLIDES in (translateX)
+ *   inside the clipping button, not the frame's gradient, so it can
+ *   transition on the compositor (motion-v2 MV8e: an animated width
+ *   relaid out the button every tick). LTR in Arabic too ("RTL text, LTR
+ *   layout").
  * - Screen readers get the countdown as one sentence in the dialog's
  *   description, with the opening value only — a per-second announcement
  *   is noise.
@@ -94,8 +97,8 @@ export default function IdleTimeoutModal({
             {/* 4 Hz updates; the linear transition smooths between ticks. */}
             <span
               aria-hidden
-              className="absolute inset-y-0 start-0 bg-tb-lilac transition-[width] duration-250 ease-linear"
-              style={{ width: `${fillPercent}%` }}
+              className="absolute inset-0 bg-tb-lilac transition-transform duration-250 ease-linear"
+              style={{ transform: `translateX(${fillPercent - 100}%)` }}
             />
             <span className="relative">{t("idle.startAgain")}</span>
           </button>

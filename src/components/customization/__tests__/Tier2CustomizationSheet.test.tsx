@@ -503,6 +503,26 @@ describe("Tier2CustomizationSheet — the full-screen CUSTOMIZE page (item 42)",
     expect(discard).toHaveClass("absolute", "inset-0", "z-[70]");
     expect(discard.parentElement).toBe(screen.getByTestId("tier2-sheet"));
   });
+
+  // motion-v2 MV8c: the page enters like a pushed page (its scroll body from
+  // the right, under a static data-enter) and the confirm card rises — the
+  // house classes, which reduced motion owns (the old inline dialog keyframes
+  // painted a 24 px offset frame under reduce).
+  it("enters like a page: a static data-enter root, the scroll body tb-enter, the confirm card tb-rise — no <style>, no inline animation", async () => {
+    seedOpenTier2();
+    const { container } = renderSheet();
+    const page = screen.getByTestId("tier2-sheet");
+    expect(page).toHaveAttribute("data-enter", "fwd");
+    expect(page).not.toHaveAttribute("style");
+    expect([...page.querySelectorAll(".tb-enter")]).toEqual([scroller()]);
+
+    await userEvent.click(screen.getByTestId("tier2-option-ice"));
+    await userEvent.click(screen.getByTestId("tier2-sheet-close"));
+    const card = screen.getByRole("alertdialog").lastElementChild; // the card above its scrim
+    expect(card).toHaveClass("tb-rise", "bg-tb-surface");
+    expect(card).not.toHaveAttribute("style");
+    expect(container.querySelector("style")).toBeNull();
+  });
 });
 
 /*

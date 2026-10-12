@@ -78,6 +78,17 @@ describe("SecondLayout (order type — Figma 1:2581)", () => {
     expect(state.auth.tab_id).toBe("t2");
   });
 
+  // motion-v2 MV8a: the house .97 squeeze (off under reduced motion), not a
+  // 0.98 of its own; tb-press-hit keeps the squeezing card's hit area whole.
+  it("every card takes the house press: tb-press-hit on a positioned card, no active:scale- of its own", () => {
+    renderSecond();
+    for (const id of ["pipeline-p-dine", "pipeline-p-take"]) {
+      const card = screen.getByTestId(id);
+      expect(card).toHaveClass("tb-press-hit", "relative");
+      expect(card.className).not.toMatch(/active:scale-/);
+    }
+  });
+
   it("a CLOSED pipeline is disabled and cannot be selected", async () => {
     store.dispatch(
       setPipelineStatuses({

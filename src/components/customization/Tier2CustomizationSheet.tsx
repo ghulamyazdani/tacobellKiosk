@@ -627,10 +627,7 @@ export default function Tier2CustomizationSheet() {
       className="absolute inset-0 z-[70] flex items-center justify-center"
     >
       <div className="absolute inset-0 bg-tb-ink-purple/60" />
-      <div
-        className="relative w-[640px] rounded-[16px] bg-tb-surface p-[40px] text-center"
-        style={{ animation: "tbTier2DialogEnter 0.2s ease-out both" }}
-      >
+      <div className="tb-rise relative w-[640px] rounded-[16px] bg-tb-surface p-[40px] text-center">
         <h3
           id={`${testIdPrefix}-title`}
           className="tb-display text-[30px] uppercase tracking-[-1px] text-tb-purple"
@@ -668,21 +665,20 @@ export default function Tier2CustomizationSheet() {
 
   return (
     // The full-screen CUSTOMIZE page (D4; 1:2984 / 1:5051 family) over the
-    // whole PDP root, its footer strip included (as 1:5051). Opacity-only
-    // entrance: a transform here would fight nothing today, but the page
-    // needs none (one transform owner per element).
+    // whole PDP root, its footer strip included (as 1:5051). It enters like a
+    // pushed page (motion-v2 MV8c; the OfferTierHost pattern): every open
+    // mounts afresh, so a static "fwd" slides the scroll body in from the
+    // right (house tb-enter) while the page and its CTA bar stay still.
     <div
       data-testid="tier2-sheet"
+      data-enter="fwd"
       className="absolute inset-0 z-[60] flex flex-col bg-tb-surface"
-      style={{ animation: "tbTier2PageEnter 0.2s ease-out both" }}
     >
-      <style>{`@keyframes tbTier2PageEnter{from{opacity:0}to{opacity:1}}@keyframes tbTier2DialogEnter{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}`}</style>
-
       {/* The hook's error AutoScroll targets this id. */}
       <div
         ref={pageScrollRef}
         id="scrollCustomizableItem2"
-        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="tb-enter min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {/* Hero/Customize (1:4924): CUSTOMIZE at y 48, the 328×202 image
             centred at y 207, name + price | cal centred at y 380. */}

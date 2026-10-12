@@ -287,6 +287,9 @@ export default function SecondLayout() {
               return (
                 // Staggered after the title (--i = index + 1, capped at 7 in
                 // CSS); the backwards fill keeps a closed card's opacity-50.
+                // The house .97 press (off under reduced motion); the 416 px
+                // card squeezes itself, so tb-press-hit keeps its hit area
+                // whole (motion-v2 MV8a).
                 <button
                   key={pipeline._id}
                   type="button"
@@ -294,8 +297,8 @@ export default function SecondLayout() {
                   disabled={closed}
                   onClick={() => handleSelectPipeline(pipeline)}
                   style={{ "--i": index + 1 } as CSSProperties}
-                  className={`tb-enter relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
-                    closed ? "opacity-50" : "active:scale-[0.98]"
+                  className={`tb-enter tb-press-hit relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
+                    closed ? "opacity-50" : ""
                   }${scrollRow ? " shrink-0" : ""}`}
                 >
                   <img

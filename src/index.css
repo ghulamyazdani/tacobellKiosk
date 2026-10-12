@@ -153,8 +153,9 @@
   animation: tb-modal-enter var(--tb-dur-modal) var(--tb-ease-out) both;
 }
 
-/* Splash carousel slide change (P9d, 1:2203 has no motion data): opacity
- * only — position-neutral, so it is safe on any positioned/translated box. */
+/* Opacity-only fade — position-neutral, so it is safe on any positioned /
+ * translated box: FullscreenGate, NetworkStatus and PleaseWait. (The splash
+ * carousel it was written for shifts on tb-carousel-in since lane motion.) */
 @keyframes tb-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -187,9 +188,10 @@
   animation: tb-confetti-fall 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) var(--d, 0s) forwards;
 }
 /* Arrival pop with a ~3% overshoot (the celebration card, the applied row's
- * "Save £X" line). Scale + opacity only: position-neutral. */
+ * "Save £X" line). Scale + opacity only: position-neutral. The from-scales
+ * are motion tokens (motion-v2 MV8d), the identity under reduced motion. */
 @keyframes tb-chip-pop {
-  from { opacity: 0; transform: scale(0.85); }
+  from { opacity: 0; transform: scale(var(--tb-chip-from)); }
   to { opacity: 1; transform: scale(1); }
 }
 .tb-chip-pop {
@@ -197,7 +199,7 @@
 }
 /* One-shot ring around the applied row's plate; ends at opacity 0. */
 @keyframes tb-success-pulse {
-  0% { opacity: 0; transform: scale(0.92); }
+  0% { opacity: 0; transform: scale(var(--tb-pulse-from)); }
   30% { opacity: 1; }
   100% { opacity: 0; transform: scale(1.12); }
 }
@@ -244,6 +246,8 @@
   --tb-pop-from: 0.6;
   --tb-bump-peak: 1.2;
   --tb-spring-from: 0.4437; /* Figma 301.683 / 680 */
+  --tb-chip-from: 0.85;
+  --tb-pulse-from: 0.92;
 }
 
 /* Press. The squeeze is design language (sign-off); base layer so any
@@ -467,7 +471,7 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
  * state at once (1 ms, fill kept: the centred modals' resting transform
  * lives in their fill — never `animation: none`), loops make one 1 ms pass
  * and rest at their base frame, delays and staggers vanish; !important also
- * beats inline animation styles (DaypartTicker, Registration). Transitions
+ * beats inline animation styles (DaypartTicker). Transitions
  * are 0 s, never 1 ms: transition-property defaults to `all`, so a non-zero
  * duration on `*` would make EVERY property change on EVERY element a
  * one-frame transition (layout reads lag a frame — the ADA switch did).
@@ -491,6 +495,8 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
     --tb-dist-sheet: 0px;
     --tb-dist-modal: 0px;
     --tb-pop-from: 1;
+    --tb-chip-from: 1;
+    --tb-pulse-from: 1;
   }
   *,
   ::before,
