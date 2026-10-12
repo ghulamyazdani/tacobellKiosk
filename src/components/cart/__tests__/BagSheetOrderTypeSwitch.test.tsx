@@ -302,6 +302,11 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       // Motion §3.7: an indeterminate sweep inside its clipping track, not a pulse.
       expect(overlay.querySelector(".tb-indeterminate")?.parentElement).toHaveClass("overflow-hidden");
       expect(overlay.querySelector(".animate-pulse")).toBeNull();
+      // A status overlay, always in place of a dialog (YES / TRY AGAIN), so it shows at once: MV4's late reveal
+      // would drop the dialog's scrim and leave the bag bright, and dead to taps, for 300 ms (motion-v2 review F1).
+      expect(screen.queryByTestId("bag-ordertype-confirm")).not.toBeInTheDocument();
+      expect(overlay).toHaveClass("absolute", "inset-0");
+      expect(overlay).not.toHaveClass("tb-reveal-late");
       expect(lastBlocked()).toBe(true);
 
       await act(async () => {

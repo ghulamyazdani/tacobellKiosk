@@ -200,11 +200,36 @@ describe("SecondLayout — menu-load failure stays on /second (P9b R8)", () => {
     expect(bar?.parentElement).toHaveClass("overflow-hidden");
     expect(screen.getByTestId("menu-fetching").querySelector(".animate-pulse")).toBeNull();
     expect(screen.getByTestId("menu-fetching").closest(".tb-enter")).toBeNull(); // an overlay never arrives
+    // In place of the dialog it shows at once: MV4's late reveal would drop the dialog's 80 % scrim and leave
+    // /second bright, and dead to taps, for 300 ms (motion-v2 review F1).
+    expect(screen.getByTestId("menu-fetching")).toHaveClass("absolute", "inset-0");
+    expect(screen.getByTestId("menu-fetching")).not.toHaveClass("tb-reveal-late");
 
     await act(async () => {
       answer(LOADED_MENU);
     });
     expect(screen.queryByTestId("menu-fetching")).not.toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith("/menu");
+  });
+
+  // motion-v2 MV4: over the cards (no dialog) the layer reveals late — a fast fetch never flashes it — and it
+  // blocks taps from its first frame.
+  it("a card tap's fetch reveals its layer late", async () => {
+    mount();
+    let answer!: (menu: unknown) => void;
+    mockFetchMenu.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    act(() => {
+      fireEvent.click(screen.getByTestId("pipeline-p-take"));
+    });
+    expect(screen.getByTestId("menu-fetching")).toHaveClass("tb-reveal-late", "absolute", "inset-0");
+
+    await act(async () => {
+      answer(LOADED_MENU);
+    });
     expect(mockNavigate).toHaveBeenCalledWith("/menu");
   });
 

@@ -104,6 +104,31 @@ describe("EditHowManyModal — value, keys, exits, layout (item 20)", () => {
     expect(value()).toBe("0");
   });
 
+  // motion-v2 MV7 (count parity with BagItemRow): the value re-keys per change, so CSS replays its bump.
+  it("each change swaps in a NEW value node carrying tb-bump; a press that changes nothing keeps the node", () => {
+    const { value, key } = setup(3);
+    const node = () => screen.getByTestId("edit-how-many-value");
+    const zero = node();
+    expect(zero).toHaveClass("tb-bump");
+
+    fireEvent.click(screen.getByTestId("edit-how-many-decrease")); // already 0
+    expect(node()).toBe(zero);
+
+    fireEvent.click(screen.getByTestId("edit-how-many-increase"));
+    expect(value()).toBe("1");
+    const one = node();
+    expect(one).not.toBe(zero);
+    expect(one).toHaveClass("tb-bump");
+
+    fireEvent.click(screen.getByTestId("numpad-clear")); // the numpad too
+    expect(value()).toBe("0");
+    const cleared = node();
+    expect(cleared).not.toBe(one);
+    key("2");
+    expect(value()).toBe("2");
+    expect(node()).not.toBe(cleared);
+  });
+
   it("numpad (N = 12): a key that would pass N is ignored; digits never exceed N's length", () => {
     const { value, key } = setup(12);
     key("5");

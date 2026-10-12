@@ -24,7 +24,10 @@ describe("NetworkStatusOverlay (P9f — pure-CSS motion)", () => {
 
     goOffline();
     const overlay = screen.getByTestId("network-offline");
-    expect(overlay).toHaveClass("tb-fade-in");
+    expect(overlay).toHaveClass("tb-fade-in", "bg-tb-purple/95");
+    // motion-v2 MV10: no full-screen backdrop blur — invisible under the 95 % layer, the
+    // costliest compositor effect there is.
+    expect(overlay.className).not.toMatch(/backdrop-blur/);
     expect(overlay.parentElement).toBe(document.body);
     expect(overlay).toHaveTextContent(i18n.t("network.title"));
 

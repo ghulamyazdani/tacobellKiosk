@@ -93,9 +93,12 @@ export default function EditHowManyModal({
               >
                 <img alt="" src={minusIcon} className="h-[36px] w-[36px]" />
               </button>
+              {/* Re-keyed per value: each change replays the bump (motion-v2
+                  MV7, the BagItemRow count pattern). */}
               <p
+                key={value}
                 data-testid="edit-how-many-value"
-                className="min-w-[26px] text-center text-[30px] font-black leading-[24px] text-black"
+                className="tb-bump min-w-[26px] text-center text-[30px] font-black leading-[24px] text-black"
               >
                 {value}
               </p>

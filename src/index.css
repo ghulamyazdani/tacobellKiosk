@@ -9,6 +9,13 @@
  * e2e pages. A class written only outside the app's src is never generated.
  * Guarded by tests/e2e/harness.spec.ts "DEV-SERVER RELOAD (source)". */
 
+/* MV1: touch-down press. Chromium applies :active to a touch only at
+ * GestureShowPress (~150 ms held; on a quick tap just after the click), so
+ * src/utils/pressFeedback.ts mirrors a touch press as [data-pressed] at
+ * touch-down (after 90 ms where a pan can start). Every active: /
+ * group-active: utility answers both; the .97 squeeze stays on :active. */
+@custom-variant active (&:is(:active, [data-pressed]));
+
 /*
  * Type: the Figma file uses GT America (commercial, Grilli Type; the design
  * file itself uses the TRIAL cut). GT America stays the licensed target —
@@ -164,8 +171,10 @@
   animation: tb-modal-enter var(--tb-dur-modal) var(--tb-ease-out) both;
 }
 
-/* Splash carousel slide change (P9d, 1:2203 has no motion data): opacity
- * only — position-neutral, so it is safe on any positioned/translated box. */
+/* Opacity-only fade — position-neutral, so it is safe on any positioned /
+ * translated box: FullscreenGate, NetworkStatus and .tb-reveal-late (the
+ * full-screen status overlays). (The splash carousel it was written for
+ * shifts on tb-carousel-in since lane motion.) */
 @keyframes tb-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -198,9 +207,10 @@
   animation: tb-confetti-fall 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) var(--d, 0s) forwards;
 }
 /* Arrival pop with a ~3% overshoot (the celebration card, the applied row's
- * "Save £X" line). Scale + opacity only: position-neutral. */
+ * "Save £X" line). Scale + opacity only: position-neutral. The from-scales
+ * are motion tokens (motion-v2 MV8d), the identity under reduced motion. */
 @keyframes tb-chip-pop {
-  from { opacity: 0; transform: scale(0.85); }
+  from { opacity: 0; transform: scale(var(--tb-chip-from)); }
   to { opacity: 1; transform: scale(1); }
 }
 .tb-chip-pop {
@@ -208,7 +218,7 @@
 }
 /* One-shot ring around the applied row's plate; ends at opacity 0. */
 @keyframes tb-success-pulse {
-  0% { opacity: 0; transform: scale(0.92); }
+  0% { opacity: 0; transform: scale(var(--tb-pulse-from)); }
   30% { opacity: 1; }
   100% { opacity: 0; transform: scale(1.12); }
 }
@@ -239,6 +249,9 @@
   --tb-dur-attract: 2000ms;
   --tb-dur-card-tilt: 3120ms; /* Figma 1:5603 GIF loop */
   --tb-dur-hourglass: 3960ms; /* Figma 1:6301 GIF loop */
+  --tb-dur-reveal: 200ms;
+  --tb-reveal-delay: 300ms; /* a wait under it never shows a loader (NN/g: < 1 s needs none) */
+  --tb-dur-nudge: 1200ms;
   --tb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --tb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --tb-ease-press: cubic-bezier(0.2, 0, 0.38, 0.9);
@@ -249,12 +262,15 @@
   --tb-dist-modal: 40px;
   --tb-dist-sheet: 80px;
   --tb-dist-shake: 6px;
+  --tb-dist-nudge: 12px;
   --tb-carousel-step: 792px; /* SplashMedia card pitch 992 − 200 */
   --tb-press-scale: 0.97;
   --tb-select-from: 0.94;
   --tb-pop-from: 0.6;
   --tb-bump-peak: 1.2;
   --tb-spring-from: 0.4437; /* Figma 301.683 / 680 */
+  --tb-chip-from: 0.85;
+  --tb-pulse-from: 0.92;
 }
 
 /* Press. The squeeze is design language (sign-off); base layer so any
@@ -280,14 +296,15 @@
  * purple texture through and its purple label would vanish — it takes the
  * lilac white-button press instead. A .tb-no-press full-surface button (the
  * splash, the ADA brand panel: bg-tb-purple under their media) takes no
- * fill either — a whole screen never flashes vibrant while held. */
-button.border-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+ * fill either — a whole screen never flashes vibrant while held. The fills
+ * answer the touch-down [data-pressed] too (MV1, top of file). */
+button.border-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: rgb(255 255 255 / 0.15);
 }
-button.bg-tb-purple:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+button.bg-tb-purple:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: var(--color-tb-purple-vibrant);
 }
-button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: var(--color-tb-lilac);
 }
 
@@ -386,6 +403,21 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
   .tb-carousel-in {
     animation: tb-carousel-in var(--tb-dur-carousel) var(--tb-ease-out) backwards;
   }
+  /* A full-screen STATUS overlay (motion-v2 MV4: PleaseWait, the menu fetch)
+   * stays invisible for its first 300 ms, so a fast wait never flashes a
+   * loader; it is mounted, and takes taps, from t = 0. Never a tap-to-close
+   * scrim (those never animate), and never in place of a dialog, whose scrim
+   * unmounts at once: the screen would show bright, and dead to taps, for
+   * those 300 ms (review F1 — the order-type switch never reveals late). */
+  .tb-reveal-late {
+    animation: tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) var(--tb-reveal-delay) backwards;
+  }
+  /* The EDC screen points at the card machine (motion-v2 MV6): three nudges
+   * toward the bottom-right after the page entrance, over by 3.86 s — a
+   * finite run, not a loop. Only on a decorative image, never a target. */
+  .tb-nudge {
+    animation: tb-nudge var(--tb-dur-nudge) ease-in-out var(--tb-dur-page) 3;
+  }
   /* Infinite loops: never a transform loop on/around a tap target. */
   .tb-attract {
     animation: tb-attract var(--tb-dur-attract) ease-in-out infinite;
@@ -443,6 +475,9 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
 @keyframes tb-carousel-in {
   from { transform: translateX(var(--tb-carousel-step)); }
 }
+@keyframes tb-nudge {
+  50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }
+}
 @keyframes tb-attract {
   50% { opacity: 0.65; }
 }
@@ -478,7 +513,7 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
  * state at once (1 ms, fill kept: the centred modals' resting transform
  * lives in their fill — never `animation: none`), loops make one 1 ms pass
  * and rest at their base frame, delays and staggers vanish; !important also
- * beats inline animation styles (DaypartTicker, Registration). Transitions
+ * beats inline animation styles (DaypartTicker). Transitions
  * are 0 s, never 1 ms: transition-property defaults to `all`, so a non-zero
  * duration on `*` would make EVERY property change on EVERY element a
  * one-frame transition (layout reads lag a frame — the ADA switch did).
@@ -502,6 +537,9 @@ button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press)
     --tb-dist-sheet: 0px;
     --tb-dist-modal: 0px;
     --tb-pop-from: 1;
+    --tb-chip-from: 1;
+    --tb-pulse-from: 1;
+    --tb-dist-nudge: 0px;
   }
   *,
   ::before,

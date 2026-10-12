@@ -53,9 +53,11 @@ function PaytmScreenUnavailable() {
  * BEFORE the initiate, so a checkout lands here with the screen in hand;
  * only a session resumed after a reload (here, or via PaytmResumeGuard)
  * loads it here.
- * Until it arrives: PleaseWait ("Setting up your payment") — never a blank
- * screen — with idle HELD: the terminal may be armed, and the screen's own
- * hold takes over once it renders (the staff panel releases it).
+ * Until it arrives: PleaseWait ("Setting up your payment"), revealed after
+ * 300 ms (motion-v2 MV4: a warm chunk never flashes it; until then the bare
+ * purple stage, never a white screen) — with idle HELD: the terminal may be
+ * armed, and the screen's own hold takes over once it renders (the staff
+ * panel releases it).
  *
  * Plain state, not React.lazy + Suspense: Suspense throttles the reveal
  * after a fallback with a 300 ms TIMER — a stalled timer queue would hold a

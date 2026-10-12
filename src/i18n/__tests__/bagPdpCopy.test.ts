@@ -78,6 +78,9 @@ const AUDIT_FIXES_LAZY_KEYS = [
   "country.noResults",
 ];
 
+/** Lane motion-v2 (MV9): the Activity Center's "Animations" row — operator copy, lazy like its modal. */
+const MOTION_V2_LAZY_KEYS = ["activity.animations", "activity.animationsOn", "activity.animationsOff"];
+
 const EN_LAZY = new Map(flatten(enLazy));
 const AR_LAZY = new Map(flatten(arLazy));
 const EN_BOOT = new Map(flatten(en));
@@ -86,8 +89,8 @@ const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
 
 describe("lane bag-pdp copy (I8)", () => {
-  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9), in EN and in AR", () => {
-    const expected = [...LANE_KEYS, ...AUDIT_FIXES_LAZY_KEYS].sort();
+  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9, motion-v2's 3), in EN and in AR", () => {
+    const expected = [...LANE_KEYS, ...AUDIT_FIXES_LAZY_KEYS, ...MOTION_V2_LAZY_KEYS].sort();
     expect([...EN_LAZY.keys()].sort()).toEqual(expected);
     expect([...AR_LAZY.keys()].sort()).toEqual(expected);
   });

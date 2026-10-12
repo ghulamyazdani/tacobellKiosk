@@ -108,9 +108,13 @@ export default function OrderTypeSwitchFlow({
   }
 
   // Switching (or committed, until onDone unmounts the flow). No card: the
-  // status sits on the scrim itself, so the scrim is /second's menu-fetching
-  // 90 % — at 80 % the bag's Medium-weight names read through and ran into
-  // the status line (fonts lane; pinned by visual-bagpdp.spec).
+  // status sits on the layer itself — a full-screen STATUS overlay, not a
+  // tap-to-close scrim — at /second's menu-fetching 90 % (at 80 % the bag's
+  // Medium-weight names read through and ran into the status line; fonts
+  // lane, pinned by visual-bagpdp.spec). Never .tb-reveal-late: it always
+  // replaces a dialog (YES / TRY AGAIN), whose scrim unmounts in the same
+  // commit — a late layer would leave the bag bright, and dead to taps, for
+  // 300 ms (motion-v2 review F1).
   return (
     <div
       data-testid="bag-ordertype-switching"

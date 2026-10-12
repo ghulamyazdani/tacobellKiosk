@@ -66,6 +66,65 @@ describe("Activity Center — loyalty status row (P9b R6)", () => {
 });
 
 /*
+  motion-v2 MV9: the OS can switch every animation off (Windows "Animation
+  effects", Android "Remove animations"), and the kiosk then honours
+  prefers-reduced-motion without a word. The operator's Activity Center says
+  which it is.
+*/
+describe("Activity Center — Animations row (motion-v2 MV9)", () => {
+  const realMatchMedia = window.matchMedia;
+  /** The OS setting: `reduce` answers the reduced-motion query, nothing else changes. */
+  const osReducesMotion = (reduce: boolean) => {
+    window.matchMedia = (query: string) => ({
+      ...realMatchMedia(query),
+      matches: reduce && query === "(prefers-reduced-motion: reduce)",
+    });
+  };
+  /** The value cell next to the "Animations" label. */
+  const animations = () =>
+    within(screen.getByTestId("activity-modal")).getByText(i18n.t("activity.animations")).nextElementSibling;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+  afterEach(async () => {
+    window.matchMedia = realMatchMedia;
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("motion on: 'On', no warning", () => {
+    osReducesMotion(false);
+    mount();
+
+    expect(animations()).toHaveTextContent(/^On$/);
+    expect(animations()).not.toHaveClass("text-amber-600");
+  });
+
+  it("the OS turned motion off: says so, flagged as a warning", () => {
+    osReducesMotion(true);
+    mount();
+
+    expect(animations()).toHaveTextContent("Off — the device's reduce-motion setting");
+    expect(animations()).toHaveClass("text-amber-600");
+  });
+
+  it("Arabic: the label and both states are translated lazy copy", async () => {
+    for (const key of ["animations", "animationsOn", "animationsOff"]) {
+      expect(i18n.getResource("ar", "translation", `activity.${key}`)).toMatch(/\p{Script=Arabic}/u);
+    }
+    osReducesMotion(true);
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    mount();
+
+    expect(animations()).toHaveTextContent(i18n.t("activity.animationsOff"));
+  });
+});
+
+/*
   P9e: the operator's "Reload resources" (a refresh-mode boot — only the
   splash passes it) and a read-only "Data loaded" row: when the last
   SUCCESSFUL boot committed (selectLastBootAt; 0 = never/unknown).

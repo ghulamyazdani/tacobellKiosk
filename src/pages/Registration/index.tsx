@@ -76,10 +76,10 @@ export default function Registration() {
       className="relative flex h-[1920px] w-[1080px] flex-col items-center bg-tb-purple"
     >
       {/* Pure-CSS motion (rAF animations freeze in occluded windows). The
-          banner slides on the `translate` property alone; the submit button
-          shakes on `rotate` and presses on `scale` — separate properties, so
-          they compose instead of fighting over `transform`. */}
-      <style>{`@keyframes tbRegistrationShake{0%,100%{rotate:0deg}20%,60%{rotate:1deg}40%,80%{rotate:-1deg}}`}</style>
+          banner slides on the `translate` property, in AND out over 400 ms
+          (the recorded exception to "closing is instant"). The banner IS the
+          feedback: nothing shakes — the house shakes the faulty content,
+          never the control just tapped (motion-v2 MV8b). */}
       <div
         className={`absolute top-0 z-50 flex w-full items-center justify-center bg-red-600 px-8 py-6 text-2xl font-bold text-white transition-transform duration-[400ms] ${
           error.status ? "translate-y-0" : "-translate-y-[120px]"
@@ -134,12 +134,7 @@ export default function Registration() {
           data-testid="registration-submit"
           onClick={handleActivate}
           disabled={isAuthenticateLoading}
-          className="min-h-[44px] min-w-[44px] rounded-full bg-tb-pink px-14 py-4 text-xl font-black uppercase text-tb-ink-purple transition-transform active:scale-95 disabled:opacity-60"
-          style={
-            error.status
-              ? { animation: "tbRegistrationShake 0.4s ease-in-out" }
-              : undefined
-          }
+          className="min-h-[44px] min-w-[44px] rounded-full bg-tb-pink px-14 py-4 text-xl font-black uppercase text-tb-ink-purple disabled:opacity-60"
         >
           {isAuthenticateLoading
             ? t("registration.activating")

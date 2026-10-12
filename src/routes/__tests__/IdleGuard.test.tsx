@@ -178,13 +178,14 @@ describe("IdleGuard — the in-session idle timeout (P9a)", () => {
       const countdown = i18n.t("idle.countdownA11y", { seconds: 20 });
 
       expect(screen.getByText(countdown)).toBeInTheDocument();
-      expect(fill()?.style.width).toBe("0%");
+      // motion-v2 MV8e: the full-width fill slides in (translateX), never a width.
+      expect(fill()?.style.transform).toBe("translateX(-100%)");
 
       advance(10_000);
-      expect(fill()?.style.width).toBe("50%");
+      expect(fill()?.style.transform).toBe("translateX(-50%)");
 
       advance(5_000);
-      expect(fill()?.style.width).toBe("75%");
+      expect(fill()?.style.transform).toBe("translateX(-25%)");
       // Announced with the opening value only — never ticked.
       expect(screen.getByText(countdown)).toBeInTheDocument();
     });

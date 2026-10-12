@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import bgTexture from "../../assets/splash/bg-texture.png";
@@ -16,8 +17,13 @@ interface PleaseWaitProps {
  * layer (absolute inset-0, z-50: above page content, below ErrorModal z-80)
  * for the Paytm waits: the initiate on /receipt and the settle on
  * /paymentPolling. Pure presentation: no timers, no store writes; the owner
- * mounts and unmounts it. Entrance is the opacity-only tb-fade-in (pure CSS,
- * position-neutral — tb-modal-enter is only for left-1/2 top-1/2 modals).
+ * mounts and unmounts it. Entrance: tb-reveal-late (motion-v2 MV4) — the
+ * opacity-only tb-fade-in after 300 ms, so a fast wait (a warm Paytm chunk,
+ * a quick initiate) never flashes a full-screen loader; the layer blocks
+ * taps from its first frame all the same — unless it replaces a dialog
+ * (below): then it shows at once. Pure CSS, position-neutral
+ * (tb-modal-enter is only for left-1/2 top-1/2 modals). Design language:
+ * the frame shows at once (sign-off).
  *
  * Re-expressed from the frame: tb-purple + the 240 px texture tile (the same
  * bytes as the frame's fill) + the plastic sheen rotated −90° at 50 %,
@@ -37,13 +43,20 @@ export default function PleaseWait({
 }: PleaseWaitProps) {
   const { t } = useTranslation();
   const ada = useAdaActive();
+  // In place of a dialog (TRY AGAIN, YES, CHECK AGAIN) it shows at once: the
+  // dialog's scrim unmounts in the same commit, and a layer still invisible
+  // would leave the screen bright, and dead to taps, for 300 ms (motion-v2
+  // review F1). Read once, at mount — this first render runs before that
+  // commit, so the dialog is still in the document — and kept, so a
+  // re-render never starts the reveal over a layer already on screen.
+  const [late] = useState(() => !document.querySelector('[aria-modal="true"]'));
 
   return (
     <div
       data-testid={testId}
       role="status"
       aria-live="polite"
-      className="tb-fade-in absolute inset-0 z-50 overflow-clip bg-tb-purple"
+      className={`${late ? "tb-reveal-late " : ""}absolute inset-0 z-50 overflow-clip bg-tb-purple`}
     >
       <div
         aria-hidden

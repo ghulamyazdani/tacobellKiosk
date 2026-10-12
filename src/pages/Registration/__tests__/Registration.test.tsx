@@ -55,43 +55,43 @@ describe("Registration (license-code entry)", () => {
   /*
     P9f — pure-CSS motion, and the ACTIVATE contrast fix (decision 2:
     ink-purple on pink is 7.73:1; white was 2.46:1). No Figma frame.
+    motion-v2 MV8b: the banner IS the feedback — nothing shakes (the house
+    shakes the faulty content, never the control just tapped), and ACTIVATE
+    takes the house press (off under reduced motion), not a scale of its own.
   */
-  it("ACTIVATE is ink-purple on pink; an error slides the banner in and shakes the button", async () => {
-    renderPage();
+  it("ACTIVATE is ink-purple on pink; an error slides the banner in; nothing shakes", async () => {
+    const { container } = renderPage();
     const submit = screen.getByTestId("registration-submit");
     const banner = screen.getByTestId("registration-error");
     expect(submit).toHaveClass("bg-tb-pink", "text-tb-ink-purple");
     expect(submit).not.toHaveClass("text-white");
+    expect(submit.className).not.toMatch(/active:scale-/);
     expect(banner).toHaveClass("-translate-y-[120px]");
-    expect(submit.style.animation).toBe("");
+    // It slides in AND out over 400 ms — the recorded exception to "closing is instant".
+    expect(banner).toHaveClass("transition-transform", "duration-[400ms]");
 
     await userEvent.click(submit);
 
     expect(banner).toHaveClass("translate-y-0");
     expect(banner).not.toHaveClass("-translate-y-[120px]");
-    expect(submit.style.animation).toContain("tbRegistrationShake");
-    // …and the name resolves to the page's own @keyframes (else the shake is silently a no-op).
-    const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("");
-    expect(css).toMatch(/@keyframes\s+tbRegistrationShake\s*\{/);
+    expect(submit).not.toHaveAttribute("style");
+    expect(container.querySelector("style")).toBeNull();
   });
 
-  it("the banner slides back out and the shake ends when the error clears (3 s)", () => {
+  it("the banner slides back out when the error clears (3 s)", () => {
     vi.useFakeTimers();
     try {
       renderPage();
-      const submit = screen.getByTestId("registration-submit");
       const banner = screen.getByTestId("registration-error");
 
-      fireEvent.click(submit); // empty code → error
+      fireEvent.click(screen.getByTestId("registration-submit")); // empty code → error
       expect(banner).toHaveClass("translate-y-0");
-      expect(submit.style.animation).toContain("tbRegistrationShake");
 
       act(() => {
         vi.advanceTimersByTime(3000);
       });
       expect(banner).toHaveClass("-translate-y-[120px]");
       expect(banner).not.toHaveClass("translate-y-0");
-      expect(submit.style.animation).toBe("");
     } finally {
       vi.useRealTimers();
     }

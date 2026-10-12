@@ -31,8 +31,9 @@ test.describe("registration + boot (mocked backend)", () => {
     await expect(page.getByTestId("registration-screen")).toBeVisible();
 
     // P9f: the error banner is pure CSS now (no framer-motion). An empty
-    // ACTIVATE slides it down from above the stage and shakes the button;
-    // the banner slides back out by itself 3 s later.
+    // ACTIVATE slides it down from above the stage — the banner is the
+    // feedback, nothing shakes (motion-v2 MV8b) — and it slides back out by
+    // itself 3 s later.
     const banner = page.getByTestId("registration-error");
     const bannerEdges = () =>
       banner.evaluate((el) => {
@@ -44,25 +45,6 @@ test.describe("registration + boot (mocked backend)", () => {
     expect((await bannerEdges()).bottom).toBeLessThanOrEqual(0);
     await page.getByTestId("registration-submit").click();
     await expect(banner).toHaveText("Length of code should be greater than 0");
-    // Same commit as the text, and gone with it after 3 s — check it first.
-    await expect(page.getByTestId("registration-submit")).toHaveAttribute(
-      "style",
-      /tbRegistrationShake/
-    );
-    // …and the keyframes it names exist (a renamed @keyframes = a dead shake).
-    const keyframes = await page.evaluate(() =>
-      [...document.styleSheets]
-        .flatMap((sheet) => {
-          try {
-            return [...sheet.cssRules];
-          } catch {
-            return []; // a cross-origin sheet
-          }
-        })
-        .filter((rule) => rule instanceof CSSKeyframesRule)
-        .map((rule) => (rule as CSSKeyframesRule).name)
-    );
-    expect(keyframes).toContain("tbRegistrationShake");
     await expect.poll(async () => (await bannerEdges()).top).toBe(0);
     await expect.poll(async () => (await bannerEdges()).bottom).toBeLessThanOrEqual(0);
 

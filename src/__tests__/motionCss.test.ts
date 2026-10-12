@@ -6,8 +6,10 @@ import { join } from "node:path";
   Lane motion — static pins on src/index.css's motion block (jsdom has no
   animation engine, so these read the CSS itself, like contrast.test).
   1. Reduced motion (D-M4): a 1 ms animation still PAINTS its from-keyframe
-     once, so every from-state shown at full opacity must be its end state
-     under reduce (the product-added card flashed at 44 %).
+     once, so every non-loop first frame must be its end state under reduce
+     — at full opacity (the product-added card flashed at 44 %) AND at
+     opacity 0, whose offset box is still what a geometry read measures
+     (motion-v2 MV8d).
   2. Figma loops (D-M7, "exactly as specified"): the hourglass (Loader 1,
      1:6301) and the EDC card tilt (Credit card 1, 1:5603) follow their GIFs
      frame by frame. CSS interpolation (per-segment cubic-bezier) is replayed
@@ -22,28 +24,6 @@ const keyframes = (name: string): string => {
   if (!block) throw new Error(`no @keyframes ${name}`);
   return block[1];
 };
-
-describe("reduced motion: no full-opacity from-keyframe flashes (D-M4)", () => {
-  const reduce = CSS.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
-  const root = Object.fromEntries(
-    [...(reduce.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "").matchAll(/(--[\w-]+):\s*([^;]+);/g)].map(
-      ([, name, value]) => [name, value.trim()]
-    )
-  );
-  const visibleFromVars = [...CSS.matchAll(/@keyframes ([\w-]+)\s*\{\s*from\s*\{([^}]*)\}/g)]
-    .filter(([, , from]) => !/opacity:\s*0\s*;/.test(from))
-    .flatMap(([, name, from]) => [...from.matchAll(/var\((--[\w-]+)\)/g)].map(([, v]) => [name, v]));
-
-  it("finds the spring, the selection and the carousel from-states", () => {
-    expect(visibleFromVars.map(([, v]) => v)).toEqual(
-      expect.arrayContaining(["--tb-spring-from", "--tb-select-from", "--tb-carousel-step"])
-    );
-  });
-
-  it.each(visibleFromVars)("%s: %s is the identity under reduce", (_name, variable) => {
-    expect(["1", "0", "0px"]).toContain(root[variable]);
-  });
-});
 
 /** The GIF frames, one per 40 ms (degrees; the hourglass unwrapped). */
 const HOURGLASS =
@@ -147,6 +127,54 @@ const TOKENS = declarations(
   )?.[1] ?? ""
 );
 const REDUCE = block("@media (prefers-reduced-motion: reduce)");
+const REDUCE_ROOT = declarations(REDUCE.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "");
+
+describe("reduced motion: every non-loop first frame is its end state (D-M4; motion-v2 MV8d)", () => {
+  /** Loops rest at their base frame: the keyframes an `infinite` animation here names. */
+  const LOOPS = [...CODE.matchAll(/animation:\s*([\w-]+)[^;]*\binfinite\b/g)].map(([, name]) => name);
+  /** Each non-loop @keyframes' first frame (`from` / `0%`, if written): its transform. */
+  const FIRST = [...CODE.matchAll(/@keyframes ([\w-]+)\s*\{/g)].flatMap((match) => {
+    const head = blockAt(match.index ?? 0).match(/^\s*([^{]+)\{([^}]*)\}/);
+    const at = head?.[1].split(",").map((stop) => stop.trim()) ?? [];
+    if (LOOPS.includes(match[1]) || !head || !(at.includes("from") || at.includes("0%"))) return [];
+    return [{ name: match[1], transform: declarations(head[2]).transform ?? "" }];
+  });
+  /** A var() a rule defines (--tb-enter-x under [data-enter]) resolves to the tokens it is made of. */
+  const tokensOf = (value: string): string[] =>
+    [...value.matchAll(/var\((--[\w-]+)/g)].flatMap(([, name]) => {
+      if (name in TOKENS) return [name];
+      const defined = [...CODE.matchAll(/([^{};]+)\{([^{}]*)\}/g)].flatMap(([, , body]) => declarations(body)[name] ?? []);
+      expect(defined, `${name} is a token or defined by a rule`).not.toEqual([]);
+      return defined.flatMap(tokensOf);
+    });
+
+  it("the loops are the five allow-listed ones; the checked first frames include every entrance", () => {
+    expect([...LOOPS].sort()).toEqual(["tb-attract", "tb-card-tilt", "tb-hourglass", "tb-indeterminate", "tb-marquee"]);
+    expect(FIRST.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "tb-modal-enter", "tb-fade-in", "tb-confetti-fall", "tb-chip-pop", "tb-success-pulse", "tb-enter", "tb-rise",
+        "tb-sheet-enter", "tb-modal-spring", "tb-pop-in", "tb-select", "tb-carousel-in",
+      ])
+    );
+  });
+
+  it.each(FIRST)("$name: every token in its first transform is the identity under reduce", ({ transform }) => {
+    for (const token of tokensOf(transform)) expect(["1", "0", "0px"], token).toContain(REDUCE_ROOT[token]);
+  });
+
+  // `calc(-50% + var(--tb-dist-modal))` leaves the centring; `scale(0.85)` would leave an 85 % frame.
+  it.each(FIRST)("$name: no literal other than 0 / 0px / 0deg / ±50 % in its first transform", ({ transform }) => {
+    const literals = transform.replace(/var\([^()]*\)/g, "").match(/(?<![\w-])-?\d*\.?\d+[a-z%]*/g) ?? [];
+    expect(literals.filter((literal) => !["0", "0px", "0deg", "50%", "-50%"].includes(literal))).toEqual([]);
+  });
+
+  it("no component carries its own @keyframes: index.css owns every one (motion-v2 MV8b / MV8c)", () => {
+    const sources = import.meta.glob<string>("../**/*.tsx", { query: "?raw", import: "default", eager: true });
+    const app = Object.entries(sources).filter(([file]) => !/(^|\/)__tests__\/|\.test\.tsx$/.test(file));
+    expect(app.length).toBeGreaterThan(50);
+    expect(app.filter(([, source]) => source.includes("@keyframes")).map(([file]) => file)).toEqual([]);
+  });
+});
 
 describe("ONE global reduced-motion block (D-M4)", () => {
   it("is the only prefers-reduced-motion block in index.css", () => {
@@ -215,7 +243,15 @@ describe("press (§3.1)", () => {
     ["button.bg-tb-purple", "var(--color-tb-purple-vibrant)"],
     ["button.bg-tb-surface", "var(--color-tb-lilac)"],
   ];
-  const NOT = ':active:not(:disabled, [aria-disabled="true"], .tb-no-press)';
+  // motion-v2 MV1: a fill answers :active OR the touch-down [data-pressed] (src/utils/pressFeedback.ts).
+  const NOT = ':is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press)';
+
+  it("MV1: every active: / group-active: utility answers :active or [data-pressed] — the one custom variant", () => {
+    expect(CODE.match(/@custom-variant[^;]*;/g)).toEqual(["@custom-variant active (&:is(:active, [data-pressed]));"]);
+    expect(depthAt(CODE.indexOf("@custom-variant"))).toBe(0);
+    // …and the three fills below. The squeeze and every .tb-press-* rule stay :active-only (motion, not state).
+    expect(CODE.split("[data-pressed]")).toHaveLength(1 + 1 + FILLS.length);
+  });
 
   it("the unlayered Figma pressed fills run border-tb-surface → bg-tb-purple → bg-tb-surface", () => {
     const at = FILLS.map(([key]) => CODE.indexOf(`${key}${NOT}`));
@@ -348,5 +384,33 @@ describe("keyframes and classes (§1.5, §4)", () => {
       "--tb-dist-modal": "40px",
       "--tb-ease-out": "cubic-bezier(0.2, 0.8, 0.2, 1)",
     });
+  });
+});
+
+describe("lane motion-v2", () => {
+  // A wait under 1 s needs no indicator (NN/g): a full-screen status overlay stays invisible for its
+  // first 300 ms, then fades in over 200 ms. `backwards` holds opacity 0 through the delay; the
+  // overlay is mounted (and takes taps) from t = 0. Reduce zeroes the delay (the global block).
+  it("MV4: .tb-reveal-late = tb-fade-in, 200 ms, after 300 ms, backwards fill — in the motion components layer", () => {
+    expect(rule(".tb-reveal-late")).toEqual({
+      depth: 1,
+      decl: { animation: "tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) var(--tb-reveal-delay) backwards" },
+    });
+    expect(TOKENS).toMatchObject({ "--tb-dur-reveal": "200ms", "--tb-reveal-delay": "300ms" });
+    expect(keyframes("tb-fade-in")).toMatch(/from \{ opacity: 0; \}/);
+  });
+
+  // The EDC screen points at the card machine (bottom-right): three 1.2 s nudges after the page entrance,
+  // done by 3.86 s — a finite run, not a loop (WCAG 2.2.2 needs none under 5 s). Reduce zeroes the distance.
+  it("MV6: tb-nudge moves only by the distance token, three runs after the page entrance; reduce zeroes it", () => {
+    expect(keyframes("tb-nudge").trim()).toBe(
+      "50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }"
+    );
+    expect(rule(".tb-nudge")).toEqual({
+      depth: 1,
+      decl: { animation: "tb-nudge var(--tb-dur-nudge) ease-in-out var(--tb-dur-page) 3" },
+    });
+    expect(TOKENS).toMatchObject({ "--tb-dur-nudge": "1200ms", "--tb-dist-nudge": "12px", "--tb-dur-page": "260ms" });
+    expect(REDUCE_ROOT["--tb-dist-nudge"]).toBe("0px");
   });
 });

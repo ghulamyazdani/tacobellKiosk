@@ -6,6 +6,7 @@ import {
   selectOpenLoyaltyModal,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import ConfettiBurst from "../common/ConfettiBurst";
 
 /** Fork parity: the redemption celebration is a brief interstitial, not a dialog. */
 const AUTO_CLOSE_MS = 3000;
@@ -29,6 +30,10 @@ const AUTO_CLOSE_MS = 3000;
  * CSS-only entrance (JS/rAF animation freezes in occluded windows). Centered,
  * so the shared `tb-modal-enter` keyframe is the correct one. z-70: above the
  * rewards sheet (z-50) and login modal (z-60), below the error dialog (z-80).
+ * The seal pops in and bursts once (motion-v2 MV5, design language), together
+ * as on Order Complete — no delay: tb-pop-in's backwards fill would hide the
+ * seal and the front-loaded burst would fly unseen. Reduced motion: no
+ * confetti, the seal at rest.
  */
 export default function LoyaltySuccessModal() {
   const { t } = useTranslation();
@@ -67,7 +72,7 @@ export default function LoyaltySuccessModal() {
       />
       <div className="tb-modal-enter absolute left-1/2 top-1/2 flex h-[802px] w-[684px] flex-col items-center justify-center gap-[80px] bg-tb-purple px-[48px]">
         {/* Composed seal — decorative; the headline below carries the message. */}
-        <span aria-hidden="true" className="relative block h-[356px] w-[356px]">
+        <span aria-hidden="true" className="tb-pop-in relative block h-[356px] w-[356px]">
           <svg viewBox="0 0 356 356" className="h-full w-full">
             <defs>
               <path
@@ -110,6 +115,7 @@ export default function LoyaltySuccessModal() {
               maskPosition: "center",
             }}
           />
+          <ConfettiBurst />
         </span>
 
         <p className="tb-display text-center text-[48px] leading-[1.05] tracking-[-1px] text-tb-surface">

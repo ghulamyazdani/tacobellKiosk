@@ -99,20 +99,24 @@ describe("IdleTimeoutModal (Figma 1:4514)", () => {
     );
   });
 
+  // motion-v2 MV8e: the full-width fill SLIDES in from the left inside the
+  // clipping button (a composited transform, never an animated width). The
+  // layout stays LTR in Arabic too (the "RTL text, LTR layout" decision).
   it.each([
-    [0, "0%"],
-    [0.5, "50%"],
-    [1, "100%"],
+    [0, "translateX(-100%)"],
+    [0.5, "translateX(-50%)"],
+    [1, "translateX(0%)"],
     // Clamped: a late tick past the window never overflows the button.
-    [-0.25, "0%"],
-    [1.7, "100%"],
-  ])("progress %s fills START AGAIN to %s from the leading edge", (progress, width) => {
+    [-0.25, "translateX(-100%)"],
+    [1.7, "translateX(0%)"],
+  ])("progress %s slides the START AGAIN fill to %s", (progress, transform) => {
     renderModal({ progress });
 
     expect(fill()).not.toBeNull();
-    expect(fill()?.style.width).toBe(width);
-    // Logical start-0, so the fill mirrors under RTL.
-    expect(fill()).toHaveClass("start-0", "bg-tb-lilac");
+    expect(fill()?.style.transform).toBe(transform);
+    expect(fill()?.style.width).toBe("");
+    expect(fill()).toHaveClass("inset-0", "bg-tb-lilac", "transition-transform");
+    expect(screen.getByTestId("idle-start-again")).toHaveClass("relative", "overflow-hidden");
   });
 
   it("CONTINUE ORDERING takes focus on open — one key press extends (WCAG 2.2.1)", () => {

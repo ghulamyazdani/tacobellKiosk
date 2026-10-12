@@ -130,6 +130,11 @@ export default function ActivityModal({
     window.location.replace(window.location.origin + "/");
   }, [logoutKiosk, onClose]);
 
+  // motion-v2 MV9: the OS can turn every animation off (Windows "Animation
+  // effects", Android "Remove animations") and the kiosk then honours
+  // prefers-reduced-motion without a word — show the operator which it is.
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
   const infoRows: Array<{ label: string; value: string; tone?: string }> = [
     {
       label: t("activity.device"),
@@ -159,6 +164,11 @@ export default function ActivityModal({
       label: t("activity.printer"),
       value: printerStatus.label,
       tone: printerStatus.connected ? undefined : "warning",
+    },
+    {
+      label: t("activity.animations"),
+      value: t(reducedMotion ? "activity.animationsOff" : "activity.animationsOn"),
+      tone: reducedMotion ? "warning" : undefined,
     },
     ...(loyaltyEnabled
       ? [

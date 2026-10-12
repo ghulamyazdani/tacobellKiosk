@@ -177,6 +177,32 @@ describe("/receipt — the Paytm branch (P8b)", () => {
     expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "none" } });
   });
 
+  // motion-v2 MV4 + review F1: over the tiles PleaseWait reveals late (a fast initiate never flashes it); in
+  // place of the failure dialog (TRY AGAIN) it shows at once — a late layer would drop the dialog's scrim and
+  // leave the tiles bright, and dead to taps, for 300 ms.
+  it("PleaseWait reveals late over a tile tap, at once when TRY AGAIN replaces the failure dialog", async () => {
+    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    m.edc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mount();
+
+    await tap("receipt-none");
+    expect(screen.getByTestId("paytm-preparing")).toHaveClass("tb-reveal-late");
+    await act(async () => first.resolve(BUSY));
+    await flush();
+    expect(modal()).toBeInTheDocument();
+
+    await tap("paytm-initiate-retry");
+    expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paytm-preparing")).not.toHaveClass("tb-reveal-late");
+    expect(m.edc).toHaveBeenCalledTimes(2);
+
+    await act(async () => second.resolve({ data: { success: true } }));
+    await flush();
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "none" } });
+  });
+
   it("a retryable failure: BACK TO BAG closes the modal and leaves for /cart", async () => {
     store.dispatch(setKioskPaymentType({ type: "PaytmDynamicQr" }));
     m.dqr.mockResolvedValue({ error: { status: 500, data: {} } });

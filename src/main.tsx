@@ -14,6 +14,7 @@ import {
   KioskEventName,
   startAnalytics,
 } from "./utils/analytics";
+import { installPressFeedback } from "./utils/pressFeedback";
 import { store, persistor } from "./redux/app/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import App from "./App.tsx";
@@ -37,6 +38,9 @@ void startAnalytics();
 captureKioskEvent(KioskEventName.pageRefreshed, {
   route_path: window.location.pathname,
 });
+// Pressed fills at touch-down (motion-v2 MV1): press STATE, never motion;
+// app-lifetime listeners, so the uninstall it returns is never needed.
+installPressFeedback();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

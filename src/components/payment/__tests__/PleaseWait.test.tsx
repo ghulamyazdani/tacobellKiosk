@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import {
   setEnableAccessibilityMode,
@@ -7,6 +8,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import PleaseWait from "../PleaseWait";
+import ErrorModal from "../../common/ErrorModal";
 import i18n from "../../../i18n";
 import tbBell from "../../../assets/brand/tb-bell.svg";
 
@@ -46,7 +48,10 @@ describe("PleaseWait", () => {
     expect(screen.queryByTestId("please-wait")).not.toBeInTheDocument();
   });
 
-  it("arms no timer and writes nothing to the store (pure-CSS entrance, z-50, clipped not scrollable)", () => {
+  // motion-v2 MV4: a full-screen status overlay reveals late (tb-reveal-late:
+  // invisible for its first 300 ms, so a fast wait never flashes) while it
+  // blocks taps from its first frame.
+  it("arms no timer and writes nothing to the store (pure-CSS late reveal, z-50, clipped not scrollable)", () => {
     vi.useFakeTimers();
     const dispatched = vi.fn();
     const unsubscribe = store.subscribe(dispatched);
@@ -56,10 +61,43 @@ describe("PleaseWait", () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(dispatched).not.toHaveBeenCalled();
     const root = screen.getByTestId("please-wait");
-    expect(root).toHaveClass("tb-fade-in", "z-50", "overflow-clip");
-    expect(root).not.toHaveClass("overflow-hidden", "tb-modal-enter");
+    expect(root).toHaveClass("tb-reveal-late", "z-50", "overflow-clip");
+    expect(root).not.toHaveClass("overflow-hidden", "tb-modal-enter", "tb-fade-in");
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  // motion-v2 review F1: in place of a dialog (TRY AGAIN, YES, CHECK AGAIN) the
+  // layer shows at once — the dialog's 80 % scrim unmounts in the same commit,
+  // and a layer still invisible would leave the screen bright, and dead to
+  // taps, for 300 ms. Decided once, at mount: a later re-render (cancelling →
+  // settling) never starts the reveal over a layer already on screen.
+  it("in place of a dialog it shows at once, and stays so across re-renders", () => {
+    function Owner() {
+      const [phase, setPhase] = useState<"confirm" | "cancelling" | "settling">("confirm");
+      return (
+        <>
+          {phase === "confirm" ? (
+            <ErrorModal
+              testId="confirm"
+              title="Cancel?"
+              primary={{ label: "YES", testId: "yes", onClick: () => setPhase("cancelling") }}
+            />
+          ) : (
+            <PleaseWait subtitle={phase} />
+          )}
+          <button type="button" data-testid="settle" onClick={() => setPhase("settling")} />
+        </>
+      );
+    }
+    mount(<Owner />);
+    fireEvent.click(screen.getByTestId("yes"));
+    expect(screen.queryByTestId("confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("please-wait")).not.toHaveClass("tb-reveal-late");
+
+    fireEvent.click(screen.getByTestId("settle"));
+    expect(screen.getByTestId("please-wait")).toHaveTextContent("settling");
+    expect(screen.getByTestId("please-wait")).not.toHaveClass("tb-reveal-late");
   });
 
   it("normal layout: the bell, the card at 560", () => {

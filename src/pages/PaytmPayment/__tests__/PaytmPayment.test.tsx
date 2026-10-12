@@ -170,6 +170,10 @@ describe("PaytmPayment — /paymentPolling", () => {
     tap("paytm-cancel");
     tap("paytm-cancel-yes");
     expect(screen.getByTestId("paytm-confirming")).toHaveTextContent(i18n.t("paytm.wait.cancelling"));
+    // In place of the confirm it shows at once: a late reveal would drop the confirm's scrim and leave the
+    // EDC screen bright — still asking for the card — for 300 ms after the guest cancelled (motion-v2 review F1).
+    expect(screen.queryByTestId("paytm-cancel-confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paytm-confirming")).not.toHaveClass("tb-reveal-late");
     expect(screen.queryByTestId("paytm-cancel")).not.toBeInTheDocument();
     expect(screen.queryByTestId("paytm-countdown")).not.toBeInTheDocument();
 
@@ -272,6 +276,23 @@ describe("PaytmPayment — /paymentPolling", () => {
     mount();
     await advance(3000);
     expect(screen.getByTestId("paytm-confirming")).toHaveTextContent(i18n.t("paytm.wait.confirming"));
+    // Over the EDC screen (no dialog) it reveals late (motion-v2 MV4): a fast settle never flashes it.
+    expect(screen.getByTestId("paytm-confirming")).toHaveClass("tb-reveal-late");
+    expect(m.navigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt: "none" } });
+  });
+
+  it("the unknown panel's CHECK AGAIN answering paid: PleaseWait replaces the panel at once (motion-v2 review F1)", async () => {
+    seed("edc");
+    statusImpl = () => Promise.resolve({ error: { status: "FETCH_ERROR" } });
+    mount();
+    await step(180_000 + 30_000);
+    expect(screen.getByTestId("paytm-unknown")).toBeInTheDocument();
+
+    statusImpl = () => Promise.resolve({ data: { status: "paid" } });
+    tap("paytm-unknown-check");
+    await advance(0);
+    expect(screen.queryByTestId("paytm-unknown")).not.toBeInTheDocument();
+    expect(screen.getByTestId("paytm-confirming")).not.toHaveClass("tb-reveal-late");
     expect(m.navigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt: "none" } });
   });
 
@@ -415,5 +436,18 @@ describe("PaytmPayment — motion (lane motion)", () => {
       expect(element?.closest(".tb-enter")).toBeNull();
     }
     expect(img(container, creditCard)).toHaveClass("tb-card-tilt");
+  });
+
+  // motion-v2 MV6: the UI points at the card machine — the DOWN HERE arrow nudges three times
+  // toward it (a finite run, not a loop) while its label stays still; nothing to tap there.
+  it("EDC: the DOWN HERE arrow nudges (tb-nudge) toward the terminal; its label and CANCEL stay still", () => {
+    mountPushed();
+    const arrow = screen.getByTestId("paytm-down-here-arrow");
+    expect(arrow.tagName).toBe("IMG");
+    expect(arrow).toHaveClass("tb-nudge");
+    expect(arrow).toHaveAttribute("aria-hidden");
+    expect(arrow.closest("button")).toBeNull();
+    expect(root().querySelectorAll(".tb-nudge")).toHaveLength(1);
+    expect(screen.getByText(i18n.t("paytm.instructions.downHere")).closest(".tb-nudge")).toBeNull();
   });
 });

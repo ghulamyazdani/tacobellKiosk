@@ -31,7 +31,10 @@
   },
   "activity": {
     "fullscreenOn": "Fullscreen is enforced. Guests cannot leave full screen.",
-    "fullscreenOff": "Fullscreen is optional. The browser controls can be reached."
+    "fullscreenOff": "Fullscreen is optional. The browser controls can be reached.",
+    "animations": "Animations",
+    "animationsOn": "On",
+    "animationsOff": "Off — the device's reduce-motion setting"
   },
   "country": {
     "title": "Select your country",

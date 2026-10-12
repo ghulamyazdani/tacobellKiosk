@@ -122,6 +122,18 @@ describe("LoadingResources — boot recovery (P9b R7)", () => {
     expect(dialog()).not.toBeInTheDocument();
   });
 
+  // motion-v2 MV3: the boot wait shows the house sweep (it pulsed in place).
+  it("the boot wait shows the house indeterminate sweep inside its clipping track — no pulse", () => {
+    const { container } = mount();
+    const sweep = container.querySelectorAll(".tb-indeterminate");
+    expect(sweep).toHaveLength(1);
+    expect(sweep[0].parentElement).toHaveClass("overflow-hidden");
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+
+    failLatest("unavailable"); // the error dialog replaces the wait
+    expect(container.querySelector(".tb-indeterminate")).toBeNull();
+  });
+
   it("an unreachable backend: 'Can't connect', a countdown and TRY AGAIN NOW — and NO 'Back to registration'", async () => {
     mount();
     await failLatest("unavailable");

@@ -197,11 +197,15 @@ export default function PaytmPayment() {
               {t("paytm.instructions.downHere")}
             </p>
           </div>
+          {/* Points at the card machine: three nudges toward it after the
+              entrance (motion-v2 MV6, design language); the label stays
+              still. The root is overflow-clip; CANCEL sits bottom-left. */}
           <img
             aria-hidden
             alt=""
             src={downHereArrow}
-            className="absolute bottom-[15px] left-[902px] size-[172px]"
+            data-testid="paytm-down-here-arrow"
+            className="tb-nudge absolute bottom-[15px] left-[902px] size-[172px]"
           />
         </>
       )}
