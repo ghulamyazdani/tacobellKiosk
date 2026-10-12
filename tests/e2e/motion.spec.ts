@@ -32,7 +32,7 @@ import { payAtCounter } from "./pages/checkout";
 import { addOneTap, openBag, typeDigits } from "./pages/order";
 
 /**
- * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M15–M17), the ONE place real motion is proven: the
+ * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M14–M17), the ONE place real motion is proven: the
  * functional suite runs under `reducedMotion: "reduce"` (playwright.config, D-M5), this file under
  * "no-preference" (M9 switches to reduce itself).
  *
@@ -919,6 +919,8 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     const viewBag = page.getByTestId("cta-view-bag");
     await hold(page, viewBag);
     await expect.poll(() => viewBag.evaluate((el) => getComputedStyle(el).scale)).toBe("0.97");
+    // motion-v2 MV1 mirrors TOUCH presses only: a mouse's :active is already instant.
+    await expect(viewBag).not.toHaveAttribute("data-pressed");
     // Released off the control (on the CTA bar's total): the press ends, no tap is taken.
     const total = await page.getByTestId("cta-total").boundingBox();
     if (!total) throw new Error("no cta-total");
@@ -1279,6 +1281,73 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await panel.locator(":scope > button").click(); // the ✕ — tappable at opacity 0
     await expect(language).toHaveCount(0);
     await rate(1);
+  });
+
+  // The kiosk's real input. A dispatched CDP touch never sets :active (only the synthetic gesture pipeline does,
+  // at GestureShowPress), so what shows here is the touch-down press state alone.
+  test.describe("M14 PRESS AT TOUCH-DOWN (motion-v2 MV1, CDP touches, hasTouch)", () => {
+    test.use({ hasTouch: true });
+
+    test("M14 PRESS AT TOUCH-DOWN: a finger on a button takes the Figma pressed fill at once (no squeeze: that stays :active's); where a pan can start the fill waits 90 ms, and a pan never shows it", async ({
+      page,
+    }) => {
+      test.slow();
+      await page.clock.install(); // the 90 ms is a page timer: stepped, never slept through
+      await mockBackend(page);
+      await registerToStart(page);
+      await startToSecond(page);
+      await settle(page);
+      const cdp = await page.context().newCDPSession(page);
+      const finger = (type: "touchStart" | "touchMove" | "touchEnd", at?: { x: number; y: number }) =>
+        cdp.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: at ? [{ x: at.x, y: at.y, radiusX: 1, radiusY: 1 }] : [],
+        });
+      const centre = async (target: Locator) => {
+        const box = await target.boundingBox();
+        if (!box) throw new Error("nothing to touch");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const state = (target: Locator) =>
+        target.evaluate((el) => ({
+          pressed: el.hasAttribute("data-pressed"),
+          active: el.matches(":active"),
+          fill: getComputedStyle(el).backgroundColor,
+          scale: getComputedStyle(el).scale,
+        }));
+
+      // 1. /second: nothing around the card can pan — the lilac at touch-down; the tap still lands.
+      const card = page.getByTestId("pipeline-p1");
+      await finger("touchStart", await centre(card));
+      expect(await state(card), "pressed at touch-down").toEqual({ pressed: true, active: false, fill: LILAC, scale: "none" });
+      await finger("touchEnd");
+      await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+      await settle(page);
+
+      // 2. /menu: the quick add sits in the pane, which overflows — a pan can start, so the fill waits 90 ms.
+      const add = page.getByTestId(`quick-add-${GREEK_SALAD}`);
+      await add.scrollIntoViewIfNeeded();
+      const atAdd = await centre(add);
+      await freezeClock(page);
+      await finger("touchStart", atAdd);
+      expect((await state(add)).pressed, "not yet: a pan may start").toBe(false);
+      await page.clock.runFor(90);
+      expect(await state(add), "pressed after 90 ms").toMatchObject({ pressed: true, fill: LILAC });
+      await page.clock.resume();
+      await finger("touchEnd");
+      await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+
+      // 3. A pan: the browser takes the touch (pointercancel) before 90 ms — the fill never shows, nothing is added.
+      const dy = await add.evaluate((el) => ((el.closest(".overflow-y-auto")?.scrollTop ?? 0) > 0 ? 80 : -80));
+      await freezeClock(page);
+      await finger("touchStart", atAdd);
+      for (let i = 1; i <= 6; i += 1) await finger("touchMove", { x: atAdd.x, y: atAdd.y + (dy * i) / 6 });
+      await page.clock.runFor(150);
+      expect((await state(add)).pressed, "a pan never shows the fill").toBe(false);
+      await finger("touchEnd");
+      await page.clock.resume();
+      await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    });
   });
 
   test("M15 WAITS (motion-v2 MV3): every silent wait shows the house sweep — the boot, /customerName's CRM lookup, the /payment window and /receipt's PLACING — a loop on no tap target", async ({

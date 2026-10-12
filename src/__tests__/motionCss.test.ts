@@ -243,7 +243,15 @@ describe("press (§3.1)", () => {
     ["button.bg-tb-purple", "var(--color-tb-purple-vibrant)"],
     ["button.bg-tb-surface", "var(--color-tb-lilac)"],
   ];
-  const NOT = ':active:not(:disabled, [aria-disabled="true"], .tb-no-press)';
+  // motion-v2 MV1: a fill answers :active OR the touch-down [data-pressed] (src/utils/pressFeedback.ts).
+  const NOT = ':is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press)';
+
+  it("MV1: every active: / group-active: utility answers :active or [data-pressed] — the one custom variant", () => {
+    expect(CODE.match(/@custom-variant[^;]*;/g)).toEqual(["@custom-variant active (&:is(:active, [data-pressed]));"]);
+    expect(depthAt(CODE.indexOf("@custom-variant"))).toBe(0);
+    // …and the three fills below. The squeeze and every .tb-press-* rule stay :active-only (motion, not state).
+    expect(CODE.split("[data-pressed]")).toHaveLength(1 + 1 + FILLS.length);
+  });
 
   it("the unlayered Figma pressed fills run border-tb-surface → bg-tb-purple → bg-tb-surface", () => {
     const at = FILLS.map(([key]) => CODE.indexOf(`${key}${NOT}`));

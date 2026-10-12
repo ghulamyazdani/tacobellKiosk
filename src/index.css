@@ -9,6 +9,13 @@
  * e2e pages. A class written only outside the app's src is never generated.
  * Guarded by tests/e2e/harness.spec.ts "DEV-SERVER RELOAD (source)". */
 
+/* MV1: touch-down press. Chromium applies :active to a touch only at
+ * GestureShowPress (~150 ms held; on a quick tap just after the click), so
+ * src/utils/pressFeedback.ts mirrors a touch press as [data-pressed] at
+ * touch-down (after 90 ms where a pan can start). Every active: /
+ * group-active: utility answers both; the .97 squeeze stays on :active. */
+@custom-variant active (&:is(:active, [data-pressed]));
+
 /*
  * Type: the Figma file uses GT America (commercial, Grilli Type; the design
  * file itself uses the TRIAL cut). GT America stays the licensed target —
@@ -278,14 +285,15 @@
  * purple texture through and its purple label would vanish — it takes the
  * lilac white-button press instead. A .tb-no-press full-surface button (the
  * splash, the ADA brand panel: bg-tb-purple under their media) takes no
- * fill either — a whole screen never flashes vibrant while held. */
-button.border-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+ * fill either — a whole screen never flashes vibrant while held. The fills
+ * answer the touch-down [data-pressed] too (MV1, top of file). */
+button.border-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: rgb(255 255 255 / 0.15);
 }
-button.bg-tb-purple:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+button.bg-tb-purple:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: var(--color-tb-purple-vibrant);
 }
-button.bg-tb-surface:active:not(:disabled, [aria-disabled="true"], .tb-no-press) {
+button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"], .tb-no-press) {
   background-color: var(--color-tb-lilac);
 }
 
