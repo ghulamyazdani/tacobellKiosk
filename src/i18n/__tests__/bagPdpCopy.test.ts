@@ -81,6 +81,40 @@ const AUDIT_FIXES_LAZY_KEYS = [
 /** Lane motion-v2 (MV9): the Activity Center's "Animations" row — operator copy, lazy like its modal. */
 const MOTION_V2_LAZY_KEYS = ["activity.animations", "activity.animationsOn", "activity.animationsOff"];
 
+/**
+ * Lane offers-parity (F3 / F5): the rewards rows' description copy — the
+ * buy/get sentence, the item-criteria scope lines, the caps and the scoped
+ * lock lines — lazy like the sheet that renders it. `offers.desc.category` is
+ * a plural family (EN one/other, AR all six forms): the pin compares
+ * families, the CLDR forms are localeParity's.
+ */
+const OFFERS_PARITY_LAZY_KEYS = [
+  "offers.desc.buyGet",
+  "offers.desc.getOnly",
+  "offers.desc.buyOnly",
+  "offers.desc.category",
+  "offers.desc.categoryAny",
+  "offers.desc.free",
+  "offers.desc.percentOff",
+  "offers.desc.amountOff",
+  "offers.desc.each",
+  "offers.desc.or",
+  "offers.desc.comma",
+  "offers.mechPercentItemsOnly",
+  "offers.mechPercentItemsExcept",
+  "offers.mechAmountItemsOnly",
+  "offers.mechAmountItemsExcept",
+  "offers.scopeSeparator",
+  "offers.scopeMore",
+  "offers.upTo",
+  "offers.lockedItemCriteriaExcept",
+  "offers.lockedItemCriteriaOnly",
+];
+
+const PLURAL = /_(zero|one|two|few|many|other)$/;
+const family = (key: string) => key.replace(PLURAL, "");
+const families = (keys: Iterable<string>) => [...new Set([...keys].map(family))].sort();
+
 const EN_LAZY = new Map(flatten(enLazy));
 const AR_LAZY = new Map(flatten(arLazy));
 const EN_BOOT = new Map(flatten(en));
@@ -89,10 +123,40 @@ const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
 
 describe("lane bag-pdp copy (I8)", () => {
-  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9, motion-v2's 3), in EN and in AR", () => {
-    const expected = [...LANE_KEYS, ...AUDIT_FIXES_LAZY_KEYS, ...MOTION_V2_LAZY_KEYS].sort();
-    expect([...EN_LAZY.keys()].sort()).toEqual(expected);
-    expect([...AR_LAZY.keys()].sort()).toEqual(expected);
+  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9, motion-v2's 3, offers-parity's 20 families), in EN and in AR", () => {
+    const expected = [
+      ...LANE_KEYS,
+      ...AUDIT_FIXES_LAZY_KEYS,
+      ...MOTION_V2_LAZY_KEYS,
+      ...OFFERS_PARITY_LAZY_KEYS,
+    ].sort();
+    expect(families(EN_LAZY.keys())).toEqual(expected);
+    expect(families(AR_LAZY.keys())).toEqual(expected);
+    // The only plural family: EN one/other, AR the six CLDR forms.
+    const forms = (copy: Map<string, unknown>) =>
+      [...copy.keys()].filter((key) => PLURAL.test(key)).sort();
+    expect(forms(EN_LAZY)).toEqual(["offers.desc.category_one", "offers.desc.category_other"]);
+    expect(forms(AR_LAZY)).toEqual(
+      ["few", "many", "one", "other", "two", "zero"].map((form) => `offers.desc.category_${form}`)
+    );
+  });
+
+  it("offers-parity: every AR value is an Arabic draft, never the English copy; the scope's +N is {{qty}} (no plural lookup)", () => {
+    for (const [key, english] of EN_LAZY) {
+      if (!OFFERS_PARITY_LAZY_KEYS.includes(family(key))) continue;
+      const twin = AR_LAZY.has(key) ? key : `${family(key)}_other`;
+      const arabic = String(AR_LAZY.get(twin));
+      expect(arabic.trim(), key).not.toBe("");
+      expect(arabic, key).not.toBe(String(english));
+      expect(arabic, key).toMatch(/[؀-ۿ]/);
+    }
+    expect(placeholders(EN_LAZY.get("offers.scopeMore"))).toEqual(["qty"]);
+    expect(placeholders(AR_LAZY.get("offers.scopeMore"))).toEqual(["qty"]);
+    // None of them shadows the boot copy (deep merge into "offers").
+    for (const key of OFFERS_PARITY_LAZY_KEYS) {
+      expect([...EN_BOOT.keys()].some((boot) => family(boot) === key), key).toBe(false);
+      expect([...AR_BOOT.keys()].some((boot) => family(boot) === key), key).toBe(false);
+    }
   });
 
   it("every AR value is a non-blank Arabic draft, never the English copy, with the same placeholders", () => {

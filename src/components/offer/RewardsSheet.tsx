@@ -18,13 +18,17 @@ import {
   type BuyStageOffer,
   type BuyStageView,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
-import { canOfferBuyStage } from "@cx-sdk/ordering/offer/offerCommitRules";
+import { canOfferBuyStageWithCategories } from "@cx-sdk/ordering/offer/offerCategoryFreebies";
+import { isBOGOOfferApplicable } from "@cx-sdk/ordering/offer/offerEngine";
 import { isOfferLockedByLoyaltyReward } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
+import useOfferDescription, {
+  type OfferDescription,
+} from "../../hooks/offerHooks/useOfferDescription";
 import useCartUpsell, {
   selectMenuSellableEntityMap,
 } from "../../hooks/menuHooks/useCartUpsell";
@@ -57,10 +61,13 @@ export interface RewardsSheetProps {
    */
   onNeedsPicker?: (offer: SavingsOffer) => void;
   /**
-   * ADD ITEMS on a locked bogoBuySide row (offers lane, item 31): fired
-   * (before onClose) with the offer and its resolved buy stage — the page
-   * owns the BuyStageSheet. Rows only offer it when canOfferBuyStage holds;
-   * every other locked row stays inert (no /menu fallback).
+   * ADD ITEMS on a locked bogoBuySide row (offers lane, item 31) — or a
+   * minItems row whose buy side is still unmet (lane offers-parity D4):
+   * fired (before onClose) with the offer and its resolved buy stage — the
+   * page owns the BuyStageSheet. Rows only offer it when
+   * canOfferBuyStageWithCategories holds (get-category groups included — the
+   * picker lists them); every other locked row stays inert (no /menu
+   * fallback).
    */
   onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
 }
@@ -141,6 +148,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
 
   const { rank } = useOfferSavings();
+  // Each row's description (lane offers-parity F3) — never throws (D10).
+  const describe = useOfferDescription();
   // Verified against the landed apply core: selectOfferAndCommit(offer) →
   // Promise<OfferCommitResult> ({ applied, needsPicker?, offer?, blocked? }) —
   // the swapCartOffer atomic / directly-applicable / picker-verdict recipes
@@ -237,26 +246,33 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     }
   };
 
-  // Buy stages for the locked bogoBuySide rows — only where TB can finish
-  // the offer (canOfferBuyStage: no group mode, no get-categories). A row
-  // whose view fails to resolve (or throws on a malformed payload) simply
-  // stays inert, as before. Tiles come from the menu-sellable map (UB6 F1):
-  // a dead pack is off the menu, so it drops like any off-menu entry (a
-  // plain-and row goes inert) instead of selling empty at full price.
+  // Buy stages for the locked bogoBuySide rows — and the minItems rows whose
+  // buy side is still unmet (lane offers-parity D4: once it is met, a stage
+  // could only add more buy items, so the nudge is the honest guide) — only
+  // where TB can finish the offer (canOfferBuyStageWithCategories: no group
+  // mode; get-category groups go to the picker). resolveBuyStageView stays
+  // the judge: a percent / amount / free-item offer resolves no stage. A
+  // row whose view fails to resolve (or throws on a malformed payload)
+  // simply stays inert, as before. Tiles come from the menu-sellable map
+  // (UB6 F1): a dead pack is off the menu, so it drops like any off-menu
+  // entry (a plain-and row goes inert) instead of selling empty at full price.
   const buyStageViews = useMemo(() => {
     const views = new Map<string, BuyStageView>();
     sections.lockedRows.forEach((row) => {
-      if (lockedGapPresentation(row.offer, row.gap).labelKind !== "bogoBuySide") {
-        return;
-      }
       try {
+        const kind = lockedGapPresentation(row.offer, row.gap).labelKind;
+        const stageable =
+          kind === "bogoBuySide" ||
+          (kind === "minItems" &&
+            !isBOGOOfferApplicable(row.offer, row.offer?.applicable, cartItems));
+        if (!stageable) return;
         const view = resolveBuyStageView(
           row.offer as BuyStageOffer,
           entityMap,
           subCategoryMap,
           variantObject,
         );
-        if (view && canOfferBuyStage(row.offer, view)) {
+        if (view && canOfferBuyStageWithCategories(row.offer, view)) {
           views.set(String(row.offer?._id ?? ""), view);
         }
       } catch {
@@ -264,7 +280,28 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
       }
     });
     return views;
-  }, [sections.lockedRows, entityMap, subCategoryMap, variantObject]);
+  }, [sections.lockedRows, cartItems, entityMap, subCategoryMap, variantObject]);
+
+  // Descriptions for the eligible and locked rows — never a gone row (its
+  // sentence would understate what the offer needs: the AST drops sold-out
+  // entries, D9). A describer that throws costs the row its description,
+  // never the sheet (D10).
+  const descriptions = useMemo(() => {
+    const byId = new Map<string, OfferDescription>();
+    const rows = [
+      ...(sections.hero ? [sections.hero] : []),
+      ...sections.readyRows,
+      ...sections.lockedRows,
+    ];
+    rows.forEach((row) => {
+      try {
+        byId.set(String(row.offer?._id ?? ""), describe(row.offer));
+      } catch {
+        // The row keeps its mechanic line.
+      }
+    });
+    return byId;
+  }, [sections, describe]);
 
   const handleAddItems = (offer: SavingsOffer, view: BuyStageView) => {
     if (committing) return;
@@ -368,6 +405,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     const id = String(row.offer?._id ?? "");
     const view =
       onAddItems && !lockedByReward ? buyStageViews.get(id) : undefined;
+    const copy = descriptions.get(id);
     return (
       <OfferRow
         key={id}
@@ -375,6 +413,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         selected={interactive && pickedId === id}
         applied={appliedId === id}
         currency={currency}
+        description={copy?.text || undefined}
+        lockLine={copy?.lockLine}
         blocked={lockedByReward}
         // Locked/gone rows render a div that ignores this latch; only their
         // ADD ITEMS button reads it.
@@ -540,8 +580,10 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
  *
  * Conditionally mounted so each open re-seeds selection from the applied
  * offer. Reads Redux + useOfferSavings directly; commits through the P7b
- * apply core (useOfferApply). Locked bogoBuySide rows that a buy stage can
- * finish carry ADD ITEMS, handed to the page via onAddItems.
+ * apply core (useOfferApply). Locked bogoBuySide rows — and minItems rows
+ * whose buy side is unmet (lane offers-parity) — that a buy stage can finish
+ * carry ADD ITEMS, handed to the page via onAddItems. Every eligible or
+ * locked row carries its description (useOfferDescription).
  *
  * Lane loyalty-visual: Figma 1:3842 geometry (D2) and the D3 lock — with a
  * XENO reward in the bag and no offer applied, a pink line explains that

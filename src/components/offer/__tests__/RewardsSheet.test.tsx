@@ -15,6 +15,23 @@ import { store } from "../../../redux/app/store";
 import RewardsSheet from "../RewardsSheet";
 import "../../../i18n";
 
+/** offers-parity U4: the real describer, unless a test makes it throw (D10). */
+const describer = vi.hoisted(() => ({ throwing: false }));
+vi.mock("../../../hooks/offerHooks/useOfferDescription", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../hooks/offerHooks/useOfferDescription")>();
+  return {
+    ...actual,
+    default: () => {
+      const real = actual.default();
+      return describer.throwing
+        ? () => {
+            throw new Error("describer exploded");
+          }
+        : real;
+    },
+  };
+});
+
 /** Paid CUSTOMIZABLE row, £8.60 line (P7a BagSheet fixture parity). */
 const BURGER_ROW = {
   id: "cheese-burger",
@@ -194,8 +211,8 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     renderSheet();
     expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
 
-    // Eligible: radio, save copy.
-    const flat = screen.getByTestId("offer-row-offer-flat-2");
+    // Eligible: radio, save copy (offers-parity D8: the text is the row body's).
+    const flat = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
     expect(flat).toHaveTextContent("Save £2.00");
 
@@ -241,7 +258,7 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
 
     const row = screen.getByTestId("offer-row-offer-flat-2");
     expect(row).toHaveAttribute("aria-checked", "true");
-    expect(row).toHaveTextContent("Applied");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Applied");
 
     await userEvent.click(screen.getByTestId("rewards-save"));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -467,14 +484,6 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
       },
     ],
     [
-      "resolvable get-CATEGORIES (the picker cannot list them)",
-      {
-        ...BOGO_OFFER,
-        _id: "offer-get-cat",
-        getItems: { items: [], categories: [{ _id: "sides", quantity: 1, entities: [{ id: "x", price: 2 }] }] },
-      },
-    ],
-    [
       "an unresolvable buy item (absent from the menu)",
       { ...BOGO_OFFER, _id: "offer-ghost", applicable: buyRaw("not-on-menu", 1) },
     ],
@@ -535,5 +544,163 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
     expect(handed).not.toBe(original);
     expect(original.getItems.items).toHaveLength(2);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity (U4): ADD ITEMS for get-category BOGOs (F1) and on a
+ * min-items lock while the buy side is unmet (F2 / D4); offers that can
+ * never unlock on this menu are hidden, a sold-out buy side is a gone row
+ * (F4); every row gets its description (F3), and a describer that throws
+ * never blanks the sheet (D10).
+ * ------------------------------------------------------------------ */
+describe("RewardsSheet — offers-parity", () => {
+  beforeEach(() => {
+    describer.throwing = false;
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: SAUCE_ENTITY } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+
+  const GET_CATEGORY_BOGO = {
+    ...BOGO_OFFER,
+    _id: "offer-get-cat",
+    name: "Buy 2 sauces get any side",
+    getItems: {
+      items: [],
+      categories: [
+        {
+          _id: "sides",
+          name: "Sides",
+          quantity: 1,
+          relation: "and",
+          discountType: "percent",
+          value: 100,
+          entities: [{ id: "x", name: "Side X", price: 2, type: "ITEM" }],
+        },
+      ],
+    },
+  };
+
+  /** Least-value: any 2 sauces, the cheapest free — with an item minimum. */
+  const leastWithMin = (minItemCount: number) => ({
+    ...offerBase,
+    _id: "offer-least-min",
+    name: "Get least priced item free",
+    type: { name: "item", value: 0 },
+    getLeastValueItem: true,
+    minItemCount,
+    leastItemValueCount: { buyQuantity: 2, getQuantity: 1, getDiscount: 100 },
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: [{ item: { baseItemId: SAUCE_ENTITY.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }],
+    },
+    getItems: { items: [], categories: [] },
+  });
+
+  it("F1 (flipped): a get-category BOGO's locked row offers ADD ITEMS and hands the stage over", async () => {
+    store.dispatch(setFilteredOffers([GET_CATEGORY_BOGO]));
+    const onAddItems = vi.fn();
+    renderWithAddItems(onAddItems);
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-get-cat"));
+    expect(onAddItems).toHaveBeenCalledTimes(1);
+    expect((onAddItems.mock.calls[0] as unknown as [any, any])[1].mode).toBe("plain-and");
+  });
+
+  it("D4: a least-value minItems lock with the buy side UNMET → nudge AND ADD ITEMS", () => {
+    store.dispatch(setFilteredOffers([leastWithMin(3)]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    expect(screen.getByTestId("offer-row-add-items-offer-least-min")).toBeInTheDocument();
+  });
+
+  it("D4: the same lock with the buy side MET → the nudge only (a stage could only add more buy items)", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW, quantity: 2 }]));
+    store.dispatch(setFilteredOffers([leastWithMin(5)]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("offer-row-add-items-offer-least-min")).toBeNull();
+  });
+
+  it("a minItems lock on a bill-wise offer → no ADD ITEMS (no stage resolves)", () => {
+    store.dispatch(setFilteredOffers([{ ...FLAT_OFFER, _id: "offer-flat-min", minItemCount: 5 }]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-flat-min")).toBeInTheDocument();
+    expect(screen.queryByTestId("offer-row-add-items-offer-flat-min")).toBeNull();
+  });
+
+  it("group-wise still never offers ADD ITEMS", () => {
+    store.dispatch(
+      setFilteredOffers([
+        {
+          ...GET_CATEGORY_BOGO,
+          _id: "offer-gw-cat",
+          buygetGroupWiseOffer: true,
+          buygetGroupWiseOfferValues: { discountType: "percent", value: "100", getQuantity: 1, buyQuantity: 2 },
+        },
+      ])
+    );
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-offer-gw-cat")).toBeInTheDocument();
+    expect(screen.queryByTestId("offer-row-add-items-offer-gw-cat")).toBeNull();
+  });
+
+  const stampedBuy = (id: string, baseItemId: string) => ({
+    ...BOGO_OFFER,
+    _id: id,
+    name: `Buy ${baseItemId}`,
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: [{ item: { baseItemId, name: baseItemId }, quantity: 1, relation: "and", isRawItemAvailable: false }],
+    },
+  });
+
+  it("F4: a stamped dead buy item absent from the menu → not listed at all", () => {
+    store.dispatch(setFilteredOffers([stampedBuy("offer-never", "not-on-menu"), FLAT_OFFER]));
+    renderSheet();
+    expect(screen.queryByTestId("offer-row-offer-never")).toBeNull();
+    expect(screen.queryByTestId("offer-row-body-offer-never")).toBeNull();
+    expect(screen.getByTestId("offer-row-offer-flat-2")).toBeInTheDocument();
+  });
+
+  it("F4: the same item on the menu but sold out → a struck 'Not available right now' row with NO description", () => {
+    store.dispatch(
+      setEntityMap({
+        entityMap: {
+          [SAUCE_ENTITY.id]: SAUCE_ENTITY,
+          "sold-out-sauce": { ...SAUCE_ENTITY, id: "sold-out-sauce", name: "Sold Out Sauce", outOfStock: true },
+        },
+      })
+    );
+    store.dispatch(setFilteredOffers([stampedBuy("offer-sold-out", "sold-out-sauce")]));
+    renderSheet();
+    const row = screen.getByTestId("offer-row-offer-sold-out");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveTextContent("Not available right now");
+    expect(within(row).getByText("Buy sold-out-sauce")).toHaveClass("line-through");
+    expect(screen.queryByTestId("offer-row-desc-offer-sold-out")).toBeNull();
+    expect(screen.queryByTestId("offer-row-add-items-offer-sold-out")).toBeNull();
+  });
+
+  it("F3: the composed description reaches the row", () => {
+    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-desc-offer-bogo")).toHaveTextContent(
+      "Buy 2 Tortilla Sauce & get 1 Caesar Dressing for free"
+    );
+  });
+
+  it("D10: a describer that throws never blanks the sheet — the rows render on their mechanic copy", () => {
+    describer.throwing = true;
+    store.dispatch(setFilteredOffers([BOGO_OFFER, FLAT_OFFER]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Add the qualifying items to unlock this reward");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Save £2.00");
   });
 });

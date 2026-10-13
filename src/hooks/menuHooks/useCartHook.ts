@@ -28,7 +28,7 @@ import {
   selectCartOffer,
   syncSubTotalOnCart,
 } from "@cx-sdk/ordering/state/cart.slice";
-import { findOrphanedFreebieRows } from "@cx-sdk/ordering/offer/offerCommitRules";
+import { findOrphanedFreebieRowsWithCategories } from "@cx-sdk/ordering/offer/offerCategoryOwnership";
 import { db } from "../../models/db";
 import { useDispatch } from "react-redux";
 import useCartIndexedDb from "../cartHooks/useCartIndexedDb";
@@ -336,7 +336,10 @@ function useCartHook() {
       // (removeAllGetItems), never re-prices them, and un-stamping would
       // charge for items nobody ordered. Silent: the screen already matches
       // the persisted reward, so there is nothing the customer saw to explain.
-      const orphans = findOrphanedFreebieRows(
+      // Lane offers-parity (D5): a get-CATEGORY freebie is the applied
+      // offer's own when its id is one of the persisted group's entities and
+      // it carries that group's stamp — else every reload deleted it.
+      const orphans = findOrphanedFreebieRowsWithCategories(
         selectCartOffer(store.getState()),
         restored,
       );

@@ -13,6 +13,7 @@ import {
   openOfferRemovalModal,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
+import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   setCurrency,
   setDeploymentInfo,
@@ -229,6 +230,27 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     await userEvent.click(entry);
     // Lazy (bagLazyParts): the sheet mounts once its chunk resolves.
     expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
+  });
+
+  it("offers-parity (review 1 F-5): the entry row never names a 'Not available right now' offer — a sold-out buy side", () => {
+    // The Caesar is on the menu but sold out: the offer ranks as the gone row.
+    const soldOut = {
+      ...BOGO_OFFER,
+      _id: "offer-sold-out-caesar",
+      name: "Buy a Caesar, get a salad",
+      applicable: {
+        ...BOGO_OFFER.applicable,
+        rawItems: [{ relation: "and", quantity: 1, item: { baseItemId: "caesar", name: "Caesar" }, isRawItemAvailable: false }],
+      },
+    };
+    store.dispatch(setEntityMap({ entityMap: { caesar: { id: "caesar", name: "Caesar Dressing", price: 2, outOfStock: true } } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setFilteredOffers([soldOut]));
+    renderSheet();
+
+    const entry = screen.getByTestId("bag-rewards-entry");
+    expect(entry).toHaveTextContent("Rewards & Offers");
+    expect(entry).not.toHaveTextContent(soldOut.name);
   });
 
   it("ghost-tap guard: closing a sheet that sits over PAY covers the CTA bar briefly, then clears", async () => {

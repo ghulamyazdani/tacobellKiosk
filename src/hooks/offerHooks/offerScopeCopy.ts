@@ -60,9 +60,28 @@ type RawItem = NonNullable<
   NonNullable<SavingsOffer["applicable"]>["rawItems"]
 >[number];
 
-/** An entry names either a single item or a whole category — never both. */
-const nameOf = (entry: RawItem): string =>
-  (entry?.item?.name || entry?.category?.categoryName || "").trim();
+/**
+ * Resolves a `rawItems` entry to the name the MENU shows for it — injected
+ * rather than imported so this file stays free of React and the store
+ * (posistKiosk offerScopeCopy parity; useOfferDescription is the one caller,
+ * lane offers-parity).
+ */
+export type OfferScopeNameResolver = (
+  entry: RawItem,
+) => string | null | undefined;
+
+/**
+ * An entry names either a single item or a whole category — never both. The
+ * resolver wins when it answers; the payload name is the fallback for
+ * everything it cannot resolve (and for a caller that passes none).
+ */
+const nameOf = (entry: RawItem, resolveName?: OfferScopeNameResolver): string =>
+  (
+    resolveName?.(entry) ||
+    entry?.item?.name ||
+    entry?.category?.categoryName ||
+    ""
+  ).trim();
 
 const isCategoryEntry = (entry: RawItem): boolean =>
   Boolean(!entry?.item && entry?.category?._id);
@@ -84,6 +103,7 @@ const isCategoryEntry = (entry: RawItem): boolean =>
  */
 export const getOfferScope = (
   offer: SavingsOffer | null | undefined,
+  resolveName?: OfferScopeNameResolver,
 ): OfferScope | null => {
   if (offer?.applicable?.on !== "itemCriteria") return null;
 
@@ -110,12 +130,16 @@ export const getOfferScope = (
   if (
     mode === "except" &&
     rawItems.some((entry) => isCategoryEntry(entry)) &&
-    rawItems.some((entry) => !isCategoryEntry(entry) && nameOf(entry))
+    rawItems.some(
+      (entry) => !isCategoryEntry(entry) && nameOf(entry, resolveName),
+    )
   ) {
     return null;
   }
 
-  const names = rawItems.map(nameOf).filter((name) => name.length > 0);
+  const names = rawItems
+    .map((entry) => nameOf(entry, resolveName))
+    .filter((name) => name.length > 0);
   if (names.length === 0) return null;
 
   return {

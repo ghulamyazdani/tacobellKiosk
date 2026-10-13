@@ -83,6 +83,10 @@
   /* Figma "Grey 3" (#B9B9B9): Select-a-Size disabled CTA (1:5646), pack
    * slot borders, the steppers' rings and the offer / reward radios'. */
   --color-tb-grey-3: #b9b9b9;
+  /* Figma "Grey 1" / "Grays/Dark Gray" (#6A6A6A): the reward rows' offer
+   * conditions, Text/Small (1:4034 / 1:4069 — lane offers-parity). 5.4:1 on
+   * white. */
+  --color-tb-grey-1: #6a6a6a;
   --color-tb-grey-4: #ebebeb;
   --color-tb-grey-6: #f9f9f9;
   /* Destructive red (P7a) — sampled from the Figma confirm modals'

@@ -16,6 +16,13 @@ import {
   matchesGetItemEntry,
   type GroupWisePick,
 } from "@cx-sdk/ordering/offer/offerCommitRules";
+import {
+  buildCategoryCommitLines,
+  canFillCategoryGroup,
+  getCategoryGroupNeed,
+  type CategoryCommitLine,
+  type CategoryPick,
+} from "@cx-sdk/ordering/offer/offerCategoryFreebies";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
@@ -45,6 +52,37 @@ type StagedRow = {
   itemId?: string;
   selectedVariant?: { id?: string };
 };
+
+/** A converter-resolved get-CATEGORY entity: the menu entity + the group's stamps. */
+type CategoryEntity = {
+  id?: string;
+  type?: string;
+  price?: number | null;
+  outOfStock?: boolean;
+  discounted_total_price?: number;
+  undiscounted_total_price?: number;
+};
+
+/** A get-category group (converter output), as the picker's sections read it. */
+type CategoryGroup = {
+  _id?: string;
+  name?: string;
+  quantity?: number | null;
+  relation?: string;
+  value?: number | string | null;
+  discountType?: string;
+  entities?: CategoryEntity[];
+};
+
+/** The item-entry option of an "or" offer (each category group is its own). */
+const ITEMS = "items";
+
+/** A staged row's owner key / a section's key: "cat:<group id>". */
+const groupKeyOf = (group: CategoryGroup): string => `cat:${group?._id ?? group?.name ?? ""}`;
+
+/** The row is this entity's (a base id; a size's id for a variant row). */
+const rowIsEntity = (row: StagedRow, entityId: string): boolean =>
+  row?.id === entityId || row?.selectedVariant?.id === entityId;
 
 /** Stable id for a getItems entry's resolved entity (slim-menu `id` first). */
 const entityIdOf = (entry: any): string =>
@@ -133,19 +171,58 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   // by a fresh itemId), so BACK out of the PDP keeps the held one. Older
   // rows are ignored here and swept by CONFIRM (commitPickedFreebies) or X.
   const stagedRowFor = (entry: GetEntry): StagedRow | undefined =>
-    [...stagedRows].reverse().find((row) => ownsRow(entry, row));
+    [...itemRows].reverse().find((row) => ownsRow(entry, row));
 
-  // "or" relation → the customer picks ONE; pure-"and" list → every entry is
+  // Lane offers-parity (F1): the get-CATEGORY groups with something on the
+  // menu, one section each below the item rows (group-wise offers keep
+  // their own picker). A group grants EXACTLY its need (D7).
+  const groups: CategoryGroup[] = groupWise
+    ? []
+    : ((offer?.getItems?.categories ?? []) as CategoryGroup[]).filter(
+        (group) => (group?.entities?.length ?? 0) > 0,
+      );
+
+  // "or" relation → the customer picks ONE option (an item, or a whole
+  // group at its need); pure-"and" list → every entry and every group is
   // part of the grant (plain ones all-selected, customizable ones once staged).
   const orMode =
     offer?.isAndOffer === false ||
-    entries.some((entry: any) => entry?.relation === "or");
+    entries.some((entry: any) => entry?.relation === "or") ||
+    groups.some((group) => group?.relation === "or");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   // Group mode: units picked per plain entry (row key → count); a
   // customizable entry counts once its row is staged.
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // Category sections: plain units per group (group key → entity id → n);
+  // which group owns each staged row (itemId → group key); the customizable
+  // category entity tapped last (its row is attributed when it lands — the
+  // same entity can sit in two groups, or be an item entry too); and, in
+  // "or" mode, the option the guest is completing.
+  const [catUnits, setCatUnits] = useState<Record<string, Record<string, number>>>({});
+  const [owners, setOwners] = useState<Record<string, string>>({});
+  const [tap, setTap] = useState<{ owner: string; entityId: string; before: string[] } | null>(null);
+  const [orOption, setOrOption] = useState<string | null>(null);
+
+  // A row staged after a category tap belongs to the tapped group (React's
+  // "adjust state while rendering" — no effect, no extra commit).
+  const landed = tap
+    ? stagedRows.find(
+        (row) =>
+          row?.itemId !== undefined &&
+          !tap.before.includes(String(row.itemId)) &&
+          owners[String(row.itemId)] === undefined &&
+          rowIsEntity(row, tap.entityId),
+      )
+    : undefined;
+  if (tap && landed) {
+    setOwners((prev) => ({ ...prev, [String(landed.itemId)]: tap.owner }));
+    setTap(null);
+  }
+  const ownerOf = (row: StagedRow): string | undefined => owners[String(row?.itemId)];
+  /** Rows the item entries may claim: never one a category group owns. */
+  const itemRows = stagedRows.filter((row) => ownerOf(row) === undefined);
 
   const unitsOf = (entry: GetEntry): number =>
     isPlain(entry) ? (counts[rowKeyOf(entry)] ?? 0) : stagedRowFor(entry) ? 1 : 0;
@@ -165,12 +242,105 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   // or an unconfigured getQuantity) says "can't be applied" and locks.
   const groupFillable = groupWise && canCompleteGroupWisePicks(offer, groupPicks, entries);
 
-  // Or-mode pick: the newest staged row's entry wins, else the plain radio pick.
-  const newest = stagedRows[stagedRows.length - 1];
+  // Or-mode pick: the newest staged row's entry wins, else the plain radio
+  // pick — none while the guest completes a category group instead.
+  const newest = itemRows[itemRows.length - 1];
   const stagedEntry = newest
     ? customEntries.find((entry) => matchesGetItemEntry(entry, newest))
     : undefined;
-  const orPickId = stagedEntry ? rowKeyOf(stagedEntry) : selectedId;
+  const orPickId =
+    orOption !== null && orOption !== ITEMS
+      ? null
+      : stagedEntry
+        ? rowKeyOf(stagedEntry)
+        : selectedId;
+
+  /* ---- category sections (lane offers-parity F1) ---- */
+  const isPlainCat = (entity: CategoryEntity) => entity?.type === "ITEM";
+  const entityKeyOf = (entity: CategoryEntity) => String(entity?.id ?? "");
+  /** The newest row the group holds for a customizable entity. */
+  const heldRowIn = (key: string, entityId: string): StagedRow | undefined =>
+    [...stagedRows].reverse().find((row) => ownerOf(row) === key && rowIsEntity(row, entityId));
+  /** D7: a plain entity's taps; a customizable one is ONE unit per group. */
+  const unitsIn = (group: CategoryGroup, entity: CategoryEntity): number => {
+    const key = groupKeyOf(group);
+    return isPlainCat(entity)
+      ? (catUnits[key]?.[entityKeyOf(entity)] ?? 0)
+      : heldRowIn(key, entityKeyOf(entity))
+        ? 1
+        : 0;
+  };
+  const haveIn = (group: CategoryGroup): number =>
+    (group.entities ?? []).reduce((sum, entity) => sum + unitsIn(group, entity), 0);
+  /** The group's commit lines, or null until it holds exactly its need. */
+  const linesIn = (group: CategoryGroup): CategoryCommitLine[] | null =>
+    buildCategoryCommitLines(
+      group,
+      (group.entities ?? []).flatMap((entity): CategoryPick[] => {
+        const quantity = unitsIn(group, entity);
+        if (quantity === 0) return [];
+        return isPlainCat(entity)
+          ? [{ entity, quantity }]
+          : [{ entity, quantity, row: heldRowIn(groupKeyOf(group), entityKeyOf(entity)) }];
+      }),
+    );
+  const completedLines = groups.map(linesIn);
+
+  /**
+   * "Or" offers: a pick in one option clears every other option — its plain
+   * units, the item radio and the staged rows it owns (removeGetItemsById,
+   * never emptyGetItems: that would wipe the active group's rows too).
+   * ponytail: a customizable pick switches at the TAP (its row lands later),
+   * so BACK out of that PDP leaves the earlier option cleared; switch when
+   * the row lands if guests trip on it.
+   */
+  const switchTo = (option: string) => {
+    if (!orMode || groups.length === 0 || option === orOption) return;
+    setOrOption(option);
+    if (option !== ITEMS) setSelectedId(null);
+    setCatUnits((prev) => (option === ITEMS ? {} : { [option]: prev[option] ?? {} }));
+    stagedRows
+      .filter((row) => (ownerOf(row) ?? ITEMS) !== option)
+      .forEach((row) => removeGetItemsById(row.itemId, "itemId"));
+  };
+
+  /** A category row tap: a plain unit (up to the need), or the embedded PDP. */
+  const handleCategoryTap = (group: CategoryGroup, entity: CategoryEntity) => {
+    if (!canFillCategoryGroup(group)) return;
+    const key = groupKeyOf(group);
+    const entityId = entityKeyOf(entity);
+    const room = haveIn(group) < getCategoryGroupNeed(group);
+    if (isPlainCat(entity)) {
+      if (!room) return;
+      switchTo(key);
+      setCatUnits((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [entityId]: (prev[key]?.[entityId] ?? 0) + 1 },
+      }));
+      return;
+    }
+    // A held pick re-customizes (still one unit); a new one needs room.
+    if (unitsIn(group, entity) === 0 && !room) return;
+    switchTo(key);
+    setTap({ owner: key, entityId, before: stagedRows.map((row) => String(row?.itemId)) });
+    openGetItemTierModal(entity);
+  };
+
+  /** A category row's "−": one plain unit off; a customized pick is dropped. */
+  const handleCategoryRemove = (group: CategoryGroup, entity: CategoryEntity) => {
+    const key = groupKeyOf(group);
+    const entityId = entityKeyOf(entity);
+    if (isPlainCat(entity)) {
+      setCatUnits((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [entityId]: Math.max(0, (prev[key]?.[entityId] ?? 0) - 1) },
+      }));
+      return;
+    }
+    stagedRows
+      .filter((row) => ownerOf(row) === key && rowIsEntity(row, entityId))
+      .forEach((row) => removeGetItemsById(row.itemId, "itemId"));
+  };
 
   const discountLine = (entry: any): string => {
     if (entry?.discountType === "percent") {
@@ -184,15 +354,18 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   };
 
   // Group mode: exactly getQuantity units (the SDK commit exists only then).
+  // Or-mode: one complete option — the item radio, or a group at its need.
   // And-mode: plain entries are auto-included; every customizable one must
-  // be staged first.
+  // be staged first, and every category group hold exactly its need.
   const canConfirm =
     !committing &&
     (group
       ? group.commitItems !== null
       : orMode
-        ? orPickId !== null
-        : entries.length > 0 && customEntries.every((entry) => stagedRowFor(entry)));
+        ? orPickId !== null || completedLines.some((lines) => lines !== null)
+        : entries.length + groups.length > 0 &&
+          customEntries.every((entry) => stagedRowFor(entry)) &&
+          completedLines.every((lines) => lines !== null));
 
   /** applyOfferByItem-shaped pick: plain → the entry; customizable → the staged row. */
   const pickFor = (entry: GetEntry): GetEntry | null => {
@@ -207,12 +380,21 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   const handleConfirm = async () => {
     if (!canConfirm) return;
-    // Group mode commits exactly the picks, stamped by the SDK rules.
+    // Group mode commits exactly the picks, stamped by the SDK rules; a
+    // category group its exact lines, stamped from the group.
+    const categoryLines = orMode
+      ? orPickId !== null
+        ? []
+        : (completedLines.find((lines) => lines !== null) ?? [])
+      : completedLines.flatMap((lines) => lines ?? []);
     const picks = group
       ? (group.commitItems ?? [])
-      : (orMode ? entries.filter((entry) => rowKeyOf(entry) === orPickId) : entries)
-          .map(pickFor)
-          .filter(Boolean);
+      : [
+          ...(orMode ? entries.filter((entry) => rowKeyOf(entry) === orPickId) : entries)
+            .map(pickFor)
+            .filter(Boolean),
+          ...categoryLines,
+        ];
     if (picks.length === 0) return;
     setCommitting(true);
     try {
@@ -269,11 +451,14 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
     }
     if (isPlain(entry)) {
       if (orMode) {
+        switchTo(ITEMS);
         emptyGetItems();
         setSelectedId(rowKeyOf(entry));
       }
       return;
     }
+    switchTo(ITEMS);
+    setTap(null);
     openGetItemTierModal(entry.entities);
   };
 
@@ -405,18 +590,161 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             onClick={() => handleRemoveUnit(entry)}
             className="flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-[1.72px] border-tb-grey-3 text-tb-purple"
           >
-            {/* Minus glyph (Figma icon 3601ce08) — BagItemRow's inline copy. */}
-            <svg viewBox="0 0 24 24" className="h-[24px] w-[24px]" aria-hidden="true">
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M2.5 12C2.5 11.1716 3.17157 10.5 4 10.5L20 10.5C20.8284 10.5 21.5 11.1716 21.5 12C21.5 12.8284 20.8284 13.5 20 13.5L4 13.5C3.17157 13.5 2.5 12.8284 2.5 12Z"
-                fill="currentColor"
-              />
-            </svg>
+            {minusGlyph}
           </button>
         )}
       </div>
+    );
+  };
+
+  /** The minus glyph (Figma icon 3601ce08) — BagItemRow's inline copy. */
+  const minusGlyph = (
+    <svg viewBox="0 0 24 24" className="h-[24px] w-[24px]" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M2.5 12C2.5 11.1716 3.17157 10.5 4 10.5L20 10.5C20.8284 10.5 21.5 11.1716 21.5 12C21.5 12.8284 20.8284 13.5 20 13.5L4 13.5C3.17157 13.5 2.5 12.8284 2.5 12Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+
+  /**
+   * One category entity — the group-mode row skin: a plain row adds a unit
+   * per tap, a customizable row opens the embedded PDP (one unit, its own
+   * customization), "−" outside the row button takes one back. Unpicked
+   * rows lock once the group holds its need; a group that can never fill
+   * locks them all. Render helper, NOT a component (house pattern).
+   */
+  const renderCategoryRow = (section: CategoryGroup, entity: CategoryEntity) => {
+    const key = groupKeyOf(section);
+    const gid = String(section?._id ?? "");
+    const entityId = entityKeyOf(entity);
+    const plain = isPlainCat(entity);
+    const units = unitsIn(section, entity);
+    const held = plain ? undefined : heldRowIn(key, entityId);
+    const locked =
+      !canFillCategoryGroup(section) ||
+      (units === 0 && haveIn(section) >= getCategoryGroupNeed(section));
+    // A held row is priced as CONFIRM will price it (redeemGetItem, add-ons
+    // included); a plain entity carries the converter's stamps.
+    const priced: CategoryEntity = held
+      ? redeemGetItem(held, section?.discountType, 1, section?.value, false)
+      : entity;
+    const showPrice = plain || !!held;
+    const undiscounted = Number(priced?.undiscounted_total_price ?? priced?.price ?? 0);
+    const discounted = Number(priced?.discounted_total_price ?? priced?.price ?? 0);
+    const qtyPrefix = units > 1 ? `${t("bag.lineQty", { qty: units })} ` : "";
+    const imageUrl = resolveEntityImage(entity);
+    return (
+      <div key={entityId} className="flex items-center gap-[16px] border-b border-tb-grey-4 pr-[48px]">
+        <button
+          type="button"
+          data-testid={`freebie-cat-option-${gid}-${entityId}`}
+          disabled={locked}
+          aria-pressed={locked ? undefined : units > 0}
+          onClick={() => handleCategoryTap(section, entity)}
+          className={`flex min-h-[132px] min-w-0 flex-1 items-center gap-[24px] py-[24px] pl-[48px] text-left ${
+            locked ? "opacity-50" : ""
+          }`}
+        >
+          {imageUrl ? (
+            <img
+              alt=""
+              src={imageUrl}
+              className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
+            />
+          ) : (
+            <span className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+          )}
+          <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
+            <span className="text-[24px] font-bold capitalize leading-[28px] text-black">
+              {qtyPrefix}
+              {name(entity)}
+            </span>
+            <span className="text-[20px] leading-[24px] text-tb-ink-purple/70">
+              {discountLine(section)}
+            </span>
+            {!plain && !locked && (
+              <span className="text-[20px] font-bold leading-[24px] text-tb-purple underline">
+                {held ? t("offers.picker.customized") : t("offers.picker.customize")}
+              </span>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-[16px]">
+            {showPrice && undiscounted > discounted && (
+              <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
+                {currency}
+                {undiscounted.toFixed(2)}
+              </span>
+            )}
+            {showPrice && (
+              <span className="text-[24px] font-medium leading-[28px] text-black">
+                {currency}
+                {discounted.toFixed(2)}
+              </span>
+            )}
+            <SelectionGlyph selected={units > 0} mode="and" />
+          </span>
+        </button>
+        {units > 0 && (
+          <button
+            type="button"
+            data-testid={`freebie-cat-dec-${gid}-${entityId}`}
+            aria-label={t("offers.buyStage.decrease", { name: name(entity) })}
+            onClick={() => handleCategoryRemove(section, entity)}
+            className="flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-[1.72px] border-tb-grey-3 text-tb-purple"
+          >
+            {minusGlyph}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  /**
+   * A category group's section (design language — no Figma frame; the buy
+   * stage's "Any N from <group>" header + "n of N added" counter, sign-off):
+   * a group that can never fill says so up front.
+   */
+  const renderCategorySection = (section: CategoryGroup) => {
+    const gid = String(section?._id ?? "");
+    const need = getCategoryGroupNeed(section);
+    const fillable = canFillCategoryGroup(section);
+    return (
+      <section
+        key={groupKeyOf(section)}
+        data-testid={`freebie-cat-${gid}`}
+        aria-labelledby={`freebie-cat-head-${gid}`}
+      >
+        <div className="flex items-center justify-between gap-[16px] border-b border-tb-grey-4 px-[48px] pb-[16px] pt-[32px]">
+          <h3
+            id={`freebie-cat-head-${gid}`}
+            className="min-w-0 text-[22px] font-bold leading-[26px] text-black"
+          >
+            {t("offers.buyStage.groupNeed", {
+              need,
+              label: section?.name || t("offers.buyStage.groupFallbackLabel"),
+            })}
+          </h3>
+          <span
+            data-testid={`freebie-cat-count-${gid}`}
+            aria-live="polite"
+            className="shrink-0 rounded-full bg-tb-lilac px-[16px] py-[6px] text-[18px] font-bold leading-[22px] text-tb-purple"
+          >
+            {t("offers.buyStage.addedCount", { have: haveIn(section), need })}
+          </span>
+        </div>
+        {!fillable && (
+          <p
+            data-testid={`freebie-cat-na-${gid}`}
+            className="border-b border-tb-grey-4 px-[48px] py-[12px] text-[20px] font-medium leading-[24px] text-tb-pink-dark"
+          >
+            {t("offers.notApplicable")}
+          </p>
+        )}
+        {(section.entities ?? []).map((entity) => renderCategoryRow(section, entity))}
+      </section>
     );
   };
 
@@ -476,6 +804,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-[8px]">
           {entries.map(renderRow)}
+          {groups.map(renderCategorySection)}
         </div>
 
         <div className="px-[24px] pb-[32px] pt-[16px]">
@@ -518,7 +847,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
  * (its own customization), "−" takes one back, unpicked rows lock at N, and
  * CONFIRM unlocks at exactly N units with a hint until then (a group its
  * entries can never fill reads "can't be applied", rows locked) — the SDK
- * group-wise rules build the commit. CONFIRM commits via
+ * group-wise rules build the commit. Get-CATEGORY groups (lane
+ * offers-parity F1) render one section each below the item rows — "Any N
+ * from <group>" + "n of N added", plain units per tap up to the need, a
+ * customizable entity ONE unit through the embedded PDP; an "or" offer
+ * completes ONE option (the item radio, or a whole group), and the exact
+ * commit lines come from the SDK (offerCategoryFreebies). CONFIRM commits via
  * useOfferApply.commitPickedFreebies, then closes; X / backdrop drop any
  * staged rows.
  */

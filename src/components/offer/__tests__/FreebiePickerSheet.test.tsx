@@ -3,7 +3,7 @@
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -1254,5 +1254,258 @@ describe("FreebiePickerSheet — group-wise pick N (G3)", () => {
     expect(unitsOf()).toBe(2);
     // Large £5 + sauce £2, both free.
     expect(billDiscount()).toBe(7);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity (U9, F1): get-CATEGORY groups in the picker — one
+ * section per group with entities, "Any N from <group>" + "n of N added",
+ * the group's own discount line. A plain entity adds a unit per tap up to
+ * the need ("−" takes one back); a customizable entity is ONE unit per
+ * group (its embedded-PDP row, attributed to the group the guest tapped —
+ * D7); a group that can never fill says "can't be applied" up front. "Or"
+ * offers complete ONE option (an item radio, or a whole group at exactly
+ * its need) — a pick in one clears the others, never the active group's
+ * staged rows. CONFIRM sends the item picks + the exact commit lines.
+ * ------------------------------------------------------------------ */
+const catPlain = (id: string, name: string, price: number) => ({
+  ...sauceEntity(id, name),
+  price,
+  undiscounted_total_price: price,
+});
+const catCustom = (id: string, name: string, price: number) => ({
+  id,
+  name,
+  price,
+  modifiers: ["pickle_group"],
+  hasVariant: false,
+  discountType: "percent",
+  discountValue: 100,
+  isGetItem: true,
+  type: "CUSTOMIZABLE",
+  customizations: { pickle_group: [] },
+  baseItem: { id, name, price, modifiers: ["pickle_group"] },
+  baseItemPrice: price,
+});
+const stagedCustom = (id: string, itemId: string, total = 1) => ({
+  id,
+  itemId,
+  itemType: "CUSTOMIZABLE",
+  type: "CUSTOMIZABLE",
+  name: id,
+  quantity: 1,
+  price: 1,
+  total_price: total,
+  customizations: { pickle_group: [] },
+  isGetItem: true,
+});
+
+/** Sauces ×2 at 100 %: two plain sauces + a customizable BBQ sauce. */
+const SAUCES_GROUP = {
+  _id: "sauces",
+  name: "Sauces",
+  quantity: 2,
+  relation: "and",
+  value: 100,
+  discountType: "percent",
+  entities: [
+    catPlain("tortilla-sauce", "Tortilla Sauce", 2),
+    catPlain("caesar-dressing", "Caesar Dressing", 2),
+    catCustom("bbq-sauce", "BBQ Sauce", 1),
+  ],
+};
+const CAT_AND_OFFER = {
+  ...offerBase,
+  _id: "offer-cat-and",
+  name: "A salad and any 2 sauces free",
+  isAndOffer: true,
+  getItems: { items: [{ ...AND_OFFER.getItems.items[0] }], categories: [SAUCES_GROUP] },
+};
+const CAT_OR_OFFER = {
+  ...offerBase,
+  _id: "offer-cat-or",
+  name: "A salad or any 2 sauces",
+  isAndOffer: false,
+  getItems: {
+    items: [{ ...AND_OFFER.getItems.items[0], relation: "or" }],
+    categories: [{ ...SAUCES_GROUP, relation: "or" }],
+  },
+};
+
+describe("FreebiePickerSheet — get-category groups (offers-parity F1)", () => {
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
+    store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+
+  const option = (entityId: string, groupId = "sauces") =>
+    screen.getByTestId(`freebie-cat-option-${groupId}-${entityId}`);
+  const count = (groupId = "sauces") => screen.getByTestId(`freebie-cat-count-${groupId}`);
+  const confirm = () => screen.getByTestId("freebie-confirm");
+
+  it("one section per group: 'Any 2 from Sauces' + '0 of 2 added', each row on the GROUP's discount line", () => {
+    renderPicker(CAT_AND_OFFER);
+    const section = screen.getByTestId("freebie-cat-sauces");
+    expect(section).toHaveTextContent("Any 2 from Sauces");
+    expect(count()).toHaveTextContent("0 of 2 added");
+    expect(option("tortilla-sauce")).toHaveTextContent("Free");
+    expect(option("tortilla-sauce")).toHaveTextContent("Tortilla Sauce");
+    // The item entry still renders above the section.
+    expect(screen.getByTestId("freebie-option-greek-salad")).toBeInTheDocument();
+  });
+
+  it("a plain entity: '+' adds a unit up to the need, unpicked rows lock at the need, '−' takes one back", async () => {
+    renderPicker(CAT_AND_OFFER);
+    await userEvent.click(option("tortilla-sauce"));
+    expect(count()).toHaveTextContent("1 of 2 added");
+    await userEvent.click(option("tortilla-sauce"));
+    expect(count()).toHaveTextContent("2 of 2 added");
+    expect(option("tortilla-sauce")).toHaveTextContent("2 x Tortilla Sauce");
+    expect(option("caesar-dressing")).toBeDisabled();
+    // A third unit is impossible.
+    await userEvent.click(option("tortilla-sauce"));
+    expect(count()).toHaveTextContent("2 of 2 added");
+
+    await userEvent.click(screen.getByTestId("freebie-cat-dec-sauces-tortilla-sauce"));
+    expect(count()).toHaveTextContent("1 of 2 added");
+    expect(option("caesar-dressing")).toBeEnabled();
+  });
+
+  it("a customizable entity opens the embedded PDP; its staged row counts ONE unit for the tapped group; a re-customization replaces it", async () => {
+    renderPicker(CAT_AND_OFFER);
+    await userEvent.click(option("bbq-sauce"));
+    expect(tierSessionOpen()).toBe(true);
+    expect(count()).toHaveTextContent("0 of 2 added");
+
+    stage(stagedCustom("bbq-sauce", "bbq-1"));
+    expect(count()).toHaveTextContent("1 of 2 added");
+    expect(option("bbq-sauce")).toHaveTextContent("Customized — tap to change");
+
+    // A second customization of the same entity: still ONE unit.
+    await userEvent.click(option("bbq-sauce"));
+    stage(stagedCustom("bbq-sauce", "bbq-2", 2));
+    expect(count()).toHaveTextContent("1 of 2 added");
+
+    // "−" drops it (every row it holds).
+    await userEvent.click(screen.getByTestId("freebie-cat-dec-sauces-bbq-sauce"));
+    expect(count()).toHaveTextContent("0 of 2 added");
+    expect(cartState().getItems).toEqual([]);
+  });
+
+  it("a row staged WITHOUT a group tap never counts for the group", () => {
+    renderPicker(CAT_AND_OFFER);
+    stage(stagedCustom("bbq-sauce", "bbq-1"));
+    expect(count()).toHaveTextContent("0 of 2 added");
+  });
+
+  it("a group only customizable entities can never fill says 'can't be applied' up front, rows locked; need 0 too", () => {
+    const burgersOnly = {
+      ...CAT_AND_OFFER,
+      _id: "offer-burgers",
+      getItems: {
+        items: [],
+        categories: [{ ...SAUCES_GROUP, _id: "burgers", name: "Burgers", entities: [catCustom("free-burger", "Burger", 9)] }],
+      },
+    };
+    renderPicker(burgersOnly);
+    expect(screen.getByTestId("freebie-cat-na-burgers")).toHaveTextContent(
+      "This reward can't be applied to your current order"
+    );
+    expect(option("free-burger", "burgers")).toBeDisabled();
+    expect(confirm()).toHaveAttribute("aria-disabled", "true");
+    cleanup();
+
+    renderPicker({
+      ...CAT_AND_OFFER,
+      _id: "offer-need-0",
+      getItems: { items: [], categories: [{ ...SAUCES_GROUP, quantity: 0 }] },
+    });
+    expect(screen.getByTestId("freebie-cat-na-sauces")).toBeInTheDocument();
+    expect(option("tortilla-sauce")).toBeDisabled();
+  });
+
+  it("and-mode: CONFIRM needs every item entry AND every group at exactly its need; it lands the salad + the group's lines, stamped from the group", async () => {
+    const { onClose } = renderPicker(CAT_AND_OFFER);
+    expect(confirm()).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(option("tortilla-sauce"));
+    expect(confirm()).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(option("caesar-dressing"));
+    expect(confirm()).toHaveAttribute("aria-disabled", "false");
+
+    await userEvent.click(confirm());
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    const rows = getItemRows();
+    expect(rows.map((row: any) => row.id).sort()).toEqual(["caesar-dressing", "greek-salad", "tortilla-sauce"]);
+    const sauces = rows.filter((row: any) => row.id !== "greek-salad");
+    expect(sauces.every((row: any) => row.discountType === "percent" && Number(row.discountValue) === 100)).toBe(true);
+    expect(sauces.every((row: any) => row.discounted_total_price === 0)).toBe(true);
+    expect(cartState().cartOffer._id).toBe("offer-cat-and");
+    expect(cartState().getItems).toEqual([]);
+  });
+
+  it("a category-ONLY 'and' offer (no item entries) can confirm (was: an empty picker, CONFIRM never enabled)", async () => {
+    const { onClose } = renderPicker({ ...CAT_AND_OFFER, _id: "offer-cat-only", getItems: { items: [], categories: [SAUCES_GROUP] } });
+    await userEvent.click(option("tortilla-sauce"));
+    await userEvent.click(option("tortilla-sauce"));
+    await userEvent.click(confirm());
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    const sauces = getItemRows().filter((row: any) => row.id === "tortilla-sauce");
+    expect(sauces.reduce((units: number, row: any) => units + Number(row.quantity), 0)).toBe(2);
+  });
+
+  it("or-mode: a group pick clears the item radio, and the reverse — never wiping the ACTIVE group's staged rows", async () => {
+    renderPicker(CAT_OR_OFFER);
+    const salad = () => screen.getByTestId("freebie-option-greek-salad");
+
+    await userEvent.click(salad());
+    expect(salad()).toHaveAttribute("aria-pressed", "true");
+    expect(confirm()).toHaveAttribute("aria-disabled", "false");
+
+    // A group pick clears the item radio.
+    await userEvent.click(option("tortilla-sauce"));
+    expect(salad()).toHaveAttribute("aria-pressed", "false");
+    expect(count()).toHaveTextContent("1 of 2 added");
+    expect(confirm()).toHaveAttribute("aria-disabled", "true");
+
+    // A customized group pick, then another plain unit: the staged row stays.
+    await userEvent.click(option("bbq-sauce"));
+    stage(stagedCustom("bbq-sauce", "bbq-1"));
+    expect(count()).toHaveTextContent("2 of 2 added");
+    await userEvent.click(screen.getByTestId("freebie-cat-dec-sauces-tortilla-sauce"));
+    await userEvent.click(option("caesar-dressing"));
+    expect(cartState().getItems.map((row: any) => row.itemId)).toEqual(["bbq-1"]);
+    expect(count()).toHaveTextContent("2 of 2 added");
+    expect(confirm()).toHaveAttribute("aria-disabled", "false");
+
+    // The reverse: the item radio clears the group — its units AND its staged row.
+    await userEvent.click(salad());
+    expect(salad()).toHaveAttribute("aria-pressed", "true");
+    expect(count()).toHaveTextContent("0 of 2 added");
+    expect(cartState().getItems).toEqual([]);
+  });
+
+  it("or-mode CONFIRM sends ONE option: the completed group's lines only", async () => {
+    const { onClose } = renderPicker(CAT_OR_OFFER);
+    await userEvent.click(option("tortilla-sauce"));
+    await userEvent.click(option("caesar-dressing"));
+    await userEvent.click(confirm());
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(getItemRows().map((row: any) => row.id).sort()).toEqual(["caesar-dressing", "tortilla-sauce"]);
+  });
+
+  it("X empties the staged rows and commits nothing", async () => {
+    const { onClose } = renderPicker(CAT_AND_OFFER);
+    await userEvent.click(option("bbq-sauce"));
+    stage(stagedCustom("bbq-sauce", "bbq-1"));
+    await userEvent.click(screen.getByTestId("freebie-close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(cartState().getItems).toEqual([]);
+    expect(getItemRows()).toEqual([]);
   });
 });

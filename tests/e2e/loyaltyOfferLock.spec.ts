@@ -322,7 +322,8 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
       "font-size",
       "24px"
     );
-    const flatRow = page.getByTestId(`offer-row-${FLAT_2._id}`);
+    // offers-parity D8: an eligible row's box is its body (the radio is the overlay).
+    const flatRow = page.getByTestId(`offer-row-body-${FLAT_2._id}`);
     expect(await boxSize(flatRow.locator(":scope > span").first())).toEqual({
       width: 152,
       height: 152,

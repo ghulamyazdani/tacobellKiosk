@@ -390,7 +390,8 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
       "aria-checked",
       "true"
     );
-    await expect(page.getByTestId(`offer-row-${AUTO_FLAT_MIN10._id}`)).not.toContainText(
+    // offers-parity D8: the radio is the row's overlay; its text is the body's.
+    await expect(page.getByTestId(`offer-row-body-${AUTO_FLAT_MIN10._id}`)).not.toContainText(
       "Applied"
     );
     await expect(page.getByTestId("bag-rewards-applied")).toHaveCount(0);
