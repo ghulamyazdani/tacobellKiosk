@@ -129,6 +129,12 @@ async function capture(page: Page, name: string) {
  * was flattened onto white: the scratches lived only in the alpha). The
  * bitmap is ~99.9 % translucent; a flattened copy is 0 %. Problems as text.
  */
+/** The Figma BG TEXTURE ground carries the plastic_2 sheen (UB3; /tent, /payment, /receipt since 2026-10-13). */
+async function expectSheen(scope: Locator, label: string) {
+  await expect.soft(scope.locator('img[src*="plastic-overlay"]'), `${label}: one sheen`).toHaveCount(1);
+  expect.soft(await sheenProblems(scope), `${label}: the sheen (UB3)`).toEqual([]);
+}
+
 function sheenProblems(scope: Locator): Promise<string[]> {
   return scope.locator('img[src*="plastic-overlay"]').evaluateAll(async (elements) => {
     if (elements.length === 0) return ["no plastic sheen"];
@@ -670,6 +676,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("tent-screen")).toBeVisible({ timeout: 15_000 });
     await capture(page, "entry-15-tent");
+    await expectSheen(page.getByTestId("tent-screen"), "entry-15");
 
     // Below the 1..99 range: refused at CONFIRM with the red banner.
     await typeDigits(page, "0");
@@ -684,6 +691,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("payment-total")).toContainText("£9.00");
     await capture(page, "entry-17-payment");
+    await expectSheen(page.getByTestId("payment-screen"), "entry-17");
 
     // The 3 s cancel window, held still for its shot.
     await pauseClock(page);
@@ -695,6 +703,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
 
     await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
     await capture(page, "entry-19-receipt");
+    await expectSheen(page.getByTestId("receipt-screen"), "entry-19");
 
     await page.getByTestId("receipt-none").click();
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });

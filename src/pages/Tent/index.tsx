@@ -14,6 +14,7 @@ import usePageEnter from "../../hooks/utils/usePageEnter";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
 /** `tent_number_range` payload: `value.value.{from,to}` (fork Tent.tsx:84-99). */
@@ -266,18 +267,24 @@ export default function Tent() {
       data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
-      {/* Full-bleed purple texture — the SAME asset as the splash screen
-          (bg-texture.png is byte-identical to the Figma fill). Tiled at
-          540px so the horizontal repeat lands exactly on the 1080px frame
-          edges; the splash tiles it at 240px for a finer grain. */}
+      {/* The Figma "BG TEXTURE" ground, exactly as on /second and the splash
+          (user 2026-10-13): bg-texture.png at its 240px tile plus the plastic_2
+          sheen at 50 %, both stage-sized and bottom-anchored so in ADA they
+          continue the brand zone's across the seam. */}
       <div
         aria-hidden
-        className="absolute inset-0"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px]"
         style={{
           backgroundImage: `url(${bgTexture})`,
-          backgroundSize: "540px 540px",
+          backgroundSize: "240px 240px",
           backgroundPosition: "top left",
         }}
+      />
+      <img
+        aria-hidden
+        alt=""
+        src={plasticOverlay}
+        className="pointer-events-none absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
       />
 
       <button
