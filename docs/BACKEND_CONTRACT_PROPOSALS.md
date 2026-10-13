@@ -19,7 +19,7 @@
 | 5 | Activity Center passcode | A static passcode in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
 | 6 | Xeno SCAN APP login (1:5881) | No QR format and no lookup | `TBR1.` app token + `check_loyalty_balance_by_token` event | Tab inert, no scanner |
 | 7 | Resend OTP (reward redemption) | No endpoint | `resend_redemption_otp` event | No resend button |
-| 8 | Offer photos + terms & conditions + expiry (1:3924, 1:4009, 1:4044) | The offer payload has no image, terms or validity | `imageUrl`, `terms`, `validTill` on `get_cx_valid_offers` | Bell placeholder; no T&C rows |
+| 8 | Offer photos + terms & conditions + expiry (1:3924, 1:4009, 1:4044) | The offer payload has no terms or validity (`imageUrl` now arrives: 2 of the tenant's 76 offers set it) | `imageUrl`, `terms`, `validTill` on `get_cx_valid_offers` | Bell placeholder; a kiosk-composed description in the T&C slot (offers-parity); no terms or expiry |
 | 9 | Nutrition values + allergens (1:5823) | Every nutrient value is 0, the units are wrong, allergens are dropped | Real values with fixed units per item and size; `allergens` as codes | Calories only, when above 0 |
 | 10 | "Apply to the following burrito" (1:4641) | No payload models repeated bundles | `bundleKey` + `bundleIndex` on `_combo` groups; shared constituent ids | One flat slot grid, no copy toggle |
 | 11 | Ingredient portion levels NONE / REGULAR / EXTRA (1:3007, 1:3037, 1:5477) | No level or per-level price in the menu | A `levels` list (code + price) per default ingredient | Add / remove picks only |
@@ -458,7 +458,7 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
 
 ## 8. Offer photos, terms & conditions and expiry
 
-**Problem.** The Figma reward rows (1:3924, My Bag 1:3137) show a product photo per offer, and the T&C frames (1:4009, 1:4044) show an "Expires …" line plus terms text clamped to two lines with Show more / Show less (several rows can be open at once; the design notes 1:3782 sort by descending expiry). The kiosk can build none of it: `get_cx_valid_offers` builds each offer explicitly (`posistApp/server/api/cx/cx.controller.js:2795`, `getOffersHelper2` → `tempObj`) with no image, description, terms or validity. The Offer schema has no image or terms field; `valid.date.endDate` exists but is only checked server-side (`api/Utils/utils.js:263`) and never shipped. Today the rows show the bell placeholder and no T&C.
+**Problem.** The Figma reward rows (1:3924, My Bag 1:3137) show a product photo per offer, and the T&C frames (1:4009, 1:4044) show an "Expires …" line plus terms text clamped to two lines with Show more / Show less (several rows can be open at once; the design notes 1:3782 sort by descending expiry). The kiosk can build none of it: `get_cx_valid_offers` builds each offer explicitly (`posistApp/server/api/cx/cx.controller.js:2795`, `getOffersHelper2` → `tempObj`) with no image, description, terms or validity. The Offer schema has no image or terms field; `valid.date.endDate` exists but is only checked server-side (`api/Utils/utils.js:263`) and never shipped. Today the rows show the bell placeholder and, since lane offers-parity (2026-10-13), a kiosk-composed description (the buy/get sentence or the scoped line) in the terms slot; no terms or expiry. Update 2026-10-13: the tenant's `get_cx_valid_offers` payload now carries `imageUrl` on every offer (non-null on 2 of 76: Free Cookie MOV, Get Least priced item free).
 
 **What the kiosk would read** (additive fields on each offer in the `get_cx_valid_offers` response):
 
@@ -490,7 +490,7 @@ The feature is turned on when the getLoyaltyPartner response includes `partnerDe
 2. Per-language terms: one `termsSecondary`, or a map keyed by language code?
 3. Expiry sort (Figma notes) vs today's saving rank (P7b): which should the kiosk use when both apply?
 
-**Kiosk-side status.** Not built (blocked on data); the contract and component designs are ready.
+**Kiosk-side status.** Photos, terms and expiry: not built (blocked on data; the 2 `imageUrl`s are not wired yet — P12); the contract and component designs are ready. Descriptions: built (lane offers-parity, 2026-10-13) — each row shows posistKiosk's composed description in the terms slot, clamped to two lines with Show more / Show less; a real `terms` field would replace it.
 
 ---
 
