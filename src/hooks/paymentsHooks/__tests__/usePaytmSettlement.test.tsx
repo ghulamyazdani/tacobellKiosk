@@ -12,7 +12,8 @@ import {
 import { setPaymentSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setAutenticationDetails } from "@cx-sdk/core/auth/authentication.slice";
 import { setClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
-import { store } from "../../../redux/app/store";
+import { readOpenPaytmSession } from "@cx-sdk/payments/gateways/paytmKiosk";
+import { persistor, store } from "../../../redux/app/store";
 import {
   IDLE_HOLD_MAX_MS,
   IdleHoldContext,
@@ -161,7 +162,7 @@ function mountWithPreDeadlineRead() {
     <Provider store={store}>
       <IdleHoldContext.Provider value={() => undefined}>
         <MemoryRouter
-          initialEntries={[{ pathname: "/paymentPolling", state: { receipt: "none" } }]}
+          initialEntries={["/paymentPolling"]}
         >
           <Harness />
         </MemoryRouter>
@@ -248,9 +249,7 @@ describe("usePaytmSettlement at the payment deadline", () => {
 
     expect(phase()).toBe("paid");
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith("/orderSuccess", {
-      state: { receipt: "none" },
-    });
+    expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
     expect(statusCalls).toHaveLength(1);
     expect(voidCalls).toHaveLength(0);
   });
@@ -277,9 +276,19 @@ describe("usePaytmSettlement — the settlement loop", () => {
   const holds = () => adjust.mock.calls.reduce((sum, [delta]) => sum + delta, 0);
   const read = () =>
     store.getState() as unknown as {
-      payment: { paymentType: string; posBillNo: string; paytmQrCode: string };
+      payment: { paymentType: string; posBillNo: string; posBillTime: unknown; paytmQrCode: string };
       loyalty: { claimedCoupon: { isClaimed: boolean; couponData: Record<string, unknown> } };
     };
+  /** state.payment as redux-persist last wrote it (`persist:root`), read synchronously. */
+  const disk = () => {
+    const root = JSON.parse(window.localStorage.getItem("persist:root") ?? "{}") as Record<string, string>;
+    return JSON.parse(root.payment ?? "{}") as Record<string, unknown>;
+  };
+  const pick = ({ posBillNo, posBillTime, paymentType }: Record<string, unknown>) => ({
+    posBillNo,
+    posBillTime,
+    paymentType,
+  });
   const answer = (value: string): Promise<Envelope> => Promise.resolve({ data: { status: value } });
   const failWith = (status: unknown): Promise<Envelope> => Promise.resolve({ error: { status } });
 
@@ -298,7 +307,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
     render(
       <Provider store={store}>
         <IdleHoldContext.Provider value={adjust}>
-          <MemoryRouter initialEntries={[{ pathname: "/paymentPolling", state: { receipt: "print" } }]}>
+          <MemoryRouter initialEntries={["/paymentPolling"]}>
             <Harness />
           </MemoryRouter>
         </IdleHoldContext.Provider>
@@ -489,12 +498,12 @@ describe("usePaytmSettlement — the settlement loop", () => {
       expect(text("phase")).toBe("paid");
       expect(statusCalls).toHaveLength(1); // nothing reads after paid
       expect(voidCalls).toHaveLength(0);
-      expect(mockNavigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
     });
   });
 
   describe("paid", () => {
-    it("records locally ONCE, never pushes, navigates ONCE with the receipt, and stops reading", async () => {
+    it("records locally ONCE, never pushes, navigates ONCE to the post-payment /receipt, and stops reading", async () => {
       seed("edc");
       const replies = ["pending", "paid"];
       statusImpl = () => answer(replies.shift() ?? "paid");
@@ -505,10 +514,10 @@ describe("usePaytmSettlement — the settlement loop", () => {
       expect(text("phase")).toBe("paid");
       expect(mockRecord.mock.calls).toEqual([[BILL, false, 0]]);
       expect(mockPushOrder).not.toHaveBeenCalled();
-      expect(mockNavigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
       expect(events("payment_successful")).toEqual([{ order_id: BILL, payment_type: "PaytmEdc", net_amount: 9 }]);
       expect(voidCalls).toHaveLength(0);
-      expect(read().payment.paymentType).toBe("PaytmEdc"); // /start's reset clears it, not this screen
+      expect(read().payment.paymentType).toBe("PaytmEdc"); // the type stays: /receipt's post-payment mode and the ticket read it
 
       await step(15_000);
       expect(statusCalls).toHaveLength(2);
@@ -517,7 +526,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
       noSecretsInAnalytics();
     });
 
-    it("a recordOrderLocally throw is not a payment failure: reported, then Order Complete", async () => {
+    it("a recordOrderLocally throw is not a payment failure: reported, then the post-payment /receipt", async () => {
       seed("edc");
       statusImpl = () => answer("paid");
       mockRecord.mockRejectedValue(new Error("dexie"));
@@ -527,7 +536,73 @@ describe("usePaytmSettlement — the settlement loop", () => {
       expect(events("error_occurred")).toEqual([{ error_source: "paytm_record_local", order_id: BILL }]);
       expect(events("payment_failed")).toEqual([]);
       expect(events("payment_successful")).toHaveLength(1);
-      expect(mockNavigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
+      // The money moved: settled all the same (U7).
+      expect(read().payment.posBillNo).toBe("");
+      expect(readOpenPaytmSession(read().payment)).toBeNull();
+    });
+
+    /*
+      U6 (2026-10-13: the receipt question follows the payment). A paid session
+      must leave readOpenPaytmSession — in memory AND on disk — before
+      /receipt mounts, so the resume guard renders the question and /start's
+      release never reads a paid order. ORDER IS LOAD-BEARING (review R2):
+      record → clear → flush → navigate; the bookkeeping still sees the open
+      session.
+    */
+    it.each([
+      ["edc", "PaytmEdc"],
+      ["dqr", "PaytmDynamicQr"],
+    ] as const)("U6 %s paid: records ONCE with the session still open, THEN the ids leave memory AND disk (the type stays), /receipt ONCE, no read after", async (kind, type) => {
+      seed(kind);
+      await persistor.flush();
+      expect(disk().posBillNo).toBe(BILL); // the precondition the flush is proven against
+      statusImpl = () => answer("paid");
+      const atRecord: unknown[] = [];
+      mockRecord.mockImplementation(() => {
+        atRecord.push(read().payment.posBillNo);
+        return Promise.resolve();
+      });
+      const atNavigate: unknown[] = [];
+      mockNavigate.mockImplementation(() => {
+        const { posBillNo, posBillTime, paymentType } = read().payment;
+        atNavigate.push({ memory: { posBillNo, posBillTime, paymentType }, disk: pick(disk()) });
+      });
+      mount();
+      await advance(3000);
+
+      expect(atRecord).toEqual([BILL]);
+      const settled = { posBillNo: "", posBillTime: "", paymentType: type };
+      expect(atNavigate).toEqual([{ memory: settled, disk: settled }]);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
+      expect(readOpenPaytmSession(read().payment)).toBeNull();
+      // DQR: the QR string stays until Order Complete's exit empties the slice.
+      expect(read().payment.paytmQrCode).toBe(kind === "dqr" ? QR : "");
+      await step(15_000);
+      expect(statusCalls).toHaveLength(1);
+      expect(mockRecord).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+    });
+
+    it("U7 a flush that throws (defensive: redux-persist swallows write failures) never holds a paid guest: the ids cleared, /receipt", async () => {
+      seed("edc");
+      statusImpl = () => answer("paid");
+      const dispatchOf = store.dispatch;
+      const flushes = vi.fn();
+      const dispatchSpy = vi.spyOn(store, "dispatch").mockImplementation(((action: { type: string }) => {
+        if (action.type === "persist/FLUSH") {
+          flushes();
+          throw new Error("quota");
+        }
+        return dispatchOf(action);
+      }) as typeof store.dispatch);
+      mount();
+      await advance(3000);
+
+      expect(flushes).toHaveBeenCalledTimes(1);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
+      expect(read().payment.posBillNo).toBe("");
+      dispatchSpy.mockRestore();
     });
   });
 
@@ -558,7 +633,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
       noSecretsInAnalytics();
     });
 
-    it("the cancel race: a paid answer to the post-cancel read wins — no void, Order Complete", async () => {
+    it("the cancel race: a paid answer to the post-cancel read wins — no void, the post-payment /receipt", async () => {
       seed("edc");
       statusImpl = () => answer("paid");
       mount();
@@ -568,7 +643,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
       expect(text("phase")).toBe("paid");
       expect(voidCalls).toHaveLength(0);
       expect(mockRecord).toHaveBeenCalledTimes(1);
-      expect(mockNavigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
     });
 
     it("an errored post-cancel read never voids; the window ends on the unknown panel", async () => {
@@ -723,7 +798,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
     expect(voidCalls).toHaveLength(0);
   });
 
-  it("the unknown panel resolves: CHECK AGAIN answering paid → Order Complete (recorded once, never voided)", async () => {
+  it("the unknown panel resolves: CHECK AGAIN answering paid → the post-payment /receipt (recorded once, never voided)", async () => {
     seed("edc", Date.now() - 400_000); // resumed long after the deadline
     statusImpl = () => failWith("FETCH_ERROR");
     mount();
@@ -738,7 +813,7 @@ describe("usePaytmSettlement — the settlement loop", () => {
     await advance(0);
     expect(text("phase")).toBe("paid");
     expect(mockRecord.mock.calls).toEqual([[BILL, false, 0]]);
-    expect(mockNavigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
+    expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
     expect(voidCalls).toHaveLength(0);
   });
 

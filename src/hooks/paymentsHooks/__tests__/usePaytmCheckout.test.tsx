@@ -19,7 +19,9 @@ import { IdleHoldContext } from "../../utils/useIdleTimeout";
 import usePaytmCheckout from "../usePaytmCheckout";
 
 /*
-  P8b-05 — the Paytm INITIATE behind /receipt, a MONEY PATH. Real store, real
+  P8b-05 — the Paytm INITIATE at the end of /payment's 3 s window (moved off
+  /receipt 2026-10-13: the receipt question follows the payment), a MONEY
+  PATH. Real store, real
   SDK classifiers (paytmKiosk), real orderOutcomeClaim. Mocked edges only:
   the two initiate triggers, the id generator (deterministic, so "NEW ids"
   is provable), getPushOrderData, navigate, analytics and the lazy
@@ -46,11 +48,23 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/analytics")>()),
   captureKioskEvent: (...args: unknown[]) => m.capture(...args),
 }));
-vi.mock("../../menuHooks/useOrderHook", () => ({
-  default: () => ({
-    getPushOrderData: (...args: unknown[]) => m.getPushOrderData(...args),
-  }),
-}));
+/** U5: getPushOrderData as the REAL hook builds it — over the RENDER-time type (useOrderHook.ts:78,256). */
+const flags = vi.hoisted(() => ({ renderTime: false }));
+vi.mock("../../menuHooks/useOrderHook", async () => {
+  const { useSelector } = await import("react-redux");
+  const { selectKioskPaymentType } = await import("@cx-sdk/payments/state/payment.slice");
+  return {
+    default: function useOrderHookMock() {
+      const renderType: unknown = useSelector(selectKioskPaymentType);
+      return {
+        getPushOrderData: (...args: unknown[]) =>
+          flags.renderTime
+            ? Promise.resolve({ toPush: orderDetails(String(renderType)), pushOrderData: {} })
+            : m.getPushOrderData(...args),
+      };
+    },
+  };
+});
 vi.mock("@cx-sdk/payments/services/paymentSettingsFetchApi", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useInitiatePaytmDqrKioskMutation: () => [(body: unknown) => m.dqr(body)],
@@ -181,7 +195,7 @@ const holds = () => adjust.mock.calls.reduce((sum, [delta]) => sum + delta, 0);
 const wrapper = ({ children }: { children: ReactNode }) => (
   <Provider store={store}>
     <IdleHoldContext.Provider value={adjust}>
-      <MemoryRouter initialEntries={["/receipt"]}>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={["/payment"]}>{children}</MemoryRouter>
     </IdleHoldContext.Provider>
   </Provider>
 );
@@ -193,8 +207,8 @@ const flush = () =>
   act(async () => {
     for (let i = 0; i < 12; i += 1) await Promise.resolve();
   });
-const start = async (result: Hook, receipt: "print" | "none" = "print") => {
-  act(() => result.current.start(receipt));
+const start = async (result: Hook) => {
+  act(() => result.current.start());
   await flush();
 };
 const events = (name: string) =>
@@ -204,6 +218,7 @@ const claim = () => st().loyalty.claimedCoupon;
 
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
+  flags.renderTime = false;
   adjust.mockReset();
   atCall = [];
   attempt = 0;
@@ -224,20 +239,19 @@ beforeEach(() => {
 
 describe("usePaytmCheckout — one initiate per tap, ids first", () => {
   it.each([
-    ["PaytmEdc", m.edc, "paytmEdc"],
-    ["PaytmDynamicQr", m.dqr, "paytmDqr"],
-  ] as const)("%s: the ids are in the store BEFORE the request leaves; a double tap sends ONE", async (type, trigger, kind) => {
+    ["PaytmEdc", m.edc],
+    ["PaytmDynamicQr", m.dqr],
+  ] as const)("%s: the ids are in the store BEFORE the request leaves; a double tap sends ONE", async (type, trigger) => {
     arm(type);
     hold(trigger);
     const { result } = mountHook();
-    expect(result.current.kind).toBe(kind);
 
     act(() => {
-      result.current.start("print");
-      result.current.start("print");
+      result.current.start();
+      result.current.start();
     });
     await flush();
-    await start(result, "none"); // a later tap while the first is out
+    await start(result); // a later tap while the first is out
 
     expect(trigger).toHaveBeenCalledTimes(1);
     expect(m.ids).toHaveBeenCalledTimes(1);
@@ -280,6 +294,27 @@ describe("usePaytmCheckout — one initiate per tap, ids first", () => {
     });
     expect(bills).toEqual(["", BILL(1), ""]);
     expect(result.current.failure).toEqual({ reason: "busy", retryable: true });
+  });
+});
+
+describe("usePaytmCheckout — /payment's window timer calls start() from a STALE render (U5)", () => {
+  it("start() from a closure rendered BEFORE the type was armed parks the ARMED type — never refused as order_details_mismatch", async () => {
+    flags.renderTime = true;
+    respond(m.edc, OK_EDC);
+    const { result } = mountHook();
+    // The tap's render: its order hook still saw type "".
+    const stale = result.current.start;
+    act(() => {
+      arm("PaytmEdc");
+    });
+    act(() => stale());
+    await flush();
+
+    expect(m.edc).toHaveBeenCalledTimes(1);
+    expect(body(m.edc).order_details).toMatchObject(orderDetails("PaytmEdc"));
+    expect(result.current.failure).toBeNull();
+    expect(events("error_occurred")).toEqual([]);
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
   });
 });
 
@@ -412,7 +447,7 @@ describe("usePaytmCheckout — local refusals send nothing and are never a dead 
     await start(result);
     store.dispatch(setAmount(9));
 
-    await start(result, "none");
+    await start(result);
     expect(m.ids).not.toHaveBeenCalled();
     expect(m.edc).not.toHaveBeenCalled();
     expect(result.current.status).toBe("failed");
@@ -421,7 +456,7 @@ describe("usePaytmCheckout — local refusals send nothing and are never a dead 
     await start(result);
     expect(result.current.failure).toEqual({ reason: "busy", retryable: true });
 
-    await start(result, "none");
+    await start(result);
     expect(m.edc).toHaveBeenCalledTimes(1);
     expect(m.ids).toHaveBeenCalledTimes(1);
     expect(m.navigate).not.toHaveBeenCalled();
@@ -439,24 +474,24 @@ describe("usePaytmCheckout — local refusals send nothing and are never a dead 
     await start(result);
 
     expect(m.edc).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "print" } });
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
   });
 });
 
 describe("usePaytmCheckout — what an answer means", () => {
-  it("DQR ok: the QR is stored and /paymentPolling gets {receipt}; the instance never initiates again", async () => {
+  it("DQR ok: the QR is stored and /paymentPolling follows (no router state); the instance never initiates again", async () => {
     arm("PaytmDynamicQr");
     respond(m.dqr, { data: { qrCode: QR } });
     const { result } = mountHook();
-    await start(result, "print");
+    await start(result);
 
     expect(st().payment.paytmQrCode).toBe(QR);
     expect(st().payment.posBillNo).toBe(BILL(1));
     expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "print" } });
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
 
     act(() => {
-      result.current.start("none");
+      result.current.start();
       result.current.retry();
     });
     await flush();
@@ -464,13 +499,13 @@ describe("usePaytmCheckout — what an answer means", () => {
     expect(m.navigate).toHaveBeenCalledTimes(1);
   });
 
-  it("EDC ok: /paymentPolling with the receipt, no QR stored, same ids kept", async () => {
+  it("EDC ok: /paymentPolling (no router state), no QR stored, same ids kept", async () => {
     arm("PaytmEdc");
     respond(m.edc, OK_EDC);
     const { result } = mountHook();
-    await start(result, "none");
+    await start(result);
 
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "none" } });
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
     expect(st().payment.paytmQrCode).toBe("");
     expect(st().payment).toMatchObject({ posBillNo: BILL(1), posBillTime: TIME(1) });
     expect(events("error_occurred")).toEqual([]);
@@ -488,10 +523,10 @@ describe("usePaytmCheckout — what an answer means", () => {
     arm("PaytmEdc");
     respond(m.edc, reply);
     const { result } = mountHook();
-    await start(result, "print");
+    await start(result);
 
     expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "print" } });
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
     expect(st().payment).toMatchObject({ posBillNo: BILL(1), posBillTime: TIME(1) });
     expect(st().order.orderId).toBe(BILL(1));
     expect(events("error_occurred")).toEqual([
@@ -501,7 +536,7 @@ describe("usePaytmCheckout — what an answer means", () => {
     expect(result.current.failure).toBeNull();
 
     act(() => {
-      result.current.start("none");
+      result.current.start();
       result.current.retry();
     });
     await flush();
@@ -531,11 +566,11 @@ describe("usePaytmCheckout — what an answer means", () => {
   it.each([
     ["500", http(500)],
     ["TIMEOUT_ERROR", TIMEOUT],
-  ])("DQR %s is retryable (the QR was never shown) and TRY AGAIN mints NEW ids, same receipt", async (_label, reply) => {
+  ])("DQR %s is retryable (the QR was never shown) and TRY AGAIN mints NEW ids", async (_label, reply) => {
     arm("PaytmDynamicQr");
     respond(m.dqr, reply, { data: { qrCode: QR } });
     const { result } = mountHook();
-    await start(result, "print");
+    await start(result);
 
     expect(result.current.failure).toEqual({ reason: "unknown", retryable: true });
     expect(st().payment.posBillNo).toBe("");
@@ -548,7 +583,7 @@ describe("usePaytmCheckout — what an answer means", () => {
     expect(body(m.dqr, 0).posBillId).toBe(BILL(1));
     expect(body(m.dqr, 1).posBillId).toBe(BILL(2));
     expect(atCall[1]).toMatchObject({ posBillNo: BILL(2), orderId: BILL(2) });
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "print" } });
+    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling");
     expect(st().payment.paytmQrCode).toBe(QR);
   });
 
@@ -762,7 +797,7 @@ describe("usePaytmCheckout — idle is held only while initiating", () => {
     await act(async () => second.resolve(OK_EDC));
     await flush();
     expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(holds()).toBe(1); // until /receipt unmounts
+    expect(holds()).toBe(1); // until /payment unmounts
 
     view.unmount();
     expect(holds()).toBe(0);

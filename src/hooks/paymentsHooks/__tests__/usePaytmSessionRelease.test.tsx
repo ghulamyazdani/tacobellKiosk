@@ -151,6 +151,21 @@ describe("usePaytmSessionRelease", () => {
     expect(releaseEvents()).toEqual([]);
   });
 
+  // Pin (2026-10-13): /paymentPolling's paid tail clears the ids (the type
+  // stays for the post-payment /receipt): /start must never read a paid order.
+  it.each([
+    ["EDC", openEdc],
+    ["DQR (its QR still in the slice)", openDqr],
+  ])("a settled %s session (Paytm type, ids cleared) → no request, no event", async (_label, open) => {
+    open();
+    store.dispatch(setBillPaymentInfo({ posBillNo: "", posBillTime: "" }));
+    const { result } = release();
+    result.current();
+    await flush();
+    expect(h.calls).toEqual([]);
+    expect(releaseEvents()).toEqual([]);
+  });
+
   it("EDC pending: the status read FIRST, the void only after its answer — one each, one event", async () => {
     openEdc();
     const status = deferred();

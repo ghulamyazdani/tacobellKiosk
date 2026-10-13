@@ -987,9 +987,8 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await openBag(page);
     await page.getByTestId("bag-pay").click();
     await page.getByTestId("payment-card").click();
-    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("paytm-preparing")).toBeVisible();
+    // The window's 3 s (real time) end in the initiate, on /payment: PleaseWait while it parks.
+    await expect(page.getByTestId("paytm-preparing")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => initiate.count).toBe(1);
     expect(await loops(page), "PleaseWait").toContain("tb-hourglass");
     // Figma Loader 1: 3.96 s, two clockwise half-turns, each overshooting (200°, 380°) and settling back.
@@ -1376,7 +1375,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
   });
 
-  test("M15 LATE REVEAL (motion-v2 MV4): PleaseWait over the Paytm initiate is invisible for its first 300 ms (tb-fade-in after 300 ms, over 200 ms) yet takes a repeat tap from its first frame — exactly one initiate", async ({
+  test("M15 HAND-OFF (motion-v2 review F1): PleaseWait over the Paytm initiate REPLACES /payment's window at once — never a late reveal — and takes a repeat tap on the tile's spot from its first frame: exactly one initiate", async ({
     page,
   }) => {
     test.slow();
@@ -1388,31 +1387,32 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await addOneTap(page, GREEK_SALAD, "(1)");
     await openBag(page);
     await page.getByTestId("bag-pay").click();
-    await page.getByTestId("payment-card").click();
-    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
     await settle(page);
-    const none = await page.getByTestId("receipt-none").boundingBox();
-    if (!none) throw new Error("no receipt-none");
-    const at = { x: none.x + none.width / 2, y: none.y + none.height / 2 };
+    const card = await page.getByTestId("payment-card").boundingBox();
+    if (!card) throw new Error("no payment-card");
+    const at = { x: card.x + card.width / 2, y: card.y + card.height / 2 };
 
     const rate = await slowMotion(page);
-    await rate(0.1); // the 300 ms delay holds while it is read
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("paytm-preparing")).toBeAttached();
-    await expectLateReveal(page, "paytm-preparing");
+    await page.getByTestId("payment-card").click();
+    await expect(page.getByTestId("payment-buffer")).toBeVisible();
+    await rate(0.1); // a late reveal's 300 ms delay would hold for 3 s here
+    // The window's 3 s (real time) end: ONE commit drops it and mounts PleaseWait.
+    await expect(page.getByTestId("payment-buffer")).toHaveCount(0, { timeout: 15_000 });
+    await expectAtOnce(page, "paytm-preparing");
     expect(
       await page.evaluate(
         ({ x, y }) => document.elementFromPoint(x, y)?.closest("[data-testid]")?.getAttribute("data-testid"),
         at
       ),
-      "what a tap on NO THANKS hits now"
+      "what a tap on the tile hits now"
     ).toBe("paytm-preparing");
-    await page.mouse.click(at.x, at.y); // the guest taps again while nothing shows yet
+    await page.mouse.click(at.x, at.y); // the guest taps the tile again
     await expect.poll(() => initiate.count).toBe(1);
+    await rate(1);
     await initiate.release();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     expect(paytm.counts.edcInit, "exactly one initiate reached Paytm").toBe(1);
-    await rate(1);
   });
 
   test("M16 CONFORMANCE (motion-v2 MV8): the /second card squeezes to the house .97 and a mouse hold 3 px inside its top edge still lands; the idle START AGAIN fill slides (transform, never width); tier-2 enters like a page with no inline <style> or animation", async ({
@@ -1465,7 +1465,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     ).toEqual([null, 0]);
   });
 
-  test("M17 HAND-OFF (motion-v2 MV4, review F1): a status layer that REPLACES a dialog shows at once — the bag's order-type switch after YES, PleaseWait after /receipt's TRY AGAIN and after the EDC cancel's YES — never a bright, dead screen while the late reveal waits", async ({
+  test("M17 HAND-OFF (motion-v2 MV4, review F1): a status layer that REPLACES a dialog shows at once — the bag's order-type switch after YES, PleaseWait after /payment's TRY AGAIN and after the EDC cancel's YES — never a bright, dead screen while the late reveal waits", async ({
     page,
   }) => {
     test.slow();
@@ -1494,11 +1494,9 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await menu.release();
     await expect(page.getByTestId("bag-ordertype-switching")).toHaveCount(0, { timeout: 15_000 });
 
-    // 2. /receipt: the terminal is busy; TRY AGAIN replaces the failure dialog with PleaseWait.
+    // 2. /payment: the window's end initiates; the terminal is busy; TRY AGAIN replaces the failure dialog with PleaseWait.
     await page.getByTestId("bag-pay").click();
     await page.getByTestId("payment-card").click();
-    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId("receipt-none").click();
     await expect(page.getByTestId("paytm-initiate-failed")).toBeVisible({ timeout: 15_000 });
     await settle(page);
     delete paytm.script.edcInit; // the retry is answered (once released)

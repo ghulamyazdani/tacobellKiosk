@@ -14,7 +14,7 @@ import tbBell from "../../../assets/brand/tb-bell.svg";
 
 /*
   PleaseWait (Figma 1:4456 = 1:6301): the full-page wait layer for the Paytm
-  initiate (/receipt) and settle (/paymentPolling). Pure presentation — no
+  initiate (/payment) and settle (/paymentPolling). Pure presentation — no
   timers, no store writes; its owner mounts and unmounts it.
 */
 

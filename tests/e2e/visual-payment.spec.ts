@@ -33,12 +33,13 @@ import {
  *
  * Covered, in English, Arabic and ADA: /payment with 3, 2 and 1 tiles (the
  * COD tile says PAY AT RESTAURANT — the longest label) and its unavailable
- * branch, the Paytm buffer, /receipt, its PleaseWait, the busy and the local
- * refusal initiate-failure modals, PLACING YOUR ORDER, the push-failure panel
- * and its uncertain variant; the EDC screen (countdown, CANCEL PAYMENT, DOWN
- * HERE), the cancel confirm, PleaseWait while the void is out, both
- * terminal-prompt lines, the staff panel and its checking note, Order
- * Complete after a Paytm payment;
+ * branch, the Paytm buffer, the initiate's PleaseWait over /payment, the busy
+ * and the local refusal initiate-failure modals over /payment, PLACING YOUR
+ * ORDER, the push-failure panel and its uncertain variant; the EDC screen
+ * (countdown, CANCEL PAYMENT, DOWN HERE), the cancel confirm, PleaseWait while
+ * the void is out, both terminal-prompt lines, the staff panel and its
+ * checking note, the post-payment /receipt (2026-10-13: the receipt question
+ * follows the payment; no BACK) and Order Complete after a Paytm payment;
  * the DQR screen, its QR-unavailable fallback, its cancel confirm, the
  * settling PleaseWait and the expired panel. English only: the chunk-failure
  * panel (a reload mid-session) and the lazy Activity Center (operator UI on
@@ -53,9 +54,9 @@ import {
  * after that, mockCheckoutBackend, then mockPaytmBackend LAST. The rupee
  * deployment (IN, ₹) is the Paytm market's and exercises the latin-ext face.
  * Time: page.clock is installed before the first goto and frozen before each
- * Paytm initiate (paytm.spec TIME): screens that would move on are held
- * still by parking one request (`holdNext`) or by stepping the clock only
- * while no Paytm request is out.
+ * Paytm tile — the window's end is the initiate (paytm.spec TIME): screens
+ * that would move on are held still by parking one request (`holdNext`) or by
+ * stepping the clock only while no Paytm request is out.
  */
 
 const readFixture = (relative: string) =>
@@ -370,7 +371,7 @@ async function bootToPayment(page: Page, opts: BootOptions): Promise<PaytmMockHa
   return paytm;
 }
 
-/** A method tile → the 3 s cancel window (flowing clock) → /receipt. */
+/** PAY AT COUNTER → the 3 s cancel window (flowing clock) → /receipt, before the push. */
 async function chooseMethod(page: Page, tile: string) {
   await page.getByTestId(tile).click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
@@ -423,10 +424,16 @@ async function stepClockTo(page: Page, paytm: PaytmMockHandle, at: number) {
 const visible = (page: Page, testId: string) => async () =>
   (await page.getByTestId(testId).count()) > 0;
 
-/** Freeze, tap NO THANKS (the Paytm initiate) and land on /paymentPolling. */
-async function initiateToPolling(page: Page) {
+/** Freeze, then tap a Paytm tile: it arms the type and opens the 3 s window (nothing sent). */
+async function armPaytm(page: Page, tile: string) {
   await freezeClock(page);
-  await page.getByTestId("receipt-none").click();
+  await page.getByTestId(tile).click();
+  await expect(page.getByTestId("payment-buffer")).toBeVisible();
+}
+
+/** The window's 3 s end in the initiate, on /payment → /paymentPolling. */
+async function initiateToPolling(page: Page) {
+  await page.clock.runFor(3_000);
   await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
 }
 
@@ -509,7 +516,7 @@ test.describe("lane fonts — payment captures", () => {
     const t = copyFor(mode);
     const tag = mode.toUpperCase();
 
-    test(`${tag} CHECKOUT: /payment with 3, 2, 1 tiles and unavailable, the Paytm buffer, /receipt, PleaseWait, the busy and refusal modals, the EDC screen, the cancel confirm, the YES prompt, Order Complete`, async ({
+    test(`${tag} CHECKOUT: /payment with 3, 2, 1 tiles and unavailable, the Paytm buffer, PleaseWait, the busy and refusal modals on /payment, the EDC screen, the cancel confirm, the YES prompt, the post-payment /receipt, Order Complete`, async ({
       page,
     }) => {
       test.slow();
@@ -556,7 +563,64 @@ test.describe("lane fonts — payment captures", () => {
       await servePayment(page, ["PaytmEdc", "PaytmDynamicQr"]);
       await expect(page.getByTestId("payment-qr")).toBeVisible();
 
-      await chooseMethod(page, "payment-card");
+      // The window's end is the initiate (2026-10-13), parked: PleaseWait
+      // covers /payment — at once, it replaces the window.
+      await armPaytm(page, "payment-card");
+      const initiate = await holdNext(page, PAYTM_ENDPOINTS.edcInit);
+      await page.clock.runFor(3_000);
+      await expect.poll(initiate.parked).toBe(true);
+      await expect(page.getByTestId("paytm-preparing")).toContainText(t.paytm.wait.preparing);
+      await expect(page).toHaveURL(/\/payment$/);
+      await capture(page, `pay-06-payment-preparing-${mode}`);
+      expect
+        .soft(await sheenProblems(page.getByTestId("paytm-preparing")), `pay-06-${mode}: PleaseWait's sheen (UB3)`)
+        .toEqual([]);
+      initiate.release();
+      const failed = page.getByTestId("paytm-initiate-failed");
+      await expect(failed).toContainText(t.paytm.failed.busy, { timeout: 15_000 });
+      await expect(page.getByTestId("paytm-initiate-retry")).toBeVisible();
+      await capture(page, `pay-07-initiate-busy-${mode}`);
+
+      // TRY AGAIN with no usable row left: the local refusal (E8b).
+      await servePayment(page, []);
+      await page.getByTestId("paytm-initiate-retry").click();
+      await expect(page.getByTestId("paytm-initiate-other")).toBeVisible();
+      await expect(failed).toContainText(t.paytm.failed.start);
+      await capture(page, `pay-08-initiate-refused-${mode}`);
+      await servePayment(page, ["PaytmEdc", "PaytmDynamicQr"]);
+      // PAY ANOTHER WAY closes the modal in place: already on /payment.
+      await page.getByTestId("paytm-initiate-other").click();
+      await expect(failed).toHaveCount(0);
+      await expect(page.getByTestId("payment-card")).toBeVisible({ timeout: 10_000 });
+
+      await armPaytm(page, "payment-card");
+      await initiateToPolling(page);
+      await expect(page.getByTestId("paytm-total")).toContainText(TOTAL);
+      await expect(page.getByTestId("paytm-countdown")).toBeVisible();
+      await capture(page, `pay-09-edc-${mode}`);
+      expect
+        .soft(await sheenProblems(page.getByTestId("paytm-screen")), `pay-09-${mode}: the EDC screen's sheen (UB3)`)
+        .toEqual([]);
+
+      await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
+      await page.getByTestId("paytm-cancel").click();
+      await expect(page.getByTestId("paytm-cancel-confirm")).toContainText(
+        t.paytm.cancelConfirm.message
+      );
+      await capture(page, `pay-10-cancel-confirm-${mode}`);
+      await page.getByTestId("paytm-cancel-yes").click();
+      // The fresh read and the delivered void are effect-driven: no time moves.
+      await expect(page.getByTestId("paytm-terminal-prompt")).toContainText(
+        t.paytm.edc.pressYesToCancel,
+        { timeout: 15_000 }
+      );
+      await capture(page, `pay-11-terminal-prompt-${mode}`);
+
+      // The guest had paid after all: the next read lands on the receipt
+      // question, AFTER the payment (no BACK — the order is placed and paid).
+      paytm.script.edcStatus = () => paytmStatus("paid");
+      await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+      await expect(page.getByTestId("receipt-back")).toHaveCount(0);
       // Print only (2026-10-12): the question and its YES / NO, no EMAIL.
       await expect(page.getByTestId("receipt-none")).toContainText(t.receipt.no);
       await expect(page.getByTestId("receipt-email")).toHaveCount(0);
@@ -567,66 +631,14 @@ test.describe("lane fonts — payment captures", () => {
       ]);
       if (!question || !answers) throw new Error("the receipt question or YES has no box");
       expect(question.y + question.height, "the question ends above YES / NO").toBeLessThan(answers.y);
-      await capture(page, `pay-06-receipt-${mode}`);
+      await capture(page, `pay-12-receipt-after-payment-${mode}`);
       await expectCompressed(
         page.locator('[data-testid="receipt-print"] span, [data-testid="receipt-none"] span'),
         48,
         44
       );
-
-      // The initiate, parked: PleaseWait covers /receipt.
-      await freezeClock(page);
-      const initiate = await holdNext(page, PAYTM_ENDPOINTS.edcInit);
       await page.getByTestId("receipt-none").click();
-      await expect.poll(initiate.parked).toBe(true);
-      await expect(page.getByTestId("paytm-preparing")).toContainText(t.paytm.wait.preparing);
-      await capture(page, `pay-07-receipt-preparing-${mode}`);
-      expect
-        .soft(await sheenProblems(page.getByTestId("paytm-preparing")), `pay-07-${mode}: PleaseWait's sheen (UB3)`)
-        .toEqual([]);
-      initiate.release();
-      const failed = page.getByTestId("paytm-initiate-failed");
-      await expect(failed).toContainText(t.paytm.failed.busy, { timeout: 15_000 });
-      await expect(page.getByTestId("paytm-initiate-retry")).toBeVisible();
-      await capture(page, `pay-08-initiate-busy-${mode}`);
-
-      // TRY AGAIN with no usable row left: the local refusal (E8b).
-      await servePayment(page, []);
-      await page.getByTestId("paytm-initiate-retry").click();
-      await expect(page.getByTestId("paytm-initiate-other")).toBeVisible();
-      await expect(failed).toContainText(t.paytm.failed.start);
-      await capture(page, `pay-09-initiate-refused-${mode}`);
-      await servePayment(page, ["PaytmEdc", "PaytmDynamicQr"]);
-      await page.getByTestId("paytm-initiate-other").click();
-      await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
-      await page.clock.resume();
-
-      await chooseMethod(page, "payment-card");
-      await initiateToPolling(page);
-      await expect(page.getByTestId("paytm-total")).toContainText(TOTAL);
-      await expect(page.getByTestId("paytm-countdown")).toBeVisible();
-      await capture(page, `pay-10-edc-${mode}`);
-      expect
-        .soft(await sheenProblems(page.getByTestId("paytm-screen")), `pay-10-${mode}: the EDC screen's sheen (UB3)`)
-        .toEqual([]);
-
-      await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
-      await page.getByTestId("paytm-cancel").click();
-      await expect(page.getByTestId("paytm-cancel-confirm")).toContainText(
-        t.paytm.cancelConfirm.message
-      );
-      await capture(page, `pay-11-cancel-confirm-${mode}`);
-      await page.getByTestId("paytm-cancel-yes").click();
-      // The fresh read and the delivered void are effect-driven: no time moves.
-      await expect(page.getByTestId("paytm-terminal-prompt")).toContainText(
-        t.paytm.edc.pressYesToCancel,
-        { timeout: 15_000 }
-      );
-      await capture(page, `pay-12-terminal-prompt-${mode}`);
-
-      // The guest had paid after all: the next read lands on Order Complete.
-      paytm.script.edcStatus = () => paytmStatus("paid");
-      await stepClockUntil(page, paytm, visible(page, "order-success"));
+      await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
       const posBillNo = paytm.bodies.edcInit.at(-1)?.posBillNo ?? "";
       await expect(page.getByTestId("order-number")).toHaveText(`#${posBillNo.slice(-5)}`);
       await capture(page, `pay-13-order-complete-${mode}`);
@@ -645,7 +657,7 @@ test.describe("lane fonts — payment captures", () => {
         mode,
         script: { edcCancel: () => VOID_IN_PROGRESS },
       });
-      await chooseMethod(page, "payment-card");
+      await armPaytm(page, "payment-card");
       await initiateToPolling(page);
       await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
 
@@ -679,7 +691,7 @@ test.describe("lane fonts — payment captures", () => {
       await capture(page, `pay-17-unknown-checking-${mode}`);
       paytm.script.edcStatus = () => paytmStatus("paid");
       check.release();
-      await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
     });
 
     test(`${tag} DQR: the QR-unavailable fallback, the QR cancel confirm, the QR screen, settling and the expired panel`, async ({
@@ -692,7 +704,7 @@ test.describe("lane fonts — payment captures", () => {
           dqrInit: (call) => ({ json: { qrCode: call === 1 ? UNENCODABLE_QR : PAYTM_QR } }),
         },
       });
-      await chooseMethod(page, "payment-qr");
+      await armPaytm(page, "payment-qr");
       await initiateToPolling(page);
       await expect(page.getByTestId("paytm-qr-unavailable")).toContainText(
         t.paytm.qr.unavailable
@@ -709,7 +721,7 @@ test.describe("lane fonts — payment captures", () => {
       await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
       await page.clock.resume();
 
-      await chooseMethod(page, "payment-qr");
+      await armPaytm(page, "payment-qr");
       await initiateToPolling(page);
       await expect(page.getByTestId("paytm-qr").locator("svg")).toHaveCount(1);
       await capture(page, `pay-20-dqr-${mode}`);
@@ -765,8 +777,8 @@ test.describe("lane fonts — payment captures", () => {
     test.slow();
     // The flowing clock on purpose: redux-persist flushes on timers (paytm.spec E19b).
     const paytm = await bootToPayment(page, { mode: "en" });
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => paytm.counts.edcStatus, { timeout: 15_000 }).toBeGreaterThan(0);
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector, useStore } from "react-redux";
+import { useDispatch, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { setOrderId } from "@cx-sdk/ordering/state/order.slice";
 import { netAmount as selectNetAmount } from "@cx-sdk/ordering/state/cart.slice";
@@ -20,7 +20,6 @@ import {
   isPaytmOrderDetailsConsistent,
   pickPaytmSelections,
   toPaytmKind,
-  type PaytmKind,
 } from "@cx-sdk/payments/gateways/paytmKiosk";
 import {
   useInitiatePaytmDqrKioskMutation,
@@ -35,16 +34,14 @@ import {
   unmarkClaimOrderOutcomeUnknown,
 } from "../loyalty/orderOutcomeClaim";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
-import type {
-  OrderSuccessLocationState,
-  ReceiptPreference,
-} from "./usePayAtCounter";
 
 /**
- * usePaytmCheckout — the Paytm INITIATE on /receipt (P8b-05). Paytm Dynamic
- * QR and Paytm EDC only (user decision 2026-10-05); /payment armed the type,
- * /paymentPolling settles. The backend places the order from the
- * `order_details` frozen here, so nothing on this path ever calls placeOrder.
+ * usePaytmCheckout — the Paytm INITIATE at the end of /payment's 3 s window
+ * (P8b-05; moved off /receipt 2026-10-13 — the receipt question follows the
+ * payment). Paytm Dynamic QR and Paytm EDC only (user decision 2026-10-05);
+ * the tile armed the type, /paymentPolling settles. The backend places the
+ * order from the `order_details` frozen here, so nothing on this path ever
+ * calls placeOrder.
  *
  * ── THE SEQUENCE (one initiate per tap; contract §P8b-05) ─────────────────
  *   refuse (modal, never a silent return — fork usePaymentHook.ts:349-351 is
@@ -54,7 +51,7 @@ import type {
  *     -> persistor.flush()                                     (on disk too)
  *   getPushOrderData(posBillNo) -> H-c guard (refuse on mismatch)
  *   S7 mark -> PaymentInitiated -> initiate (no unwrap) -> decidePaytmInitiate
- *   await: DQR stores the QR; both -> /paymentPolling {receipt}
+ *   await: DQR stores the QR; both -> /paymentPolling (no router state)
  *   fail:  clear the ids (and flush), un-mark S7, modal (TRY AGAIN = NEW ids)
  *
  * ── MONEY RULES ──────────────────────────────────────────────────────────
@@ -69,9 +66,10 @@ import type {
  *   go only into the request body — never setPaymentSetting / setPaytmInfo
  *   (the payment slice is persisted; D11).
  * - `getPushOrderData` builds `order_details` from useOrderHook's RENDER-time
- *   `payment.paymentType` (the closure note in usePayAtCounter). /payment
- *   armed it a whole navigation earlier, so it is current; the H-c guard
- *   (isPaytmOrderDetailsConsistent) refuses to park anything else.
+ *   `payment.paymentType` (the closure note in usePayAtCounter), so it is read
+ *   through a latest ref: /payment's window timer calls start() from the
+ *   TAP's render, before the armed type's render committed. The H-c guard
+ *   (isPaytmOrderDetailsConsistent) still refuses to park anything else.
  * - Every await is followed by a mounted check: RTK never aborts, and a late
  *   answer must not write into the next session. If the screen dies with an
  *   EDC request out, the stored ids let /start's release settle it.
@@ -82,13 +80,11 @@ import type {
 export type PaytmCheckoutStatus = "idle" | "initiating" | "failed";
 
 export interface UsePaytmCheckout {
-  /** toPaytmKind(payment.paymentType) — null means a COD checkout. */
-  kind: PaytmKind | null;
   status: PaytmCheckoutStatus;
   failure: { reason: "busy" | "rejected" | "unknown"; retryable: boolean } | null;
   /** Exactly one initiate per tap. */
-  start: (receipt: ReceiptPreference) => void;
-  /** failed + retryable only: NEW ids, same receipt. */
+  start: () => void;
+  /** failed + retryable only: NEW ids. */
   retry: () => void;
   /** failed -> idle, so the screen can leave. */
   dismiss: () => void;
@@ -106,7 +102,6 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
   const { getPushOrderData } = useOrderHook();
   const [initiateDqr] = useInitiatePaytmDqrKioskMutation();
   const [initiateEdc] = useInitiatePaytmEdcKioskMutation();
-  const kind = toPaytmKind(useSelector(selectKioskPaymentType));
 
   const [status, setStatus] = useState<PaytmCheckoutStatus>("idle");
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -117,7 +112,12 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
 
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
-  const receiptRef = useRef<ReceiptPreference>("none");
+  // /payment's window timer calls start() from the tap's render — before the
+  // armed type's render committed. Always build order_details from the latest.
+  const pushDataRef = useRef(getPushOrderData);
+  useEffect(() => {
+    pushDataRef.current = getPushOrderData;
+  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -151,7 +151,7 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
     fail(paymentType, REFUSED, posBillNo);
   };
 
-  const run = async (receipt: ReceiptPreference) => {
+  const run = async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
@@ -197,7 +197,7 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
       await persistor.flush();
       if (!mountedRef.current) return;
 
-      const { toPush } = await getPushOrderData(posBillNo);
+      const { toPush } = await pushDataRef.current(posBillNo);
       if (!mountedRef.current) return;
       if (!isPaytmOrderDetailsConsistent(toPush, selection.paymentType)) {
         refuse(selection.paymentType, "order_details_mismatch", posBillNo);
@@ -258,21 +258,19 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
       });
     }
     // The in-flight latch stays set: this instance never initiates again.
-    const pollingState: OrderSuccessLocationState = { receipt };
-    navigate("/paymentPolling", { state: pollingState });
+    navigate("/paymentPolling");
   };
 
-  // Plain functions on purpose: they only run from event handlers, so each
-  // call uses the latest render's getPushOrderData closure.
-  const start = (receipt: ReceiptPreference) => {
+  // start/retry may run from a stale closure (the window timer): everything
+  // render-scoped they need is read through a ref or the store.
+  const start = () => {
     if (inFlightRef.current || status !== "idle") return;
-    receiptRef.current = receipt;
-    void run(receipt);
+    void run();
   };
 
   const retry = () => {
     if (inFlightRef.current || status !== "failed" || !failure?.retryable) return;
-    void run(receiptRef.current);
+    void run();
   };
 
   const dismiss = () => {
@@ -281,5 +279,5 @@ export default function usePaytmCheckout(): UsePaytmCheckout {
     setStatus("idle");
   };
 
-  return { kind, status, failure, start, retry, dismiss };
+  return { status, failure, start, retry, dismiss };
 }

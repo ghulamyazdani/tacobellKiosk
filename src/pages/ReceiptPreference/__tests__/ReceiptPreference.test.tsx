@@ -6,6 +6,7 @@ import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { toggleAccessibilityMode } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
+import { IdleHoldContext } from "../../../hooks/utils/useIdleTimeout";
 import ReceiptPreferenceScreen from "../index";
 import i18n from "../../../i18n";
 
@@ -242,6 +243,29 @@ describe("/receipt — one question, YES / NO (print only)", () => {
 
     expect(mockPushOrder).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt } });
+  });
+
+  // Pin (2026-10-13): only a PAID Paytm order gets the post-payment mode's
+  // idle hold and auto-answer; before the push the guest is still ordering.
+  it("COD mode: no idle hold, no auto-answer — 100 s later nothing has navigated", () => {
+    const adjust = vi.fn<(delta: 1 | -1) => void>();
+    render(
+      <Provider store={store}>
+        <IdleHoldContext.Provider value={adjust}>
+          <MemoryRouter initialEntries={["/receipt"]}>
+            <ReceiptPreferenceScreen />
+          </MemoryRouter>
+        </IdleHoldContext.Provider>
+      </Provider>
+    );
+    act(() => {
+      vi.advanceTimersByTime(100_000);
+    });
+
+    expect(screen.getByTestId("receipt-back")).toBeInTheDocument();
+    expect(adjust).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockPushOrder).not.toHaveBeenCalled();
   });
 
   it("Arabic: the question and both answers are translated", async () => {

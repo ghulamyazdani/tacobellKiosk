@@ -15,6 +15,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { getDetailedPaymentType } from "@cx-sdk/ordering/order/orderBuilder";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import PaymentSelection from "../index";
@@ -24,26 +25,41 @@ import i18n from "../../../i18n";
   HOUSE STYLE: real store + Provider + MemoryRouter + RESET_STATE + i18n.
 
   Mocked, and only these:
-  - useNavigate — the buffer ends in a navigation to /receipt, and Back has a
-    two-way fan-out; both have to be assertable.
+  - useNavigate — the COD window ends in a navigation to /receipt, a Paytm
+    initiate in one to /paymentPolling, and Back has a two-way fan-out; all
+    have to be assertable.
   - useOrderHook — usePayAtCounter (imported by this screen for beginCheckout /
     cancelCheckout) pulls the real order hook, which drags in RTK Query
     mutations, IndexedDB and a whole converted menu. The push itself has its
-    own suite; here the spies exist to prove this screen pushes NOTHING.
+    own suite; here the spies exist to prove this screen pushes NOTHING. Its
+    getPushOrderData builds order_details from the payment type of the RENDER
+    it was made in, exactly like the real hook (useOrderHook.ts:78,256).
+  - the Paytm edges usePaytmCheckout reaches: the two initiate triggers, the
+    id generator and the lazy /paymentPolling screen loader (arrived, unless
+    a case says not). The money rules live in usePaytmCheckout.test.
 
   The COD gate, the label flip and the total all run through the REAL
   selectors and the REAL SDK `checkIfCODAvailable`, so a fixture written
   against the wrong key spelling fails instead of silently passing.
 
-  ⛔ SAFETY (P8b): a Paytm tile only ARMS `payment.paymentType`. The initiate
-  runs on /receipt, so the Paytm block below asserts that a tap here pushes
-  and initiates NOTHING, and that only a usable configured option gets a tile.
+  ⛔ SAFETY (P8b; the receipt question follows the payment since 2026-10-13):
+  a Paytm tile only ARMS `payment.paymentType` and opens the 3 s window —
+  nothing is sent inside it. The window's END is the initiate (here, on
+  /payment), so the Paytm blocks below assert nothing leaves before 3000 ms,
+  exactly ONE initiate after it, and that only a usable configured option gets
+  a tile.
 */
 
 const mockNavigate = vi.fn();
 const mockPushOrder = vi.fn();
 const mockGenerateQROrderId = vi.fn();
 const mockCapture = vi.fn();
+const m = vi.hoisted(() => ({
+  dqr: vi.fn(),
+  edc: vi.fn(),
+  ids: vi.fn(),
+  loadScreen: vi.fn(),
+}));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
@@ -55,14 +71,66 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
 }));
 
-vi.mock("../../../hooks/menuHooks/useOrderHook", () => ({
-  default: () => ({
-    pushOrder: (...args: unknown[]) => mockPushOrder(...args),
-    generateQROrderId: (...args: unknown[]) => mockGenerateQROrderId(...args),
-  }),
+vi.mock("../../../hooks/menuHooks/useOrderHook", async () => {
+  const { useSelector } = await import("react-redux");
+  const { selectKioskPaymentType } = await import("@cx-sdk/payments/state/payment.slice");
+  const orderBuilder = await import("@cx-sdk/ordering/order/orderBuilder");
+  return {
+    default: function useOrderHookMock() {
+      // RENDER-time, like the real hook: /payment's window timer runs the
+      // tap's render, where this was still "".
+      const type: unknown = useSelector(selectKioskPaymentType);
+      return {
+        pushOrder: (...args: unknown[]) => mockPushOrder(...args),
+        generateQROrderId: (...args: unknown[]) => mockGenerateQROrderId(...args),
+        getPushOrderData: () =>
+          Promise.resolve({
+            toPush: {
+              payments: { type: orderBuilder.getPaymentType(type) },
+              originalPayments: {
+                cards: [{ detail: [{ otherName: orderBuilder.getDetailedPaymentType(type) }] }],
+              },
+            },
+            pushOrderData: {},
+          }),
+      };
+    },
+  };
+});
+vi.mock("@cx-sdk/payments/services/paymentSettingsFetchApi", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useInitiatePaytmDqrKioskMutation: () => [(body: unknown) => m.dqr(body)],
+  useInitiatePaytmEdcKioskMutation: () => [(body: unknown) => m.edc(body)],
+}));
+vi.mock("@cx-sdk/payments/gateways/paymentSession", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  generatePaymentIds: () => m.ids(),
+}));
+vi.mock("../../PaytmPayment/loadPaytmScreen", () => ({
+  loadPaytmScreen: () => m.loadScreen(),
 }));
 
 const state = () => store.getState() as any;
+const QR = "upi://pay?pa=tb@paytm&am=24.50";
+const BUSY = { error: { status: 400, data: { msg: "Multiple payment request not allowed" } } };
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
+/** Let the initiate's promise chain (chunk → ids → flush → order_details → trigger) run. */
+const flush = () =>
+  act(async () => {
+    for (let i = 0; i < 12; i += 1) await Promise.resolve();
+  });
+const advance = (ms: number) =>
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+/** The body the n-th call of a trigger carried. */
+const sent = (trigger: typeof m.edc, call = 0) => trigger.mock.calls[call]?.[0] as any;
 
 /**
  * A "Disable COD for Kiosk" row with ONE ticked tab. Since audit-fixes A2 the
@@ -119,6 +187,15 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     mockPushOrder.mockReset();
     mockGenerateQROrderId.mockReset();
     mockCapture.mockReset();
+    Object.values(m).forEach((fn) => fn.mockReset());
+    let n = 0;
+    m.ids.mockImplementation(() => {
+      n += 1;
+      return Promise.resolve({ posBillNo: `1700000000000${n}`, posBillTime: 1_700_000_000_000 + n });
+    });
+    m.loadScreen.mockResolvedValue(() => null);
+    m.edc.mockResolvedValue({ data: { success: true } });
+    m.dqr.mockResolvedValue({ data: { qrCode: QR } });
 
     store.dispatch({ type: "RESET_STATE" });
     seedCart();
@@ -302,24 +379,65 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.getByTestId("payment-counter")).toBeInTheDocument();
     });
 
-    it("an EDC tap arms PaytmEdc and hands over to /receipt after 3 s, pushing nothing", () => {
+    // U1 (2026-10-13): the receipt question follows the payment, so the
+    // window's end IS the initiate — here, never a hop to /receipt.
+    it.each([
+      ["payment-card", "PaytmEdc", m.edc],
+      ["payment-qr", "PaytmDynamicQr", m.dqr],
+    ] as const)("a %s window ends in ONE initiate HERE: nothing at 2999 ms; at 3000 PleaseWait replaces the window at once; → /paymentPolling", async (testId, type, trigger) => {
+      store.dispatch(setPaymentSettings([PAYTM_EDC, PAYTM_DQR]));
+      const answer = deferred<unknown>();
+      trigger.mockReturnValue(answer.promise);
+      mount();
+      tap(testId);
+
+      expect(state().payment.paymentType).toBe(type);
+      expect(buffer()).toBeInTheDocument();
+      advance(2999);
+      await flush();
+      expect(trigger).not.toHaveBeenCalled();
+      expect(m.ids).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("paytm-preparing")).not.toBeInTheDocument();
+
+      advance(1);
+      // ONE commit drops the window and mounts PleaseWait, so it shows at
+      // once — it replaces a dialog (PleaseWait.tsx; motion-v2 review F1).
+      expect(buffer()).not.toBeInTheDocument();
+      const wait = screen.getByTestId("paytm-preparing");
+      expect(wait).not.toHaveClass("tb-reveal-late");
+      expect(wait).toHaveTextContent(i18n.t("paytm.wait.preparing"));
+      await flush();
+      expect(m.edc.mock.calls.length + m.dqr.mock.calls.length).toBe(1);
+      expect(trigger).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      await act(async () =>
+        answer.resolve(type === "PaytmEdc" ? { data: { success: true } } : { data: { qrCode: QR } })
+      );
+      await flush();
+      expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
+      expect(mockPushOrder).not.toHaveBeenCalled();
+      expect(mockGenerateQROrderId).not.toHaveBeenCalled();
+    });
+
+    // U2: the timer runs the TAP's render, whose order hook still saw type
+    // "" — without the latest-ref the H-c guard would refuse every first
+    // initiate as order_details_mismatch.
+    it("the window-fired initiate parks the ARMED type (order_details built for PaytmEdc), no refusal", async () => {
       store.dispatch(setPaymentSettings([PAYTM_EDC]));
       mount();
       tap("payment-card");
+      advance(3000);
+      await flush();
 
-      expect(state().payment.paymentType).toBe("PaytmEdc");
-      expect(buffer()).toBeInTheDocument();
-      act(() => {
-        vi.advanceTimersByTime(2999);
-      });
-      expect(mockNavigate).not.toHaveBeenCalled();
-
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
-      expect(mockNavigate).toHaveBeenCalledWith("/receipt");
-      expect(mockPushOrder).not.toHaveBeenCalled();
-      expect(mockGenerateQROrderId).not.toHaveBeenCalled();
+      expect(m.edc).toHaveBeenCalledTimes(1);
+      expect(sent(m.edc).order_details.payments.type).toBe("ONLINE");
+      expect(sent(m.edc).order_details.originalPayments.cards[0].detail[0].otherName).toBe(
+        getDetailedPaymentType("PaytmEdc")
+      );
+      expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+      expect(mockCapture.mock.calls.filter(([name]) => name === "payment_initiated")).toHaveLength(1);
+      expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
     });
 
     it("offers no card tile for an EDC option with a blank paytm_device_id", () => {
@@ -444,7 +562,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       ["payment-card", "PaytmEdc", "paytm.redirecting"],
       ["payment-qr", "PaytmDynamicQr", "paytm.redirecting"],
       ["payment-counter", "PAY_AT_RESTAURANT", "payment.placingOrder"],
-    ])("%s arms %s (and only arms it): buffer, then /receipt — nothing pushed or sent", (testId, type, titleKey) => {
+    ])("%s arms %s: the window sends nothing; its end is /receipt for COD (nothing pushed) and ONE initiate for Paytm", async (testId, type, titleKey) => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       mount();
       tap(testId);
@@ -452,10 +570,21 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(state().payment.paymentType).toBe(type);
       expect(buffer()).toHaveTextContent(i18n.t(titleKey));
       expect(events("payment_method_selected")).toEqual([{ payment_type: type, net_amount: 24.5 }]);
-      act(() => {
-        vi.advanceTimersByTime(3000);
-      });
-      expect(mockNavigate).toHaveBeenCalledWith("/receipt");
+      advance(2999);
+      await flush();
+      expect(m.edc).not.toHaveBeenCalled();
+      expect(m.dqr).not.toHaveBeenCalled();
+      advance(1);
+      await flush();
+      if (type === "PAY_AT_RESTAURANT") {
+        expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
+        expect(m.edc).not.toHaveBeenCalled();
+        expect(m.dqr).not.toHaveBeenCalled();
+      } else {
+        expect(m.edc.mock.calls.length + m.dqr.mock.calls.length).toBe(1);
+        expect((type === "PaytmEdc" ? m.edc : m.dqr).mock.calls).toHaveLength(1);
+        expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
+      }
       expect(mockPushOrder).not.toHaveBeenCalled();
       expect(mockGenerateQROrderId).not.toHaveBeenCalled();
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -463,7 +592,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(JSON.stringify(state().payment)).not.toContain("secret-1");
     });
 
-    it("a second tile tapped inside the window is ignored: ONE armed type, ONE navigation", () => {
+    it("a second tile tapped inside the window is ignored: ONE armed type, ONE initiate", async () => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       mount();
       tap("payment-card");
@@ -471,10 +600,11 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       tap("payment-counter");
 
       expect(state().payment.paymentType).toBe("PaytmEdc");
-      act(() => {
-        vi.advanceTimersByTime(3000);
-      });
-      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      advance(3000);
+      await flush();
+      expect(m.edc).toHaveBeenCalledTimes(1);
+      expect(m.dqr).not.toHaveBeenCalled();
+      expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
     });
 
     it.each([
@@ -518,6 +648,224 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       codOff();
       mount();
       expect(screen.getByTestId("payment-unavailable")).toBeInTheDocument();
+    });
+
+    /*
+      The Paytm initiate on /payment (2026-10-13; moved off /receipt): its wait
+      (PleaseWait 1:4456) and its failure modal (1:6288 layout) sit over the
+      tiles. While either is up nothing under them may start a second window
+      or leave the screen.
+    */
+    const modal = () => screen.getByTestId("paytm-initiate-failed");
+    const preparing = () => screen.queryByTestId("paytm-preparing");
+
+    // U3
+    it("busy: PleaseWait while initiating (a covered tile and BACK TO MENU do nothing), then the busy modal; TRY AGAIN → a second initiate with NEW ids; BACK TO BAG → /cart", async () => {
+      store.dispatch(setPaymentSettings([EDC, DQR]));
+      const first = deferred<unknown>();
+      const second = deferred<unknown>();
+      m.edc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      mount();
+      tap("payment-card");
+      advance(3000);
+      await flush();
+
+      expect(preparing()).toHaveTextContent(i18n.t("paytm.wait.title"));
+      tap("payment-qr");
+      tap("payment-card");
+      tap("payment-back");
+      await flush();
+      expect(buffer()).not.toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(m.edc).toHaveBeenCalledTimes(1);
+      expect(m.dqr).not.toHaveBeenCalled();
+
+      await act(async () => first.resolve(BUSY));
+      await flush();
+      expect(preparing()).not.toBeInTheDocument();
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.title"));
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.busy"));
+      expect(screen.getByTestId("paytm-initiate-retry")).toHaveTextContent(i18n.t("paytm.failed.tryAgain"));
+      expect(screen.queryByTestId("paytm-initiate-other")).not.toBeInTheDocument();
+      // Under the modal a covered tile stays inert too (nothing is in flight
+      // there, so BACK keeps its way out — the unavailable branch needs it).
+      tap("payment-qr");
+      expect(buffer()).not.toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      tap("paytm-initiate-retry");
+      await flush();
+      expect(m.edc).toHaveBeenCalledTimes(2);
+      expect(sent(m.edc, 1).posBillNo).not.toBe(sent(m.edc, 0).posBillNo);
+      // TRY AGAIN replaces the dialog: PleaseWait at once (F1).
+      expect(preparing()).not.toHaveClass("tb-reveal-late");
+
+      await act(async () => second.resolve(BUSY));
+      await flush();
+      tap("paytm-initiate-bag");
+      expect(mockNavigate.mock.calls).toEqual([["/cart"]]);
+      expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+      expect(m.edc).toHaveBeenCalledTimes(2);
+      expect(events("payment_viewed")).toHaveLength(1);
+    });
+
+    // U4 (a)
+    it("a local refusal (the Paytm rows gone during the window): the non-retryable modal at 3000 ms; PAY ANOTHER WAY closes it in place, disarmed, nothing minted or sent; PAY AT COUNTER is live", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      mount();
+      tap("payment-card");
+      act(() => {
+        store.dispatch(setPaymentSettings([]));
+      });
+      advance(3000);
+      await flush();
+
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(screen.queryByTestId("paytm-initiate-retry")).not.toBeInTheDocument();
+      expect(screen.getByTestId("paytm-initiate-other")).toHaveTextContent(i18n.t("paytm.failed.payAnotherWay"));
+      tap("paytm-initiate-other");
+
+      expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(state().payment.paymentType).toBe("");
+      expect(m.ids).not.toHaveBeenCalled();
+      expect(m.edc).not.toHaveBeenCalled();
+      expect(m.dqr).not.toHaveBeenCalled();
+      tap("payment-counter");
+      expect(buffer()).toHaveTextContent(i18n.t("payment.placingOrder"));
+    });
+
+    // U4 (b)
+    it("the /paymentPolling chunk did not arrive: the same refusal; PAY ANOTHER WAY → a fresh tap on the SAME tile opens the window again and refuses again — nothing minted or sent", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      m.loadScreen.mockResolvedValue(null);
+      mount();
+      tap("payment-card");
+      advance(3000);
+      await flush();
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      tap("paytm-initiate-other");
+      expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+
+      tap("payment-card");
+      expect(buffer()).toHaveTextContent(i18n.t("paytm.redirecting"));
+      advance(3000);
+      await flush();
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(m.loadScreen).toHaveBeenCalledTimes(2);
+      expect(m.ids).not.toHaveBeenCalled();
+      expect(m.edc).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    /*
+      U11 (contract review R1): the window's controls outlive its timer by one
+      commit. Until the timer's batch renders, CANCEL and BACK TO MENU are still
+      painted and still run the WINDOW render's handlers — and with a warm chunk
+      the initiate has already left. One act = that frame: the timer fires and
+      the captured control is clicked before anything commits.
+    */
+    it("a CANCEL from the timer's frame changes nothing: the type stays armed, no cancel event, ONE initiate → /paymentPolling", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      mount();
+      tap("payment-card");
+      const cancel = screen.getByTestId("payment-buffer-cancel");
+      act(() => {
+        vi.advanceTimersByTime(3000);
+        fireEvent.click(cancel);
+      });
+      await flush();
+
+      expect(state().payment.paymentType).toBe("PaytmEdc");
+      expect(events("payment_initiation_cancelled")).toEqual([]);
+      expect(m.edc).toHaveBeenCalledTimes(1);
+      expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
+    });
+
+    it("a BACK TO MENU from the timer's frame (keyboard / AT — the window covers it for a finger) never leaves under the initiate", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      mount();
+      tap("payment-card");
+      const back = screen.getByTestId("payment-back");
+      act(() => {
+        vi.advanceTimersByTime(3000);
+        fireEvent.click(back);
+      });
+      await flush();
+
+      expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
+      expect(events("payment_dismissed")).toEqual([]);
+      expect(m.edc).toHaveBeenCalledTimes(1);
+    });
+
+    it("pin: a CANCEL inside the window still disarms and sends nothing", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      mount();
+      tap("payment-card");
+      advance(2999);
+      tap("payment-buffer-cancel");
+      advance(10_000);
+      await flush();
+
+      expect(state().payment.paymentType).toBe("");
+      expect(events("payment_initiation_cancelled")).toHaveLength(1);
+      expect(m.edc).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    /*
+      Review 2 F1: a window's end is an initiate now, so a tile armed by the
+      second tap of a double tap moves money 3 s later. That tap lands on
+      whatever this screen paints under the finger: a tile under the window's
+      CANCEL or the modal's PAY ANOTHER WAY (both close at once), and on
+      arrival a tile under /paymentPolling's TRY AGAIN. jsdom does not
+      hit-test, so these pin the guard's life; paytm.spec R7 / R8 drive the
+      real double taps.
+    */
+    const tapGuard = () => screen.queryByTestId("payment-tap-guard");
+
+    it("the tap guard covers the screen for its first 500 ms (the second tap of the screen before)", () => {
+      store.dispatch(setPaymentSettings([EDC, DQR]));
+      mount();
+
+      expect(tapGuard()).toHaveAttribute("aria-hidden", "true");
+      advance(499);
+      expect(tapGuard()).toBeInTheDocument();
+      advance(1);
+      expect(tapGuard()).not.toBeInTheDocument();
+    });
+
+    it.each(["payment-card", "payment-counter"])("CANCEL on a %s window re-arms the tap guard for 500 ms", (testId) => {
+      store.dispatch(setPaymentSettings([EDC, DQR]));
+      mount();
+      advance(500);
+      tap(testId);
+      expect(tapGuard()).not.toBeInTheDocument();
+
+      tap("payment-buffer-cancel");
+      expect(buffer()).not.toBeInTheDocument();
+      expect(tapGuard()).toBeInTheDocument();
+      advance(499);
+      expect(tapGuard()).toBeInTheDocument();
+      advance(1);
+      expect(tapGuard()).not.toBeInTheDocument();
+    });
+
+    it("PAY ANOTHER WAY re-arms the tap guard for 500 ms; the window's own end does not", async () => {
+      store.dispatch(setPaymentSettings([EDC]));
+      m.loadScreen.mockResolvedValue(null);
+      mount();
+      advance(500);
+      tap("payment-card");
+      advance(3000);
+      await flush();
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(tapGuard()).not.toBeInTheDocument();
+
+      tap("paytm-initiate-other");
+      expect(tapGuard()).toBeInTheDocument();
+      advance(500);
+      expect(tapGuard()).not.toBeInTheDocument();
     });
   });
 
