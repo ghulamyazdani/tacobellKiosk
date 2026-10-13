@@ -553,9 +553,11 @@ test.describe("P9c ADA reach-zone view", () => {
 
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
     await expectAdaLayout(page);
-    // Figma draws no control on Order Complete: nothing to reach (a reach
-    // pass would find no control at all), and the exit is its timer.
-    await expect(reachZone(page).getByRole("button")).toHaveCount(0);
+    // Order Complete's one control, START NEW ORDER (2026-10-13), sits at the
+    // zone's foot and is reachable; the exit is still its timer otherwise.
+    await expect(reachZone(page).getByRole("button")).toHaveCount(1);
+    await expect(page.getByTestId("order-success-new-order")).toBeVisible();
+    await expectReachable(page);
 
     // The 20 s exit navigates; /start's mount resets ("full" closes the view).
     const splashInZone = await watchSplashNeverInZone(page);
