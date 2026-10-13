@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
-import tbBell from "../../assets/brand/tb-bell.svg";
+// Figma's rail bell (Menu-Categories "Bell", 1:24 — Dark Purple with the Grey 6
+// cut-out), exported as is (user 2026-10-13: the rail showed the white bell
+// filtered to black). ?no-inline: a precached file, never boot-path bytes.
+import tbBellRail from "../../assets/brand/tb-bell-rail.svg?no-inline";
 
 export interface RailCategory {
   id: string;
@@ -33,7 +36,7 @@ export default function CategoryRail({
       data-testid="category-rail"
       className="flex h-full w-[264px] shrink-0 flex-col items-center border-r border-tb-grey-4 bg-tb-surface px-[24px] pt-[40px]"
     >
-      <img alt="Taco Bell" src={tbBell} className="mb-[40px] h-[64px] w-[72px] brightness-0" />
+      <img alt="Taco Bell" src={tbBellRail} className="mb-[40px] h-[64px] w-[72px]" />
       {children}
       <div className="flex w-full flex-col overflow-y-auto">
         {categories.map((category) => {
