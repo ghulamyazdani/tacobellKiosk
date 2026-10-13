@@ -394,10 +394,9 @@
     "thankYou": "Thank you\nfor your order",
     "orderHeading": "Order",
     "proceedToCounter": "Proceed to front counter",
-    "unlockTop": "Unlock",
-    "unlockFreebies": "Freebies",
-    "unlockBottom": "with points",
-    "startNewOrder": "Start new order"
+    "startNewOrder": "Start new order",
+    "countdown": "{{seconds}}s",
+    "countdownA11y": "Starting a new order in {{seconds}} seconds"
   },
   "orderError": {
     "title": "We couldn't place your order",

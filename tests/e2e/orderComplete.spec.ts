@@ -1,4 +1,4 @@
-import { test, expect, freezeClock, stepClockUntil, type Locator, type Page } from "./fixtures/kiosk";
+import { test, expect, freezeClock, stepClockUntil, type Page } from "./fixtures/kiosk";
 import { mockKioskBackend, locale, SKIP_CRM, GREEK_SALAD } from "./fixtures/backend";
 import { mockCheckoutBackend, expectNothingDangerousWasContacted } from "./fixtures/checkout";
 import { mockXenoLoyalty, LOYALTY_PHONE, LOYALTY_SETTINGS } from "./fixtures/loyalty";
@@ -10,17 +10,20 @@ import { payAtCounter } from "./pages/checkout";
 
 /**
  * Lane order-success — Order Complete as Figma draws it, measured on the 1080×1920 stage at scale 1:
- * 1:5932 (a guest: "THANK YOU / FOR YOUR ORDER", the photo panel at y 792) and 1:3437 (an identified
- * loyalty customer: "ORDER #NNNNN", the merch panel at y 725). Both: the bell at (490, 128), the text
- * block at 345, the 412×900 panel at x 334 — and one control, START NEW ORDER in the CTA slot
- * (user 2026-10-13), which leaves exactly as the 20 s timer does (user decision 2026-10-12). The guest's UNLOCK FREEBIES WITH POINTS shows only where
- * loyalty is on, its arrowhead painted OVER the photo; the QR, points and campaign copy have no
- * source and never show. ADA keeps the panel and the annotation mounted but invisible and centres the
- * text block in the reach zone (design language — neither frame has an ADA variant).
+ * 1:5932 (a guest: "THANK YOU / FOR YOUR ORDER") and 1:3437 (an identified loyalty customer: "ORDER
+ * #NNNNN"). Both: the bell at (490, 128) and the text block — centred on the stage since the photo
+ * panel was removed with the guest's UNLOCK FREEBIES WITH POINTS, whose arrow pointed into it (user
+ * 2026-10-14: "remove the static image in the middle"). One control, START NEW ORDER in the CTA slot
+ * (user 2026-10-13), counting the 20 s exit down on its label while a fill slides across it (user
+ * 2026-10-14; design language): a tap leaves at once, 0 leaves for the splash. The QR, points and
+ * campaign copy have no source and never show. ADA drops the bell and centres the text block in the
+ * reach zone (design language — neither frame has an ADA variant).
  *
  * TIME: page.clock is installed before the first goto and runs (the 3 s PAY AT COUNTER window is
- * stepped); from the receipt tap it STANDS STILL, so the 20 s exit is pinned: up at 19 s, the splash
- * at 20 s. Shots are capture-only (user decision 2026-10-05: no pixel diffing).
+ * stepped); from the receipt tap it STANDS STILL, so the countdown is pinned: 20 on arrival, 15 at
+ * 5 s, 1 at 19 s, the splash at 20 s. The fill is CSS (it runs on the document timeline, not the page
+ * clock): the suite's reduced motion does not render it; one test turns motion on to read it. Shots
+ * are capture-only (user decision 2026-10-05: no pixel diffing).
  */
 
 const en = locale("en");
@@ -99,12 +102,19 @@ function expectNear<K extends string>(
 
 const success = (page: Page) => page.getByTestId("order-success");
 const textBlock = (page: Page) => success(page).locator("h1").locator("xpath=..");
-const panel = (page: Page) => page.getByTestId("order-success-panel");
-const unlock = (page: Page) => page.getByTestId("order-success-unlock");
 const newOrder = (page: Page) => page.getByTestId("order-success-new-order");
+/** START NEW ORDER's ticking part (aria-hidden): " · 20s". */
+const countdown = (page: Page) => page.getByTestId("order-success-countdown");
+const fill = (page: Page) => page.getByTestId("order-success-countdown-fill");
+/** The English label's seconds, as rendered after the name. */
+const secs = (seconds: number) => `· ${en.success.countdown.replace("{{seconds}}", String(seconds))}`;
 
-/** The frame's fixed geometry (±2 px) on the unscaled stage, the photo decoded, and ONE control: START NEW ORDER in the CTA slot (2026-10-13). */
-async function expectFrame(page: Page, panelTop: 792 | 725) {
+/**
+ * The frame's fixed geometry (±2 px) on the unscaled stage — the text block centred (no panel, no
+ * unlock: the sheen and the bell are its only pictures) — and ONE control: START NEW ORDER in the
+ * CTA slot (2026-10-13), named without its seconds.
+ */
+async function expectFrame(page: Page) {
   expect(await page.getByTestId("kiosk-stage").boundingBox(), "the stage at scale 1").toEqual({
     x: 0,
     y: 0,
@@ -112,12 +122,24 @@ async function expectFrame(page: Page, panelTop: 792 | 725) {
     height: STAGE_HEIGHT,
   });
   expectNear(await stageBox(success(page).getByAltText("Taco Bell")), { x: 490, y: 128, width: 100, height: 89 }, 2, "bell");
-  expectNear(await stageBox(textBlock(page)), { y: 345 }, 2, "text block");
-  expectNear(await stageBox(panel(page)), { x: 334, y: panelTop, width: 412, height: 900 }, 2, "panel");
-  await expect.poll(() => panel(page).locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  const block = await stageBox(textBlock(page));
+  expectNear({ centre: block.y + block.height / 2 }, { centre: STAGE_HEIGHT / 2 }, 2, "text block (centred on the stage)");
+  await expect(page.getByTestId("order-success-panel")).toHaveCount(0);
+  await expect(page.getByTestId("order-success-unlock")).toHaveCount(0);
+  await expect(success(page).locator("img")).toHaveCount(2);
   await expect(success(page).getByRole("button")).toHaveCount(1);
   expectNear(await stageBox(newOrder(page)), { x: 24, y: 1812, width: 1032, height: 84 }, 2, "START NEW ORDER (CTA_Sheet_Fixed)");
   await expect(success(page).getByRole("progressbar")).toHaveCount(0);
+}
+
+/** shot() with the animations left as they are: "disabled" would finish a paused fill. */
+async function shotAsIs(page: Page, name: string) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  const path = test.info().outputPath(`${name}.png`);
+  await page.screenshot({ path, animations: "allow", caret: "hide" });
+  await test.info().attach(name, { path, contentType: "image/png" });
 }
 
 /**
@@ -132,10 +154,10 @@ async function watchUntilGone(page: Page) {
     const read = () => {
       const root = document.querySelector('[data-testid="order-success"]');
       if (!root) return;
+      // Never the countdown: its digits tick by design.
       const line = [
         document.querySelector('[data-testid="order-number"]')?.textContent,
         root.querySelector("h1")?.textContent,
-        document.querySelector('[data-testid="order-success-panel"]')?.className.match(/top-\[\d+px\]/)?.[0],
         document.documentElement.lang,
         Math.round(root.getBoundingClientRect().height),
       ].join(" | ");
@@ -153,30 +175,19 @@ async function watchUntilGone(page: Page) {
   return () => page.evaluate(() => (window as unknown as { __orderCompleteSeen: string[] }).__orderCompleteSeen);
 }
 
-/** A box's centre in stage px, unrounded (a rotated box's AABB keeps its centre). */
-const centre = (locator: Locator) =>
-  locator.evaluate((el, stageHeight) => {
-    const stage = document.querySelector('[data-testid="kiosk-stage"]');
-    if (!stage) throw new Error("kiosk-stage is not mounted");
-    const s = stage.getBoundingClientRect();
-    const k = s.height / stageHeight;
-    const r = el.getBoundingClientRect();
-    return { x: (r.left + r.width / 2 - s.left) / k, y: (r.top + r.height / 2 - s.top) / k };
-  }, STAGE_HEIGHT);
-
 test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
   });
 
-  test("GUEST, loyalty off (1:5932): the frame's geometry, THANK YOU on two lines, Figma's PROCEED, START NEW ORDER and no unlock pitch — up at 19 s, the splash at 20 s with the screen unchanged until it goes, and the next guest's bag is empty", async ({
+  test("GUEST, loyalty off (1:5932): the frame's geometry with the text block centred, THANK YOU on two lines, Figma's PROCEED, no photo and no unlock pitch — START NEW ORDER counts 20, 15 … 1 and the splash comes at 0 with the screen unchanged until it goes, and the next guest's bag is empty", async ({
     page,
   }) => {
     test.slow();
     const checkout = await mockBackend(page, "guest");
     await orderToComplete(page, "guest");
 
-    await expectFrame(page, 792);
+    await expectFrame(page);
     await expect(success(page).locator("h1")).toHaveText(en.success.thankYou);
     expectNear(await stageBox(success(page).locator("h1")), { height: 88 }, 2, "THANK YOU / FOR YOUR ORDER (two 44 px lines)");
     // Broken where 1:5932 breaks it: a soft wrap of the one-line copy is 88 px too ("THANK YOU FOR YOUR /
@@ -186,14 +197,25 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
       "Figma's two lines"
     ).toEqual(["THANK YOU", "FOR YOUR ORDER"]);
     await expect(page.getByTestId("order-success-proceed")).toHaveText(en.success.proceedToCounter);
-    await expect(newOrder(page)).toHaveText(en.success.startNewOrder);
-    await expect(unlock(page)).toHaveCount(0);
+    // The label shows the seconds; the name never carries them (the digits are aria-hidden).
+    await expect(newOrder(page)).toHaveText(`${en.success.startNewOrder} ${secs(20)}`);
+    await expect(newOrder(page)).toHaveAccessibleName(en.success.startNewOrder);
+    await expect(countdown(page)).toHaveAttribute("aria-hidden", "true");
+    await expect(success(page).getByRole("status")).toHaveText(
+      en.success.countdownA11y.replace("{{seconds}}", "20")
+    );
+    // The suite runs reduced motion: the fill is not rendered there — the digits carry the countdown.
+    await expect(fill(page)).toBeHidden();
     await shot(page, "oc-01-guest-en");
 
     const committed = await watchUntilGone(page);
-    await page.clock.runFor(19_000);
+    await page.clock.runFor(5_000);
+    await expect(countdown(page)).toHaveText(secs(15));
+    await page.clock.runFor(14_000);
+    await expect(countdown(page)).toHaveText(secs(1));
     await expect(success(page)).toBeVisible();
     await expect(page).toHaveURL(/\/orderSuccess$/);
+    await expect(newOrder(page)).toHaveAccessibleName(en.success.startNewOrder);
     await page.clock.runFor(1_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page).toHaveURL(/\/start$/);
@@ -213,6 +235,8 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
   }) => {
     const checkout = await mockBackend(page, "guest");
     await orderToComplete(page, "guest");
+    await page.clock.runFor(3_000);
+    await expect(countdown(page)).toHaveText(secs(17));
 
     await newOrder(page).click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
@@ -226,64 +250,85 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("GUEST, loyalty on (1:5932): UNLOCK / FREEBIES / WITH POINTS at the frame's place, FREEBIES yellow, and the arrowhead painted over the photo", async ({
+  test("GUEST, loyalty on (1:5932): the plain guest frame — no unlock pitch, no photo, no points copy; with motion on, START NEW ORDER's fill is ONE linear CSS transform run over the 20 s from the left edge (inline-start), and nothing waits on it", async ({
     page,
   }) => {
     test.slow();
     await mockBackend(page, "loyaltyGuest");
     await orderToComplete(page, "loyaltyGuest");
 
-    await expectFrame(page, 792);
+    await expectFrame(page);
     await expect(success(page).locator("h1")).toHaveText(en.success.thankYou);
-    // The wrapper is a zero-height static box: its arrow and lines are what shows.
-    await expect(unlock(page).locator("img")).toBeVisible();
-    await expect(unlock(page).locator("span")).toHaveText([
-      en.success.unlockTop,
-      en.success.unlockFreebies,
-      en.success.unlockBottom,
-    ]);
-    await expect(unlock(page).locator("span").nth(1)).toHaveCSS("color", "rgb(250, 219, 60)");
-    const arrow = unlock(page).locator("img");
-    expectNear(await centre(arrow), { x: 779.9, y: 1304.3 }, 3, "arrow centre");
-    // 1:5932 paints the arrowhead over the photo's right edge (x 746).
-    const hit = await page.evaluate((stageHeight) => {
-      const stage = document.querySelector('[data-testid="kiosk-stage"]');
-      if (!stage) return "no stage";
-      const s = stage.getBoundingClientRect();
-      const k = s.height / stageHeight;
-      const el = document.elementFromPoint(s.left + 730 * k, s.top + 1281 * k);
-      return el?.closest('[data-testid="order-success-unlock"]') && el.tagName === "IMG" ? "arrow" : (el?.outerHTML.slice(0, 120) ?? "nothing");
-    }, STAGE_HEIGHT);
-    expect(hit, "what (730, 1281) hits").toBe("arrow");
-    await expect(success(page)).not.toContainText(/scan to earn|110 points|for your meal|merch|tuesday/i);
+    await expect(success(page)).not.toContainText(/unlock|freebies|with points|scan to earn|110 points|for your meal|merch|tuesday/i);
+    await expect(fill(page)).toBeHidden();
     await shot(page, "oc-02-guest-loyalty-en");
 
-    // With motion on, the arrow waits one page entrance + one stagger and each line three staggers
-    // (the tokens, read live). Those delays hold only while .tb-pop-in's shorthand sits in
-    // @layer components, under the utilities layer — out of it, it resets them to 0 s.
+    // Motion on, halfway through: the digits read 10 (page clock), the fill is read on its own
+    // timeline (it started when motion came on), then paused at 10 s for the shot.
+    await page.clock.runFor(10_000);
+    await expect(countdown(page)).toHaveText(secs(10));
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    const offBy = await unlock(page).evaluate((wrap) => {
-      const ms = (css: string) => parseFloat(css) * (css.trim().endsWith("ms") ? 1 : 1000);
-      const tokens = getComputedStyle(document.documentElement);
-      const [dur, stagger] = ["--tb-dur-page", "--tb-stagger"].map((name) => ms(tokens.getPropertyValue(name)));
-      const delay = (el: Element | null | undefined) => (el ? ms(getComputedStyle(el).animationDelay) : Number.NaN);
+    await expect(fill(page)).toBeVisible();
+    await settle(page); // the burst, now rendered, has flown; the fill runs on (settle exempts it)
+    const run = await fill(page).evaluate((el) => {
+      const animations = el.getAnimations();
+      const slide = animations[0];
+      if (animations.length !== 1 || !(slide instanceof CSSAnimation)) return { animations: animations.length };
+      const effect = slide.effect as KeyframeEffect;
+      const duration = Number(effect.getComputedTiming().duration);
+      slide.pause();
+      // Never seek to the very end: a paused run there leaves getAnimations() (and the
+      // compositor keeps the frame it paused on).
+      const offsetAt = (ms: number) => {
+        slide.currentTime = ms;
+        return Math.round(new DOMMatrix(getComputedStyle(el).transform).m41) + 0;
+      };
+      const offsets = [offsetAt(0), offsetAt(duration / 2), offsetAt(duration - 1)];
       return {
-        tokensSet: dur > 0 && stagger > 0,
-        arrow: Math.round(delay(wrap.querySelector("img")) - (dur + stagger)),
-        lines: [...wrap.querySelectorAll("span")].map((line) => Math.round(delay(line.parentElement) - (dur + 3 * stagger))),
+        animations: 1,
+        name: slide.animationName,
+        duration,
+        iterations: effect.getComputedTiming().iterations,
+        easing: getComputedStyle(el).animationTimingFunction,
+        props: [...new Set(effect.getKeyframes().flatMap((frame) => Object.keys(frame)))].filter(
+          (key) => !["offset", "easing", "composite", "computedOffset"].includes(key)
+        ),
+        width: (el as HTMLElement).offsetWidth,
+        offsets,
       };
     });
-    expect(offBy, "the unlock pops' delays vs the tokens (ms)").toEqual({ tokensSet: true, arrow: 0, lines: [0, 0, 0] });
+    expect(run, "the fill's one run").toEqual({
+      animations: 1,
+      name: "tb-countdown-fill",
+      duration: 20_000,
+      iterations: 1,
+      easing: "linear",
+      props: ["transform"],
+      width: 1030, // the button's 1032 inside its 1 px border
+      offsets: [-1030, -515, 0], // from the left edge: wholly left of it, half in, home
+    });
+    // Paused at 10 s for the shot, to match the digits (its own task: a seek the compositor sees).
+    await fill(page).evaluate((el) => {
+      el.getAnimations()[0].currentTime = 10_000;
+    });
+    // tb-surface at 20 % (Tailwind 4 mixes the alpha in oklab).
+    await expect(fill(page)).toHaveCSS("background-color", /^(rgba\(255, 255, 255, 0\.2\)|oklab\(0\.99\d* \S+ \S+ \/ 0\.2\))$/);
+    await shotAsIs(page, "oc-06-countdown-half-en");
+
+    // The exit never waits on the fill: paused, the page clock still ends the screen at 0.
+    await page.clock.runFor(10_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/start$/);
   });
 
-  test("LOYALTY, identified (1:3437): ORDER and the number are one 116 px H1 block, the merch panel at y 725, no unlock pitch and no campaign footer", async ({
+  test("LOYALTY, identified (1:3437): ORDER and the number are one 116 px H1 block, centred like the guest's, with no merch photo and no campaign footer; START NEW ORDER counts down", async ({
     page,
   }) => {
     test.slow();
     await mockBackend(page, "identified");
     await orderToComplete(page, "identified");
 
-    await expectFrame(page, 725);
+    await expectFrame(page);
     const heading = success(page).locator("h1");
     const number = page.getByTestId("order-number");
     await expect(heading).toHaveText(en.success.orderHeading);
@@ -292,9 +337,9 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await expect(number).toHaveCSS("font-size", "116px");
     const [h1, n] = [await stageBox(heading), await stageBox(number)];
     expect(Math.abs(n.y - (h1.y + h1.height)), "the number sits right under ORDER (no gap)").toBeLessThanOrEqual(1);
-    await expect(unlock(page)).toHaveCount(0);
     await expect(success(page)).not.toContainText(/checkout next|tuesday drops|merch|scan to earn/i);
     await expect(success(page)).not.toContainText(en.success.thankYou);
+    await expect(newOrder(page)).toHaveText(`${en.success.startNewOrder} ${secs(20)}`);
     await shot(page, "oc-03-identified-en");
 
     // The exit: the identified frame stays as it is until /start replaces it — never the guest frame.
@@ -304,7 +349,7 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     expect(await committed(), "Order Complete on its way out (H1: never the emptied store)").toHaveLength(1);
   });
 
-  test("ARABIC guest, loyalty on: the thank-you on ONE line, the Arabic PROCEED and the three Arabic unlock lines — no English, no raw key", async ({
+  test("ARABIC guest, loyalty on: the thank-you on ONE line, the Arabic PROCEED, and START NEW ORDER in Arabic counting down in Western digits, read right to left — no English, no raw key", async ({
     page,
   }) => {
     test.slow();
@@ -312,24 +357,30 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await orderToComplete(page, "loyaltyGuest", { arabic: true });
 
     await expect(page.locator("html")).toHaveAttribute("lang", "ar");
-    await expectFrame(page, 792);
+    await expectFrame(page);
     const heading = success(page).locator("h1");
     await expect(heading).toContainText(ar.success.thankYou);
     expectNear(await stageBox(heading), { height: 44 }, 2, "the Arabic thank-you (one 44 px line)");
     await expect(page.getByTestId("order-success-proceed")).toContainText(ar.success.proceedToCounter);
-    const lines = unlock(page).locator("span");
-    await expect(lines).toHaveCount(3);
-    await expect(lines.nth(0)).toContainText(ar.success.unlockTop);
-    await expect(lines.nth(1)).toContainText(ar.success.unlockFreebies);
-    await expect(lines.nth(2)).toContainText(ar.success.unlockBottom);
     await expect(newOrder(page)).toContainText(ar.success.startNewOrder);
-    for (const english of [en.success.proceedToCounter, en.success.unlockTop, en.success.unlockFreebies, en.success.unlockBottom, en.success.startNewOrder]) {
+    await expect(newOrder(page)).toHaveAccessibleName(new RegExp(ar.success.startNewOrder));
+    // The seconds as the number shows them: Western digits, the Arabic unit (each value its own isolate).
+    const unit = ar.success.countdown.replace("{{seconds}}", "").trim();
+    await expect(countdown(page)).toContainText("20");
+    await expect(countdown(page)).toContainText(unit);
+    await expect(countdown(page)).not.toContainText(/[\u0660-\u0669]/);
+    // One dir=auto leaf: the label and its seconds resolve right to left (the name on the right).
+    await expect(countdown(page).locator("xpath=..")).toHaveCSS("direction", "rtl");
+    await expect(success(page).getByRole("status")).toContainText(ar.success.countdownA11y.split("{{seconds}}")[0].trim());
+    for (const english of [en.success.proceedToCounter, en.success.startNewOrder, secs(20).slice(2), "seconds"]) {
       await expect(success(page)).not.toContainText(english);
     }
     await shot(page, "oc-04-guest-loyalty-ar");
+    await page.clock.runFor(1_000);
+    await expect(countdown(page)).toContainText("19");
   });
 
-  test("ADA guest, loyalty on: the panel and the unlock stay mounted but hidden, the text block is centred in the reach zone, and nothing of the screen shows above it", async ({
+  test("ADA guest, loyalty on: no panel and no unlock, no bell; the text block centred in the reach zone, START NEW ORDER counting down at its foot, and nothing of the screen shows above it", async ({
     page,
   }) => {
     test.slow();
@@ -337,12 +388,14 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await orderToComplete(page, "loyaltyGuest", { ada: true });
 
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
-    await expect(panel(page)).toHaveCSS("visibility", "hidden");
-    await expect(unlock(page)).toHaveCSS("visibility", "hidden");
-    await expect(unlock(page).locator("img")).toHaveCSS("visibility", "hidden");
+    await expect(page.getByTestId("order-success-panel")).toHaveCount(0);
+    await expect(page.getByTestId("order-success-unlock")).toHaveCount(0);
     await expect(success(page).getByAltText("Taco Bell")).toHaveCount(0);
+    await expect(success(page).locator("img")).toHaveCount(1); // the sheen
     await expect(success(page).getByRole("button")).toHaveCount(1);
     await expect(newOrder(page)).toBeVisible();
+    await expect(newOrder(page)).toHaveText(`${en.success.startNewOrder} ${secs(20)}`);
+    expectNear(await stageBox(newOrder(page)), { x: 24, y: 1812, width: 1032, height: 84 }, 2, "START NEW ORDER at the zone's foot");
 
     const zone = await stageBox(success(page));
     expect(zone, "the screen IS the reach zone").toEqual({ x: 0, y: ADA_BRAND_ZONE_HEIGHT, width: 1080, height: STAGE_HEIGHT - ADA_BRAND_ZONE_HEIGHT });

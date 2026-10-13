@@ -414,3 +414,32 @@ describe("lane motion-v2", () => {
     expect(REDUCE_ROOT["--tb-dist-nudge"]).toBe("0px");
   });
 });
+
+/*
+  Order Complete's START NEW ORDER countdown (user 2026-10-14; design
+  language). The page feeds the duration from ORDER_SUCCESS_COUNTDOWN_SECONDS
+  (the unit suite checks that side); the CSS is ONE linear transform run
+  that nothing waits on, from the inline-start edge.
+*/
+describe("the Order Complete countdown fill (user 2026-10-14)", () => {
+  /** The first `.tb-countdown-fill { … }` in `scope` (the [dir] rule is separate). */
+  const fillRule = (scope: string) =>
+    declarations(scope.match(/(?:^|[};])\s*\.tb-countdown-fill\s*\{([^}]*)\}/)?.[1] ?? "");
+
+  it("slides in linearly over the page's --tb-countdown (no token), from-only + backwards so it rests as its own full box", () => {
+    expect(fillRule(CODE)).toEqual({
+      "--tb-countdown-from": "-100%",
+      animation: "tb-countdown-fill var(--tb-countdown) linear backwards",
+    });
+    expect(keyframes("tb-countdown-fill").trim()).toBe("from { transform: translateX(var(--tb-countdown-from)); }");
+    expect(TOKENS["--tb-countdown"]).toBeUndefined();
+  });
+
+  it("grows from the inline-start edge: an rtl ancestor mirrors it (the app's Arabic is RTL text in an LTR layout, so it never does today)", () => {
+    expect(rule('[dir="rtl"] .tb-countdown-fill')).toEqual({ depth: 1, decl: { "--tb-countdown-from": "100%" } });
+  });
+
+  it("hidden under reduce: at rest it would be FULL all along, and its empty from-frame never paints — the digits carry the countdown", () => {
+    expect(fillRule(REDUCE)).toEqual({ display: "none" });
+  });
+});

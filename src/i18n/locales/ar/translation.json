@@ -394,10 +394,9 @@
     "thankYou": "شكرًا لطلبك",
     "orderHeading": "الطلب",
     "proceedToCounter": "توجه إلى الكاشير",
-    "unlockTop": "احصل على",
-    "unlockFreebies": "هدايا مجانية",
-    "unlockBottom": "بالنقاط",
-    "startNewOrder": "ابدأ طلبًا جديدًا"
+    "startNewOrder": "ابدأ طلبًا جديدًا",
+    "countdown": "{{seconds}} ث",
+    "countdownA11y": "سيتم بدء طلب جديد خلال {{seconds}} ثانية"
   },
   "orderError": {
     "title": "تعذر إرسال طلبك",
