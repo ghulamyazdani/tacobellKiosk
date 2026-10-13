@@ -274,14 +274,6 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
       "Add £16.40+ to your order to be eligible to redeem this reward",
     ],
     [
-      "minItems",
-      lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
-        reason: "minItems",
-        countShort: 2,
-      }),
-      null,
-    ],
-    [
       "itemCriteria",
       lockedEntry({ ...FLAT_OFFER, _id: "offer-scoped" }, "amountItems", { reason: "itemCriteria" }),
       "Needs specific items in your order",
@@ -302,6 +294,29 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
     expect(screen.queryByTestId(`offer-row-add-items-${id}`)).not.toBeInTheDocument();
     expect(row.querySelector("button")).toBeNull();
     if (copy) expect(row).toHaveTextContent(copy);
+  });
+
+  it("offers-parity (flipped): a minItems row handed onAddItems stacks the nudge AND ADD ITEMS in the 206 px column", async () => {
+    const onAddItems = vi.fn();
+    const { onPick } = renderRow({
+      entry: lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
+        reason: "minItems",
+        countShort: 2,
+      }),
+      onAddItems,
+    });
+    const nudge = screen.getByTestId("offer-row-nudge-offer-min-items");
+    expect(nudge).toHaveTextContent("Add 2+ more items to your order to be eligible to redeem this reward");
+    const addItems = screen.getByTestId("offer-row-add-items-offer-min-items");
+    expect(addItems.tagName).toBe("BUTTON");
+    // One 206 px column holds both, the nudge first.
+    const column = nudge.parentElement as HTMLElement;
+    expect(column).toHaveClass("w-[206px]");
+    expect(column).toContainElement(addItems);
+    expect(nudge.compareDocumentPosition(addItems) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(addItems);
+    expect(onAddItems).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
   });
 
   it("the minItems nudge still names the item shortfall", () => {

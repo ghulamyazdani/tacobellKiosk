@@ -22,8 +22,9 @@ export interface OfferRowProps {
   /** Interaction latch (e.g. while a commit is in flight). */
   disabled: boolean;
   /**
-   * Buy-stage entry (offers lane, item 31). Only a LOCKED bogoBuySide row
-   * renders it — as an ADD ITEMS text button in the nudge slot; the sheet
+   * Buy-stage entry (offers lane, item 31). Only a LOCKED bogoBuySide or
+   * minItems row renders it — as an ADD ITEMS text button in the nudge slot
+   * (under the nudge on a minItems row, lane offers-parity); the sheet
    * passes it only when a buy stage can finish the offer. Every other locked
    * kind ignores it and stays informational.
    */
@@ -178,7 +179,37 @@ export default function OfferRow({
   })();
 
   const showAddItems =
-    !blocked && !!onAddItems && presentation?.labelKind === "bogoBuySide";
+    !blocked &&
+    !!onAddItems &&
+    (presentation?.labelKind === "bogoBuySide" ||
+      presentation?.labelKind === "minItems");
+
+  const addItemsButton = (
+    // A sibling of the row's text inside a div — never a nested button.
+    <button
+      type="button"
+      data-testid={`offer-row-add-items-${id}`}
+      disabled={disabled}
+      onClick={onAddItems}
+      className={`inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-[8px] text-[18px] font-bold tracking-[-0.08px] text-tb-purple underline ${
+        disabled ? "opacity-40" : ""
+      }`}
+    >
+      {t("offers.buyStage.addItems")}
+    </button>
+  );
+
+  const nudgeLeaf = nudge ? (
+    // A wrapping LEAF (P9f rule): start-aligned like Figma 1:3824 in
+    // English; an Arabic nudge resolves RTL and right-aligns.
+    <span
+      data-testid={`offer-row-nudge-${id}`}
+      dir="auto"
+      className="w-[206px] shrink-0 pt-[48px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-pink-dark"
+    >
+      {nudge}
+    </span>
+  ) : null;
 
   const inner = (
     <>
@@ -219,29 +250,17 @@ export default function OfferRow({
         )}
       </span>
 
-      {nudge ? (
-        // A wrapping LEAF (P9f rule): start-aligned like Figma 1:3824 in
-        // English; an Arabic nudge resolves RTL and right-aligns.
-        <span
-          data-testid={`offer-row-nudge-${id}`}
-          dir="auto"
-          className="w-[206px] shrink-0 pt-[48px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-pink-dark"
-        >
-          {nudge}
+      {nudgeLeaf && showAddItems ? (
+        // A minItems lock a buy stage can finish: the nudge AND ADD ITEMS,
+        // stacked in the 206 px column.
+        <span className="flex w-[206px] shrink-0 flex-col items-start gap-[8px]">
+          {nudgeLeaf}
+          {addItemsButton}
         </span>
+      ) : nudgeLeaf ? (
+        nudgeLeaf
       ) : showAddItems ? (
-        // A sibling of the row's text inside a div — never a nested button.
-        <button
-          type="button"
-          data-testid={`offer-row-add-items-${id}`}
-          disabled={disabled}
-          onClick={onAddItems}
-          className={`inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-[8px] text-[18px] font-bold tracking-[-0.08px] text-tb-purple underline ${
-            disabled ? "opacity-40" : ""
-          }`}
-        >
-          {t("offers.buyStage.addItems")}
-        </button>
+        addItemsButton
       ) : (
         entry.eligible &&
         !blocked && (
@@ -281,9 +300,8 @@ export default function OfferRow({
 
   // Locked / gone / D3-blocked rows are informational, never targets — a
   // div, not a disabled button (nothing to press, nothing to announce as
-  // pressable). A bogoBuySide row's ADD ITEMS is its own button inside the
-  // div. Gone and blocked rows are inactive (aria-disabled, dimmed — exempt
-  // from WCAG 1.4.3).
+  // pressable). ADD ITEMS is its own button inside the div. Gone and blocked
+  // rows are inactive (aria-disabled, dimmed — exempt from WCAG 1.4.3).
   const inactive = gone || blocked;
   return (
     <div

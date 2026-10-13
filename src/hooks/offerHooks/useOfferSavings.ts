@@ -203,8 +203,11 @@ function useOfferSavings() {
   const context = useMemo<SavingsContext>(() => {
     const items = cartRdx?.cartItems ?? [];
     // minBillAmount / minItemCount are compared against the cart EXCLUDING
-    // loyalty lines, matching every existing eligibility check.
-    const payable = items.filter((i) => !i?.isLoyaltyItem);
+    // loyalty lines, matching every existing eligibility check — and item
+    // minimums count PAID units (lane offers-parity D3): freebie rows are
+    // swept by every commit and revalidation check 3 never counts them, so a
+    // gap a freebie "closed" applied an offer the next check removed.
+    const payable = items.filter((i) => !i?.isLoyaltyItem && !i?.isGetItem);
     const cartQuantity = payable.reduce((sum, i) => sum + num(i?.quantity), 0);
     // Baseline subtotal cached per signature — this ran a FULL bill on every
     // context rebuild before billFor was ref-stabilized.

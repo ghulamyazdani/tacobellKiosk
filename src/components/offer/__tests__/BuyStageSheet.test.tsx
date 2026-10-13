@@ -400,3 +400,80 @@ describe("BuyStageSheet — tiles and modes", () => {
     expect(screen.getByTestId("buy-stage-continue").className).toMatch(/min-h-\[84px\]/);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity (U10, F2 / D4): once the buy side is met, any OTHER
+ * gap (an item minimum, a bill minimum) is a blocker — named at once, with
+ * no CONTINUE tap, and CONTINUE waits for it. Item minimums count paid
+ * units (D3), so a stage never applies an offer the next revalidation
+ * removes.
+ * ------------------------------------------------------------------ */
+describe("BuyStageSheet — offers-parity: the blocker after the buy side is met", () => {
+  /** Plain-or: buy ONE Tortilla Sauce, get a Caesar — min 4 items. */
+  const MIN_FOUR = {
+    ...BOGO,
+    _id: "offer-min-four",
+    name: "Buy a sauce get a Caesar (min 4)",
+    minItemCount: 4,
+    applicable: applicable([{ item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }]),
+  };
+
+  it("buy side met + a minItems gap: no 'Reward unlocked!'; 'Add 2+ more items…' shows WITHOUT a CONTINUE tap; onContinue never runs", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
+    const { onContinue } = renderStage(MIN_FOUR);
+
+    expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
+    expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    const cont = screen.getByTestId("buy-stage-continue");
+    expect(cont).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(cont);
+    expect(onContinue).not.toHaveBeenCalled();
+    // The buy side itself reads complete.
+    expect(screen.getByTestId("buy-stage-counter")).toHaveTextContent("1 of 1 added");
+  });
+
+  it("a freebie row is no paid unit (D3): 3 paid + 1 free still blocks a min of 4", () => {
+    const freebie = sauceRow("free-1", 1, { id: CAESAR.id, isGetItem: true, total_price: 0 });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1", 2), freebie]));
+    renderStage(MIN_FOUR);
+    expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
+      "Add 1+ more items to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
+  });
+
+  it("a minBill gap names the amount (the addNudge copy)", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
+    renderStage({ ...MIN_FOUR, _id: "offer-min-bill", minItemCount: null, minBillAmount: 20 });
+    expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
+      /^Add £\d+\.\d{2}\+ to your order to be eligible to redeem this reward$/
+    );
+    expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
+  });
+
+  it("the gap cleared → 'Reward unlocked!' → CONTINUE reaches onContinue", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
+    const { onContinue } = renderStage(MIN_FOUR);
+
+    await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
+    expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
+      "Add 1+ more items to your order to be eligible to redeem this reward"
+    );
+    await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
+    expect(screen.getByTestId("buy-stage-unlocked")).toHaveTextContent("Reward unlocked!");
+    expect(screen.getByTestId("buy-stage-hint")).toBeEmptyDOMElement();
+    const cont = screen.getByTestId("buy-stage-continue");
+    expect(cont).toHaveAttribute("aria-disabled", "false");
+    await userEvent.click(cont);
+    expect(onContinue).toHaveBeenCalledTimes(1);
+  });
+
+  it("buy side unmet: the tap-to-hint stays as it was (no blocker line before a tap)", async () => {
+    renderStage(MIN_FOUR);
+    expect(screen.getByTestId("buy-stage-hint")).toBeEmptyDOMElement();
+    await userEvent.click(screen.getByTestId("buy-stage-continue"));
+    expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent("Add 1 more qualifying item to unlock");
+  });
+});

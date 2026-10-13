@@ -17,6 +17,7 @@ import {
 } from "@cx-sdk/ordering/offer/buyStageUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import type { BuyStage } from "../../hooks/offerHooks/useBuyStage";
+import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -78,8 +79,10 @@ const calorieValue = (
  * The tiles read and write the REAL paid cart: a buy item is an ordinary
  * purchase. The counters mirror the engine (buyStageUtils) and the display is
  * clamped to "unlocked" whenever the engine predicate passes; CONTINUE only
- * reaches onContinue once satisfied. Nothing here navigates: customizable
- * tiles open the in-place paid tier session hosted by OfferTierHost.
+ * reaches onContinue once satisfied — and, with the buy side met, any other
+ * gap (an item or bill minimum) is named at once and CONTINUE waits for it
+ * (lane offers-parity). Nothing here navigates: customizable tiles open the
+ * in-place paid tier session hosted by OfferTierHost.
  */
 export default function BuyStageSheet({
   stage,
@@ -102,6 +105,7 @@ export default function BuyStageSheet({
     doesItemExistInCart,
   } = useCartHook();
   const { openBuyItemTierModal } = useMakeItAMeal();
+  const { gapFor } = useOfferSavings();
   // Menu names at render; offer and buy-group labels stay English (no data).
   const { name: localName } = useLocalized();
 
@@ -117,12 +121,19 @@ export default function BuyStageSheet({
   const progress = getBuyStageProgress(offer as BuyStageOffer, view, cartItems);
   // The engine predicate outranks the mirror (fork parity): once it unlocks,
   // the counter and bar read full.
-  const satisfied =
+  const met =
     Boolean(isBOGOOfferApplicable(offer, offer?.applicable, cartItems)) ||
     progress.satisfied;
+  // Lane offers-parity (D4 / P5): with the buy side met, any OTHER gap — an
+  // item minimum (paid units, D3) or a bill minimum — still blocks the offer:
+  // named at once, and CONTINUE waits for it, so a stage never applies an
+  // offer the bag's revalidation removes a moment later.
+  const gap = gapFor(offer);
+  const blocker = met && gap && gap.reason !== "bogoBuySide" ? gap : null;
+  const satisfied = met && !blocker;
   const need = progress.totalNeed;
-  const have = satisfied ? need : Math.min(progress.totalHave, need);
-  const fill = satisfied ? 1 : need > 0 ? have / need : 0;
+  const have = met ? need : Math.min(progress.totalHave, need);
+  const fill = met ? 1 : need > 0 ? have / need : 0;
   const counterText = t("offers.buyStage.addedCount", { have, need });
 
   const subtitle =
@@ -150,12 +161,22 @@ export default function BuyStageSheet({
     }
     return Math.max(0, progress.totalNeed - progress.totalHave);
   })();
+  const blockerText = !blocker
+    ? null
+    : blocker.reason === "minItems"
+      ? t("offers.addNudgeItems", { count: blocker.countShort })
+      : blocker.reason === "minBill"
+        ? t("offers.addNudge", {
+            amount: `${currency}${Number(blocker.amountShort ?? 0).toFixed(2)}`,
+          })
+        : t("offers.notApplicable");
   const hint =
-    hintRequested && !satisfied
+    blockerText ??
+    (hintRequested && !met
       ? remaining <= 1 || !Number.isFinite(remaining)
         ? t("offers.buyStage.hintMoreOne")
         : t("offers.buyStage.hintMoreOther", { count: remaining })
-      : null;
+      : null);
   const guardText = guard ? t(`offers.buyStage.${guard}`) : blockedMessage;
 
   const handleAdd = (entity: BuyMenuEntity) => {

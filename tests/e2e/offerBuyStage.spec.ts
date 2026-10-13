@@ -810,8 +810,11 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Lane offers-parity (E-C1, E-C2): the buy stage now opens for get-category
- * BOGOs (F1 — the picker lists the category's items). Category ids are the slim menu's
+ * Lane offers-parity (E-C1, E-C2, E-C4, E-C5): the buy stage now opens for
+ * get-category BOGOs (F1 — the picker lists the category's items) and on a
+ * min-items lock while the buy side is unmet (F2 / D4); once the buy side is
+ * met, the stage names any other gap at once and CONTINUE waits for it, so a
+ * reward is never applied and then removed. Category ids are the slim menu's
  * sub-categories (items carry subCategoryId null; the converter stamps it).
  * Money (header rules): E-C1 Tortilla 2 + Greek Salad 17 + free Tortilla 2:
  * Sub £21.00, −£2.00, VAT 15% × 19 = 2.85 → 21.85 → £22.00. E-C2 burger 8 +
@@ -856,10 +859,36 @@ const CAT_OR_BOGO = itemOffer({
   },
 });
 
+/** "Get Least priced item free"-shaped: any 3 sauces, the cheapest free — min 2 items, min £1. */
+const LEAST_MIN = itemOffer({
+  _id: "offer-least-min",
+  name: "Any 3 sauces, cheapest free (min 2 items)",
+  getItemOnly: false,
+  getLeastValueItem: true,
+  minItemCount: 2,
+  minBillAmount: 1,
+  leastItemValueCount: { buyQuantity: 3, getQuantity: 1 },
+  applicable: applicableBuy([buyCategory(SAUCES_SUB, "Sauces", "or")]),
+  getItems: { items: [], categories: [] },
+});
+
+/** "bogo"-shaped: buy a Tortilla Sauce ("or"), get a Caesar free — min 4 items. */
+const MIN_FOUR_BOGO = itemOffer({
+  _id: "offer-min-four",
+  name: "Buy a Tortilla Sauce, get a Caesar free (min 4 items)",
+  getItemOnly: false,
+  minItemCount: 4,
+  applicable: applicableBuy([{ ...buyRaw(TORTILLA_SAUCE, "Tortilla Sauce", 1), relation: "or" }]),
+  getItems: {
+    items: [getEntry("gi-min-four-caesar", CAESAR_DRESSING, "Caesar Dressing", "or")],
+    categories: [],
+  },
+});
+
 const catOption = (page: Page, groupId: string, entityId: string) =>
   page.getByTestId(`freebie-cat-option-${groupId}-${entityId}`);
 
-test.describe("Lane offers-parity — the buy stage for category offers", () => {
+test.describe("Lane offers-parity — the buy stage for category and min-items offers", () => {
   test("E-C1 a get-category BOGO: ADD ITEMS → + Greek Salad → CONTINUE → the picker's Sauces section; X rolls the cart back; then Tortilla → CONFIRM → −£2.00, Total £22.00", async ({
     page,
   }) => {
@@ -945,5 +974,75 @@ test.describe("Lane offers-parity — the buy stage for category offers", () => 
     await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£4.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
+  test("E-C4 least-value + minItemCount: with 1 Tortilla the row shows the item nudge AND ADD ITEMS → the least stage → + Tortilla + Caesar → APPLY REWARD → −£2.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [LEAST_MIN]);
+    await bootRegisteredToMenu(page);
+    await addTortillaSauceOneTap(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-row-nudge-${LEAST_MIN._id}`)).toHaveText(
+      "Add 1+ more items to your order to be eligible to redeem this reward"
+    );
+    await page.getByTestId(`offer-row-add-items-${LEAST_MIN._id}`).click();
+    await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("buy-stage-least-note")).toBeVisible();
+
+    await page.getByTestId(`buy-stage-inc-${TORTILLA_SAUCE}`).click();
+    await page.getByTestId(`buy-stage-add-${CAESAR_DRESSING}`).click();
+    await expect(page.getByTestId("buy-stage-unlocked")).toBeVisible();
+    await page.getByTestId("buy-stage-continue").click();
+    await expect(page.getByTestId("buy-stage-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(LEAST_MIN.name);
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+  });
+
+  test("E-C5 plain-or + minItemCount 4: nudge + ADD ITEMS → + Tortilla → 'Add 2+ more items…' at once, no 'Reward unlocked!'; ×2 more → unlocked → CONTINUE → applied, and never 'Reward Removed'", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [MIN_FOUR_BOGO]);
+    await bootRegisteredToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-row-nudge-${MIN_FOUR_BOGO._id}`)).toHaveText(
+      "Add 3+ more items to your order to be eligible to redeem this reward"
+    );
+    await page.getByTestId(`offer-row-add-items-${MIN_FOUR_BOGO._id}`).click();
+    await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
+
+    await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
+    await expect(page.getByTestId("buy-stage-hint")).toHaveText(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    await expect(page.getByTestId("buy-stage-unlocked")).toHaveCount(0);
+    await expect(page.getByTestId("buy-stage-continue")).toHaveAttribute("aria-disabled", "true");
+
+    await page.getByTestId(`buy-stage-inc-${TORTILLA_SAUCE}`).click();
+    await page.getByTestId(`buy-stage-inc-${TORTILLA_SAUCE}`).click();
+    await expect(page.getByTestId("buy-stage-unlocked")).toBeVisible();
+    await page.getByTestId("buy-stage-continue").click();
+    await expect(page.getByTestId("buy-stage-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(MIN_FOUR_BOGO.name);
+
+    // Revalidation agrees (paid units 4 ≥ 4): no removal in the window.
+    const start = Date.now();
+    await expect
+      .poll(
+        async () => {
+          if ((await page.getByTestId("offer-removal-notice").count()) > 0) return "removed";
+          return Date.now() - start >= 1_500 ? "kept" : "waiting";
+        },
+        { timeout: 5_000, intervals: [250] }
+      )
+      .toBe("kept");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(MIN_FOUR_BOGO.name);
   });
 });

@@ -532,7 +532,8 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
 });
 
 /* ------------------------------------------------------------------ *
- * Lane offers-parity (U4): ADD ITEMS for get-category BOGOs (F1).
+ * Lane offers-parity (U4): ADD ITEMS for get-category BOGOs (F1) and on a
+ * min-items lock while the buy side is unmet (F2 / D4).
  * ------------------------------------------------------------------ */
 describe("RewardsSheet — offers-parity", () => {
   beforeEach(() => {
@@ -562,6 +563,22 @@ describe("RewardsSheet — offers-parity", () => {
     },
   };
 
+  /** Least-value: any 2 sauces, the cheapest free — with an item minimum. */
+  const leastWithMin = (minItemCount: number) => ({
+    ...offerBase,
+    _id: "offer-least-min",
+    name: "Get least priced item free",
+    type: { name: "item", value: 0 },
+    getLeastValueItem: true,
+    minItemCount,
+    leastItemValueCount: { buyQuantity: 2, getQuantity: 1, getDiscount: 100 },
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: [{ item: { baseItemId: SAUCE_ENTITY.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }],
+    },
+    getItems: { items: [], categories: [] },
+  });
+
   it("F1 (flipped): a get-category BOGO's locked row offers ADD ITEMS and hands the stage over", async () => {
     store.dispatch(setFilteredOffers([GET_CATEGORY_BOGO]));
     const onAddItems = vi.fn();
@@ -569,6 +586,32 @@ describe("RewardsSheet — offers-parity", () => {
     await userEvent.click(screen.getByTestId("offer-row-add-items-offer-get-cat"));
     expect(onAddItems).toHaveBeenCalledTimes(1);
     expect((onAddItems.mock.calls[0] as unknown as [any, any])[1].mode).toBe("plain-and");
+  });
+
+  it("D4: a least-value minItems lock with the buy side UNMET → nudge AND ADD ITEMS", () => {
+    store.dispatch(setFilteredOffers([leastWithMin(3)]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    expect(screen.getByTestId("offer-row-add-items-offer-least-min")).toBeInTheDocument();
+  });
+
+  it("D4: the same lock with the buy side MET → the nudge only (a stage could only add more buy items)", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW, quantity: 2 }]));
+    store.dispatch(setFilteredOffers([leastWithMin(5)]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
+      "Add 2+ more items to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("offer-row-add-items-offer-least-min")).toBeNull();
+  });
+
+  it("a minItems lock on a bill-wise offer → no ADD ITEMS (no stage resolves)", () => {
+    store.dispatch(setFilteredOffers([{ ...FLAT_OFFER, _id: "offer-flat-min", minItemCount: 5 }]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-nudge-offer-flat-min")).toBeInTheDocument();
+    expect(screen.queryByTestId("offer-row-add-items-offer-flat-min")).toBeNull();
   });
 
   it("group-wise still never offers ADD ITEMS", () => {
