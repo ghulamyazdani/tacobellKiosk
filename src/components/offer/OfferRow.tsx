@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import {
@@ -30,9 +30,17 @@ export interface OfferRowProps {
    */
   onAddItems?: () => void;
   /**
+   * Lane offers-parity (F3): the composed description (useOfferDescription)
+   * under the second line — 2 lines + Show more / Show less (Figma 1:4034 /
+   * 1:4069). The sheet never passes one to a gone row.
+   */
+  description?: string;
+  /** An itemCriteria lock's scoped line ("Not valid on Beer"). */
+  lockLine?: string;
+  /**
    * D3 lock (a XENO reward in the bag, no offer applied): every row — also
    * an eligible one — renders the inert div, dimmed and aria-disabled, with
-   * no radio, nudge or ADD ITEMS.
+   * no radio, nudge, ADD ITEMS or Show more.
    */
   blocked?: boolean;
 }
@@ -69,11 +77,15 @@ const bellMaskStyle: CSSProperties = {
  *  - pink right-nudge (tb-pink-dark) ONLY for minBill/minItems gaps, amount
  *    from lockedGapPresentation().short.
  *  - eligible rows carry a radio (decision 2 — radio + SAVE SELECTION, not
- *    the fork's instant tap); locked rows no radio; gone rows struck.
+ *    the fork's instant tap): a full-row overlay (lane offers-parity D8);
+ *    locked rows no radio; gone rows struck.
  *  - geometry (lane loyalty-visual D2, Figma 1:3842): hairline above each
- *    row inside the 24 top gap (pt-23 → 200 pitch), 152 plate, title 32/36,
- *    second line 24/24; locked rows top-align with the nudge in a 206
- *    column (D3-blocked rows show no nudge, so they centre like the rest).
+ *    row inside the 24 top gap (pt-23), 152 plate, title 32/36, second line
+ *    24/24; locked rows top-align with the nudge in a 206 column (D3-blocked
+ *    rows show no nudge, so they centre like the rest).
+ *  - lane offers-parity (Figma 1:4034 / 1:4069): the description under the
+ *    second line, 2 lines + Show more / Show less — the row grows with it
+ *    (194 collapsed / 346 expanded in the frame; no fixed pitch).
  *
  * Presentational only: no Redux, no apply logic — the sheet owns selection
  * state and the commit.
@@ -87,8 +99,16 @@ export default function OfferRow({
   disabled,
   onAddItems,
   blocked = false,
+  description,
+  lockLine,
 }: OfferRowProps) {
   const { t } = useTranslation();
+  // Ids the overlay radio and the toggle point at (aria-labelledby/-describedby/-controls).
+  const uid = useId();
+  const titleId = `${uid}-title`;
+  const appliedId = `${uid}-applied`;
+  const lineId = `${uid}-line`;
+  const descId = `${uid}-desc`;
 
   const offer = entry.offer;
   const id = String(offer?._id ?? "");
@@ -114,14 +134,19 @@ export default function OfferRow({
         return t("offers.mechAmountComplete", {
           amount: money(currency, spec.value),
         });
+      // The scoped description names the items ("10% off everything except
+      // Beer") — the second line and the description then agree.
       case "percentItemsScoped":
       case "percentItems":
-        return t("offers.mechPercentItems", { value: spec.value });
+        return description || t("offers.mechPercentItems", { value: spec.value });
       case "amountItemsScoped":
       case "amountItems":
-        return t("offers.mechAmountItems", {
-          amount: money(currency, spec.value),
-        });
+        return (
+          description ||
+          t("offers.mechAmountItems", {
+            amount: money(currency, spec.value),
+          })
+        );
       case "leastValueOne":
         return t("offers.mechLeastValueOne", { buy: spec.buy });
       case "leastValueOther":
@@ -146,7 +171,7 @@ export default function OfferRow({
         return t("offers.lockedBogoBuySide");
       }
       if (presentation.labelKind === "itemCriteria") {
-        return t("offers.lockedItemCriteria");
+        return lockLine || t("offers.lockedItemCriteria");
       }
       if (presentation.labelKind === "generic") {
         return t("offers.lockedGeneric");
@@ -184,6 +209,36 @@ export default function OfferRow({
     (presentation?.labelKind === "bogoBuySide" ||
       presentation?.labelKind === "minItems");
 
+  // The description under the second line (lane offers-parity F3): the
+  // composed text, else the mechanic line — never on a gone row, never a
+  // repeat of the second line.
+  const descText = gone ? "" : description || mechanicCopy();
+  const showDesc = descText !== "" && descText !== secondLine;
+
+  // Show more / Show less (CTA/Show more 1:1687): only when the COLLAPSED
+  // block overflows. Measured collapsed only — on resize (the observer's
+  // first report included), once the fonts settle and whenever the text
+  // changes (a language switch); expanded, the toggle stays.
+  const descRef = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el || expanded || typeof ResizeObserver === "undefined") return undefined;
+    let live = true;
+    const measure = () => {
+      if (live) setClamped(el.scrollHeight - el.clientHeight > 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    document.fonts?.ready.then(measure, () => undefined);
+    const cleanup = () => {
+      live = false;
+      observer.disconnect();
+    };
+    return cleanup;
+  }, [descText, expanded, showDesc]);
+
   const addItemsButton = (
     // A sibling of the row's text inside a div — never a nested button.
     <button
@@ -213,8 +268,9 @@ export default function OfferRow({
 
   const inner = (
     <>
-      {/* 152px plate — grey plate + tinted bell placeholder (photos deferred). */}
-      <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
+      {/* 152px plate — grey plate + tinted bell placeholder (photos deferred).
+          Top-aligned when a description makes the text the taller column (1:4069). */}
+      <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center self-start overflow-hidden rounded-[8px] bg-tb-grey-6">
         <span
           aria-hidden="true"
           className="h-[64px] w-[72px] bg-tb-purple opacity-25"
@@ -225,6 +281,7 @@ export default function OfferRow({
       <span className="flex min-w-0 flex-1 flex-col items-start gap-[10px] text-left">
         <span className="flex flex-wrap items-center gap-[12px]">
           <span
+            id={titleId}
             className={`text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black ${
               gone ? "line-through" : ""
             }`}
@@ -232,7 +289,10 @@ export default function OfferRow({
             {offer?.name}
           </span>
           {applied && (
-            <span className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface">
+            <span
+              id={appliedId}
+              className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface"
+            >
               {t("offers.applied")}
             </span>
           )}
@@ -242,10 +302,48 @@ export default function OfferRow({
           // Arabic line right-aligns; text-start because the parent sets
           // physical text-left.
           <span
+            id={lineId}
             dir="auto"
             className="text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
           >
             {secondLine}
+          </span>
+        )}
+        {showDesc && (
+          // Figma 1:4069 "Offer conditions": 24 below the title block (10 +
+          // 14), Text/Small Rg 18/20 Grey 1, 498 wide, 8 above the toggle.
+          <span className="mt-[14px] flex flex-col items-start gap-[8px]">
+            {/* dir="auto" on this LEAF only: a wrapped Arabic description
+                right-aligns; w-fit keeps a single line at the start edge. */}
+            <span
+              ref={descRef}
+              id={descId}
+              data-testid={`offer-row-desc-${id}`}
+              dir="auto"
+              className={`w-fit max-w-[498px] text-start text-[18px] leading-[20px] text-tb-grey-1 ${
+                expanded ? "" : "line-clamp-2"
+              }`}
+            >
+              {descText}
+            </span>
+            {clamped && !blocked && (
+              // Above the eligible row's overlay radio (relative z-[1]), so a
+              // toggle tap never selects; named apart from every other row's
+              // "Show more" by the title (aria-describedby). A D3-blocked row
+              // is dimmed and aria-disabled: no live control inside it — its
+              // text stays clamped.
+              <button
+                type="button"
+                data-testid={`offer-row-more-${id}`}
+                aria-expanded={expanded}
+                aria-controls={descId}
+                aria-describedby={titleId}
+                onClick={() => setExpanded((open) => !open)}
+                className="tb-display relative z-[1] inline-flex min-h-[44px] min-w-[44px] items-center text-[16px] font-bold normal-case leading-[24px] tracking-[-0.08px] text-tb-purple underline"
+              >
+                {expanded ? t("pdp.showLess") : t("pdp.showMore")}
+              </button>
+            )}
           </span>
         )}
       </span>
@@ -281,27 +379,43 @@ export default function OfferRow({
   );
 
   if (entry.eligible && !blocked) {
+    // D8 overlay-radio pattern (BagSheet's applied row): the row is a div and
+    // its LAST child a full-row radio — named by the title, described by the
+    // Applied pill, the second line and the description — so nothing
+    // interactive nests and the Show more toggle (relative z-[1]) sits above
+    // it; a tap anywhere else on the row selects.
+    const describedBy =
+      [applied ? appliedId : "", secondLine ? lineId : "", showDesc ? descId : ""]
+        .filter(Boolean)
+        .join(" ") || undefined;
     return (
-      <button
-        type="button"
-        role="radio"
-        aria-checked={selected}
-        data-testid={`offer-row-${id}`}
-        disabled={disabled}
-        onClick={onPick}
-        className={`flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
+      <div
+        data-testid={`offer-row-body-${id}`}
+        className={`relative flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
           disabled ? "opacity-60" : ""
         }`}
       >
         {inner}
-      </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selected}
+          aria-labelledby={titleId}
+          aria-describedby={describedBy}
+          data-testid={`offer-row-${id}`}
+          disabled={disabled}
+          onClick={onPick}
+          className="absolute inset-0 h-full w-full"
+        />
+      </div>
     );
   }
 
   // Locked / gone / D3-blocked rows are informational, never targets — a
   // div, not a disabled button (nothing to press, nothing to announce as
-  // pressable). ADD ITEMS is its own button inside the div. Gone and blocked
-  // rows are inactive (aria-disabled, dimmed — exempt from WCAG 1.4.3).
+  // pressable). ADD ITEMS and Show more are their own buttons inside the
+  // div. Gone and blocked rows are inactive (aria-disabled, dimmed — exempt
+  // from WCAG 1.4.3).
   const inactive = gone || blocked;
   return (
     <div

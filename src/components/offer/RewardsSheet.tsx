@@ -26,6 +26,9 @@ import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
+import useOfferDescription, {
+  type OfferDescription,
+} from "../../hooks/offerHooks/useOfferDescription";
 import useCartUpsell, {
   selectMenuSellableEntityMap,
 } from "../../hooks/menuHooks/useCartUpsell";
@@ -145,6 +148,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
 
   const { rank } = useOfferSavings();
+  // Each row's description (lane offers-parity F3) — never throws (D10).
+  const describe = useOfferDescription();
   // Verified against the landed apply core: selectOfferAndCommit(offer) →
   // Promise<OfferCommitResult> ({ applied, needsPicker?, offer?, blocked? }) —
   // the swapCartOffer atomic / directly-applicable / picker-verdict recipes
@@ -277,6 +282,26 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     return views;
   }, [sections.lockedRows, cartItems, entityMap, subCategoryMap, variantObject]);
 
+  // Descriptions for the eligible and locked rows — never a gone row (its
+  // sentence would understate what the offer needs: the AST drops sold-out
+  // entries, D9). A describer that throws costs the row its description,
+  // never the sheet (D10).
+  const descriptions = useMemo(() => {
+    const byId = new Map<string, OfferDescription>();
+    const rows = [
+      ...(sections.hero ? [sections.hero] : []),
+      ...sections.readyRows,
+      ...sections.lockedRows,
+    ];
+    rows.forEach((row) => {
+      try {
+        byId.set(String(row.offer?._id ?? ""), describe(row.offer));
+      } catch {
+        // The row keeps its mechanic line.
+      }
+    });
+    return byId;
+  }, [sections, describe]);
 
   const handleAddItems = (offer: SavingsOffer, view: BuyStageView) => {
     if (committing) return;
@@ -380,6 +405,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     const id = String(row.offer?._id ?? "");
     const view =
       onAddItems && !lockedByReward ? buyStageViews.get(id) : undefined;
+    const copy = descriptions.get(id);
     return (
       <OfferRow
         key={id}
@@ -387,6 +413,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
         selected={interactive && pickedId === id}
         applied={appliedId === id}
         currency={currency}
+        description={copy?.text || undefined}
+        lockLine={copy?.lockLine}
         blocked={lockedByReward}
         // Locked/gone rows render a div that ignores this latch; only their
         // ADD ITEMS button reads it.
@@ -554,7 +582,8 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
  * offer. Reads Redux + useOfferSavings directly; commits through the P7b
  * apply core (useOfferApply). Locked bogoBuySide rows — and minItems rows
  * whose buy side is unmet (lane offers-parity) — that a buy stage can finish
- * carry ADD ITEMS, handed to the page via onAddItems.
+ * carry ADD ITEMS, handed to the page via onAddItems. Every eligible or
+ * locked row carries its description (useOfferDescription).
  *
  * Lane loyalty-visual: Figma 1:3842 geometry (D2) and the D3 lock — with a
  * XENO reward in the bag and no offer applied, a pink line explains that

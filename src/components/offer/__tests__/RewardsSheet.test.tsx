@@ -15,6 +15,22 @@ import { store } from "../../../redux/app/store";
 import RewardsSheet from "../RewardsSheet";
 import "../../../i18n";
 
+/** offers-parity U4: the real describer, unless a test makes it throw (D10). */
+const describer = vi.hoisted(() => ({ throwing: false }));
+vi.mock("../../../hooks/offerHooks/useOfferDescription", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../hooks/offerHooks/useOfferDescription")>();
+  return {
+    ...actual,
+    default: () => {
+      const real = actual.default();
+      return describer.throwing
+        ? () => {
+            throw new Error("describer exploded");
+          }
+        : real;
+    },
+  };
+});
 
 /** Paid CUSTOMIZABLE row, £8.60 line (P7a BagSheet fixture parity). */
 const BURGER_ROW = {
@@ -195,8 +211,8 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     renderSheet();
     expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
 
-    // Eligible: radio, save copy.
-    const flat = screen.getByTestId("offer-row-offer-flat-2");
+    // Eligible: radio, save copy (offers-parity D8: the text is the row body's).
+    const flat = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
     expect(flat).toHaveTextContent("Save £2.00");
 
@@ -242,7 +258,7 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
 
     const row = screen.getByTestId("offer-row-offer-flat-2");
     expect(row).toHaveAttribute("aria-checked", "true");
-    expect(row).toHaveTextContent("Applied");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Applied");
 
     await userEvent.click(screen.getByTestId("rewards-save"));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -533,10 +549,13 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
 
 /* ------------------------------------------------------------------ *
  * Lane offers-parity (U4): ADD ITEMS for get-category BOGOs (F1) and on a
- * min-items lock while the buy side is unmet (F2 / D4).
+ * min-items lock while the buy side is unmet (F2 / D4); every row gets its
+ * description (F3), and a describer that throws never blanks the sheet
+ * (D10).
  * ------------------------------------------------------------------ */
 describe("RewardsSheet — offers-parity", () => {
   beforeEach(() => {
+    describer.throwing = false;
     store.dispatch({ type: "RESET_STATE" });
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: SAUCE_ENTITY } }));
@@ -628,5 +647,22 @@ describe("RewardsSheet — offers-parity", () => {
     renderWithAddItems(vi.fn());
     expect(screen.getByTestId("offer-row-offer-gw-cat")).toBeInTheDocument();
     expect(screen.queryByTestId("offer-row-add-items-offer-gw-cat")).toBeNull();
+  });
+
+  it("F3: the composed description reaches the row", () => {
+    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("offer-row-desc-offer-bogo")).toHaveTextContent(
+      "Buy 2 Tortilla Sauce & get 1 Caesar Dressing for free"
+    );
+  });
+
+  it("D10: a describer that throws never blanks the sheet — the rows render on their mechanic copy", () => {
+    describer.throwing = true;
+    store.dispatch(setFilteredOffers([BOGO_OFFER, FLAT_OFFER]));
+    renderWithAddItems(vi.fn());
+    expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Add the qualifying items to unlock this reward");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Save £2.00");
   });
 });

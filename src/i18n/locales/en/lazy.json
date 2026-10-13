@@ -40,5 +40,29 @@
     "title": "Select your country",
     "search": "Search for a country",
     "noResults": "No country matches \"{{query}}\""
+  },
+  "offers": {
+    "desc": {
+      "buyGet": "Buy {{buy}} & get {{get}}",
+      "getOnly": "Get {{get}}",
+      "buyOnly": "Buy {{buy}}",
+      "category_one": "{{count}} item from {{category}} category",
+      "category_other": "{{count}} items from {{category}} category",
+      "categoryAny": "item from {{category}} category",
+      "free": "for free",
+      "percentOff": "at {{value}}% off",
+      "amountOff": "with {{amount}} off",
+      "each": "{{clause}} each",
+      "or": " or ",
+      "comma": ", "
+    },
+    "mechPercentItemsOnly": "{{value}}% off {{scope}}",
+    "mechPercentItemsExcept": "{{value}}% off everything except {{scope}}",
+    "mechAmountItemsOnly": "{{amount}} off {{scope}}",
+    "mechAmountItemsExcept": "{{amount}} off everything except {{scope}}",
+    "scopeSeparator": ", ",
+    "scopeMore": "+{{qty}} more",
+    "lockedItemCriteriaExcept": "Not valid on {{scope}}",
+    "lockedItemCriteriaOnly": "Add something from {{scope}}"
   }
 }

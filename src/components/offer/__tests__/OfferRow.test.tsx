@@ -2,7 +2,7 @@
  * Ranked-entry fixtures mirror the untyped SDK offer payloads; typed in the
  * P7+ domain passes. Do not add NEW anys.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OfferRow from "../OfferRow";
@@ -76,8 +76,10 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     const row = screen.getByTestId("offer-row-offer-flat-2");
     expect(row).toHaveAttribute("role", "radio");
     expect(row).toHaveAttribute("aria-checked", "false");
-    expect(row).toHaveTextContent("£2 off your order");
-    expect(row).toHaveTextContent("Save £2.00");
+    // offers-parity D8: the radio is the full-row overlay; the text is the body's.
+    const body = screen.getByTestId("offer-row-body-offer-flat-2");
+    expect(body).toHaveTextContent("£2 off your order");
+    expect(body).toHaveTextContent("Save £2.00");
     expect(screen.getByText("Save £2.00")).toHaveAttribute("dir", "auto"); // the leaf, never the row
     // text-start: without it the parent's physical text-left keeps a wrapped AR line left-aligned.
     expect(screen.getByText("Save £2.00")).toHaveClass("text-start");
@@ -112,14 +114,14 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
         saving: { amount: 2, certainty: "upTo", kind: "freeItem", requiresChoice: true },
       }),
     });
-    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveTextContent(
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent(
       "Save up to £2.00"
     );
   });
 
   it("applied: shows the Applied chip", () => {
     renderRow({ applied: true, selected: true });
-    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveTextContent("Applied");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Applied");
   });
 
   it("disabled latch: the eligible row's button is disabled and onPick never fires", async () => {
@@ -431,7 +433,7 @@ describe("OfferRow — D3 blocked + D2 geometry (lane loyalty-visual)", () => {
 
   it("D2: both row kinds carry the hairline ABOVE inside the 24 gap, the 152 plate, 32/36 title and 24/24 line; the nudge is the 206 column", () => {
     renderRow();
-    const button = screen.getByTestId("offer-row-offer-flat-2");
+    const button = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(button).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]", "gap-[24px]");
     expect(button).not.toHaveClass("border-b");
     expect(button.querySelector(".h-\\[152px\\].w-\\[152px\\]")).not.toBeNull();
@@ -447,5 +449,231 @@ describe("OfferRow — D3 blocked + D2 geometry (lane loyalty-visual)", () => {
     expect(nudge).toHaveClass("w-[206px]", "pt-[48px]", "text-[24px]", "leading-[24px]", "text-start");
     // A wrapping leaf: start-aligned in English, right-aligned when Arabic resolves RTL.
     expect(nudge).toHaveAttribute("dir", "auto");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity (F3, Figma 1:4034 collapsed / 1:4069 expanded):
+ * the description under the second line — 2 lines + Show more / Show less
+ * (CTA/Show more 1:1687), shown only when clamped — and D8, the eligible
+ * row as a div whose LAST child is the full-row radio, named by the title,
+ * described by the second line + the description; the toggle sits above it.
+ * ------------------------------------------------------------------ */
+describe("OfferRow — description, Show more, overlay radio (offers-parity)", () => {
+  const LONG =
+    "Buy 2 Heineken or 2 Choclate Truffle & get 1 Kingfisher at 50% off or 1 Choclate Brownie at 70% off";
+
+  /** A ResizeObserver that reports at once (the browser's first observation). */
+  class FiringResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  /** Every element measures `scroll` tall inside a `client` box. */
+  const measure = (scroll: number, client: number) => {
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(scroll);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(client);
+  };
+  // setupTests installs a silent, writable (not configurable) ResizeObserver.
+  const silentResizeObserver = window.ResizeObserver;
+  const reporting = () => {
+    window.ResizeObserver = FiringResizeObserver as unknown as typeof ResizeObserver;
+  };
+  const clamped = () => {
+    reporting();
+    measure(60, 40);
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.ResizeObserver = silentResizeObserver;
+  });
+
+  it("the description sits under the second line, a dir=auto leaf in Text/Small grey (1:4069)", () => {
+    renderRow({ description: LONG });
+    const line = screen.getByText("Save £2.00");
+    const desc = screen.getByTestId("offer-row-desc-offer-flat-2");
+    expect(desc).toHaveTextContent(LONG);
+    expect(line.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(desc).toHaveAttribute("dir", "auto");
+    expect(desc).toHaveClass("text-start", "text-[18px]", "leading-[20px]", "text-tb-grey-1", "line-clamp-2");
+  });
+
+  it("no description block when it repeats the second line, and none on a gone row", () => {
+    renderRow({ description: "Save £2.00" });
+    expect(screen.queryByTestId("offer-row-desc-offer-flat-2")).toBeNull();
+    cleanup();
+
+    renderRow({
+      entry: {
+        offer: { ...FLAT_OFFER, _id: "offer-gone", isAvailable: false },
+        saving: { amount: 2, certainty: "exact", kind: "amountComplete", requiresChoice: false, lockReason: "unavailable" },
+        eligible: false,
+        gap: { reason: "unavailable" },
+      },
+      description: LONG,
+    });
+    expect(screen.queryByTestId("offer-row-desc-offer-gone")).toBeNull();
+    expect(screen.getByTestId("offer-row-offer-gone")).toHaveTextContent("Not available right now");
+  });
+
+  it("without a description the mechanic line steps in (and is hidden when it IS the second line)", () => {
+    renderRow();
+    // Eligible flat-2: "Save £2.00" + the mechanic line under it.
+    expect(screen.getByTestId("offer-row-desc-offer-flat-2")).toHaveTextContent("£2.00 off your order");
+    cleanup();
+    renderRow({
+      entry: {
+        offer: PERCENT_OFFER,
+        saving: { amount: 0, certainty: "exact", kind: "percentComplete", requiresChoice: false, lockReason: "minBill" },
+        eligible: false,
+        gap: { reason: "minBill", amountShort: 16.4 },
+      },
+    });
+    // Locked minBill: the mechanic line already IS the second line.
+    expect(screen.queryByTestId("offer-row-desc-offer-percent-25")).toBeNull();
+  });
+
+  it("an itemCriteria lock shows the scoped lockLine; a scoped description feeds the mechanic line", () => {
+    renderRow({
+      entry: {
+        offer: { ...FLAT_OFFER, _id: "offer-scoped", type: { name: "percent", value: 10 }, applicable: { ...offerBase.applicable, on: "itemCriteria" } },
+        saving: { amount: 0, certainty: "exact", kind: "percentItems", requiresChoice: false, lockReason: "itemCriteria" },
+        eligible: false,
+        gap: { reason: "itemCriteria" },
+      },
+      description: "10% off everything except Beer",
+      lockLine: "Not valid on Beer",
+    });
+    const row = screen.getByTestId("offer-row-offer-scoped");
+    expect(row).toHaveTextContent("Not valid on Beer");
+    expect(row).not.toHaveTextContent("Needs specific items in your order");
+    expect(screen.getByTestId("offer-row-desc-offer-scoped")).toHaveTextContent("10% off everything except Beer");
+  });
+
+  it("Show more renders only when the collapsed block overflows", () => {
+    reporting();
+    measure(40, 40);
+    renderRow({ description: LONG });
+    expect(screen.queryByTestId("offer-row-more-offer-flat-2")).toBeNull();
+    cleanup();
+
+    clamped();
+    renderRow({ description: LONG });
+    expect(screen.getByTestId("offer-row-more-offer-flat-2")).toHaveTextContent("Show more");
+  });
+
+  it("Show more expands (aria-expanded + aria-controls), stays while expanded, Show less collapses; never picks", async () => {
+    clamped();
+    const onPick = vi.fn();
+    const row = (selected: boolean) => (
+      <OfferRow
+        entry={eligibleEntry() as never}
+        selected={selected}
+        applied={false}
+        currency="£"
+        disabled={false}
+        onPick={onPick}
+        description={LONG}
+      />
+    );
+    const { rerender } = render(row(false));
+    const toggle = screen.getByTestId("offer-row-more-offer-flat-2");
+    const desc = screen.getByTestId("offer-row-desc-offer-flat-2");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", desc.id);
+    expect(desc.id).not.toBe("");
+    // Told apart from every other row's "Show more" by the title.
+    expect(toggle).toHaveAccessibleDescription("£2 off your order");
+
+    await userEvent.click(toggle);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveTextContent("Show less");
+    expect(desc).not.toHaveClass("line-clamp-2");
+
+    // Expanded, the block no longer overflows — the toggle stays (measured collapsed only).
+    measure(60, 60);
+    rerender(row(true));
+    expect(screen.getByTestId("offer-row-more-offer-flat-2")).toHaveTextContent("Show less");
+
+    measure(60, 40);
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(desc).toHaveClass("line-clamp-2");
+    expect(onPick).not.toHaveBeenCalled();
+    // A tap anywhere else on the row still picks (the overlay radio).
+    await userEvent.click(screen.getByTestId("offer-row-offer-flat-2"));
+    expect(onPick).toHaveBeenCalledTimes(1);
+  });
+
+  it("the toggle is a ≥44 px target in CTA/Show more (1:1687): Exp Bd 16/24, underlined tb-purple", () => {
+    clamped();
+    renderRow({ description: LONG });
+    const toggle = screen.getByTestId("offer-row-more-offer-flat-2");
+    expect(toggle.className).toMatch(/min-h-\[44px\]/);
+    expect(toggle.className).toMatch(/min-w-\[44px\]/);
+    expect(toggle).toHaveClass("tb-display", "text-[16px]", "leading-[24px]", "text-tb-purple", "underline");
+  });
+
+  it("D8: no nested buttons; the radio is named by the title and described by the second line + the description", () => {
+    clamped();
+    const { container } = render(
+      <OfferRow
+        entry={eligibleEntry() as never}
+        selected={false}
+        applied={false}
+        currency="£"
+        disabled={false}
+        onPick={vi.fn()}
+        description={LONG}
+      />
+    );
+    expect(container.querySelector("button button")).toBeNull();
+    const radio = screen.getByRole("radio", { name: "£2 off your order" });
+    expect(radio).toBe(screen.getByTestId("offer-row-offer-flat-2"));
+    expect(radio).toHaveAccessibleDescription(`Save £2.00 ${LONG}`);
+    // The overlay is the body's LAST child; the toggle is a sibling above it.
+    const body = screen.getByTestId("offer-row-body-offer-flat-2");
+    expect(body.lastElementChild).toBe(radio);
+    const toggle = screen.getByTestId("offer-row-more-offer-flat-2");
+    expect(radio.contains(toggle)).toBe(false);
+    expect(toggle).toHaveClass("relative", "z-[1]");
+  });
+
+  it("locked rows carry the description too (and their toggle), still inert divs", () => {
+    clamped();
+    renderRow({
+      entry: {
+        offer: { ...FLAT_OFFER, _id: "offer-bogo", type: { name: "item", value: 0 } },
+        saving: { amount: 2, certainty: "upTo", kind: "bogo", requiresChoice: true, lockReason: "bogoBuySide" },
+        eligible: false,
+        gap: { reason: "bogoBuySide" },
+      },
+      description: LONG,
+    });
+    const row = screen.getByTestId("offer-row-offer-bogo");
+    expect(row.tagName).toBe("DIV");
+    expect(screen.getByTestId("offer-row-desc-offer-bogo")).toHaveTextContent(LONG);
+    expect(screen.getByTestId("offer-row-more-offer-bogo")).toBeInTheDocument();
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+
+  it("review 2: the applied row's radio announces 'Applied' (its description) — checked or not", () => {
+    renderRow({ applied: true, selected: false, description: LONG });
+    const radio = screen.getByRole("radio", { name: "£2 off your order" });
+    expect(radio).toHaveAccessibleDescription(`Applied Save £2.00 ${LONG}`);
+  });
+
+  it("review 2: a D3-blocked row keeps its description clamped with NO toggle — no live control inside the dimmed, aria-disabled row", () => {
+    clamped();
+    renderRow({ blocked: true, description: LONG });
+    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("offer-row-desc-offer-flat-2")).toHaveClass("line-clamp-2");
+    expect(screen.queryByTestId("offer-row-more-offer-flat-2")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });

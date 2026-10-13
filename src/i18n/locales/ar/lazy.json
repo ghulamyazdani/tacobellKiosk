@@ -40,5 +40,33 @@
     "title": "اختر بلدك",
     "search": "ابحث عن دولة",
     "noResults": "لا توجد دولة تطابق \"{{query}}\""
+  },
+  "offers": {
+    "desc": {
+      "buyGet": "اشترِ {{buy}} واحصل على {{get}}",
+      "getOnly": "احصل على {{get}}",
+      "buyOnly": "اشترِ {{buy}}",
+      "category_zero": "{{count}} صنف من فئة {{category}}",
+      "category_one": "صنف واحد من فئة {{category}}",
+      "category_two": "صنفان من فئة {{category}}",
+      "category_few": "{{count}} أصناف من فئة {{category}}",
+      "category_many": "{{count}} صنفًا من فئة {{category}}",
+      "category_other": "{{count}} صنف من فئة {{category}}",
+      "categoryAny": "صنف من فئة {{category}}",
+      "free": "مجانًا",
+      "percentOff": "بخصم {{value}}٪",
+      "amountOff": "بخصم {{amount}}",
+      "each": "{{clause}} لكلٍّ منها",
+      "or": " أو ",
+      "comma": "، "
+    },
+    "mechPercentItemsOnly": "خصم {{value}}٪ على {{scope}}",
+    "mechPercentItemsExcept": "خصم {{value}}٪ على كل شيء ما عدا {{scope}}",
+    "mechAmountItemsOnly": "خصم {{amount}} على {{scope}}",
+    "mechAmountItemsExcept": "خصم {{amount}} على كل شيء ما عدا {{scope}}",
+    "scopeSeparator": "، ",
+    "scopeMore": "و{{qty}} أخرى",
+    "lockedItemCriteriaExcept": "غير صالح على {{scope}}",
+    "lockedItemCriteriaOnly": "أضف شيئًا من {{scope}}"
   }
 }

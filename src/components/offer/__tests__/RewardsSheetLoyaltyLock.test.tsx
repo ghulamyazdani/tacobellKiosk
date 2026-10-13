@@ -328,7 +328,8 @@ describe("RewardsSheet — D2 geometry (Figma 1:3842, lane loyalty-visual)", () 
     renderSheet();
 
     for (const id of ["offer-flat-2", "offer-min-bill"]) {
-      const row = screen.getByTestId(`offer-row-${id}`);
+      // An eligible row's box is its body (offers-parity D8: the radio is the overlay).
+      const row = screen.queryByTestId(`offer-row-body-${id}`) ?? screen.getByTestId(`offer-row-${id}`);
       expect(row, id).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]");
       expect(row, id).not.toHaveClass("border-b");
       expect(row.querySelector(".h-\\[152px\\].w-\\[152px\\]"), id).not.toBeNull();

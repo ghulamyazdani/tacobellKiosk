@@ -8,9 +8,18 @@ import {
   GREEK_SALAD,
   TORTILLA_SAUCE,
   CAESAR_DRESSING,
+  LARGE_FRIES,
 } from "./fixtures/backend";
-import { bootRegisteredToMenu } from "./pages/boot";
+import {
+  bootRegisteredToMenu,
+  registerToStart,
+  startToSecond,
+  chooseLanguage,
+  pickPipelineToMenu,
+} from "./pages/boot";
 import { addViaPdp, openBag, bagRows, openRewardsSheet } from "./pages/order";
+import { axeSweep, targetProblems, englishCopy, untranslatedCopy, arabicNotIsolated } from "./fixtures/a11y";
+import { settle } from "./fixtures/capture";
 
 /**
  * P7b — Offers vertical: the REWARDS sheet (radio + SAVE SELECTION), the
@@ -240,7 +249,8 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     // is now eligible: radio present, pink nudge gone.
     await page.getByTestId("bag-rewards-applied").click();
     await expect(page.getByTestId("rewards-sheet")).toBeVisible();
-    await expect(page.getByTestId(`offer-row-${OFFER_FLAT}`)).toContainText(
+    // offers-parity D8: the radio is the row's overlay; its text is the body's.
+    await expect(page.getByTestId(`offer-row-body-${OFFER_FLAT}`)).toContainText(
       "Applied"
     );
     await expect(page.getByTestId(`offer-row-${OFFER_FLAT}`)).toHaveAttribute(
@@ -428,7 +438,8 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     // the preselected radio (decision 3). X closes with no change.
     await page.getByTestId("bag-rewards-applied").click();
     await expect(page.getByTestId("rewards-sheet")).toBeVisible();
-    await expect(page.getByTestId(`offer-row-${OFFER_FREE_SAUCE}`)).toContainText(
+    // offers-parity D8: the radio is the row's overlay; its text is the body's.
+    await expect(page.getByTestId(`offer-row-body-${OFFER_FREE_SAUCE}`)).toContainText(
       "Applied"
     );
     await expect(page.getByTestId(`offer-row-${OFFER_FREE_SAUCE}`)).toHaveAttribute(
@@ -570,13 +581,34 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Lane offers-parity: category freebies in the picker (E-C6). Ids: the slim
+ * Lane offers-parity: category freebies in the picker (E-C6), the rows'
+ * descriptions with Show more / Show less (E-D1, Figma 1:4034 / 1:4069)
+ * and the a11y probes on the new surfaces (E-A1). Ids: the slim
  * menu's sub-categories (items carry subCategoryId null; the converter
  * stamps it).
  * ------------------------------------------------------------------ */
 const SAUCES_SUB = "5dd1092fbec752021df55e1c"; // Tortilla £2, Caesar £2, BBQ Sauce. £1 (PDP)
 const offersFixture = fixtureJson("offers.json");
 const itemOffer = (over: Record<string, unknown>) => ({ ...clone(offersFixture[2]), ...over });
+const applicable = (rawItems: unknown[], over: Record<string, unknown> = {}) => ({
+  on: "complete",
+  categories: [],
+  items: [],
+  isExclude: false,
+  isInclude: false,
+  rawItems,
+  ...over,
+});
+const getEntry = (_id: string, baseItemId: string, name: string, relation: "and" | "or") => ({
+  _id,
+  baseItemId,
+  name,
+  relation,
+  discountType: "percent",
+  value: 100,
+  quantity: 1,
+});
+
 /** "only get item"-shaped: a category-only freebie (was: an empty picker). */
 const ANY_SAUCE = itemOffer({
   _id: "offer-any-sauce",
@@ -586,7 +618,104 @@ const ANY_SAUCE = itemOffer({
     categories: [{ _id: SAUCES_SUB, name: "Sauces", quantity: 1, relation: "and", value: 100, discountType: "percent" }],
   },
 });
-test.describe("Lane offers-parity — category freebies", () => {
+/** Buy 2 Tortilla Sauce → a Caesar free: locked under a burger, its sentence described. */
+const DESC_BOGO = itemOffer({
+  _id: "offer-desc-bogo",
+  name: "Two sauces, a Caesar on us",
+  getItemOnly: false,
+  applicable: applicable([{ item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" }, quantity: 2, relation: "and" }]),
+  getItems: { items: [getEntry("gi-desc-caesar", CAESAR_DRESSING, "Caesar Dressing", "and")], categories: [] },
+});
+/** 10 % off everything except Sauces (item criteria, exclude). */
+const EXCEPT_SAUCES = {
+  ...clone(offersFixture[0]),
+  _id: "offer-except-sauces",
+  name: "10% off, sauces excluded",
+  type: { name: "percent", value: 10 },
+  minBillAmount: null,
+  maxDiscount: null,
+  applicable: applicable(
+    [{ category: { _id: SAUCES_SUB, categoryName: "Sauces" }, quantity: null, relation: "and" }],
+    { on: "itemCriteria", isExclude: true, categories: [SAUCES_SUB] }
+  ),
+};
+/** A free pick of six: a sentence long enough to clamp at 2 lines. */
+const LONG_PICK = itemOffer({
+  _id: "offer-long-pick",
+  name: "Pick any one, free",
+  getItems: {
+    items: [
+      getEntry("gi-long-1", TORTILLA_SAUCE, "Tortilla Sauce", "or"),
+      getEntry("gi-long-2", CAESAR_DRESSING, "Caesar Dressing", "or"),
+      getEntry("gi-long-3", GREEK_SALAD, "Greek Salad", "or"),
+      getEntry("gi-long-4", LARGE_FRIES, "Large Fries", "or"),
+      getEntry("gi-long-5", CHEESE_BURGER, "Cheese Burger", "or"),
+      getEntry("gi-long-6", "5dd1093a188e72ce1b3eb359", "Kiddie Meal Nuggets", "or"),
+    ],
+    categories: [],
+  },
+});
+/** 10 % off two sauces only (item criteria, include): a two-name scope list. */
+const SCOPED_SAUCES = {
+  ...clone(offersFixture[0]),
+  _id: "offer-scoped-sauces",
+  name: "10% off two sauces",
+  type: { name: "percent", value: 10 },
+  minBillAmount: null,
+  maxDiscount: null,
+  applicable: applicable(
+    [
+      { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" }, quantity: null, relation: "or" },
+      { item: { baseItemId: CAESAR_DRESSING, name: "Caesar Dressing" }, quantity: null, relation: "or" },
+    ],
+    { on: "itemCriteria", isInclude: true, items: [TORTILLA_SAUCE, CAESAR_DRESSING] }
+  ),
+};
+const stripIsolates = (s: string | null) => (s ?? "").replace(/[\u2066-\u2069]/g, "").trim();
+
+/**
+ * Review 2 (bidi): the runs of a description in the order an Arabic reader
+ * meets them — line by line, right edge first — beside their logical order.
+ * A run is the text between bidi controls (a Latin name is one run).
+ */
+const rtlReadingOrder = (page: Page, testId: string) =>
+  page.getByTestId(testId).evaluate((el) => {
+    const runs: { text: string; right: number; mid: number }[] = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const data = (node as Text).data;
+      for (const match of data.matchAll(/[^\u2066-\u2069]+/g)) {
+        const text = match[0].trim();
+        if (!text) continue;
+        const start = (match.index ?? 0) + match[0].indexOf(text);
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, start + text.length);
+        const rect = range.getClientRects()[0];
+        if (rect) runs.push({ text, right: rect.right, mid: (rect.top + rect.bottom) / 2 });
+      }
+    }
+    const lines: (typeof runs)[] = [];
+    for (const run of [...runs].sort((a, b) => a.mid - b.mid)) {
+      const line = lines.find((l) => Math.abs(l[0].mid - run.mid) < 10);
+      if (line) line.push(run);
+      else lines.push([run]);
+    }
+    return {
+      logical: runs.map((run) => run.text),
+      read: lines.flatMap((line) => [...line].sort((a, b) => b.right - a.right).map((run) => run.text)),
+    };
+  });
+
+/** Arabic session on the registered device: splash → /second → AR → /menu. */
+async function bootArabicToMenu(page: Page) {
+  await registerToStart(page);
+  await startToSecond(page);
+  await chooseLanguage(page, "ar");
+  await pickPipelineToMenu(page);
+}
+
+test.describe("Lane offers-parity — category freebies, descriptions", () => {
   test("E-C6 a category-only freebie: SAVE → the picker lists Sauces → Tortilla → CONFIRM → −£2.00, Total £9.00", async ({
     page,
   }) => {
@@ -608,5 +737,141 @@ test.describe("Lane offers-parity — category freebies", () => {
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(ANY_SAUCE.name);
+  });
+
+  test("E-D1 descriptions: the BOGO sentence, a scoped line, the bill-wise line under 'Save £X'; a long one clamps → Show more / Show less, a short one has no toggle, the toggle never picks", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [DESC_BOGO, EXCEPT_SAUCES, offersFixture[1], LONG_PICK]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+
+    await expect(page.getByTestId(`offer-row-desc-${DESC_BOGO._id}`)).toHaveText(
+      "Buy 2 Tortilla Sauce & get 1 Caesar Dressing for free"
+    );
+    await expect(page.getByTestId(`offer-row-desc-${EXCEPT_SAUCES._id}`)).toHaveText("10% off everything except Sauces");
+    await expect(page.getByTestId("offer-row-body-offer-flat-2")).toContainText("Save £2.00");
+    await expect(page.getByTestId("offer-row-desc-offer-flat-2")).toHaveText("£2.00 off your order");
+    await expect(page.getByTestId("offer-row-more-offer-flat-2")).toHaveCount(0);
+
+    const desc = page.getByTestId(`offer-row-desc-${LONG_PICK._id}`);
+    const more = page.getByTestId(`offer-row-more-${LONG_PICK._id}`);
+    const radio = page.getByTestId(`offer-row-${LONG_PICK._id}`);
+    await more.scrollIntoViewIfNeeded();
+    await expect(desc).toHaveText(
+      "Get 1 Tortilla Sauce for free or 1 Caesar Dressing for free or 1 Greek Salad for free or 1 Large Fries for free or 1 Cheese Burger for free or 1 Kiddie Meal Nuggets for free"
+    );
+    await expect(more).toHaveText("Show more");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    const collapsed = (await desc.boundingBox())?.height ?? 0;
+    await more.click();
+    await expect(more).toHaveText("Show less");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(async () => (await desc.boundingBox())?.height ?? 0).toBeGreaterThan(collapsed);
+    await expect(radio).toHaveAttribute("aria-checked", "false");
+    await more.click();
+    await expect(more).toHaveText("Show more");
+    await expect(radio).toHaveAttribute("aria-checked", "false");
+    // A tap elsewhere on the row still picks it.
+    await radio.click();
+    await expect(radio).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("E-D1 AR: the description is the Arabic template with the menu's Arabic names, and it READS in that order (right to left)", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockBackend(page, { offers: [DESC_BOGO, SCOPED_SAUCES], arabic: true });
+    await bootArabicToMenu(page);
+    await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
+    await openBag(page);
+    await openRewardsSheet(page);
+    const desc = page.getByTestId(`offer-row-desc-${DESC_BOGO._id}`);
+    await expect.poll(async () => stripIsolates(await desc.textContent())).toBe(
+      "اشترِ 2 صوص التورتلا واحصل على 1 تتبيلة السيزر مجانًا"
+    );
+    // Review 2 (bidi): "2" before its name, "مجانًا" after the Caesar — not
+    // "صوص التورتلا 2 … مجانًا تتبيلة السيزر 1".
+    const bogo = await rtlReadingOrder(page, `offer-row-desc-${DESC_BOGO._id}`);
+    expect(bogo.logical).toEqual(["اشترِ", "2", "صوص التورتلا", "واحصل على", "1", "تتبيلة السيزر", "مجانًا"]);
+    expect(bogo.read).toEqual(bogo.logical);
+    // A two-name scope list reads first name first (locked: the burger is no sauce).
+    const scopeId = `offer-row-desc-${SCOPED_SAUCES._id}`;
+    await page.getByTestId(scopeId).scrollIntoViewIfNeeded();
+    await expect.poll(async () => stripIsolates(await page.getByTestId(scopeId).textContent())).toBe(
+      "خصم 10٪ على صوص التورتلا، تتبيلة السيزر"
+    );
+    const scope = await rtlReadingOrder(page, scopeId);
+    expect(scope.read).toEqual(scope.logical);
+  });
+
+  test.describe("E-A1 a11y on the new surfaces", () => {
+    test.describe.configure({ timeout: 120_000 });
+
+    const expectClean = async (page: Page, label: string) => {
+      await settle(page);
+      expect(await axeSweep(page, label), `${label}: axe`).toEqual([]);
+      await expect.poll(() => targetProblems(page), { message: `${label}: touch targets` }).toEqual([]);
+    };
+
+    const expandLong = async (page: Page) => {
+      const more = page.getByTestId(`offer-row-more-${LONG_PICK._id}`);
+      await more.scrollIntoViewIfNeeded();
+      await more.click();
+      await expect(more).toHaveAttribute("aria-expanded", "true");
+    };
+
+    test("EN: the rewards sheet with an expanded row, and the picker's category section", async ({ page }) => {
+      await mockKioskBackend(page);
+      await routeOffers(page, [LONG_PICK, DESC_BOGO, EXCEPT_SAUCES, ANY_SAUCE]);
+      await bootRegisteredToMenu(page);
+      await addCheeseBurgerViaPdp(page);
+      await openBag(page);
+      await openRewardsSheet(page);
+      await expandLong(page);
+      await expectClean(page, "e-a1-rewards-expanded-en");
+
+      await pickAndSave(page, ANY_SAUCE._id);
+      await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toBeVisible();
+      await page.getByTestId(`freebie-cat-option-${SAUCES_SUB}-${TORTILLA_SAUCE}`).click();
+      await expectClean(page, "e-a1-picker-category-en");
+    });
+
+    test("AR: the rewards sheet with an expanded row and the picker — no English left, every Arabic run isolated", async ({
+      page,
+    }) => {
+      await mockBackend(page, { offers: [LONG_PICK, DESC_BOGO, EXCEPT_SAUCES, ANY_SAUCE], arabic: true });
+      await bootArabicToMenu(page);
+      await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
+      await openBag(page);
+      await openRewardsSheet(page);
+      await expandLong(page);
+      await expectClean(page, "e-a1-rewards-expanded-ar");
+      expect(await untranslatedCopy(page, englishCopy())).toEqual([]);
+      expect(await arabicNotIsolated(page)).toEqual([]);
+
+      await pickAndSave(page, ANY_SAUCE._id);
+      await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toBeVisible();
+      await expectClean(page, "e-a1-picker-category-ar");
+      expect(await untranslatedCopy(page, englishCopy())).toEqual([]);
+      expect(await arabicNotIsolated(page)).toEqual([]);
+    });
+
+    test("ADA reach zone: the rewards sheet with an expanded row", async ({ page }) => {
+      await mockKioskBackend(page);
+      await routeOffers(page, [LONG_PICK, DESC_BOGO, EXCEPT_SAUCES]);
+      await bootRegisteredToMenu(page);
+      await page.getByTestId("footer-ada").click();
+      await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+      await addCheeseBurgerViaPdp(page);
+      await openBag(page);
+      await openRewardsSheet(page);
+      await expandLong(page);
+      await expectClean(page, "e-a1-rewards-expanded-ada");
+    });
   });
 });
