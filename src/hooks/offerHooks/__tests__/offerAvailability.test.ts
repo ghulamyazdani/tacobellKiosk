@@ -188,6 +188,72 @@ describe("rankOffersForKiosk", () => {
     expect(ids).toEqual(["flat"]);
   });
 
+  // sameOrLess plain BOGO: buy 1 from Side Orders, get 1 from Side Orders free.
+  const SIDES = [
+    { id: "salad", price: 17, type: "ITEM" },
+    { id: "burger", price: 8, type: "CUSTOMIZABLE" },
+    { id: "fries", price: 9, type: "CUSTOMIZABLE" },
+  ];
+  const SOL: SavingsOffer = {
+    _id: "sol",
+    name: "Buy a side get a side",
+    type: { name: "item", value: 0 },
+    sameOrLess: true,
+    applicable: { on: "complete", rawItems: [categoryRaw("side-orders", "or")] },
+    getItems: {
+      items: [],
+      categories: [
+        { _id: "side-orders", name: "Side Orders", quantity: 1, relation: "or", value: 100, discountType: "percent", entities: SIDES },
+      ],
+    },
+  };
+  const row = (id: string, price: number) => ({
+    id,
+    itemId: `${id}-1`,
+    type: "ITEM",
+    price,
+    quantity: 1,
+    subCategoryId: "side-orders",
+  });
+
+  it("a same-or-less category offer is PRICED on its ceiling-filtered copy ('up to' the bought price); the entry keeps the original offer", () => {
+    const sol = { ...ctx, cartItems: [row("burger", 8)] };
+    const plain = rankOffers([SOL], sol)[0];
+    expect(plain.saving.amount).toBe(17);
+
+    const entry = rankOffersForKiosk([SOL], sol, isOnMenu)[0];
+    expect(entry.saving).toMatchObject({ amount: 8, certainty: "upTo" });
+    // Review 1 F-3: never the rank-time copy — the stage and SAVE hand the
+    // apply core the original, which re-applies the ceiling on the LIVE cart
+    // (a stage that raises it must not keep the dearer candidates out).
+    expect(entry.offer).toBe(SOL);
+  });
+
+  it("a 'blocked' ceiling keeps the original offer", () => {
+    const tooCheap = { ...ctx, cartItems: [row("sauce", 2)] };
+    const entry = rankOffersForKiosk([SOL], tooCheap, isOnMenu)[0];
+    expect(entry.offer).toBe(SOL);
+    expect(entry.saving.amount).toBe(17);
+  });
+
+  it("review 1 F-2: 'Save up to' is what the picker can give (D7) — a customizable entity once, every other unit at the best plain pick", () => {
+    // "Any 2 from Combo" free over two customizable combos (£20, £10): £30, never 2 × £20.
+    const combos = { _id: "combo", name: "Combo", quantity: 2, relation: "and", value: 100, discountType: "percent" };
+    const two = freeFrom("free-two", { ...combos, entities: [meal("a", 20), meal("b", 10)] });
+    expect(rankOffers([two], ctx)[0].saving.amount).toBe(40);
+    expect(rankOffersForKiosk([two], ctx, isOnMenu)[0]).toMatchObject({
+      offer: two,
+      saving: { amount: 30, certainty: "upTo" },
+    });
+    // A plain £12 entity repeats: £20 once + £12 = £32.
+    const mixed = freeFrom("free-mixed", { ...combos, entities: [meal("a", 20), { id: "p", price: 12, type: "ITEM" }] });
+    expect(rankOffersForKiosk([mixed], ctx, isOnMenu)[0].saving.amount).toBe(32);
+    // "or" groups are alternatives: one that can never fill adds nothing (£16 × 4 before).
+    const either = freeFrom("free-either", { ...combos, relation: "or", entities: [meal("a", 20), meal("b", 10)] });
+    either.getItems?.categories?.push({ ...KIDDIE_FOUR, relation: "or" });
+    expect(rankOffersForKiosk([either], ctx, isOnMenu)[0].saving.amount).toBe(30);
+  });
+
   it("a throw anywhere → plain rankOffers (the bag never breaks)", () => {
     const exploding: MenuPresence = () => {
       throw new Error("boom");

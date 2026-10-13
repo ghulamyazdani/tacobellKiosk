@@ -810,7 +810,7 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Lane offers-parity (E-C1, E-C2, E-C4, E-C5): the buy stage now opens for
+ * Lane offers-parity (E-C1 … E-C5): the buy stage now opens for
  * get-category BOGOs (F1 — the picker lists the category's items) and on a
  * min-items lock while the buy side is unmet (F2 / D4); once the buy side is
  * met, the stage names any other gap at once and CONTINUE waits for it, so a
@@ -818,7 +818,8 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
  * sub-categories (items carry subCategoryId null; the converter stamps it).
  * Money (header rules): E-C1 Tortilla 2 + Greek Salad 17 + free Tortilla 2:
  * Sub £21.00, −£2.00, VAT 15% × 19 = 2.85 → 21.85 → £22.00. E-C2 burger 8 +
- * 2 free Tortilla 4: Sub £12.00, −£4.00, VAT 1.20 → £9.00.
+ * 2 free Tortilla 4: Sub £12.00, −£4.00, VAT 1.20 → £9.00. E-C3 burger 8 +
+ * a free burger 8: Sub £16.00, −£8.00 → £9.00.
  * ------------------------------------------------------------------ */
 const SAUCES_SUB = "5dd1092fbec752021df55e1c"; // Tortilla £2, Caesar £2, BBQ Sauce. £1 (PDP)
 const SIDE_ORDERS_SUB = "5dd1092e29754a432f2c32d7"; // Greek Salad £17, Cheese Burger £8 (PDP), Large Fries £9 (PDP)
@@ -857,6 +858,55 @@ const CAT_OR_BOGO = itemOffer({
     items: [getEntry("gi-cat-or-caesar", CAESAR_DRESSING, "Caesar Dressing", "or")],
     categories: [getCategory(SAUCES_SUB, "Sauces", 2, "or")],
   },
+});
+
+/** "Buy 1 Combo Get Another Combo"-shaped: same or less, any side for any side. */
+const SOL_CAT = itemOffer({
+  _id: "offer-sol-cat",
+  name: "Buy any side, get another (same or less) free",
+  getItemOnly: false,
+  sameOrLess: true,
+  applicable: applicableBuy([buyCategory(SIDE_ORDERS_SUB, "Side Orders", "or")]),
+  getItems: { items: [], categories: [getCategory(SIDE_ORDERS_SUB, "Side Orders", 1, "or")] },
+});
+
+/*
+ * Review 1 (offers-parity): D7 lets a customizable entity count ONE unit per
+ * group, so the list must agree with the picker. Kiddie Meal = 3 customizable
+ * meals (£16 / £15 / £13), Boxes = 3 customizable boxes (£25 / £25 / £32).
+ */
+const KIDDIE_SUB = "5dd10932d61b199c2e6bbe77";
+const BOXES_SUB = "67b18913fdf6f421a9cc4b6c";
+/** F-1: "Any 4 from Kiddie Meal" free — can never fill (3 meals, one unit each). */
+const FOUR_KIDDIE = itemOffer({
+  _id: "offer-four-kiddie",
+  name: "Any four kiddie meals free",
+  applicable: applicableBuy([]),
+  getItems: { items: [], categories: [getCategory(KIDDIE_SUB, "Kiddie Meal", 4, "and")] },
+});
+/** F-1, its BOGO twin: ADD ITEMS would sell a salad into a picker that can never confirm. */
+const BOGO_FOUR_KIDDIE = itemOffer({
+  _id: "offer-bogo-four-kiddie",
+  name: "Buy a salad, get four kiddie meals",
+  getItemOnly: false,
+  applicable: applicableBuy([{ ...buyRaw(GREEK_SALAD, "Greek Salad", 1), relation: "or" }]),
+  getItems: { items: [], categories: [getCategory(KIDDIE_SUB, "Kiddie Meal", 4, "and")] },
+});
+/** F-2: "Any 2 from Boxes" free — the picker can give £32 + £25, never 2 × £32. */
+const TWO_BOXES = itemOffer({
+  _id: "offer-two-boxes",
+  name: "Any two boxes free",
+  applicable: applicableBuy([]),
+  getItems: { items: [], categories: [getCategory(BOXES_SUB, "Boxes", 2, "and")] },
+});
+/** F-3: same or less over an "and" buy side (Cheese Burger + Tortilla): any side free. */
+const SOL_CAT_AND = itemOffer({
+  _id: "offer-sol-cat-and",
+  name: "Burger and sauce, a side free (same or less)",
+  getItemOnly: false,
+  sameOrLess: true,
+  applicable: applicableBuy([buyRaw(CHEESE_BURGER, "Cheese Burger", 1), buyRaw(TORTILLA_SAUCE, "Tortilla Sauce", 1)]),
+  getItems: { items: [], categories: [getCategory(SIDE_ORDERS_SUB, "Side Orders", 1, "or")] },
 });
 
 /** "Get Least priced item free"-shaped: any 3 sauces, the cheapest free — min 2 items, min £1. */
@@ -974,6 +1024,79 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£4.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
+  test("E-C3 same-or-less category: 'Save up to £8.00' (the bought burger caps it, F5); the picker offers the Cheese Burger only → embedded PDP → CONFIRM → −£8.00, Total £9.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [SOL_CAT]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-row-body-${SOL_CAT._id}`)).toContainText("Save up to £8.00");
+    await page.getByTestId(`offer-row-${SOL_CAT._id}`).click();
+    await page.getByTestId("rewards-save").click();
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+
+    await expect(page.locator('[data-testid^="freebie-cat-option-"]')).toHaveCount(1);
+    await expect(catOption(page, SIDE_ORDERS_SUB, GREEK_SALAD)).toHaveCount(0);
+    await expect(catOption(page, SIDE_ORDERS_SUB, LARGE_FRIES)).toHaveCount(0);
+    await catOption(page, SIDE_ORDERS_SUB, CHEESE_BURGER).click();
+    const host = page.getByTestId("offer-tier-host");
+    await expect(host.getByTestId("customization-screen")).toHaveAttribute("data-embedded", "true");
+    await host.getByTestId("pdp-add-to-bag").click();
+    await expect(host).toHaveCount(0);
+    await expect(page.getByTestId(`freebie-cat-count-${SIDE_ORDERS_SUB}`)).toHaveText("1 of 1 added");
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£16.00");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£8.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+
+  test("E-C8 (review 1 F-1/F-2) the list agrees with the picker: 'Any 4 from Kiddie Meal' is not listed (nor its BOGO twin's ADD ITEMS); 'Any 2 from Boxes' saves up to £57.00, never 2 × £32", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [FOUR_KIDDIE, BOGO_FOUR_KIDDIE, TWO_BOXES]);
+    await bootRegisteredToMenu(page);
+    await addTortillaSauceOneTap(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-row-body-${TWO_BOXES._id}`)).toContainText("Save up to £57.00");
+    for (const offer of [FOUR_KIDDIE, BOGO_FOUR_KIDDIE]) {
+      await expect(page.getByTestId(`offer-row-${offer._id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`offer-row-body-${offer._id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`offer-row-add-items-${offer._id}`)).toHaveCount(0);
+    }
+  });
+
+  test("E-C9 (review 1 F-3) the stage hands the picker the LIVE ceiling: + Tortilla lifts it to £10, so Large Fries (£9) is offered beside the Cheese Burger; X rolls the Tortilla back", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [SOL_CAT_AND]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openBuyStage(page, SOL_CAT_AND._id);
+    await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
+    await expect(page.getByTestId("buy-stage-unlocked")).toBeVisible();
+    await page.getByTestId("buy-stage-continue").click();
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+    await expect(catOption(page, SIDE_ORDERS_SUB, CHEESE_BURGER)).toBeVisible();
+    await expect(catOption(page, SIDE_ORDERS_SUB, LARGE_FRIES)).toBeVisible();
+    await expect(catOption(page, SIDE_ORDERS_SUB, GREEK_SALAD)).toHaveCount(0);
+    await page.getByTestId("freebie-close").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+    await expect(bagRows(page)).toHaveCount(1);
   });
 
   test("E-C4 least-value + minItemCount: with 1 Tortilla the row shows the item nudge AND ADD ITEMS → the least stage → + Tortilla + Caesar → APPLY REWARD → −£2.00", async ({

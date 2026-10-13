@@ -11,8 +11,9 @@
  *     previous one by THAT clause's relation, the connector chosen from the
  *     bodies, never the prefixes (PK buyGetCopy) — a dead buy side reads
  *     "Get …", never a dangling "Buy &";
- *  3. the item-criteria scope line ("10% off everything except Beer") — and
- *     its lock line ("Not valid on Beer");
+ *  3. the item-criteria scope line ("10% off everything except Beer"), with
+ *     the cap the bill applies (F5: "· up to £150.00"; an amount prints
+ *     min(value, cap)) — and its lock line ("Not valid on Beer");
  *  4. "" — the row keeps its mechanic line.
  * Names: a buy item resolves through the menu (entityMap, then variantObject
  * as "Base (Variant)"), the payload's POS name the fallback; a get item is
@@ -153,17 +154,20 @@ export default function useOfferDescription(): (
               scope.overflow > 0 ? `${listed}${separator}${t("offers.scopeMore", { qty: scope.overflow })}` : listed,
             );
             const value = Number(offer.type?.value) || 0;
+            const cap = Number(offer.maxDiscount) || 0;
             const except = scope.mode === "except";
-            scopeLine =
-              kind === "percentItems"
-                ? t(except ? "offers.mechPercentItemsExcept" : "offers.mechPercentItemsOnly", {
-                    value,
-                    scope: scopeText,
-                  })
-                : t(except ? "offers.mechAmountItemsExcept" : "offers.mechAmountItemsOnly", {
-                    amount: money(value),
-                    scope: scopeText,
-                  });
+            if (kind === "percentItems") {
+              const line = t(except ? "offers.mechPercentItemsExcept" : "offers.mechPercentItemsOnly", {
+                value,
+                scope: scopeText,
+              });
+              scopeLine = cap > 0 ? t("offers.upTo", { line, max: money(cap) }) : line;
+            } else {
+              scopeLine = t(except ? "offers.mechAmountItemsExcept" : "offers.mechAmountItemsOnly", {
+                amount: money(cap > 0 ? Math.min(value, cap) : value),
+                scope: scopeText,
+              });
+            }
             lockLine = t(except ? "offers.lockedItemCriteriaExcept" : "offers.lockedItemCriteriaOnly", {
               scope: scopeText,
             });

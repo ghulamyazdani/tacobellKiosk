@@ -495,6 +495,18 @@ const SEVEN = scoped({
     ],
   },
 });
+/* #33 amount ic — ₹50 off everything except Breads, Burger; capped at ₹45. */
+const AMOUNT_CAPPED = scoped({
+  _id: "ic-amount",
+  type: { name: "amount", value: 50 },
+  maxDiscount: 45,
+  applicable: {
+    isExclude: true,
+    isInclude: false,
+    rawItems: [buyCategory("Breads", 1, "and"), buyCategory("Burger", null, "and")],
+  },
+});
+
 describe("U2 — the item-criteria scope line, through useOfferDescription", () => {
   it("'10% off everything except Beer', locked: 'Not valid on Beer'", () => {
     expect(describer().current(EXCEPT_BEER)).toEqual({
@@ -510,8 +522,12 @@ describe("U2 — the item-criteria scope line, through useOfferDescription", () 
     });
   });
 
-  it("two names then '+N more'", () => {
-    expect(text(SEVEN)).toBe("50% off Burger, Afghani Chaap, +5 more");
+  it("two names then '+N more', and the percent cap: '· up to £150.00' (F5)", () => {
+    expect(text(SEVEN)).toBe("50% off Burger, Afghani Chaap, +5 more · up to £150.00");
+  });
+
+  it("the amount cap prints min(value, maxDiscount) (F5)", () => {
+    expect(text(AMOUNT_CAPPED)).toBe("£45.00 off everything except Breads, Burger");
   });
 
   it("a mixed item + category exclude list cannot be stated honestly → '' and no lock line", () => {

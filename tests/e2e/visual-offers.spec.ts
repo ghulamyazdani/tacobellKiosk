@@ -249,6 +249,79 @@ const PICK_2_SIDES = itemOffer({
 /** The top LOCKED row has the minBill gap, so the sheet shows its suggested rail. */
 const REWARDS_OFFERS = [PERCENT_25, FLAT_2, FREE_SALAD, FREE_SAUCE, PICK_2_SIDES];
 
+// ---- Lane offers-parity (descriptions, category freebies, min-items stages) ----
+const SAUCES_SUB = "5dd1092fbec752021df55e1c";
+const SIDE_ORDERS_SUB = "5dd1092e29754a432f2c32d7";
+const category = (_id: string, name: string, quantity: number) => ({
+  _id,
+  name,
+  quantity,
+  relation: "and",
+  value: 100,
+  discountType: "percent",
+});
+/** A free pick of five: a description long enough to clamp at 2 lines. */
+const PARITY_LONG = itemOffer({
+  _id: "parity-long",
+  name: "Pick Any One Party Favourite, Free With Your Order",
+  getItems: {
+    items: [
+      getEntry("gi-pl-1", TORTILLA_SAUCE, "Tortilla Sauce", "or"),
+      getEntry("gi-pl-2", GREEK_SALAD, "Greek Salad", "or"),
+      getEntry("gi-pl-3", LARGE_FRIES, "Large Fries", "or"),
+      getEntry("gi-pl-4", CHEESE_BURGER, "Cheese Burger", "or"),
+      getEntry("gi-pl-5", SHAKE, "Kiddie Meal Beef Burger", "or"),
+    ],
+    categories: [],
+  },
+});
+/** 10 % off everything except the sauces (an item-criteria scope line). */
+const PARITY_SCOPED = {
+  ...named(offersFixture[0], "10% Off Everything, Sauces Excluded"),
+  _id: "parity-scoped",
+  type: { name: "percent", value: 10 },
+  minBillAmount: null,
+  maxDiscount: null,
+  applicable: {
+    ...applicableBuy([{ category: { _id: SAUCES_SUB, categoryName: "Sauces" }, quantity: null, relation: "and" }]),
+    on: "itemCriteria",
+    isExclude: true,
+    categories: [SAUCES_SUB],
+  },
+};
+/** Buy 2 sauces (a category), get any side free: a get-category buy stage. */
+const PARITY_CAT_STAGE = itemOffer({
+  _id: "parity-cat-stage",
+  name: "Buy Any 2 Sauces, Get Any Side Free",
+  getItemOnly: false,
+  applicable: applicableBuy([{ category: { _id: SAUCES_SUB, categoryName: "Sauces" }, quantity: 2, relation: "and" }]),
+  getItems: { items: [], categories: [category(SIDE_ORDERS_SUB, "Side Orders", 1)] },
+});
+/** Buy a Tortilla Sauce, get a salad — min 4 items: nudge + ADD ITEMS, the stage's blocker. */
+const PARITY_MIN = itemOffer({
+  _id: "parity-min",
+  name: "Buy A Taco Party Pack, Get A Bowl Free (4+ Items)",
+  getItemOnly: false,
+  minItemCount: 4,
+  applicable: applicableBuy([{ item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }]),
+  getItems: { items: [getEntry("gi-pm-salad", GREEK_SALAD, "Greek Salad", "or")], categories: [] },
+});
+/** Its only buy item (the Caesar) is out of stock: the gone row. */
+const PARITY_SOLD = itemOffer({
+  _id: "parity-sold",
+  name: "Buy A Lava Taco, Get A Bowl Free",
+  getItemOnly: false,
+  applicable: applicableBuy([{ item: { baseItemId: CAESAR_DRESSING, name: "Caesar Dressing" }, quantity: 1, relation: "and" }]),
+  getItems: { items: [getEntry("gi-ps-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
+});
+/** Any sauce free: the picker's category section. */
+const PARITY_ANY_SAUCE = itemOffer({
+  _id: "parity-any-sauce",
+  name: "Any Sauce Free With Your Order",
+  getItems: { items: [], categories: [category(SAUCES_SUB, "Sauces", 2)] },
+});
+const PARITY_OFFERS = [PARITY_LONG, PARITY_SCOPED, PARITY_CAT_STAGE, PARITY_MIN, PARITY_SOLD, PARITY_ANY_SAUCE];
+
 /** The tenant co-purchase file (bag-recommendations.spec): the bag's rail. */
 const RECS_HOST = "https://recommendations.e2e.test";
 const RECS_BODY = {
@@ -773,6 +846,61 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await expect(notice).toBeVisible();
       await expect(notice).toContainText(FREE_SAUCE.name);
       await capture(page, `offers-${mode}-29-reward-removed`);
+    });
+  }
+
+  for (const mode of MODES) {
+    test(`OFFERS-PARITY (${mode}): rows with descriptions collapsed + expanded (1:4034 / 1:4069), the gone row, the min-items stage, the get-category stage, the picker's category section`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { offers: PARITY_OFFERS });
+      // The Caesar is out (newest route wins): PARITY_SOLD's only buy item.
+      await page.route("**/api/cx/kiosk/get_out_of_stock", (r) =>
+        r.fulfill({ json: [{ item_id: CAESAR_DRESSING, type: "item", partners: { partner_name: "Kiosk", inStock: false } }] })
+      );
+      await startOrder(page, mode);
+      await addBurger(page);
+      await openBag(page);
+      await openRewards(page);
+      const more = page.getByTestId(`offer-row-more-${PARITY_LONG._id}`);
+      await expect(more).toHaveText(mode === "ar" ? /\p{Script=Arabic}/u : "Show more");
+      await capture(page, `offers-${mode}-30-parity-rewards-collapsed`);
+      await more.click();
+      await expect(more).toHaveAttribute("aria-expanded", "true");
+      await capture(page, `offers-${mode}-31-parity-rewards-expanded`);
+
+      const gone = page.getByTestId(`offer-row-${PARITY_SOLD._id}`);
+      await gone.scrollIntoViewIfNeeded();
+      await expect(gone).toHaveAttribute("aria-disabled", "true");
+      await capture(page, `offers-${mode}-32-parity-gone-row`);
+
+      // Min items: the nudge AND ADD ITEMS; in the stage, the blocker line at once.
+      const minAdd = page.getByTestId(`offer-row-add-items-${PARITY_MIN._id}`);
+      await minAdd.scrollIntoViewIfNeeded();
+      await capture(page, `offers-${mode}-33-parity-min-items-row`);
+      await minAdd.click();
+      await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
+      await expect(page.getByTestId("buy-stage-hint")).not.toBeEmpty();
+      await expect(page.getByTestId("buy-stage-unlocked")).toHaveCount(0);
+      await capture(page, `offers-${mode}-34-parity-min-items-stage`);
+      await page.getByTestId("buy-stage-back").click();
+      await expect(page.getByTestId("rewards-sheet")).toBeVisible();
+
+      // A get-category BOGO's stage (its buy side: any 2 sauces).
+      await page.getByTestId(`offer-row-add-items-${PARITY_CAT_STAGE._id}`).scrollIntoViewIfNeeded();
+      await page.getByTestId(`offer-row-add-items-${PARITY_CAT_STAGE._id}`).click();
+      await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
+      await capture(page, `offers-${mode}-35-parity-category-stage`);
+      await page.getByTestId("buy-stage-back").click();
+      await expect(page.getByTestId("rewards-sheet")).toBeVisible();
+
+      // The picker's category section: one plain unit picked.
+      await page.getByTestId(`offer-row-${PARITY_ANY_SAUCE._id}`).scrollIntoViewIfNeeded();
+      await pickAndSave(page, PARITY_ANY_SAUCE._id);
+      await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toBeVisible();
+      await page.getByTestId(`freebie-cat-option-${SAUCES_SUB}-${TORTILLA_SAUCE}`).click();
+      await capture(page, `offers-${mode}-36-parity-category-picker`);
     });
   }
 });

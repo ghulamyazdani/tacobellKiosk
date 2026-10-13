@@ -83,8 +83,8 @@ const MOTION_V2_LAZY_KEYS = ["activity.animations", "activity.animationsOn", "ac
 
 /**
  * Lane offers-parity (F3 / F5): the rewards rows' description copy — the
- * buy/get sentence, the item-criteria scope lines and the scoped lock
- * lines — lazy like the sheet that renders it. `offers.desc.category` is
+ * buy/get sentence, the item-criteria scope lines, the caps and the scoped
+ * lock lines — lazy like the sheet that renders it. `offers.desc.category` is
  * a plural family (EN one/other, AR all six forms): the pin compares
  * families, the CLDR forms are localeParity's.
  */
@@ -106,6 +106,7 @@ const OFFERS_PARITY_LAZY_KEYS = [
   "offers.mechAmountItemsExcept",
   "offers.scopeSeparator",
   "offers.scopeMore",
+  "offers.upTo",
   "offers.lockedItemCriteriaExcept",
   "offers.lockedItemCriteriaOnly",
 ];
@@ -122,7 +123,7 @@ const placeholders = (value: unknown) =>
   [...String(value).matchAll(/{{\s*([\w.]+)[^}]*}}/g)].map(([, name]) => name).sort();
 
 describe("lane bag-pdp copy (I8)", () => {
-  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9, motion-v2's 3, offers-parity's 19 families), in EN and in AR", () => {
+  it("lazy.json holds exactly the 14 lane keys (+ audit-fixes' 9, motion-v2's 3, offers-parity's 20 families), in EN and in AR", () => {
     const expected = [
       ...LANE_KEYS,
       ...AUDIT_FIXES_LAZY_KEYS,
