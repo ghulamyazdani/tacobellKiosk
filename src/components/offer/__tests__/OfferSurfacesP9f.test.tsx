@@ -281,12 +281,15 @@ describe("menu names at render (Arabic session)", () => {
     );
   });
 
-  it("buy-stage tiles show the alias; '+' adds the raw entity", async () => {
+  it("buy-stage tiles show the alias and the card's add is named by it; a card tap adds the raw entity", async () => {
     await arabicSession();
     renderStage();
     const tile = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
     expect(tile).toHaveTextContent(iso(AR_SAUCE), { normalizeWhitespace: false });
     expect(tile).not.toHaveTextContent("Tortilla Sauce");
+    expect(screen.getByTestId(`buy-stage-add-${SAUCE.id}`)).toHaveAccessibleName(
+      `${i18n.t("menu.quickAdd")} ${iso(AR_SAUCE)}`
+    );
 
     await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
     expect(cartRows().find((row) => row.id === SAUCE.id)?.name).toBe("Tortilla Sauce");

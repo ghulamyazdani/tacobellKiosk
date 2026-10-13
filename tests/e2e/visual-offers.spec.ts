@@ -214,18 +214,21 @@ const BOGO_SAUCE = itemOffer({
     categories: [],
   },
 });
-/** Any 2 of 3 (the 70-character bowl among them), the cheapest free: the least-value stage. */
+/**
+ * Any 2 of 3 (the 70-character bowl among them), the cheapest free: the
+ * least-value stage. Each buy entry carries its item's own menu name — the
+ * tenant shape of the 2026-10-14 report — so no header repeats a card and
+ * the three cards share a row.
+ */
 const LEAST_SAUCES = itemOffer({
   _id: "offer-least-sauces",
   name: "Any 2 Tacos Or Bowls From The Party Menu, Cheapest One Free",
   getItemOnly: false,
   getLeastValueItem: true,
   leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
-  applicable: applicableBuy([
-    { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" } },
-    { item: { baseItemId: CAESAR_DRESSING, name: "Caesar Dressing" } },
-    { item: { baseItemId: GREEK_SALAD, name: "Greek Salad" } },
-  ]),
+  applicable: applicableBuy(
+    [TORTILLA_SAUCE, CAESAR_DRESSING, GREEK_SALAD].map((id) => ({ item: { baseItemId: id, name: NAMES[id][0] } }))
+  ),
   getItems: { items: [], categories: [] },
 });
 /** Group-wise "pick 2" of 4, one customizable (the burger): picker controls. */
@@ -815,9 +818,10 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await expect(page.getByTestId("rewards-sheet")).toBeVisible();
       await page.getByTestId(`offer-row-add-items-${LEAST_SAUCES._id}`).click();
       await expect(page.getByTestId("buy-stage-least-note")).toBeVisible();
-      // The 70-character bowl's tile on screen: its name meets the
-      // two-line box (the probe would see a sliced third line).
+      // The 70-character bowl's card on screen: its name meets the
+      // two-line clamp (the probe would see a sliced third line).
       await page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).scrollIntoViewIfNeeded();
+      await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(0);
       await capture(page, `offers-${mode}-27-buy-stage-least`);
     });
 

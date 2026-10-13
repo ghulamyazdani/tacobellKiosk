@@ -6,9 +6,9 @@
   This file keeps the layout geometry: the px constants of the Figma
   "Menu-Item" card as it appears on the bag's Complete-Your-Meal rail (mybag
   1:3171 / node I1:3196;6618:5020 — 240×277, name+price+cal above a 172px
-  image, ⊕ top-right). ForYouCard, the suggestion rails, the rewards sheet and
-  the buy stage apply them as inline styles read from here rather than as
-  Tailwind classes precisely so they cannot drift apart.
+  image, ⊕ top-right). ForYouCard, the suggestion rails and the rewards sheet
+  apply them as inline styles read from here rather than as Tailwind classes
+  precisely so they cannot drift apart.
 */
 export {
   MIN_CART_UPSELL_ITEMS,

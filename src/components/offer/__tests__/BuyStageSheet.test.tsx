@@ -5,7 +5,7 @@
  * isBOGOOfferApplicable passes. Nothing here navigates.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -14,13 +14,15 @@ import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   resolveBuyStageView,
+  type BuyMenuEntity,
   type BuyStageOffer,
   type BuyStageView,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import BuyStageSheet from "../BuyStageSheet";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 type Row = { id?: string; itemId?: string; quantity?: number; [key: string]: unknown };
 
@@ -135,6 +137,12 @@ const viewFor = (offer: object, variantObject = {}): BuyStageView => {
   if (!view) throw new Error("fixture offer must resolve a buy stage");
   return view;
 };
+/** viewFor over the fixture menu with some entities replaced. */
+const viewWith = (offer: object, entities: Record<string, BuyMenuEntity>): BuyStageView => {
+  const view = resolveBuyStageView(offer as BuyStageOffer, { ...ENTITY_MAP, ...entities }, {}, {});
+  if (!view) throw new Error("fixture offer must resolve a buy stage");
+  return view;
+};
 
 const LocationProbe = () => <span data-testid="location">{useLocation().pathname}</span>;
 
@@ -184,8 +192,11 @@ beforeEach(() => {
   store.dispatch(setCartItems([{ ...BURGER_ROW }]));
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
 });
 
 describe("BuyStageSheet — motion (D-M3)", () => {
@@ -213,7 +224,7 @@ describe("BuyStageSheet — counters, adds and the CONTINUE gate", () => {
     expect(screen.queryByTestId("buy-stage-unlocked")).not.toBeInTheDocument();
   });
 
-  it("'+' adds ONE paid row; a second '+' increments that same row — no duplicate, no MIAM, no repeat sheet, no added modal", async () => {
+  it("a card tap adds ONE paid row; its '+' increments that same row — no duplicate, no MIAM, no repeat sheet, no added modal", async () => {
     renderStage(BOGO);
 
     await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
@@ -385,14 +396,19 @@ describe("BuyStageSheet — tiles and modes", () => {
     expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent("£2 | 50 Cal");
   });
 
-  it("every control is a ≥44 px target (64 px ADD / stepper, 48 px X with a 44 px floor, 84 px BACK / CONTINUE)", () => {
+  it("every control is a ≥44 px target (the whole 240×277 card adds, 44 px '−' / '+', 48 px X with a 44 px floor, 84 px BACK / CONTINUE)", () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
     renderStage(LEAST);
 
-    expect(screen.getByTestId(`buy-stage-add-${CAESAR.id}`).className).toMatch(/\bh-\[64px\]/);
-    expect(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`).className).toMatch(/\bw-\[64px\]/);
-    expect(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`).className).toMatch(/\bw-\[64px\]/);
-    expect(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`).parentElement?.className).toMatch(/\bh-\[64px\]/);
+    for (const id of [CAESAR.id, SAUCE.id]) {
+      const add = screen.getByTestId(`buy-stage-add-${id}`);
+      expect(add).toHaveClass("absolute", "inset-0");
+      expect(add.parentElement).toHaveClass("h-[277px]", "w-full");
+      expect(add.parentElement?.parentElement).toHaveClass("grid-cols-[repeat(4,240px)]");
+    }
+    expect(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`)).toHaveClass("h-[44px]", "w-[44px]");
+    expect(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`)).toHaveClass("h-[44px]", "w-[44px]");
+    expect(screen.getByTestId(`buy-stage-inc-${CAESAR.id}`)).toHaveClass("h-[44px]", "w-[44px]");
     const close = screen.getByTestId("buy-stage-close").className;
     expect(close).toMatch(/min-h-\[44px\]/);
     expect(close).toMatch(/min-w-\[44px\]/);
@@ -475,5 +491,352 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
     expect(screen.getByTestId("buy-stage-hint")).toBeEmptyDOMElement();
     await userEvent.click(screen.getByTestId("buy-stage-continue"));
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent("Add 1 more qualifying item to unlock");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * User report 2026-10-14 ("the item card in get stage in offer doesn't
+ * look good make it something like ui in figma"): every buy group was one
+ * item under its own name, so each card sat alone under a header that
+ * repeated it. The card is now Figma's Menu-Item grid card (1:2609, as
+ * MenuItemCard draws it) four across in 1:2595's 16 px grid, picked the
+ * product-added way, and a header renders only when it says something the
+ * cards don't.
+ * ------------------------------------------------------------------ */
+const PHOTO = "https://cdn.example.com/kiosk/tortilla-sauce.png";
+const headers = () => screen.queryAllByTestId(/^buy-stage-group-/);
+
+describe("BuyStageSheet — Figma's Menu-Item card", () => {
+  it("the menu grid's card (1:2609): 240×277 grey-6 r8, four across with 1:2595's 16 px gaps; the Md 20/24 name clamped at 2; the price line led by the veg mark; the 172 photo band object-cover × multiply; the 36 px Quick Add on a 44 px hit area", () => {
+    renderStage(LEAST, viewWith(LEAST, { [SAUCE.id]: { ...SAUCE, image_url: PHOTO, tags: ["veg"] } }));
+
+    const card = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
+    expect(card).toHaveClass(
+      "tb-press-card",
+      "relative",
+      "flex",
+      "h-[277px]",
+      "w-full",
+      "flex-col",
+      "justify-between",
+      "overflow-hidden",
+      "rounded-[8px]",
+      "bg-tb-grey-6"
+    );
+    expect(card.parentElement).toHaveClass("grid", "grid-cols-[repeat(4,240px)]", "justify-center", "gap-[16px]");
+
+    const name = within(card).getByText(SAUCE.name);
+    expect(name).toHaveClass(
+      "line-clamp-2",
+      "text-[20px]",
+      "font-medium",
+      "capitalize",
+      "leading-[24px]",
+      "tracking-[-0.5px]",
+      "text-black"
+    );
+    expect(name.parentElement).toHaveClass("gap-[4px]", "ps-[24px]", "pe-[64px]", "pt-[24px]");
+    const price = name.nextElementSibling as HTMLElement;
+    expect(price).toHaveTextContent(/^£2 \| 50 Cal$/);
+    expect(price).toHaveClass("text-[18px]", "leading-[20px]", "text-tb-ink-purple");
+    expect(price.firstElementChild).toBe(within(price).getByTestId("veg-mark-veg"));
+
+    const photo = card.querySelector(`img[src="${PHOTO}"]`);
+    expect(photo).toHaveClass("h-[172px]", "min-h-0", "w-full", "object-cover", "mix-blend-multiply");
+    expect(photo).not.toHaveClass("object-contain");
+
+    // Figma Quick Add: a 36 px white circle at 192 / 12 (end 12), 16 px plus,
+    // white → lilac while pressed; centred in a 44 px hit area.
+    const plus = screen.getByTestId(`buy-stage-inc-${SAUCE.id}`);
+    expect(plus).toHaveClass("group", "absolute", "end-[8px]", "top-[8px]", "z-10", "h-[44px]", "w-[44px]");
+    expect(plus.firstElementChild).toHaveClass(
+      "h-[36px]",
+      "w-[36px]",
+      "rounded-full",
+      "bg-tb-surface",
+      "shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)]",
+      "group-active:bg-tb-lilac"
+    );
+    expect(plus.querySelector("img")).toHaveClass("h-[16px]", "w-[16px]");
+  });
+
+  it("the WHOLE card adds: an empty overlay (a direct child — the card presses) named 'Quick add <name>', the add target at every quantity; the '+' is its aria-hidden twin that never takes focus", async () => {
+    renderStage(BOGO);
+    const card = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
+    const overlay = within(card).getByRole("button", { name: "Quick add Tortilla Sauce" });
+    expect(overlay).toHaveAttribute("data-testid", `buy-stage-add-${SAUCE.id}`);
+    expect(overlay.parentElement).toBe(card);
+    expect(overlay).toBeEmptyDOMElement();
+    expect(overlay).toHaveClass("absolute", "inset-0");
+    const plus = screen.getByTestId(`buy-stage-inc-${SAUCE.id}`);
+    expect(plus).toHaveAttribute("aria-hidden", "true");
+    expect(plus).toHaveAttribute("tabindex", "-1");
+    // ONE accessible control per card until it is picked.
+    expect(within(card).getAllByRole("button")).toEqual([overlay]);
+    expect(within(card).getAllByRole("button", { hidden: true })).toEqual([overlay, plus]);
+    // fireEvent answers false when the handler called preventDefault().
+    expect(fireEvent.mouseDown(plus)).toBe(false);
+
+    await userEvent.click(overlay);
+    expect(sauceRows()).toEqual([expect.objectContaining({ quantity: 1 })]);
+    await userEvent.click(plus);
+    expect(sauceRows()).toEqual([expect.objectContaining({ quantity: 2 })]);
+    await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
+    expect(sauceRows()).toEqual([expect.objectContaining({ quantity: 3 })]);
+    expect(sauceRows()).toHaveLength(1);
+  });
+
+  it("a card whose tap opens the tier session is named 'Customize <name>' (a customizable item); a one-tap card 'Quick add <name>' — the add path's own split, nothing opened to find out", () => {
+    const BURGER_OR_SAUCE = {
+      ...BOGO,
+      _id: "offer-burger-or-sauce",
+      applicable: applicable([
+        { item: { baseItemId: BURGER.id, name: "Cheese Burger" }, quantity: 1, relation: "or" },
+        { item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" },
+      ]),
+    };
+    renderStage(BURGER_OR_SAUCE);
+
+    expect(screen.getByTestId(`buy-stage-add-${BURGER.id}`)).toHaveAccessibleName(
+      `${i18n.t("pack.customize")} Cheese Burger`
+    );
+    expect(screen.getByTestId(`buy-stage-add-${SAUCE.id}`)).toHaveAccessibleName(
+      `${i18n.t("menu.quickAdd")} Tortilla Sauce`
+    );
+    expect(state().makeItAMeal.makeItAMealModal.tier1CustomizationModal.isOpen).toBe(false);
+  });
+
+  it("a variant-id entry is 'Customize <name> (<size>)' (the size sheet opens), its size within the 2-line clamp", () => {
+    const view = viewFor(LARGE_FRIES_BOGO, {
+      "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },
+    });
+    renderStage(LARGE_FRIES_BOGO, view);
+    expect(screen.getByTestId("buy-stage-add-fries")).toHaveAccessibleName("Customize Fries (Large)");
+    expect(within(screen.getByTestId("buy-stage-tile-fries")).getByText("Fries (Large)")).toHaveClass("line-clamp-2");
+  });
+
+  it("picked: the purple ring; the count pill (aria-hidden) at the photo band's bottom-start pops in and re-keys its number (bump) on each change; an always-mounted status speaks 'N selected' (EN, AR); at 0 none of it", async () => {
+    renderStage(BOGO);
+    const card = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
+    const status = within(card).getByRole("status");
+    expect(status).toHaveClass("absolute", "bottom-[12px]", "start-[12px]");
+    expect(status).toBeEmptyDOMElement();
+    expect(card).not.toHaveClass("ring-[3px]");
+    expect(screen.queryByTestId(`buy-stage-qty-${SAUCE.id}`)).toBeNull();
+    expect(screen.queryByTestId(`buy-stage-dec-${SAUCE.id}`)).toBeNull();
+
+    await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
+    expect(card).toHaveClass("ring-[3px]", "ring-tb-purple");
+    const pill = screen.getByTestId(`buy-stage-qty-${SAUCE.id}`);
+    expect(pill).toHaveTextContent(/^1$/);
+    expect(pill).toHaveAttribute("aria-hidden", "true");
+    expect(pill).toHaveClass(
+      "tb-pop-in",
+      "h-[36px]",
+      "min-w-[36px]",
+      "rounded-full",
+      "bg-tb-purple",
+      "px-[8px]",
+      "text-[18px]",
+      "font-bold",
+      "text-tb-surface"
+    );
+    const number = pill.firstElementChild;
+    expect(number).toHaveClass("tb-bump");
+    expect(status).toContainElement(pill);
+    const spoken = () => status.querySelector(".sr-only")?.textContent;
+    expect(spoken()).toBe("1 selected");
+    // Before the overlay: a tap on the pill lands on the card's add.
+    const children = Array.from(card.children);
+    expect(children.indexOf(status)).toBeLessThan(children.indexOf(screen.getByTestId(`buy-stage-add-${SAUCE.id}`)));
+
+    await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
+    expect(screen.getByTestId(`buy-stage-qty-${SAUCE.id}`)).toBe(pill);
+    expect(pill).toHaveTextContent(/^2$/);
+    expect(pill.firstElementChild).not.toBe(number);
+    expect(pill.firstElementChild).toHaveClass("tb-bump");
+    expect(spoken()).toBe("2 selected");
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    expect(spoken()).toBe(i18n.t("added.selected", { value: 2 }));
+    expect(spoken()).not.toBe("2 selected");
+  });
+
+  it("'−' only while picked: a 36 px white circle on a 44 px hit area at the photo band's bottom-end, named 'Remove one <name>' — the trash glyph at 1, '−' from 2", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1", 2)]));
+    renderStage(BOGO);
+    const dec = screen.getByRole("button", { name: "Remove one Tortilla Sauce" });
+    expect(dec).toHaveAttribute("data-testid", `buy-stage-dec-${SAUCE.id}`);
+    expect(dec).toHaveClass("group", "absolute", "bottom-[8px]", "end-[8px]", "z-10", "h-[44px]", "w-[44px]");
+    expect(dec.firstElementChild).toHaveClass(
+      "h-[36px]",
+      "w-[36px]",
+      "rounded-full",
+      "bg-tb-surface",
+      "group-active:bg-tb-lilac"
+    );
+    const glyph = () =>
+      screen.getByTestId(`buy-stage-dec-${SAUCE.id}`).querySelector("img")?.getAttribute("src") ?? "";
+    expect(glyph()).toContain("qty-minus");
+    expect(glyph()).not.toContain("trash");
+
+    await userEvent.click(dec);
+    await waitFor(() => expect(sauceRows()).toEqual([expect.objectContaining({ quantity: 1 })]));
+    expect(screen.getByTestId(`buy-stage-qty-${SAUCE.id}`)).toHaveTextContent(/^1$/);
+    expect(glyph()).toContain("trash");
+    expect(glyph()).not.toContain("qty-minus");
+  });
+
+  it("an unavailable card (out of stock) has MenuItemCard's look — content at 40 %, a grayscale photo, the Unavailable chip — and NO add target: no overlay, no '+', a tap adds nothing", async () => {
+    renderStage(LEAST, viewWith(LEAST, { [CAESAR.id]: { ...CAESAR, image_url: PHOTO, outOfStock: true } }));
+    const card = screen.getByTestId(`buy-stage-tile-${CAESAR.id}`);
+    expect(within(card).getByText("Unavailable")).toHaveClass(
+      "absolute",
+      "bottom-[16px]",
+      "left-1/2",
+      "-translate-x-1/2",
+      "bg-tb-ink-purple/80"
+    );
+    expect(within(card).getByText(CAESAR.name).parentElement).toHaveClass("opacity-40");
+    expect(card.querySelector("img")).toHaveClass("opacity-40", "grayscale");
+    expect(screen.queryByTestId(`buy-stage-add-${CAESAR.id}`)).toBeNull();
+    expect(screen.queryByTestId(`buy-stage-inc-${CAESAR.id}`)).toBeNull();
+    expect(within(card).queryAllByRole("button", { hidden: true })).toEqual([]);
+
+    await userEvent.click(card);
+    expect(state().cart.cartItems).toEqual([BURGER_ROW]);
+    // Its neighbour is still a live card.
+    expect(screen.getByTestId(`buy-stage-add-${SAUCE.id}`)).toBeEnabled();
+  });
+
+  it("logical insets (a mirrored layout flips them): '+' top-end, the pill bottom-start, the '−' bottom-end, the text block ps / pe — no physical left / right on the card's corners", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
+    renderStage(BOGO);
+    const card = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
+    const plus = screen.getByTestId(`buy-stage-inc-${SAUCE.id}`);
+    const dec = screen.getByTestId(`buy-stage-dec-${SAUCE.id}`);
+    const status = within(card).getByRole("status");
+    const text = within(card).getByText(SAUCE.name).parentElement as HTMLElement;
+
+    expect(plus).toHaveClass("end-[8px]", "top-[8px]");
+    expect(dec).toHaveClass("end-[8px]", "bottom-[8px]");
+    expect(status).toHaveClass("start-[12px]", "bottom-[12px]");
+    expect(text).toHaveClass("ps-[24px]", "pe-[64px]");
+    for (const el of [plus, dec, status, text]) {
+      expect(el.className).not.toMatch(/(^|\s)-?(left|right|pl|pr)-/);
+    }
+  });
+});
+
+describe("BuyStageSheet — a header only says what the cards don't", () => {
+  /** Plain-and: ANY sauce (a category of two) AND a Cheese Burger. */
+  const CAT_AND_BURGER = {
+    ...BOGO,
+    _id: "offer-cat-burger",
+    name: "Any sauce and a burger",
+    applicable: applicable([
+      { category: { _id: "sauces", categoryName: "Sauces" }, quantity: 1, relation: "and" },
+      { item: { baseItemId: BURGER.id, name: "Cheese Burger" }, quantity: 1, relation: "and" },
+    ]),
+  };
+  /** Two Tortilla Sauces AND a Caesar (per-group needs 2 and 1). */
+  const TWO_AND_ONE = (relation: "and" | "or") => ({
+    ...BOGO,
+    _id: `offer-two-${relation}-one`,
+    applicable: applicable([
+      { item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 2, relation },
+      { item: { baseItemId: CAESAR.id, name: "Caesar Dressing" }, quantity: 1, relation },
+    ]),
+  });
+
+  it("each group one item under its own name (the reported tenant shape): no headers, and the cards flow together in one row", () => {
+    renderStage(LEAST);
+    expect(headers()).toEqual([]);
+    const sauce = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
+    const caesar = screen.getByTestId(`buy-stage-tile-${CAESAR.id}`);
+    expect(sauce.parentElement).toBe(caesar.parentElement);
+    expect(sauce.nextElementSibling).toBe(caesar);
+    for (const card of [sauce, caesar]) expect(card).not.toHaveClass("col-start-1");
+  });
+
+  it("the label matches the card's name trimmed and case-insensitively (no header); a label the card does not show keeps one", () => {
+    const view = viewFor(LEAST);
+    renderStage(LEAST, {
+      ...view,
+      groups: [
+        { ...view.groups[0], label: "  tortilla SAUCE " },
+        { ...view.groups[1], label: "Dressings" },
+      ],
+    });
+    expect(headers().map((header) => header.getAttribute("data-testid"))).toEqual([
+      `buy-stage-group-${CAESAR.id}`,
+    ]);
+    expect(screen.getByTestId(`buy-stage-group-${CAESAR.id}`)).toHaveTextContent(/^Dressings$/);
+    expect(screen.getByTestId(`buy-stage-group-${CAESAR.id}`)).toHaveClass("col-span-full");
+  });
+
+  it("an empty label on a lone item: no header", () => {
+    const view = viewFor(LEAST);
+    renderStage(LEAST, { ...view, groups: view.groups.map((group) => ({ ...group, label: " " })) });
+    expect(headers()).toEqual([]);
+  });
+
+  it("a category group (several items) keeps its header, its fallback label too; a header-less group after it starts its own row", () => {
+    renderStage(CAT_AND_BURGER);
+    expect(headers().map((header) => header.textContent)).toEqual(["Any 1 from Sauces"]);
+    expect(screen.getByTestId("buy-stage-group-sauces")).toHaveClass("col-span-full");
+    expect(screen.getByTestId(`buy-stage-tile-${BURGER.id}`)).toHaveClass("col-start-1");
+    expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).not.toHaveClass("col-start-1");
+    expect(screen.getByTestId(`buy-stage-tile-${CAESAR.id}`)).not.toHaveClass("col-start-1");
+  });
+
+  it("a category group with an empty label still says 'these items'", () => {
+    const view = viewFor(CAT_AND_BURGER);
+    renderStage(CAT_AND_BURGER, {
+      ...view,
+      groups: view.groups.map((group) => (group.kind === "category" ? { ...group, label: "" } : group)),
+    });
+    expect(headers().map((header) => header.textContent)).toEqual(["Any 1 from these items"]);
+  });
+
+  it.each(["and", "or"] as const)(
+    "plain-%s: a per-group need above 1 is something the card does not say — 'Any 2 from Tortilla Sauce' stays; its need-1 sibling named by its item has none",
+    (relation) => {
+      renderStage(TWO_AND_ONE(relation));
+      expect(headers().map((header) => header.textContent)).toEqual(["Any 2 from Tortilla Sauce"]);
+      expect(screen.getByTestId(`buy-stage-tile-${CAESAR.id}`)).toHaveClass("col-start-1");
+    }
+  );
+
+  it("least: the threshold is shared, so a group's own count never earns it a header", () => {
+    const view = viewFor(LEAST);
+    renderStage(LEAST, { ...view, groups: view.groups.map((group) => ({ ...group, requiredQuantity: 2 })) });
+    expect(headers()).toEqual([]);
+  });
+
+  it("one group: never a header, whatever its label", () => {
+    const view = viewFor(BOGO);
+    renderStage(BOGO, { ...view, groups: [{ ...view.groups[0], label: "Sauces of the day" }] });
+    expect(headers()).toEqual([]);
+  });
+
+  it("Arabic session: the English label is the item's raw name, so its Arabic card goes without a header; a label the card does not show keeps one", async () => {
+    const AR_SAUCE = "صلصة التورتيلا";
+    const view = viewWith(LEAST, {
+      [SAUCE.id]: { ...SAUCE, aliases: [{ value: AR_SAUCE, name: "Arabic", code: "ar", dir: "rtl" }] },
+    });
+    store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderStage(LEAST, { ...view, groups: [view.groups[0], { ...view.groups[1], label: "Dressings" }] });
+
+    expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent(AR_SAUCE);
+    expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).not.toHaveTextContent("Tortilla Sauce");
+    expect(headers().map((header) => header.getAttribute("data-testid"))).toEqual([
+      `buy-stage-group-${CAESAR.id}`,
+    ]);
   });
 });

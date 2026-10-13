@@ -15,6 +15,7 @@ import {
   type BuyStageGroup,
   type BuyStageOffer,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
+import { isDirectlyAddable } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import type { BuyStage } from "../../hooks/offerHooks/useBuyStage";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
@@ -23,13 +24,12 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
-import {
-  CART_UPSELL_IMAGE_HEIGHT_PX,
-  CART_UPSELL_TITLE_HEIGHT_PX,
-  CART_UPSELL_TITLE_LINE_HEIGHT_PX,
-} from "../../hooks/menuHooks/cartUpsellUtils";
+import { formatMenuPriceLine } from "../menu/MenuItemCard";
+import VegMark from "../menu/VegMark";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
+import minusIcon from "../../assets/icons/qty-minus.svg?no-inline";
+import trashIcon from "../../assets/icons/trash.svg?no-inline";
 
 export interface BuyStageSheetProps {
   /** The offer being unlocked and its resolved buy side (useBuyStage). */
@@ -49,32 +49,18 @@ export interface BuyStageSheetProps {
 /** Decrement refusals, rendered inline (TB mounts no global error modal). */
 type GuardKey = "loyaltyRowGuard" | "cartEmptyGuard";
 
-/**
- * Converted menu entities may carry an object-shaped calorie count — read
- * through this widening rather than `any`. Lifted verbatim from ForYouCard.
- */
-type ConvertedEntityExtras = {
-  calorieCount?: number | string | { value?: number | string };
-  nutritionalInfo?: {
-    calorieCount?: number | string | { value?: number | string };
-  };
-};
-
-const calorieValue = (
-  entity: BuyMenuEntity,
-): number | string | undefined => {
-  const extras = entity as BuyMenuEntity & ConvertedEntityExtras;
-  const cal = extras?.calorieCount ?? extras?.nutritionalInfo?.calorieCount;
-  if (cal !== null && typeof cal === "object") return cal?.value;
-  return cal;
-};
+/** Trimmed, case-insensitive text equality (the header rule). */
+const sameText = (a: unknown, b: unknown) =>
+  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
 
 /**
  * BOGO BUY STAGE — "unlock this reward" (offers lane, item 31). Opened from a
  * locked bogoBuySide row's ADD ITEMS in the rewards sheet; the fork's
- * BuyItemSelection structure re-skinned in the TB design language (no Figma
- * frame — flagged for client sign-off): RewardsSheet geometry (1:3824 header,
- * X, full-width purple CTA bar), Suggested-rail card tiles, bag-style steppers.
+ * BuyItemSelection structure in the TB design language (no Figma frame —
+ * flagged for client sign-off): RewardsSheet geometry (1:3824 header, X,
+ * full-width purple CTA bar) over Figma's Menu-Item grid card (1:2609, the
+ * menu card's encoding) four across in 1:2595's 16 px grid, picked the
+ * product-added way (the whole card adds, a count pill, a "−").
  *
  * The tiles read and write the REAL paid cart: a buy item is an ordinary
  * purchase. The counters mirror the engine (buyStageUtils) and the display is
@@ -228,12 +214,51 @@ export default function BuyStageSheet({
     onContinue();
   };
 
-  // Render helper, NOT a component (react-hooks/static-components) — the
-  // Suggested-rail card skin with an ADD / stepper control under the image.
+  /**
+   * A tile's name: the menu name in the guest's language, and a variant-id
+   * entry's size, in the guest's language too (the tile entity's variants are
+   * subset to that size by resolveBuyStageView).
+   */
+  const tileName = (group: BuyStageGroup, entity: BuyMenuEntity) => {
+    const size = group.requiredVariantId
+      ? (entity?.variants?.find((variant) => variant?.id === group.requiredVariantId) ?? {
+          name: group.requiredVariantName,
+        })
+      : null;
+    const sizeName = size ? localName(size) : "";
+    return `${localName(entity)}${sizeName ? ` (${sizeName})` : ""}`;
+  };
+
+  /**
+   * A header renders only when it says something the cards don't. A lone
+   * item under its own name (the tenant's usual buy group: label = item name)
+   * or under no label goes without — unless it names a per-group need above 1
+   * (plain-and / plain-or). The label is English (no data), so the item's raw
+   * name counts as its name in an Arabic session too.
+   */
+  const showsHeader = (group: BuyStageGroup) => {
+    const [entity, ...others] = group.entities;
+    const named =
+      !group.label?.trim() ||
+      sameText(group.label, tileName(group, entity)) ||
+      sameText(group.label, entity?.name);
+    const needShown = view.mode !== "least" && group.requiredQuantity > 1;
+    return view.groups.length > 1 && !(others.length === 0 && named && !needShown);
+  };
+  const headed = view.groups.map(showsHeader);
+
+  // Render helper, NOT a component (react-hooks/static-components) — Figma's
+  // Menu-Item grid card as MenuItemCard draws it (1:2609: 240×277 grey-6 r8,
+  // Md 20/24 name clamped at 2, the price line with its veg mark, the 172
+  // photo band object-cover × multiply, the 36 px Quick Add at 192 / 12),
+  // picked the product-added way: the WHOLE card adds (an empty overlay,
+  // the "+" its aria-hidden twin), a count pill and a "−" once picked.
+  // Logical insets: "+" top-end, the pill bottom-start, the "−" bottom-end.
   const renderTile = (
     group: BuyStageGroup,
     entity: BuyMenuEntity,
     index: number,
+    newRow: boolean,
   ) => {
     const id = String(entity?.id ?? index);
     const qty = countCartQuantityForTile(
@@ -242,126 +267,117 @@ export default function BuyStageSheet({
       cartItems,
       excludeLoyalty,
     );
-    // A variant-id entry names its size, in the guest's language too: the
-    // tile entity's variants are subset to that size (resolveBuyStageView).
-    const size = group.requiredVariantId
-      ? (entity?.variants?.find((variant) => variant?.id === group.requiredVariantId) ?? {
-          name: group.requiredVariantName,
-        })
-      : null;
-    const sizeName = size ? localName(size) : "";
-    const name = `${localName(entity)}${sizeName ? ` (${sizeName})` : ""}`;
+    const name = tileName(group, entity);
     const imageUrl = resolveEntityImage(entity);
-    const cal = calorieValue(entity);
-    const priceLine = `${currency}${entity?.price ?? ""}${
-      cal ? ` | ${t("pack.cal", { value: cal })}` : ""
-    }`;
     const unavailable = !!entity?.outOfStock;
+    // handleAdd's own split, side-effect free: a variant or customizable
+    // entity opens the tier session (planStagedTierModal), anything else adds.
+    const oneTap = isDirectlyAddable(entity as unknown as RecommendedEntity);
 
     return (
       <div
         key={`${group.key}-${id}`}
         data-testid={`buy-stage-tile-${id}`}
-        className={`flex flex-col overflow-hidden rounded-[8px] bg-tb-grey-6 ${
+        className={`tb-press-card relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
           qty > 0 ? "ring-[3px] ring-tb-purple" : ""
-        }`}
+        } ${newRow ? "col-start-1" : ""}`}
       >
-        <span className="flex flex-col gap-[4px] px-[24px] pt-[24px]">
-          {/* line-clamp-2, the rail card's rule: a name past the fixed
-              two-line box ends in an ellipsis, never a sliced third line (a
-              70-character TB India name is 643 px of Archivo at 20 px — three
-              lines in the 264 px box). */}
-          <span
-            className="line-clamp-2 text-[20px] font-medium capitalize tracking-[-0.5px] text-black"
-            style={{
-              lineHeight: `${CART_UPSELL_TITLE_LINE_HEIGHT_PX}px`,
-              height: CART_UPSELL_TITLE_HEIGHT_PX,
-            }}
-          >
+        {/* line-clamp-2: a 70-character TB India name ends in an ellipsis,
+            never a sliced third line; the photo yields (min-h-0) to a
+            wrapped price line. */}
+        <div
+          className={`flex flex-col gap-[4px] pe-[64px] ps-[24px] pt-[24px] ${
+            unavailable ? "opacity-40" : ""
+          }`}
+        >
+          <p className="line-clamp-2 text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
             {name}
-          </span>
-          <span className="block text-[18px] leading-[20px] text-tb-ink-purple">
-            {priceLine}
-          </span>
-        </span>
-        {imageUrl ? (
+          </p>
+          <p className="flex items-center gap-[8px] text-[18px] leading-[20px] text-tb-ink-purple">
+            <VegMark entity={entity} />
+            {formatMenuPriceLine(entity, currency, t)}
+          </p>
+        </div>
+        {imageUrl && (
           <img
             alt=""
             src={imageUrl}
-            className={`w-full object-contain ${
+            className={`h-[172px] min-h-0 w-full object-cover mix-blend-multiply ${
               unavailable ? "opacity-40 grayscale" : ""
             }`}
-            style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-          />
-        ) : (
-          <span
-            className="block w-full"
-            style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
           />
         )}
-        <div className="px-[16px] pb-[16px] pt-[8px]">
-          {qty === 0 ? (
-            <button
-              type="button"
-              data-testid={`buy-stage-add-${id}`}
-              aria-label={
-                unavailable
-                  ? undefined
-                  : t("offers.buyStage.increase", { name })
-              }
-              disabled={continuing || unavailable}
-              onClick={() => handleAdd(entity)}
-              className={`tb-display flex h-[64px] w-full items-center justify-center rounded-full bg-tb-purple text-[20px] leading-[20px] text-tb-surface ${
-                continuing || unavailable ? "opacity-40" : ""
-              }`}
-            >
-              {unavailable ? t("menu.unavailable") : t("offers.buyStage.add")}
-            </button>
-          ) : (
-            <div className="flex h-[64px] w-full items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface">
-              <button
-                type="button"
-                data-testid={`buy-stage-dec-${id}`}
-                aria-label={t("offers.buyStage.decrease", { name })}
-                disabled={continuing}
-                onClick={() => handleDecrease(entity, group)}
-                className="flex h-full w-[64px] items-center justify-center text-tb-purple"
-              >
-                {/* Minus glyph (Figma icon 3601ce08) — BagItemRow's inline copy. */}
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-[24px] w-[24px]"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    clipRule="evenodd"
-                    d="M2.5 12C2.5 11.1716 3.17157 10.5 4 10.5L20 10.5C20.8284 10.5 21.5 11.1716 21.5 12C21.5 12.8284 20.8284 13.5 20 13.5L4 13.5C3.17157 13.5 2.5 12.8284 2.5 12Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </button>
+        {/* Before the overlay, so a tap on the pill still adds. ForYouCard's
+            pill at the photo band's corner (design language, no frame): it
+            pops in, the re-keyed number bumps on each change; the status is
+            always mounted so changes are spoken. */}
+        <span role="status" className="absolute bottom-[12px] start-[12px]">
+          {qty > 0 && (
+            <>
               <span
+                aria-hidden="true"
                 data-testid={`buy-stage-qty-${id}`}
-                className="text-[22px] font-black leading-[22px] text-black"
+                className="tb-pop-in flex h-[36px] min-w-[36px] items-center justify-center rounded-full bg-tb-purple px-[8px] text-[18px] font-bold text-tb-surface"
               >
-                {qty}
+                <span key={qty} className="tb-bump">
+                  {qty}
+                </span>
               </span>
-              <button
-                type="button"
-                data-testid={`buy-stage-inc-${id}`}
-                aria-label={t("offers.buyStage.increase", { name })}
-                disabled={continuing || unavailable}
-                onClick={() => handleAdd(entity)}
-                className={`flex h-full w-[64px] items-center justify-center ${
-                  unavailable ? "opacity-40" : ""
-                }`}
-              >
-                <img alt="" src={plusIcon} className="h-[24px] w-[24px]" />
-              </button>
-            </div>
+              <span className="sr-only">{t("added.selected", { value: qty })}</span>
+            </>
           )}
-        </div>
+        </span>
+        {/* A DIRECT, EMPTY child: tb-press-card squeezes the card while it
+            is pressed. "Customize" names a tap that opens the tier session. */}
+        {!unavailable && (
+          <button
+            type="button"
+            data-testid={`buy-stage-add-${id}`}
+            aria-label={`${t(oneTap ? "menu.quickAdd" : "pack.customize")} ${name}`}
+            disabled={continuing}
+            onClick={() => handleAdd(entity)}
+            className="absolute inset-0"
+          />
+        )}
+        {/* The added modal's "−" (design language, no frame): the trash
+            glyph at 1, "−" from 2 (D6). */}
+        {qty > 0 && (
+          <button
+            type="button"
+            data-testid={`buy-stage-dec-${id}`}
+            aria-label={t("offers.buyStage.decrease", { name })}
+            disabled={continuing}
+            onClick={() => handleDecrease(entity, group)}
+            className="group absolute bottom-[8px] end-[8px] z-10 flex h-[44px] w-[44px] items-center justify-center"
+          >
+            <span className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)] group-active:bg-tb-lilac">
+              <img alt="" src={qty === 1 ? trashIcon : minusIcon} className="h-[16px] w-[16px]" />
+            </span>
+          </button>
+        )}
+        {unavailable ? (
+          <span className="tb-display absolute bottom-[16px] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface">
+            {t("menu.unavailable")}
+          </span>
+        ) : (
+          // The overlay's visual twin: one accessible control per card, and
+          // a tap never focuses it (review UIA-1). Figma Quick Add pressed:
+          // the white circle turns lilac.
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            data-testid={`buy-stage-inc-${id}`}
+            disabled={continuing}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => handleAdd(entity)}
+            className="group absolute end-[8px] top-[8px] z-10 flex h-[44px] w-[44px] items-center justify-center"
+          >
+            <span className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-tb-surface shadow-[0px_2px_12px_0px_rgba(0,0,0,0.15)] group-active:bg-tb-lilac">
+              <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
+            </span>
+          </button>
+        )}
       </div>
     );
   };
@@ -443,13 +459,17 @@ export default function BuyStageSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="grid grid-cols-3 gap-[24px] px-[48px] py-[32px]">
-            {view.groups.map((group: BuyStageGroup) => (
+          {/* 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four
+              across, centred. Header-less groups share rows; after a headed
+              group, the next one starts its own row (its card would read as
+              one of that group's). */}
+          <div className="grid grid-cols-[repeat(4,240px)] justify-center gap-[16px] px-[24px] py-[32px]">
+            {view.groups.map((group: BuyStageGroup, groupIndex: number) => (
               <Fragment key={group.key}>
-                {view.groups.length > 1 && (
+                {headed[groupIndex] && (
                   <p
                     data-testid={`buy-stage-group-${group.key}`}
-                    className="col-span-3 text-[22px] font-bold leading-[26px] text-black"
+                    className="col-span-full text-[22px] font-bold leading-[26px] text-black"
                   >
                     {/* least: the threshold is shared, so a per-group
                         "Any N" would mislead — the label alone (fork). */}
@@ -464,7 +484,12 @@ export default function BuyStageSheet({
                   </p>
                 )}
                 {group.entities.map((entity: BuyMenuEntity, index: number) =>
-                  renderTile(group, entity, index),
+                  renderTile(
+                    group,
+                    entity,
+                    index,
+                    index === 0 && !headed[groupIndex] && groupIndex > 0 && headed[groupIndex - 1],
+                  ),
                 )}
               </Fragment>
             ))}
