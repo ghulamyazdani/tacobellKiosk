@@ -73,8 +73,8 @@ export default function useLocalized(): Localized {
       pipelineName: (pipeline) =>
         show(
           (isSecondary && asText(pipeline?.secondary_name).trim()) ||
-            asText(pipeline?.primary_name) ||
-            asText(pipeline?.name),
+            asText(pipeline?.primary_name).trim() ||
+            asText(pipeline?.name).trim(),
         ),
       text: show,
     };

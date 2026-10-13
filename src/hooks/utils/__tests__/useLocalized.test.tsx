@@ -154,6 +154,13 @@ describe("useLocalized — pipeline names", () => {
     expect(result.current.pipelineName({ name: "Legacy" })).toBe(iso("Legacy"));
   });
 
+  it("a blank primary_name falls back to the legacy name; all blank is '' — the bag toggle's cue for its fixed copy", () => {
+    const { result } = localized();
+
+    expect(result.current.pipelineName({ primary_name: "   ", name: "Legacy" })).toBe("Legacy");
+    expect(result.current.pipelineName({ primary_name: "   ", name: " " })).toBe("");
+  });
+
   it("a secondary_name is trimmed", () => {
     store.dispatch(setSelectedLanguage(AR_SESSION));
     const { result } = localized();

@@ -352,16 +352,17 @@ const idleModal = (page: Page) => page.getByTestId("idle-modal");
 const fill = (template: string, values: Record<string, string>) =>
   template.replace(/{{(\w+)}}/g, (_, key: string) => values[key] ?? "");
 
+/** The switch copy names the pipelines, as the toggle does (user 2026-10-13). */
 const COPY = {
-  confirmTitle: fill(enLazy.bag.orderType.confirmTitle, { type: en.bag.takeOut }),
+  confirmTitle: fill(enLazy.bag.orderType.confirmTitle, { type: TAKE_OUT.primary_name }),
   confirmBody: enLazy.bag.orderType.confirmBody as string,
   confirmYes: enLazy.bag.orderType.confirmYes as string,
-  confirmNo: fill(enLazy.bag.orderType.confirmNo, { current: en.bag.eatIn }),
-  failedTitle: fill(enLazy.bag.orderType.failedTitle, { type: en.bag.takeOut }),
+  confirmNo: fill(enLazy.bag.orderType.confirmNo, { current: EAT_IN.primary_name }),
+  failedTitle: fill(enLazy.bag.orderType.failedTitle, { type: TAKE_OUT.primary_name }),
   failedBody: enLazy.bag.orderType.failedBody as string,
   removedTitle: enLazy.bag.orderType.removedTitle as string,
   removedBody: (items: string) =>
-    fill(enLazy.bag.orderType.removedBody, { type: en.bag.takeOut, items }),
+    fill(enLazy.bag.orderType.removedBody, { type: TAKE_OUT.primary_name, items }),
 };
 
 /** Capture-only screenshot (user decision 2026-10-05): attached for review, never compared. */
@@ -489,6 +490,9 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await expect(eatInSegment(page)).toHaveAttribute("aria-pressed", "true");
     await expect(takeOutSegment(page)).toHaveAttribute("aria-pressed", "false");
     await expect(takeOutSegment(page)).toHaveAttribute("aria-disabled", "true");
+    // The current pipeline is named; with no target the inert segment keeps the fixed copy.
+    await expect(eatInSegment(page)).toHaveText(EAT_IN.primary_name);
+    await expect(takeOutSegment(page)).toHaveText(en.bag.takeOut);
     // Playwright refuses a normal click on aria-disabled; forced, it is a
     // no-op — no confirm, no lazy stand-in, no fetch for another tab.
     const before = net.calls.length;
@@ -1112,5 +1116,57 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     await page.clock.runFor(500);
     await expect(notice).toHaveCount(0);
+  });
+
+  test("NAMES (user 2026-10-13): each segment names its pipeline as /second does — Dine In (current), Take Away (the target); the prompt and the notice use the same names, and after the switch Take Away is the active segment", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await bootToBagWithBurgerAndSalad(page);
+    await expect(eatInSegment(page)).toHaveText(EAT_IN.primary_name);
+    await expect(takeOutSegment(page)).toHaveText(TAKE_OUT.primary_name);
+
+    // COPY fills the switch copy with the same two names.
+    await takeOutSegment(page).click();
+    await expect(page.getByRole("alertdialog", { name: COPY.confirmTitle })).toBeVisible();
+    await expect(page.getByTestId("bag-ordertype-confirm-no")).toHaveText(COPY.confirmNo);
+    await page.getByTestId("bag-ordertype-confirm-yes").click();
+    const notice = page.getByRole("alertdialog", { name: COPY.removedTitle });
+    await expect(notice).toBeVisible({ timeout: 20_000 });
+    await expect(notice).toHaveAccessibleDescription(COPY.removedBody("Greek Salad"));
+    await page.getByTestId("bag-ordertype-notice-gotit").click();
+    await expect(takeOutSegment(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(takeOutSegment(page)).toHaveText(TAKE_OUT.primary_name);
+    await expect(eatInSegment(page)).toHaveText(EAT_IN.primary_name);
+  });
+
+  test("LONG NAME: a pipeline name wider than its segment stays on one line — ellipsis inside the pill, the full name kept as the button's accessible name", async ({
+    page,
+  }) => {
+    test.slow();
+    const LONG = "Curbside Pickup At The Express Drive-Thru Window, Lane Two";
+    await mockKioskBackend(page, { pipelines: [EAT_IN, { ...TAKE_OUT, primary_name: LONG }] });
+    await bootRegisteredToMenu(page);
+    await addOneTap(page, GREEK_SALAD, "(1)");
+    await openBag(page);
+
+    const segment = takeOutSegment(page);
+    await expect(segment).toHaveAccessibleName(LONG);
+    const geometry = await segment.evaluate((button) => {
+      const label = button.firstElementChild as HTMLElement;
+      const style = getComputedStyle(label);
+      const box = button.getBoundingClientRect();
+      const text = label.getBoundingClientRect();
+      return {
+        buttonHeight: box.height,
+        lines: Math.round(text.height / parseFloat(style.lineHeight)),
+        ellipsis: style.textOverflow === "ellipsis" && label.scrollWidth > label.clientWidth,
+        inside: text.left >= box.left && text.right <= box.right,
+      };
+    });
+    expect(geometry).toEqual({ buttonHeight: 52, lines: 1, ellipsis: true, inside: true });
+    // The short name beside it is untouched.
+    await expect(eatInSegment(page)).toHaveText(EAT_IN.primary_name);
   });
 });
