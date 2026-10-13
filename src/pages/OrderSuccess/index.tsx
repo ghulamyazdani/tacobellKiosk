@@ -200,12 +200,13 @@ export default function OrderSuccess() {
     printReceiptOnce();
   }, [printReceiptOnce]);
 
-  // ONE timer that flips state, armed at mount and cleared on unmount
-  // (Rule 5): a re-created callback never restarts it.
-  const [timedOut, setTimedOut] = useState(false);
+  // How the screen ends — the 20 s timer or START NEW ORDER (user
+  // 2026-10-13): ONE timer that flips state, armed at mount and cleared on
+  // unmount (Rule 5), and whichever comes first wins.
+  const [exitBy, setExitBy] = useState<"timeout" | "tap" | null>(null);
   useEffect(() => {
     const id = window.setTimeout(
-      () => setTimedOut(true),
+      () => setExitBy((by) => by ?? "timeout"),
       ORDER_SUCCESS_COUNTDOWN_SECONDS * 1000,
     );
     return () => window.clearTimeout(id);
@@ -215,10 +216,12 @@ export default function OrderSuccess() {
   // The next guest's splash tap starts their analytics session (audit-fixes
   // B3).
   useEffect(() => {
-    if (!timedOut || exitedRef.current) return;
+    if (!exitBy || exitedRef.current) return;
     exitedRef.current = true;
     captureKioskEvent(
-      KioskEventName.startOverFromOrderSuccessTimeoutTriggered,
+      exitBy === "tap"
+        ? KioskEventName.startOverFromOrderSuccessClicked
+        : KioskEventName.startOverFromOrderSuccessTimeoutTriggered,
       { order_id: orderIdRdx },
     );
     // Belt and braces: the mount effect has normally printed already, and
@@ -236,7 +239,7 @@ export default function OrderSuccess() {
     // A paid Paytm session is settled: /start's release must not read it.
     dispatch(emptyPayment());
     navigate("/start");
-  }, [dispatch, navigate, netAmountRdx, orderIdRdx, printReceiptOnce, timedOut]);
+  }, [dispatch, navigate, netAmountRdx, orderIdRdx, printReceiptOnce, exitBy]);
 
   return (
     // Motion §2.7 / MV2: the text block and the panel arrive (.tb-enter),
@@ -348,6 +351,18 @@ export default function OrderSuccess() {
           ))}
         </div>
       )}
+
+      {/* START NEW ORDER (user 2026-10-13; design language — Figma draws no
+          control): the CTA_Sheet_Fixed outline at 1812 (ADA: the zone's
+          foot), ending the screen the same way the timer does. */}
+      <button
+        type="button"
+        data-testid="order-success-new-order"
+        onClick={() => setExitBy((by) => by ?? "tap")}
+        className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
+      >
+        {t("success.startNewOrder")}
+      </button>
     </div>
   );
 }

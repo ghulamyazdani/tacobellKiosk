@@ -397,7 +397,8 @@
     "proceedToCounter": "توجه إلى الكاشير",
     "unlockTop": "احصل على",
     "unlockFreebies": "هدايا مجانية",
-    "unlockBottom": "بالنقاط"
+    "unlockBottom": "بالنقاط",
+    "startNewOrder": "ابدأ طلبًا جديدًا"
   },
   "orderError": {
     "title": "تعذر إرسال طلبك",

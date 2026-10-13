@@ -12,8 +12,8 @@ import { payAtCounter } from "./pages/checkout";
  * Lane order-success — Order Complete as Figma draws it, measured on the 1080×1920 stage at scale 1:
  * 1:5932 (a guest: "THANK YOU / FOR YOUR ORDER", the photo panel at y 792) and 1:3437 (an identified
  * loyalty customer: "ORDER #NNNNN", the merch panel at y 725). Both: the bell at (490, 128), the text
- * block at 345, the 412×900 panel at x 334 — and no control at all: the screen's one exit is its
- * 20 s timer (user decision 2026-10-12). The guest's UNLOCK FREEBIES WITH POINTS shows only where
+ * block at 345, the 412×900 panel at x 334 — and one control, START NEW ORDER in the CTA slot
+ * (user 2026-10-13), which leaves exactly as the 20 s timer does (user decision 2026-10-12). The guest's UNLOCK FREEBIES WITH POINTS shows only where
  * loyalty is on, its arrowhead painted OVER the photo; the QR, points and campaign copy have no
  * source and never show. ADA keeps the panel and the annotation mounted but invisible and centres the
  * text block in the reach zone (design language — neither frame has an ADA variant).
@@ -101,8 +101,9 @@ const success = (page: Page) => page.getByTestId("order-success");
 const textBlock = (page: Page) => success(page).locator("h1").locator("xpath=..");
 const panel = (page: Page) => page.getByTestId("order-success-panel");
 const unlock = (page: Page) => page.getByTestId("order-success-unlock");
+const newOrder = (page: Page) => page.getByTestId("order-success-new-order");
 
-/** The frame's fixed geometry (±2 px) on the unscaled stage, the photo decoded, and not one control. */
+/** The frame's fixed geometry (±2 px) on the unscaled stage, the photo decoded, and ONE control: START NEW ORDER in the CTA slot (2026-10-13). */
 async function expectFrame(page: Page, panelTop: 792 | 725) {
   expect(await page.getByTestId("kiosk-stage").boundingBox(), "the stage at scale 1").toEqual({
     x: 0,
@@ -114,7 +115,8 @@ async function expectFrame(page: Page, panelTop: 792 | 725) {
   expectNear(await stageBox(textBlock(page)), { y: 345 }, 2, "text block");
   expectNear(await stageBox(panel(page)), { x: 334, y: panelTop, width: 412, height: 900 }, 2, "panel");
   await expect.poll(() => panel(page).locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  await expect(success(page).getByRole("button")).toHaveCount(0);
+  await expect(success(page).getByRole("button")).toHaveCount(1);
+  expectNear(await stageBox(newOrder(page)), { x: 24, y: 1812, width: 1032, height: 84 }, 2, "START NEW ORDER (CTA_Sheet_Fixed)");
   await expect(success(page).getByRole("progressbar")).toHaveCount(0);
 }
 
@@ -167,7 +169,7 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await page.clock.install();
   });
 
-  test("GUEST, loyalty off (1:5932): the frame's geometry, THANK YOU on two lines, Figma's PROCEED, no control and no unlock pitch — up at 19 s, the splash at 20 s with the screen unchanged until it goes, and the next guest's bag is empty", async ({
+  test("GUEST, loyalty off (1:5932): the frame's geometry, THANK YOU on two lines, Figma's PROCEED, START NEW ORDER and no unlock pitch — up at 19 s, the splash at 20 s with the screen unchanged until it goes, and the next guest's bag is empty", async ({
     page,
   }) => {
     test.slow();
@@ -184,6 +186,7 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
       "Figma's two lines"
     ).toEqual(["THANK YOU", "FOR YOUR ORDER"]);
     await expect(page.getByTestId("order-success-proceed")).toHaveText(en.success.proceedToCounter);
+    await expect(newOrder(page)).toHaveText(en.success.startNewOrder);
     await expect(unlock(page)).toHaveCount(0);
     await shot(page, "oc-01-guest-en");
 
@@ -201,6 +204,24 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await pickPipelineToMenu(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     await expect(page.getByTestId("cta-total")).toContainText("0.00");
+    expect(checkout.placeOrderCount).toBe(1);
+    expectNothingDangerousWasContacted(checkout);
+  });
+
+  test("START NEW ORDER: a tap leaves at once for the splash — the same exit as the timer — and the next guest's bag is empty", async ({
+    page,
+  }) => {
+    const checkout = await mockBackend(page, "guest");
+    await orderToComplete(page, "guest");
+
+    await newOrder(page).click();
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/start$/);
+
+    await page.clock.resume();
+    await startToSecond(page);
+    await pickPipelineToMenu(page);
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     expect(checkout.placeOrderCount).toBe(1);
     expectNothingDangerousWasContacted(checkout);
   });
@@ -301,7 +322,8 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await expect(lines.nth(0)).toContainText(ar.success.unlockTop);
     await expect(lines.nth(1)).toContainText(ar.success.unlockFreebies);
     await expect(lines.nth(2)).toContainText(ar.success.unlockBottom);
-    for (const english of [en.success.proceedToCounter, en.success.unlockTop, en.success.unlockFreebies, en.success.unlockBottom]) {
+    await expect(newOrder(page)).toContainText(ar.success.startNewOrder);
+    for (const english of [en.success.proceedToCounter, en.success.unlockTop, en.success.unlockFreebies, en.success.unlockBottom, en.success.startNewOrder]) {
       await expect(success(page)).not.toContainText(english);
     }
     await shot(page, "oc-04-guest-loyalty-ar");
@@ -319,7 +341,8 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await expect(unlock(page)).toHaveCSS("visibility", "hidden");
     await expect(unlock(page).locator("img")).toHaveCSS("visibility", "hidden");
     await expect(success(page).getByAltText("Taco Bell")).toHaveCount(0);
-    await expect(success(page).getByRole("button")).toHaveCount(0);
+    await expect(success(page).getByRole("button")).toHaveCount(1);
+    await expect(newOrder(page)).toBeVisible();
 
     const zone = await stageBox(success(page));
     expect(zone, "the screen IS the reach zone").toEqual({ x: 0, y: ADA_BRAND_ZONE_HEIGHT, width: 1080, height: STAGE_HEIGHT - ADA_BRAND_ZONE_HEIGHT });
