@@ -27,8 +27,8 @@ import {
  * 3 or 5 order types keeping the title off the bell). The menu / PDP / bag /
  * ADA captures live in visual-order.spec.ts. Lane audit-fixes adds two DOM
  * probes (no pixel comparison): the plastic sheen (UB3 — the alpha WebP at
- * 50 % normal on the carousel, /second and the ADA brand zone, none on
- * WELCOME or a single slide; `sheenProblems`) and the Order Complete
+ * 50 % normal on the carousel and the single card, /second and the ADA brand
+ * zone, none on WELCOME; `sheenProblems`) and the Order Complete
  * gradient's tb-* tokens (C4b).
  *
  * Mocks and helpers are copied from the specs each walk cribs from (splash,
@@ -543,7 +543,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await capture(page, "entry-05-update-countdown");
   });
 
-  test("SPLASH ONE IMAGE: a single home_screen image fills the stage under START ORDER (1:5604)", async ({
+  test("SPLASH ONE IMAGE: a single home_screen image alone in the centre card over ORDER HERE / START ORDER (1:2203; 2026-10-13)", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -552,11 +552,12 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
 
     const splash = page.getByTestId("start-screen");
     await expect(splash.locator(`img[src="${SLIDE_A}"]`)).toHaveCount(1);
+    await expect(splash).toContainText(en.splash.orderHere);
     await expect(splash).toContainText(en.splash.startOrder);
     await expect(splash).not.toContainText(en.splash.welcome);
-    await capture(page, "entry-06-splash-full-bleed");
-    // UB3: the operator's single slide stays flat — no sheen over it.
-    await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(0);
+    await capture(page, "entry-06-splash-single-card");
+    // The single card sits on the carousel's ground, its sheen included (UB3).
+    await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(1);
   });
 
   test("SPLASH CAROUSEL: two images in the peek carousel under ORDER HERE (1:2203)", async ({

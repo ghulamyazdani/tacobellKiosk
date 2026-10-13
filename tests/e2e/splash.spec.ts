@@ -7,8 +7,9 @@ import { registerToStart } from "./pages/boot";
 /**
  * P9d — splash (attract) media, end to end: boot fetches `getMedia`, stores
  * only this deployment's `home_screen` list, and /start lays it out by
- * PLAYABLE slide count — 0 → WELCOME (Figma 1:5617), 1 → full-bleed
- * (1:5604), ≥ 2 → the peek carousel (1:2203). A slide that fails drops out,
+ * PLAYABLE slide count — 0 → WELCOME (Figma 1:5617), 1 → the 1:2203 centre
+ * card alone (2026-10-13; was full-bleed 1:5604), ≥ 2 → the peek carousel
+ * (1:2203). A slide that fails drops out,
  * so the layout degrades 2 → 1 → WELCOME and is never blank. A slide that
  * errored or stalled gets one more try 10 min after the last failure
  * (post-P9 44, D9: SPLASH_RETRY_MS); one with no picture (no_video) never.
@@ -111,12 +112,18 @@ async function expectLoaded(page: Page, url: string) {
     .toBeGreaterThan(0);
 }
 
-/** Full-bleed = ONE media element, and its box IS the stage box. */
-async function expectFullBleed(page: Page, selector: string) {
+/**
+ * One slide = ONE media element filling the 1:2203 centre card alone
+ * (x 200 · y 345 · 680 × 1043 on the stage; user decision 2026-10-13).
+ */
+async function expectSingleCard(page: Page, selector: string) {
   const media = splashOf(page).locator(selector);
   await expect(media).toHaveCount(1);
   await expect(media).toBeVisible();
-  expect(await media.boundingBox()).toEqual(await splashOf(page).boundingBox());
+  const stage = await splashOf(page).boundingBox();
+  const box = await media.boundingBox();
+  if (!stage || !box) throw new Error("no box for the single card");
+  expect([box.x - stage.x, box.y - stage.y, box.width, box.height].map(Math.round)).toEqual([200, 345, 680, 1043]);
 }
 
 /**
@@ -199,7 +206,7 @@ test.describe("P9d splash media", () => {
     await tapToSecond(page);
   });
 
-  test("ONE IMAGE: a single home_screen image fills the stage (1:5604) under START ORDER, and a relaunch shows it again from the device store without a new getMedia; the tap starts the order", async ({
+  test("ONE IMAGE: a single home_screen image sits alone in the centre card (1:2203; 2026-10-13) over ORDER HERE / START ORDER, and a relaunch shows it again from the device store without a new getMedia; the tap starts the order", async ({
     page,
   }) => {
     await mockBootEndpoints(page);
@@ -207,11 +214,11 @@ test.describe("P9d splash media", () => {
     await serveMediaHost(page);
     await registerToStart(page);
 
-    await expectFullBleed(page, `img[src="${SLIDE_A}"]`);
+    await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
     const splash = splashOf(page);
     await expect(splash).toContainText(en.splash.startOrder);
-    await expect(splash).not.toContainText(en.splash.orderHere);
+    await expect(splash).toContainText(en.splash.orderHere);
     await expect(splash).not.toContainText(en.splash.welcome);
 
     // TB boots only at registration: a relaunch lands straight on /start, so
@@ -220,7 +227,7 @@ test.describe("P9d splash media", () => {
       .poll(() => page.evaluate(() => Object.values(window.localStorage).join()))
       .toContain(SLIDE_A);
     await page.reload();
-    await expectFullBleed(page, `img[src="${SLIDE_A}"]`);
+    await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
     expect(getMedia).toHaveLength(1);
     await tapToSecond(page);
@@ -272,7 +279,7 @@ test.describe("P9d splash media", () => {
     await tapToSecond(page);
   });
 
-  test("BROKEN SLIDE: a slide that 404s drops out — two slides degrade to the survivor, full-bleed (never a blank card)", async ({
+  test("BROKEN SLIDE: a slide that 404s drops out — two slides degrade to the survivor, alone in the centre card (never a blank card)", async ({
     page,
   }) => {
     await mockBootEndpoints(page);
@@ -285,10 +292,10 @@ test.describe("P9d splash media", () => {
     // only slide left — one image.
     const splash = splashOf(page);
     await expect(splash.locator(`img[src="${SLIDE_A}"]`)).toHaveCount(0);
-    await expectFullBleed(page, `img[src="${SLIDE_B}"]`);
+    await expectSingleCard(page, `img[src="${SLIDE_B}"]`);
     await expectLoaded(page, SLIDE_B);
     await expect(splash).toContainText(en.splash.startOrder);
-    await expect(splash).not.toContainText(en.splash.orderHere);
+    await expect(splash).toContainText(en.splash.orderHere);
     await tapToSecond(page);
   });
 
@@ -307,7 +314,7 @@ test.describe("P9d splash media", () => {
     await tapToSecond(page);
   });
 
-  test("SCOPE: an entry scoped to another store, or carrying a malformed (string) scope, never shows — only this store's slide plays, full-bleed", async ({
+  test("SCOPE: an entry scoped to another store, or carrying a malformed (string) scope, never shows — only this store's slide plays, alone in the centre card", async ({
     page,
   }) => {
     const otherStore = `${MEDIA_ORIGIN}/other-store.png`;
@@ -325,14 +332,14 @@ test.describe("P9d splash media", () => {
     const requested = await serveMediaHost(page);
     await registerToStart(page);
 
-    await expectFullBleed(page, `img[src="${SLIDE_A}"]`);
+    await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
-    await expect(splashOf(page)).not.toContainText(en.splash.orderHere);
+    await expect(splashOf(page)).toContainText(en.splash.orderHere);
     expect(requested).not.toContain(otherStore);
     expect(requested).not.toContain(malformed);
   });
 
-  test("VIDEO: a WebM slide plays full-bleed and loops (the single-slide layout); leaving the splash tears it down", async ({
+  test("VIDEO: a WebM slide plays in the centre card and loops (the single-slide layout); leaving the splash tears it down", async ({
     page,
   }) => {
     await mockBootEndpoints(page);
@@ -352,12 +359,12 @@ test.describe("P9d splash media", () => {
       })
       .toBeGreaterThan(0);
     await expect(video).toHaveJSProperty("paused", false);
-    await expectFullBleed(page, "video");
+    await expectSingleCard(page, "video");
     await expect(splashOf(page)).toContainText(en.splash.startOrder);
     await tapToSecond(page);
   });
 
-  test("RETRY (D9): a slide whose host 404s sits out (full-bleed survivor), and 10 min after the failure — host healed — it is fetched again and the carousel is back; the tap starts the order", async ({
+  test("RETRY (D9): a slide whose host 404s sits out (the survivor alone in the centre card), and 10 min after the failure — host healed — it is fetched again and the carousel is back; the tap starts the order", async ({
     page,
   }) => {
     test.slow();
@@ -377,11 +384,11 @@ test.describe("P9d splash media", () => {
     const requested = await serveMediaHost(page, [SLIDE_B]);
     await registerToStart(page);
 
-    // B's host 404s: the carousel degrades to A alone, full-bleed.
+    // B's host 404s: the carousel degrades to A alone in the centre card.
     const splash = splashOf(page);
-    await expect(splash).not.toContainText(en.splash.orderHere);
+    await expect(splash).toContainText(en.splash.orderHere);
     await expect(splash.locator(`img[src="${SLIDE_B}"]`)).toHaveCount(0);
-    await expectFullBleed(page, `img[src="${SLIDE_A}"]`);
+    await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
     expect(requested).toContain(SLIDE_B);
 
