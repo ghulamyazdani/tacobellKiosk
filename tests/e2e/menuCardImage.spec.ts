@@ -34,7 +34,7 @@ import { bootRegisteredToMenu } from "./pages/boot";
  */
 
 // ---- Fixture ids (tests/e2e/fixtures/slim-menu.json; fixtures/backend.ts) ----
-// GREEK_SALAD: badged NEW in the copy below → the 504-px arch-top hero.
+// GREEK_SALAD: badged NEW in the copy below — a regular grid card since the hero was retired (2026-10-13).
 // LARGE_FRIES: a grid card that gets a 60+ character name.
 // CHEESE_BURGER: a grid card with its fixture name (one line).
 
@@ -46,7 +46,6 @@ const GRID_NAME = "Melted Cheese Quesadilla Veg + Seasoned Fries & Pepsi Party B
 const STAGE_HEIGHT = 1920;
 /** Figma 1:2609 / 1:2597 photo boxes (design px). */
 const GRID_PHOTO = { width: 240, height: 172 };
-const HERO_PHOTO = { width: 504, height: 326 };
 
 /** A 512×512 RGB PNG: white, with a centred dark 256² "product". */
 function squarePhoto(size = 512): Buffer {
@@ -79,7 +78,7 @@ function squarePhoto(size = 512): Buffer {
 }
 const PHOTO = squarePhoto();
 
-/** The slim menu, Greek Salad badged NEW (the hero), two long names. */
+/** The slim menu, Greek Salad badged NEW (no hero since 2026-10-13), two long names. */
 function cardMenu() {
   const menu = fixtureJson("slim-menu.json");
   for (const category of menu.categories)
@@ -171,19 +170,16 @@ test.describe("UB4 menu-card photo (Figma 1:2609 / 1:2597)", () => {
     expect(probe.nameClamp).toBe("2");
   });
 
-  test("HERO: the photo fills the 504-px arch card at 326 px, painted ≥ the box", async ({ page }) => {
+  test("NO HERO: a NEW-badged item is a regular 240-px grid card like every other (user 2026-10-13), its photo at 172 px", async ({ page }) => {
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
 
     const probe = await probePhoto(page.getByTestId(`item-${GREEK_SALAD}`));
     expect(probe.boxWidth).toBe(probe.cardWidth);
-    expect(probe.cardWidth).toBe(HERO_PHOTO.width);
+    expect(probe.cardWidth).toBe(GRID_PHOTO.width);
+    expect(probe.boxHeight).toBe(GRID_PHOTO.height);
     expect(probe.objectFit).toBe("cover");
-    expect(probe.blend).toBe("multiply");
-    expect(probe.paintedWidth).toBeGreaterThanOrEqual(probe.boxWidth);
-    // A 70-character name clamps at 3 lines: the photo keeps its full height.
-    expect(probe.nameClamp).toBe("3");
-    expect(probe.boxHeight).toBe(HERO_PHOTO.height);
+    expect(probe.nameClamp).toBe("2");
   });
 
   test("LONG NAME: a 60+ character grid name clamps at 2 lines and the photo stays ≥ 160 px tall; the overlay keeps the full name", async ({

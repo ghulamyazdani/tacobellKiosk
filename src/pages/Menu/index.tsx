@@ -559,9 +559,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                               key={entity?.id}
                               entity={entity}
                               currency={currency}
-                              large={
-                                Array.isArray(entity?.badges) && entity.badges.length > 0
-                              }
                               onOpen={(e: any) => handleEntityAction(e, false)}
                               onQuickAdd={(e: any) => handleEntityAction(e, true)}
                             />

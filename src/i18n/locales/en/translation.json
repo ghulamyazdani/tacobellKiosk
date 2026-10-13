@@ -76,7 +76,6 @@
   },
   "menu": {
     "empty": "Menu is loading…",
-    "new": "New",
     "unavailable": "Unavailable",
     "quickAdd": "Quick add",
     "total": "Total",

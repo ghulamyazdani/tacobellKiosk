@@ -21,7 +21,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   <Provider store={store}>{children}</Provider>
 );
 
-describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
+describe("MenuItemCard", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
   });
@@ -35,7 +35,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   it("the overlay named by the item opens it; quick-add only quick-adds", () => {
     const onOpen = vi.fn();
     const onQuickAdd = vi.fn();
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={onOpen} onQuickAdd={onQuickAdd} />, { wrapper });
+    render(<MenuItemCard entity={ENTITY} currency="£" onOpen={onOpen} onQuickAdd={onQuickAdd} />, { wrapper });
 
     const card = screen.getByTestId("item-cw");
     const overlay = screen.getByRole("button", { name: "Crunchwrap Supreme" });
@@ -56,7 +56,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   });
 
   it("no button nests inside another button (invalid HTML, axe nested-interactive)", () => {
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
+    render(<MenuItemCard entity={ENTITY} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
 
     const buttons = screen.getAllByRole("button");
     expect(buttons).toHaveLength(2); // the overlay and the quick-add
@@ -66,7 +66,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   it("unavailable: aria-disabled, and neither the overlay nor the quick-add renders", () => {
     const onOpen = vi.fn();
     render(
-      <MenuItemCard entity={{ ...ENTITY, outOfStock: true }} currency="£" large={large} onOpen={onOpen} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={{ ...ENTITY, outOfStock: true }} currency="£" onOpen={onOpen} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
 
@@ -80,7 +80,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
 
   it("calories go through t('pack.cal'): EN '740 Cal' unchanged, AR never 'Cal'", async () => {
     const { unmount } = render(
-      <MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={ENTITY} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
     expect(screen.getByTestId("item-cw")).toHaveTextContent("£5.99 | 740 Cal");
@@ -89,7 +89,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
+    render(<MenuItemCard entity={ENTITY} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />, { wrapper });
 
     const card = screen.getByTestId("item-cw");
     expect(card).toHaveTextContent(i18n.t("pack.cal", { value: 740 }));
@@ -103,7 +103,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
   */
   it("U1: the price <p> is a centred flex row — the mark, then the price text", () => {
     render(
-      <MenuItemCard entity={{ ...ENTITY, tags: ["non-veg"] }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={{ ...ENTITY, tags: ["non-veg"] }} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
 
@@ -111,7 +111,6 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
     const price = mark.parentElement as HTMLElement;
     expect(price.tagName).toBe("P");
     expect(price).toHaveClass("flex", "items-center", "gap-[8px]");
-    if (large) expect(price).toHaveClass("justify-center");
     expect(price.firstElementChild).toBe(mark);
     expect(price.textContent).toBe("£5.99 | 740 Cal");
     expect(mark).toHaveAccessibleName(i18n.t("menu.nonVeg"));
@@ -120,7 +119,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
 
   it("U1: no mark for an untagged item, nor under the operator's hide_veg_non_veg", () => {
     const { unmount } = render(
-      <MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={ENTITY} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
     expect(screen.queryByTestId(/^veg-mark-/)).toBeNull();
@@ -128,7 +127,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
 
     store.dispatch(setKioskSettings({ hide_veg_non_veg: true }));
     render(
-      <MenuItemCard entity={{ ...ENTITY, tags: ["veg"] }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={{ ...ENTITY, tags: ["veg"] }} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
     expect(screen.queryByTestId(/^veg-mark-/)).toBeNull();
@@ -139,17 +138,17 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
     UB4 — the name clamps (grid 2 / hero 3 lines) so the photo keeps its
     Figma height; the full name stays the overlay's accessible name.
   */
-  it("UB4: the name clamps at 2 (grid) / 3 (hero) lines; the overlay keeps the full name", () => {
+  it("UB4: the name clamps at 2 lines; the overlay keeps the full name", () => {
     const long = "2 Value Rice Bowl Non Veg+1 Small Fries+1 Cinnamon Twists+2 Pepsi Zero";
     render(
-      <MenuItemCard entity={{ ...ENTITY, name: long }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={{ ...ENTITY, name: long }} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
 
     const name = screen.getByText(long);
     expect(name.tagName).toBe("P");
-    expect(name).toHaveClass(large ? "line-clamp-3" : "line-clamp-2");
-    expect(name).not.toHaveClass(large ? "line-clamp-2" : "line-clamp-3");
+    expect(name).toHaveClass("line-clamp-2");
+    expect(name).not.toHaveClass("line-clamp-3");
     expect(screen.getByRole("button", { name: long })).toHaveClass("absolute", "inset-0");
   });
 });
