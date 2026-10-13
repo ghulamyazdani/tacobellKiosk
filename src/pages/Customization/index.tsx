@@ -830,12 +830,14 @@ export default function Customization({
           </section>
         ) : (
           <>
+            {/* Block-level (flex w-fit) so the chip takes its own line: as an
+                inline button it sat right after Show more (user 2026-10-13). */}
             {isVariantFlow && selectedVariant?.name && (
               <button
                 type="button"
                 data-testid="pdp-change-size"
                 onClick={() => setConfirmedVariant(false)}
-                className="mt-[24px] rounded-full border-2 border-tb-purple px-6 py-3 text-[18px] font-bold text-tb-purple min-h-[44px]"
+                className="mt-[24px] flex min-h-[44px] w-fit items-center rounded-full border-2 border-tb-purple px-6 py-3 text-[18px] font-bold text-tb-purple"
               >
                 {name(selectedVariant)} · {t("pdp.change")}
               </button>
