@@ -239,19 +239,19 @@ describe("OrderSuccess — Order Complete", () => {
     exactly one exit, its 20 s timer (user decision 2026-10-12 — the Rule 1
     "way back" exemption of an order confirmation).
   */
-  describe("no controls (Figma)", () => {
+  describe("one control: START NEW ORDER (user 2026-10-13)", () => {
     it.each([
       ["a guest", () => undefined],
       ["a guest on a loyalty deployment", loyaltyOn],
       ["an identified customer", signIn],
       ["ADA", () => store.dispatch(toggleAccessibilityMode())],
-    ])("%s: no button, no progress bar, no countdown copy", (_who, seed) => {
+    ])("%s: the one button is START NEW ORDER; no progress bar, no countdown copy", (_who, seed) => {
       seed();
       mount();
 
-      expect(screen.queryAllByRole("button")).toEqual([]);
+      expect(screen.getAllByRole("button")).toEqual([screen.getByRole("button", { name: /start new order/i })]);
       expect(screen.queryByRole("progressbar")).toBeNull();
-      expect(heading()).not.toMatch(/returning|start over|new order/i);
+      expect(heading()).not.toMatch(/returning|start over|seconds?\b/i);
     });
   });
 
@@ -347,7 +347,8 @@ describe("OrderSuccess — Order Complete", () => {
   /*
     audit-fixes B3 — a guest's analytics session starts at the splash tap.
     The timer's exit goes to /start, so it closes this guest and resets
-    nothing; START OVER's click event is gone with the button.
+    nothing; START NEW ORDER (2026-10-13) leaves the same way, reporting
+    its click instead of the timeout.
   */
   describe("the analytics session (audit-fixes B3)", () => {
     beforeEach(() => {
@@ -365,6 +366,27 @@ describe("OrderSuccess — Order Complete", () => {
         ["capture", KioskEventName.SessionEnd],
         ["capture", KioskEventName.AccountSignoutSuccess],
       ]);
+    });
+
+    it("START NEW ORDER: the same exit at once, reporting the click — and the timer after it does nothing", () => {
+      store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
+      store.dispatch(setBillPaymentInfo({ posBillNo: "17000000000001234", posBillTime: 1_700_000_000_000 }));
+      mount();
+      expect(readOpenPaytmSession(state().payment)).not.toBeNull();
+      analyticsLog.length = 0;
+
+      fireEvent.click(screen.getByRole("button", { name: /start new order/i }));
+      fireEvent.click(screen.getByRole("button", { name: /start new order/i }));
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS + 5);
+
+      expect(analyticsLog).toEqual([
+        ["capture", KioskEventName.startOverFromOrderSuccessClicked],
+        ["capture", KioskEventName.OrderCompleted],
+        ["capture", KioskEventName.SessionEnd],
+        ["capture", KioskEventName.AccountSignoutSuccess],
+      ]);
+      expect(mockNavigate.mock.calls).toEqual([["/start"]]);
+      expect(readOpenPaytmSession(state().payment)).toBeNull();
     });
   });
 

@@ -397,7 +397,8 @@
     "proceedToCounter": "Proceed to front counter",
     "unlockTop": "Unlock",
     "unlockFreebies": "Freebies",
-    "unlockBottom": "with points"
+    "unlockBottom": "with points",
+    "startNewOrder": "Start new order"
   },
   "orderError": {
     "title": "We couldn't place your order",

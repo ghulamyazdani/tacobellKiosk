@@ -933,6 +933,8 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await openBag(page);
     await settle(page);
     // A purple primary presses vibrant (Figma Primary 1:638); released off it, nothing pays.
+    // The bag swallows CTA taps for its first 500 ms (bag-cta-tap-guard): press after it.
+    await expect(page.getByTestId("bag-cta-tap-guard")).toHaveCount(0);
     const pay = page.getByTestId("bag-pay");
     await hold(page, pay);
     await expect.poll(() => pay.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(VIBRANT);
