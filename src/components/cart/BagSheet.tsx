@@ -1398,7 +1398,9 @@ export default function BagSheet({
             </Suspense>
           </ErrorBoundary>
 
-          <div className="mt-[40px] px-[48px] pb-[32px]">
+          {/* The order summary sits on the bag's own 24 px margin, its prices in line
+              with the rows' (user 2026-10-13: "the space ... should be lesser"). */}
+          <div className="mt-[40px] px-[24px] pb-[32px]">
             <div className="flex w-full items-center justify-between border-t border-tb-grey-4 pb-[16px] pt-[16px] text-[28px] leading-[32px] text-black">
               <p>{t("bag.subTotal")}</p>
               <p data-testid="bag-subtotal" className="text-right">
