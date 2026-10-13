@@ -808,3 +808,142 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity (E-C1, E-C2): the buy stage now opens for get-category
+ * BOGOs (F1 — the picker lists the category's items). Category ids are the slim menu's
+ * sub-categories (items carry subCategoryId null; the converter stamps it).
+ * Money (header rules): E-C1 Tortilla 2 + Greek Salad 17 + free Tortilla 2:
+ * Sub £21.00, −£2.00, VAT 15% × 19 = 2.85 → 21.85 → £22.00. E-C2 burger 8 +
+ * 2 free Tortilla 4: Sub £12.00, −£4.00, VAT 1.20 → £9.00.
+ * ------------------------------------------------------------------ */
+const SAUCES_SUB = "5dd1092fbec752021df55e1c"; // Tortilla £2, Caesar £2, BBQ Sauce. £1 (PDP)
+const SIDE_ORDERS_SUB = "5dd1092e29754a432f2c32d7"; // Greek Salad £17, Cheese Burger £8 (PDP), Large Fries £9 (PDP)
+
+const buyCategory = (_id: string, categoryName: string, relation: "and" | "or") => ({
+  category: { _id, categoryName },
+  quantity: 1,
+  relation,
+});
+const getCategory = (_id: string, name: string, quantity: number, relation: "and" | "or") => ({
+  _id,
+  name,
+  quantity,
+  relation,
+  value: 100,
+  discountType: "percent",
+});
+
+/** "Order any pizza…"-shaped: buy any side ("and"), get any sauce free. */
+const CAT_BOGO = itemOffer({
+  _id: "offer-cat-bogo",
+  name: "Buy any side, get any sauce free",
+  getItemOnly: false,
+  applicable: applicableBuy([buyCategory(SIDE_ORDERS_SUB, "Side Orders", "and")]),
+  getItems: { items: [], categories: [getCategory(SAUCES_SUB, "Sauces", 1, "and")] },
+});
+
+/** "BOGO OR"-shaped: buy a burger, get a Caesar OR any 2 sauces. */
+const CAT_OR_BOGO = itemOffer({
+  _id: "offer-cat-or-bogo",
+  name: "Buy a burger, get a Caesar or any 2 sauces",
+  getItemOnly: false,
+  isAndOffer: false,
+  applicable: applicableBuy([{ ...buyRaw(CHEESE_BURGER, "Cheese Burger", 1), relation: "or" }]),
+  getItems: {
+    items: [getEntry("gi-cat-or-caesar", CAESAR_DRESSING, "Caesar Dressing", "or")],
+    categories: [getCategory(SAUCES_SUB, "Sauces", 2, "or")],
+  },
+});
+
+const catOption = (page: Page, groupId: string, entityId: string) =>
+  page.getByTestId(`freebie-cat-option-${groupId}-${entityId}`);
+
+test.describe("Lane offers-parity — the buy stage for category offers", () => {
+  test("E-C1 a get-category BOGO: ADD ITEMS → + Greek Salad → CONTINUE → the picker's Sauces section; X rolls the cart back; then Tortilla → CONFIRM → −£2.00, Total £22.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [CAT_BOGO]);
+    await bootRegisteredToMenu(page);
+    await addTortillaSauceOneTap(page);
+    await openBag(page);
+
+    // Dismissed: picker X abandons the journey — the stage's salad rolls back.
+    await openBuyStage(page, CAT_BOGO._id);
+    await expect(page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`)).toBeVisible();
+    await page.getByTestId(`buy-stage-add-${GREEK_SALAD}`).click();
+    await expect(page.getByTestId("buy-stage-unlocked")).toBeVisible();
+    await page.getByTestId("buy-stage-continue").click();
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+    await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toContainText("Any 1 from Sauces");
+    await expect(bagRows(page)).toHaveCount(2);
+    await page.getByTestId("freebie-close").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+    await expect(bagRows(page)).toHaveCount(1);
+    await expect(page.getByTestId("bag-total")).toContainText("£2.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toHaveCount(0);
+
+    // Completed.
+    await openBuyStage(page, CAT_BOGO._id);
+    await page.getByTestId(`buy-stage-add-${GREEK_SALAD}`).click();
+    await expect(page.getByTestId("buy-stage-unlocked")).toBeVisible();
+    await page.getByTestId("buy-stage-continue").click();
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+    await expect(page).toHaveURL(/\/cart$/);
+    const confirm = page.getByTestId("freebie-confirm");
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await catOption(page, SAUCES_SUB, TORTILLA_SAUCE).click();
+    await expect(page.getByTestId(`freebie-cat-count-${SAUCES_SUB}`)).toHaveText("1 of 1 added");
+    await expect(confirm).toHaveAttribute("aria-disabled", "false");
+    await confirm.click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page)).toHaveCount(3);
+    await expect(bagRows(page).locator(freeChip)).toHaveCount(1);
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£21.00");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£22.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(CAT_BOGO.name);
+  });
+
+  test("E-C2 'BOGO OR'-shaped: the picker offers the Caesar item OR 'Any 2 from Sauces' — switching clears the other; Tortilla ×2 → CONFIRM → −£4.00, Total £9.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [CAT_OR_BOGO]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await page.getByTestId(`offer-row-${CAT_OR_BOGO._id}`).click();
+    await page.getByTestId("rewards-save").click();
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+
+    const caesar = page.getByTestId(`freebie-option-${CAESAR_DRESSING}`);
+    const tortilla = catOption(page, SAUCES_SUB, TORTILLA_SAUCE);
+    const count = page.getByTestId(`freebie-cat-count-${SAUCES_SUB}`);
+    await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toContainText("Any 2 from Sauces");
+
+    await caesar.click();
+    await expect(caesar).toHaveAttribute("aria-pressed", "true");
+    await tortilla.click();
+    await expect(caesar).toHaveAttribute("aria-pressed", "false");
+    await expect(count).toHaveText("1 of 2 added");
+    await caesar.click();
+    await expect(count).toHaveText("0 of 2 added");
+    await tortilla.click();
+    await tortilla.click();
+    await expect(count).toHaveText("2 of 2 added");
+    await expect(caesar).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page).filter({ has: page.locator(freeChip) })).toContainText("Tortilla Sauce");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£12.00");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£4.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  });
+});

@@ -2,6 +2,8 @@ import { test, expect, type Page } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   fixtureJson,
+  routeOffers,
+  clone,
   CHEESE_BURGER,
   GREEK_SALAD,
   TORTILLA_SAUCE,
@@ -564,5 +566,47 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     await page.getByTestId("bag-pay").click();
     await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
     await expect(page.getByTestId("global-error")).toHaveCount(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane offers-parity: category freebies in the picker (E-C6). Ids: the slim
+ * menu's sub-categories (items carry subCategoryId null; the converter
+ * stamps it).
+ * ------------------------------------------------------------------ */
+const SAUCES_SUB = "5dd1092fbec752021df55e1c"; // Tortilla £2, Caesar £2, BBQ Sauce. £1 (PDP)
+const offersFixture = fixtureJson("offers.json");
+const itemOffer = (over: Record<string, unknown>) => ({ ...clone(offersFixture[2]), ...over });
+/** "only get item"-shaped: a category-only freebie (was: an empty picker). */
+const ANY_SAUCE = itemOffer({
+  _id: "offer-any-sauce",
+  name: "Any sauce on us",
+  getItems: {
+    items: [],
+    categories: [{ _id: SAUCES_SUB, name: "Sauces", quantity: 1, relation: "and", value: 100, discountType: "percent" }],
+  },
+});
+test.describe("Lane offers-parity — category freebies", () => {
+  test("E-C6 a category-only freebie: SAVE → the picker lists Sauces → Tortilla → CONFIRM → −£2.00, Total £9.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [ANY_SAUCE]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+    await pickAndSave(page, ANY_SAUCE._id);
+    await expect(page.getByTestId("freebie-picker")).toBeVisible();
+    await expect(page.getByTestId(`freebie-cat-${SAUCES_SUB}`)).toContainText("Any 1 from Sauces");
+    await page.getByTestId(`freebie-cat-option-${SAUCES_SUB}-${TORTILLA_SAUCE}`).click();
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+
+    await expect(bagRows(page)).toHaveCount(2);
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(ANY_SAUCE.name);
   });
 });

@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, dexieRows } from "./fixtures/kiosk";
+import { test, expect, type Locator, type Page, dexieRows, persistedSlice } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   fixtureJson,
@@ -932,5 +932,96 @@ test.describe("figma-polish R1 — no suggestion rail on the embedded PDP", () =
     await expect(host.locator('[data-testid^="pdp-group-"]').first()).toBeVisible();
     await expect(page.getByTestId("pdp-rail")).toHaveCount(0);
     await expect(page.locator('[data-testid^="pdp-rail-item-"]')).toHaveCount(0);
+  });
+});
+
+/**
+ * Lane offers-parity E-C7 (D5, mandatory with F1): the crash-reload sweep
+ * keeps a get-CATEGORY freebie that belongs to the applied offer — its id is
+ * one of the persisted group's entities AND it carries the group's stamp —
+ * and drops a row with a foreign stamp. Seeded straight into the persisted
+ * slot and IndexedDB (no picker), so on the base the reload deletes the free
+ * sauce while the reward stays applied.
+ */
+const SAUCES_SUB = "5dd1092fbec752021df55e1c";
+const ANY_SAUCE_FREE = freebieOffer({
+  _id: "offer-any-sauce-free",
+  name: "Any sauce free",
+  getItems: {
+    items: [],
+    categories: [{ _id: SAUCES_SUB, name: "Sauces", quantity: 1, relation: "and", value: 100, discountType: "percent" }],
+  },
+});
+
+const seededFreeRow = (id: string, name: string, itemId: string, discountValue: number) => ({
+  id,
+  itemId,
+  uniqueItemId: itemId,
+  name,
+  quantity: 1,
+  type: "ITEM",
+  price: 2,
+  total_price: 2,
+  subCategoryId: SAUCES_SUB,
+  customizations: {},
+  isGetItem: true,
+  discountType: "percent",
+  discountValue,
+  undiscounted_total_price: 2,
+  discounted_total_price: 2 - (2 * discountValue) / 100,
+  baseItem: { id, name, price: 2, isGetItem: true, discountType: "percent", discountValue },
+});
+
+test.describe("Lane offers-parity — category freebies survive a crash-reload (E-C7)", () => {
+  test("E-C7 a persisted applied CATEGORY offer keeps its free sauce across a reload, still discounted (−£2.00, no 'Reward Removed'); a foreign-stamped free row is dropped from the bag and IndexedDB", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [ANY_SAUCE_FREE]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+
+    // Seed: the converted offer into the persisted slot (the DEV store seam)…
+    await page.evaluate((offerId) => {
+      const store = (
+        window as unknown as {
+          __kioskStore: {
+            getState: () => { offer: { filteredOffers?: Array<{ _id?: string }> } };
+            dispatch: (action: unknown) => void;
+          };
+        }
+      ).__kioskStore;
+      const offer = store.getState().offer.filteredOffers?.find((o) => o._id === offerId);
+      store.dispatch({ type: "cart/applyOffer", payload: { offer } });
+    }, ANY_SAUCE_FREE._id);
+    await expect
+      .poll(async () => (await persistedSlice<{ cartOffer?: { _id?: string } }>(page, "cart")).cartOffer?._id)
+      .toBe(ANY_SAUCE_FREE._id);
+    // …and two free rows into IndexedDB: the group's own stamp, and a foreign one.
+    await writeDexieCart(page, [
+      seededFreeRow(TORTILLA_SAUCE, "Tortilla Sauce", "e2e-free-sauce", 100),
+      seededFreeRow(CAESAR_DRESSING, "Caesar Dressing", "e2e-free-caesar", 50),
+    ]);
+    expect(await readDexieCart(page)).toHaveLength(3);
+
+    await page.reload();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(bagRows(page)).toHaveCount(2);
+    const free = bagRows(page).filter({ has: page.locator('[data-testid^="bag-free-chip-"]') });
+    await expect(free).toHaveCount(1);
+    await expect(free).toContainText("Tortilla Sauce");
+    await expect(bagRows(page).filter({ hasText: "Caesar Dressing" })).toHaveCount(0);
+    await expect(page.getByTestId("bag-discounts")).toHaveText(/^\u2212£?2\.00$/);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(ANY_SAUCE_FREE.name);
+    await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
+    await expect
+      .poll(async () => (await readDexieCart(page)).map((row) => row.itemId).sort())
+      .toEqual(expect.arrayContaining(["e2e-free-sauce"]));
+    await expect
+      .poll(async () => (await readDexieCart(page)).some((row) => row.itemId === "e2e-free-caesar"))
+      .toBe(false);
   });
 });

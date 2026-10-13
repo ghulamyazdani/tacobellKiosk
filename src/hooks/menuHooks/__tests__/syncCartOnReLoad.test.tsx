@@ -139,3 +139,46 @@ describe("syncCartOnReLoad — orphaned freebie rows never come back (4a)", () =
     expect(discount).toBe(17);
   });
 });
+
+/**
+ * Lane offers-parity (D5, mandatory with F1): a get-CATEGORY freebie belongs
+ * to the applied offer when its id is one of the persisted group's entities
+ * AND it carries that group's stamp — the commit's own membership rule. The
+ * base sweep matched getItems.items only, so every crash-reload deleted the
+ * applied offer's category freebies while the offer stayed applied.
+ */
+describe("syncCartOnReLoad — the applied offer's CATEGORY freebies survive (offers-parity)", () => {
+  const CAESAR = entity("caesar-dressing", "Caesar Dressing", 2);
+  /** Free rows as the picker lands them: stamped from the GROUP. */
+  const FREE_TORTILLA_10 = { ...redeemGetItem(SAUCE, "percent", 1, 100, true, false), itemId: "free-cat-sauce" };
+  const FOREIGN_CAESAR = { ...redeemGetItem(CAESAR, "percent", 1, 50, true, false), itemId: "free-foreign" };
+  const SAUCES_OFFER = {
+    _id: "offer-sauces",
+    name: "Any sauce free",
+    type: { name: "item", value: 0 },
+    getItemOnly: true,
+    getItems: {
+      items: [],
+      categories: [
+        {
+          _id: "sauces",
+          name: "Sauces",
+          quantity: 1,
+          relation: "and",
+          discountType: "percent",
+          value: 100,
+          entities: [SAUCE, CAESAR],
+        },
+      ],
+    },
+  };
+
+  it("the owned category row stays (redux + IndexedDB) and keeps its discount; a foreign-stamped row is dropped", async () => {
+    store.dispatch(applyOffer({ offer: SAUCES_OFFER }));
+    dexie.rows = [PAID, FREE_TORTILLA_10, FOREIGN_CAESAR];
+    const { itemIds, discount } = await restore();
+    expect(itemIds).toEqual(["cb-1", "free-cat-sauce"]);
+    expect(deleted).toEqual(["free-foreign"]);
+    expect(discount).toBe(2);
+  });
+});

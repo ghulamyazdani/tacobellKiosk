@@ -18,7 +18,7 @@ import {
   type BuyStageOffer,
   type BuyStageView,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
-import { canOfferBuyStage } from "@cx-sdk/ordering/offer/offerCommitRules";
+import { canOfferBuyStageWithCategories } from "@cx-sdk/ordering/offer/offerCategoryFreebies";
 import { isOfferLockedByLoyaltyReward } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
@@ -59,8 +59,10 @@ export interface RewardsSheetProps {
   /**
    * ADD ITEMS on a locked bogoBuySide row (offers lane, item 31): fired
    * (before onClose) with the offer and its resolved buy stage — the page
-   * owns the BuyStageSheet. Rows only offer it when canOfferBuyStage holds;
-   * every other locked row stays inert (no /menu fallback).
+   * owns the BuyStageSheet. Rows only offer it when
+   * canOfferBuyStageWithCategories holds (get-category groups included — the
+   * picker lists them); every other locked row stays inert (no /menu
+   * fallback).
    */
   onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
 }
@@ -238,11 +240,12 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
   };
 
   // Buy stages for the locked bogoBuySide rows — only where TB can finish
-  // the offer (canOfferBuyStage: no group mode, no get-categories). A row
-  // whose view fails to resolve (or throws on a malformed payload) simply
-  // stays inert, as before. Tiles come from the menu-sellable map (UB6 F1):
-  // a dead pack is off the menu, so it drops like any off-menu entry (a
-  // plain-and row goes inert) instead of selling empty at full price.
+  // the offer (canOfferBuyStageWithCategories: no group mode; get-category
+  // groups go to the picker). A row whose view fails to resolve (or throws
+  // on a malformed payload) simply stays inert, as before. Tiles come from
+  // the menu-sellable map (UB6 F1): a dead pack is off the menu, so it drops
+  // like any off-menu entry (a plain-and row goes inert) instead of selling
+  // empty at full price.
   const buyStageViews = useMemo(() => {
     const views = new Map<string, BuyStageView>();
     sections.lockedRows.forEach((row) => {
@@ -256,7 +259,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
           subCategoryMap,
           variantObject,
         );
-        if (view && canOfferBuyStage(row.offer, view)) {
+        if (view && canOfferBuyStageWithCategories(row.offer, view)) {
           views.set(String(row.offer?._id ?? ""), view);
         }
       } catch {
@@ -265,6 +268,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     });
     return views;
   }, [sections.lockedRows, entityMap, subCategoryMap, variantObject]);
+
 
   const handleAddItems = (offer: SavingsOffer, view: BuyStageView) => {
     if (committing) return;

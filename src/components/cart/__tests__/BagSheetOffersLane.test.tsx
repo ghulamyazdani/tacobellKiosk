@@ -346,8 +346,9 @@ describe("BagSheet — applied-row pop (AppliedRowPop + the spent key)", () => {
 
     await userEvent.click(screen.getByTestId("bag-rewards-remove"));
     await userEvent.click(await screen.findByTestId("bag-rewards-entry"));
-    // Lazy (bagLazyParts): the rewards sheet mounts once its chunk resolves.
-    await userEvent.click(await screen.findByTestId("offer-row-plain-flat-1"));
+    // Lazy (bagLazyParts): the rewards sheet mounts once its chunk resolves
+    // (5 s: the house LAZY window — a known flake at 1 s under load).
+    await userEvent.click(await screen.findByTestId("offer-row-plain-flat-1", {}, { timeout: 5000 }));
     await userEvent.click(screen.getByTestId("rewards-save"));
 
     await waitFor(() => expect(slotId()).toBe("plain-flat-1"));

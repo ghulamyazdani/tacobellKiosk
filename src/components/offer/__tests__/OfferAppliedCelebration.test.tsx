@@ -231,11 +231,15 @@ describe("OfferAppliedCelebration", () => {
     customerApply({ not: "a string" });
 
     // The bag's celebration is lazy (bagLazyParts): it throws once mounted.
-    await waitFor(() =>
-      expect(mockCapture).toHaveBeenCalledWith(
-        "error_occurred",
-        expect.objectContaining({ recovery_path: "local_fallback" })
-      )
+    // 5 s: the chunk's first import under a loaded runner (the house LAZY
+    // window — a known flake at 1 s).
+    await waitFor(
+      () =>
+        expect(mockCapture).toHaveBeenCalledWith(
+          "error_occurred",
+          expect.objectContaining({ recovery_path: "local_fallback" })
+        ),
+      { timeout: 5000 }
     );
     expect(card()).toBeNull();
     expect(screen.getByTestId("bag-sheet")).toBeInTheDocument();
