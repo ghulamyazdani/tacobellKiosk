@@ -582,8 +582,9 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
 
 /* ------------------------------------------------------------------ *
  * Lane offers-parity: category freebies in the picker (E-C6), the rows'
- * descriptions with Show more / Show less (E-D1, Figma 1:4034 / 1:4069)
- * and the a11y probes on the new surfaces (E-A1). Ids: the slim
+ * descriptions with Show more / Show less (E-D1, Figma 1:4034 / 1:4069),
+ * offers that can never unlock hidden and a sold-out buy side struck
+ * (E-F1), and the a11y probes on the new surfaces (E-A1). Ids: the slim
  * menu's sub-categories (items carry subCategoryId null; the converter
  * stamps it).
  * ------------------------------------------------------------------ */
@@ -671,6 +672,27 @@ const SCOPED_SAUCES = {
     { on: "itemCriteria", isInclude: true, items: [TORTILLA_SAUCE, CAESAR_DRESSING] }
   ),
 };
+/** An "and" buy side with an item the slim menu does not sell: can never unlock. */
+const NEVER = itemOffer({
+  _id: "offer-never",
+  name: "Buy a ghost and a sauce",
+  getItemOnly: false,
+  applicable: applicable([
+    { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" }, quantity: 1, relation: "and" },
+    { item: { baseItemId: "e2e-not-on-menu", name: "Ghost Item" }, quantity: 1, relation: "and" },
+  ]),
+  getItems: { items: [getEntry("gi-never-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
+});
+/** Its only buy item (Caesar) is sold out: a gone row until stock returns. */
+const SOLD_OUT_BUY = itemOffer({
+  _id: "offer-sold-out-buy",
+  name: "Buy a Caesar, get a salad",
+  getItemOnly: false,
+  applicable: applicable([{ item: { baseItemId: CAESAR_DRESSING, name: "Caesar Dressing" }, quantity: 1, relation: "and" }]),
+  getItems: { items: [getEntry("gi-sold-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
+});
+const CAESAR_OUT = [{ item_id: CAESAR_DRESSING, type: "item", partners: { partner_name: "Kiosk", inStock: false } }];
+
 const stripIsolates = (s: string | null) => (s ?? "").replace(/[\u2066-\u2069]/g, "").trim();
 
 /**
@@ -715,7 +737,7 @@ async function bootArabicToMenu(page: Page) {
   await pickPipelineToMenu(page);
 }
 
-test.describe("Lane offers-parity — category freebies, descriptions", () => {
+test.describe("Lane offers-parity — category freebies, descriptions, availability", () => {
   test("E-C6 a category-only freebie: SAVE → the picker lists Sauces → Tortilla → CONFIRM → −£2.00, Total £9.00", async ({
     page,
   }) => {
@@ -807,6 +829,26 @@ test.describe("Lane offers-parity — category freebies, descriptions", () => {
     );
     const scope = await rtlReadingOrder(page, scopeId);
     expect(scope.read).toEqual(scope.logical);
+  });
+
+  test("E-F1 an 'and' buy side the menu cannot sell is not listed; a sold-out buy side is a struck 'Not available right now' row with no description", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockBackend(page, { offers: [NEVER, SOLD_OUT_BUY, offersFixture[1]], outOfStock: CAESAR_OUT });
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openRewardsSheet(page);
+
+    await expect(page.getByTestId("offer-row-body-offer-flat-2")).toBeVisible();
+    await expect(page.getByTestId(`offer-row-${NEVER._id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`offer-row-body-${NEVER._id}`)).toHaveCount(0);
+    const gone = page.getByTestId(`offer-row-${SOLD_OUT_BUY._id}`);
+    await expect(gone).toContainText("Not available right now");
+    await expect(gone).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByTestId(`offer-row-desc-${SOLD_OUT_BUY._id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`offer-row-add-items-${SOLD_OUT_BUY._id}`)).toHaveCount(0);
   });
 
   test.describe("E-A1 a11y on the new surfaces", () => {

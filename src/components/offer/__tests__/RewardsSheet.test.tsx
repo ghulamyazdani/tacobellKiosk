@@ -549,9 +549,10 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
 
 /* ------------------------------------------------------------------ *
  * Lane offers-parity (U4): ADD ITEMS for get-category BOGOs (F1) and on a
- * min-items lock while the buy side is unmet (F2 / D4); every row gets its
- * description (F3), and a describer that throws never blanks the sheet
- * (D10).
+ * min-items lock while the buy side is unmet (F2 / D4); offers that can
+ * never unlock on this menu are hidden, a sold-out buy side is a gone row
+ * (F4); every row gets its description (F3), and a describer that throws
+ * never blanks the sheet (D10).
  * ------------------------------------------------------------------ */
 describe("RewardsSheet — offers-parity", () => {
   beforeEach(() => {
@@ -647,6 +648,43 @@ describe("RewardsSheet — offers-parity", () => {
     renderWithAddItems(vi.fn());
     expect(screen.getByTestId("offer-row-offer-gw-cat")).toBeInTheDocument();
     expect(screen.queryByTestId("offer-row-add-items-offer-gw-cat")).toBeNull();
+  });
+
+  const stampedBuy = (id: string, baseItemId: string) => ({
+    ...BOGO_OFFER,
+    _id: id,
+    name: `Buy ${baseItemId}`,
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: [{ item: { baseItemId, name: baseItemId }, quantity: 1, relation: "and", isRawItemAvailable: false }],
+    },
+  });
+
+  it("F4: a stamped dead buy item absent from the menu → not listed at all", () => {
+    store.dispatch(setFilteredOffers([stampedBuy("offer-never", "not-on-menu"), FLAT_OFFER]));
+    renderSheet();
+    expect(screen.queryByTestId("offer-row-offer-never")).toBeNull();
+    expect(screen.queryByTestId("offer-row-body-offer-never")).toBeNull();
+    expect(screen.getByTestId("offer-row-offer-flat-2")).toBeInTheDocument();
+  });
+
+  it("F4: the same item on the menu but sold out → a struck 'Not available right now' row with NO description", () => {
+    store.dispatch(
+      setEntityMap({
+        entityMap: {
+          [SAUCE_ENTITY.id]: SAUCE_ENTITY,
+          "sold-out-sauce": { ...SAUCE_ENTITY, id: "sold-out-sauce", name: "Sold Out Sauce", outOfStock: true },
+        },
+      })
+    );
+    store.dispatch(setFilteredOffers([stampedBuy("offer-sold-out", "sold-out-sauce")]));
+    renderSheet();
+    const row = screen.getByTestId("offer-row-offer-sold-out");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveTextContent("Not available right now");
+    expect(within(row).getByText("Buy sold-out-sauce")).toHaveClass("line-through");
+    expect(screen.queryByTestId("offer-row-desc-offer-sold-out")).toBeNull();
+    expect(screen.queryByTestId("offer-row-add-items-offer-sold-out")).toBeNull();
   });
 
   it("F3: the composed description reaches the row", () => {

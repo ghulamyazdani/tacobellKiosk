@@ -31,17 +31,21 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
+import { selectEntityMap, selectVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import useOrderHook from "../menuHooks/useOrderHook";
 import useOfferHook from "./useOfferHook";
 import {
   computeRealisedSaving,
   getOfferGap,
-  rankOffers,
   shouldNudgeUnlock,
   type SavingsCartItem,
   type SavingsContext,
   type SavingsOffer,
 } from "@cx-sdk/ordering/offer/offerSavings";
+import {
+  rankOffersForKiosk,
+  type MenuPresence,
+} from "@cx-sdk/ordering/offer/offerAvailability";
 import type { RankedOffer, RealisedSaving } from "@cx-sdk/core/types/offer";
 
 interface KioskCart {
@@ -49,6 +53,39 @@ interface KioskCart {
   cartOffer?: Record<string, unknown>;
   lockedFreebieAllocation?: Record<string, number>;
 }
+
+/** The menu maps' fields presence reads (the untyped Menu slice). */
+type MenuEntity = {
+  subCategoryId?: string;
+  variants?: Array<{ subCategoryId?: string } | null> | null;
+};
+
+/**
+ * D1 (lane offers-parity): "on the menu" — in stock or not — from the store's
+ * maps, which hold sold-out entities with `outOfStock` set. An item entry is
+ * its base (entityMap) or variant (variantObject) id; a category entry is any
+ * entity or variant stamped with that sub-category. Staleness is posistKiosk's:
+ * the maps refresh on a menu fetch.
+ */
+const buildMenuPresence = (
+  entityMap: Record<string, MenuEntity | undefined> | null | undefined,
+  variantObject: Record<string, unknown> | null | undefined,
+): MenuPresence => {
+  const subCategories = new Set<string>();
+  for (const entity of Object.values(entityMap ?? {})) {
+    if (entity?.subCategoryId) subCategories.add(entity.subCategoryId);
+    for (const variant of entity?.variants ?? []) {
+      if (variant?.subCategoryId) subCategories.add(variant.subCategoryId);
+    }
+  }
+  return (entry) => {
+    const item = entry?.item as { baseItemId?: string; _id?: string } | undefined;
+    const id = item?.baseItemId || item?._id;
+    if (id) return Boolean(entityMap?.[id] || variantObject?.[id]);
+    const categoryId = entry?.category?._id;
+    return Boolean(categoryId && subCategories.has(categoryId));
+  };
+};
 
 interface CalculatedBill {
   getTotalDiscount?: () => number;
@@ -106,6 +143,19 @@ const sharedBaselineCache: { signature: string; subtotal: number | null } = {
 
 function useOfferSavings() {
   const cartRdx = useSelector(selectCart) as KioskCart | undefined;
+  const entityMap = useSelector(selectEntityMap) as
+    | Record<string, MenuEntity | undefined>
+    | null
+    | undefined;
+  const variantObject = useSelector(selectVariantObject) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  // Rebuilt only when a menu loads (the maps' identities change then).
+  const isOnMenu = useMemo(
+    () => buildMenuPresence(entityMap, variantObject),
+    [entityMap, variantObject],
+  );
   const { getCalculatedBill } = useOrderHook();
   const { isItemWiseOfferApplicable, isBOGOOfferApplicable } = useOfferHook();
 
@@ -257,10 +307,12 @@ function useOfferSavings() {
     [context],
   );
 
+  // Offers that can never unlock on this menu are not listed; a sold-out buy
+  // side is a gone row (lane offers-parity F4 — posistKiosk's rank filter).
   const rank = useCallback(
     (offers: SavingsOffer[] | null | undefined): RankedOffer<SavingsOffer>[] =>
-      rankOffers(offers, context),
-    [context],
+      rankOffersForKiosk(offers, context, isOnMenu),
+    [context, isOnMenu],
   );
 
   const gapFor = useCallback(
@@ -289,7 +341,7 @@ function useOfferSavings() {
       if (!offersToWarm?.length) return;
       const run = () => {
         try {
-          rankOffers(offersToWarm, context);
+          rankOffersForKiosk(offersToWarm, context, isOnMenu);
           offersToWarm.forEach((o) => netAfter(o));
         } catch {
           /* prewarming must never break anything */
@@ -301,7 +353,7 @@ function useOfferSavings() {
         setTimeout(run, 300);
       }
     },
-    [context, netAfter],
+    [context, netAfter, isOnMenu],
   );
 
   return {

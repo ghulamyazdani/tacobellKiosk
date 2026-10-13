@@ -1052,7 +1052,10 @@ export default function BagSheet({
   // F1: the applied offer row and its celebration show the OFFER's own
   // saving — a XENO reward's item discount is in the total, not the offer's.
   const offerDiscount = getBillOfferDiscount(bill);
-  const bestRankedName: string = rankedOffers[0]?.offer?.name ?? "";
+  // Never a "Not available right now" offer (lane offers-parity: a sold-out
+  // buy side ranks as the gone row).
+  const bestRankedName: string =
+    rankedOffers.find((entry) => entry.gap?.reason !== "unavailable")?.offer?.name ?? "";
   const sheetHeight = adaActive ? ADA_SHEET_HEIGHT : BAG_SHEET_HEIGHT;
   // One celebration per applied VALUE (see AppliedRowPop).
   const barKey = `${cartOffer?._id}:${offerDiscount.toFixed(2)}`;
