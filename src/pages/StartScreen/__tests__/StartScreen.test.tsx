@@ -91,7 +91,7 @@ describe("StartScreen — the splash (P9d)", () => {
   });
 
   it.each([
-    ["one slide → full-bleed (1:5604)", ONE, /^start order$/i],
+    ["one slide → the single card (1:2203 centre, 2026-10-13)", ONE, /^order here\s*start order$/i],
     ["two slides → carousel (1:2203)", TWO, /^order here\s*start order$/i],
   ])("%s: the whole screen is ONE button named by its visible copy; a tap starts the order", (_label, media, name) => {
     seedMedia(media);

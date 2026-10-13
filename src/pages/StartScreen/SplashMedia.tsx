@@ -157,10 +157,11 @@ export function SplashWelcome() {
 
 /**
  * The splash composition by PLAYABLE slide count (user decision 2026-10-01):
- * 0 → WELCOME (1:5617) · 1 → full-bleed media (1:5604 frame; the promo words
- * and stars live IN the media) · ≥2 → the 1:2203 peek carousel. A slide that
- * errors or stalls is skipped, so the layout degrades 2 → 1 → WELCOME and is
- * never blank or stuck; the next visit (fresh mount) retries everything.
+ * 0 → WELCOME (1:5617) · 1 → the 1:2203 centre card alone (user decision
+ * 2026-10-13: an operator video carries its own captions, which full-bleed
+ * 1:5604 covered with START ORDER) · ≥2 → the 1:2203 peek carousel. A slide
+ * that errors or stalls is skipped, so the layout degrades 2 → 1 → WELCOME
+ * and is never blank or stuck; the next visit (fresh mount) retries everything.
  * ponytail: retry — non-codec failures get one more try 10 min after the LAST
  * failure; fixed interval, no backoff (a dead URL costs one request / ≤15 s
  * frozen card per 10 min); back off if the physical soak shows churn.
@@ -239,26 +240,8 @@ export default function SplashMedia() {
   const alive = n - failed.size;
   if (alive === 0) return <SplashWelcome />;
   const slide = slides[cur]; // `cur` is always a live index while alive > 0
-
-  if (alive === 1) {
-    return (
-      <>
-        <SlideMedia
-          key={cur}
-          slide={slide}
-          index={cur}
-          role="single"
-          onDone={advance}
-          onFail={fail}
-        />
-        <Tint />
-        <Bell className="top-[101px]" />
-        <span className={`${CTA} ${CENTRED} top-[1752px]`}>
-          {t("splash.startOrder")}
-        </span>
-      </>
-    );
-  }
+  // One playable slide: the centre card alone, looping / never advancing.
+  const single = alive === 1;
 
   // Exactly three cards (prev / current / next, wrapping) — ≤3 media
   // elements, and only the centre one ever plays a video (Rule 5).
@@ -288,35 +271,39 @@ export default function SplashMedia() {
         className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-50"
       />
       <Bell className="top-[128px]" />
-      <div key={`prev${prev}`} className={`${shift}${CARD} left-[-592px]`}>
-        <SlideMedia
-          slide={slides[prev]}
-          index={prev}
-          role="peek"
-          onDone={advance}
-          onFail={fail}
-        />
-      </div>
+      {!single && (
+        <div key={`prev${prev}`} className={`${shift}${CARD} left-[-592px]`}>
+          <SlideMedia
+            slide={slides[prev]}
+            index={prev}
+            role="peek"
+            onDone={advance}
+            onFail={fail}
+          />
+        </div>
+      )}
       {/* Keyed by slide: an advance remounts all three cards, which shift in
           together; the first frame of a visit is static (no fade-in). */}
       <div key={`cur${cur}`} className={`${shift}${CARD} left-[200px]`}>
         <SlideMedia
           slide={slide}
           index={cur}
-          role="centre"
+          role={single ? "single" : "centre"}
           onDone={advance}
           onFail={fail}
         />
       </div>
-      <div key={`next${next}`} className={`${shift}${CARD} left-[992px]`}>
-        <SlideMedia
-          slide={slides[next]}
-          index={next}
-          role="peek"
-          onDone={advance}
-          onFail={fail}
-        />
-      </div>
+      {!single && (
+        <div key={`next${next}`} className={`${shift}${CARD} left-[992px]`}>
+          <SlideMedia
+            slide={slides[next]}
+            index={next}
+            role="peek"
+            onDone={advance}
+            onFail={fail}
+          />
+        </div>
+      )}
       <div className="absolute bottom-[128px] left-[162px] flex w-[756px] flex-col items-center gap-[48px] text-center">
         <span className={H1}>{t("splash.orderHere")}</span>
         <span className={CTA}>{t("splash.startOrder")}</span>
