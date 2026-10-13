@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
+  DINE_IN,
   fixtureJson,
   routeOffers,
   clone,
@@ -886,7 +887,12 @@ test.describe("Lane offers-parity — category freebies, descriptions, availabil
     test("AR: the rewards sheet with an expanded row and the picker — no English left, every Arabic run isolated", async ({
       page,
     }) => {
-      await mockBackend(page, { offers: [LONG_PICK, DESC_BOGO, EXCEPT_SAUCES, ANY_SAUCE], arabic: true });
+      // The pipeline's Arabic name is server data (menu-arabic.spec): the bag's toggle names it.
+      await mockBackend(page, {
+        offers: [LONG_PICK, DESC_BOGO, EXCEPT_SAUCES, ANY_SAUCE],
+        arabic: true,
+        pipelines: [{ ...DINE_IN, secondary_name: "تناول في المطعم" }],
+      });
       await bootArabicToMenu(page);
       await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
       await openBag(page);
