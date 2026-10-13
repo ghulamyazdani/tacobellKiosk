@@ -138,14 +138,14 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
     expect(screen.getByTestId("rail-c2")).toHaveTextContent("Drinks");
   });
 
-  it("renders item cards with price + calories; NEW/badged items get the hero card", () => {
+  it("renders item cards with price + calories; a NEW/badged item is a regular grid card (the hero is retired, user 2026-10-13)", () => {
     renderMenu();
     const hero = screen.getByTestId("item-e-new");
     expect(hero).toHaveTextContent("Beefy Fries Box");
     expect(hero).toHaveTextContent("5.99");
     expect(hero).toHaveTextContent("740 Cal");
-    expect(hero.className).toContain("col-span-2"); // hero treatment
-    expect(screen.getByTestId("item-e-plain").className).not.toContain("col-span-2");
+    expect(hero.className).not.toContain("col-span-2"); // no hero treatment
+    expect(hero.className).not.toContain("rounded-t-[500px]");
   });
 
   it("out-of-stock items show UNAVAILABLE and lose the quick-add", () => {

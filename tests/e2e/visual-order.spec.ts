@@ -16,7 +16,7 @@ import { clippedText } from "./fixtures/clippedText";
  * lane used it as its BEFORE/AFTER tool, and any lane that touches text
  * metrics can rerun it.
  *
- * Covered: /menu (rail with the VEG / NON-VEG chips, hero, grid, the diet
+ * Covered: /menu (rail with the VEG / NON-VEG chips, the grid, the diet
  * marks, CTA total; top and scrolled; a NON-VEG filter in EN / AR / ADA —
  * audit-fixes U1), the single
  * PDP (long-description clamp + groups), the added modal with its strip, the
@@ -30,13 +30,13 @@ import { clippedText } from "./fixtures/clippedText";
  * Mocks and walks are copied from bag.spec / pack.spec / offers.spec /
  * ada.spec / idle.spec (none of them export helpers — the house precedent).
  * The fixture FILE is never edited; the in-memory copy gets Figma-like
- * content so the captures stress what the frames show: a NEW hero card
+ * content so the captures stress what the frames show: a NEW-badged card (a regular grid card since the hero was retired, 2026-10-13)
  * (Greek Salad), "| 360 Cal" on every price line, the long Cheese Burger
  * description (registration.spec's clamp text) and a "You Might Like" strip
  * on the Cheese Burger's added modal — plus real-length names (the reference
  * TB India menu's median name is 32 characters and a third run past 40): on
  * Large Fries, which lands on the menu grid, the bag rail, the added
- * modal, the tier-2 sheet title and its pack slot; on the Greek Salad hero
+ * modal, the tier-2 sheet title and its pack slot; on the Greek Salad card
  * (a 4-line name, clamped at 3 since UB4 so the photo keeps its 326 px; the
  * rewards rail's 2-line title box); and on two imageless options (a PDP
  * addon and the tier-2 pick) whose name shares a row with the radio. Pack
@@ -104,8 +104,8 @@ const RECS_BODY = {
 const OFFER_FREE_SAUCE = "offer-free-sauce-choice";
 
 /** Real-length names (header): two TB India item names — 53 characters, and
- * the reference menu's longest (70) on the hero: 4 lines in its 352-px name
- * box, clamped at 3 (UB4: the photo keeps its height), and a clamped 2-line
+ * the reference menu's longest (70) on a grid card, clamped at 2 lines (UB4:
+ * the photo keeps its height), and a clamped 2-line
  * title on the rewards rail — and two imageless options (their name shares
  * the row with the tile's radio). */
 const LONG_NAMES: Record<string, string> = {
@@ -241,7 +241,7 @@ async function bootRegisteredToMenu(page: Page) {
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** The hero card's quick-add: Greek Salad is plain, so no modal opens. */
+/** Greek Salad's quick-add: it is plain, so no modal opens. */
 async function quickAddGreekSalad(page: Page, expectedCount: string) {
   const add = page.getByTestId(`quick-add-${GREEK_SALAD}`);
   await add.scrollIntoViewIfNeeded();
@@ -368,7 +368,7 @@ test.describe("visual capture — ordering screens", () => {
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
 
-    // Rail + NEW hero + grid + a CTA bar carrying a total.
+    // Rail + the grid (a NEW-badged item included) + a CTA bar carrying a total.
     await quickAddGreekSalad(page, "(1)");
     await expect(page.getByTestId("cta-total")).toContainText("£17.00");
     await expect(page.getByTestId("category-rail")).toContainText("Side Orders");
@@ -380,7 +380,7 @@ test.describe("visual capture — ordering screens", () => {
     await expect(page.getByTestId(`item-${KIDDIE_CHEESE_BURGER}`)).toBeInViewport();
     await capture(page, "order-01-menu-top");
 
-    // …and to its end: the Side Orders grid under the hero, then Sauces.
+    // …and to its end: the Side Orders grid, then Sauces.
     await page.getByTestId(`item-${CAESAR_DRESSING}`).scrollIntoViewIfNeeded();
     await capture(page, "order-02-menu-scrolled");
 

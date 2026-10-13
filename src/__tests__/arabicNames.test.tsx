@@ -105,14 +105,14 @@ afterEach(async () => {
   });
 });
 
-describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
+describe("MenuItemCard", () => {
   const ENTITY = { id: "cw", name: "Crunchwrap Supreme", price: "5.99", aliases: AR(AR_CRUNCHWRAP) };
 
   it("Arabic: the card shows the alias, the overlay is named by it, quick-add is the AR verb; callbacks get the raw entity", async () => {
     await arabicSession();
     const onOpen = vi.fn();
     const onQuickAdd = vi.fn();
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={onOpen} onQuickAdd={onQuickAdd} />, {
+    render(<MenuItemCard entity={ENTITY} currency="£" onOpen={onOpen} onQuickAdd={onQuickAdd} />, {
       wrapper,
     });
     const card = screen.getByTestId("item-cw");
@@ -131,7 +131,7 @@ describe.each([false, true])("MenuItemCard (large=%s)", (large) => {
 
   it("switching back to English restores the name (unisolated) on the same card", async () => {
     await arabicSession();
-    render(<MenuItemCard entity={ENTITY} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />, {
+    render(<MenuItemCard entity={ENTITY} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />, {
       wrapper,
     });
 

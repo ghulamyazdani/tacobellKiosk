@@ -260,9 +260,9 @@ describe("counts re-key a small leaf (§3.3)", () => {
 });
 
 describe("press (§3.1)", () => {
-  it.each([false, true])("a menu card (large=%s) is tb-press-card with its overlay as a DIRECT empty child", (large) => {
+  it("a menu card is tb-press-card with its overlay as a DIRECT empty child", () => {
     render(
-      <MenuItemCard entity={{ id: "x", name: "X", price: "1" }} currency="£" large={large} onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
+      <MenuItemCard entity={{ id: "x", name: "X", price: "1" }} currency="£" onOpen={vi.fn()} onQuickAdd={vi.fn()} />,
       { wrapper }
     );
     const card = screen.getByTestId("item-x");
