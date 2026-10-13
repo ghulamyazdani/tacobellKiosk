@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   paymentSettingsRdx,
   setShowErrorModal,
@@ -13,6 +13,7 @@ import {
 import {
   emptyPayment,
   selectPayment,
+  setBillPaymentInfo,
 } from "@cx-sdk/payments/state/payment.slice";
 import {
   useCancelPaytmEdcKioskMutation,
@@ -40,24 +41,23 @@ import {
   type PaytmSessionPhase,
   type PaytmSessionState,
 } from "@cx-sdk/payments/settlement/paytmKioskSettlement";
+import { FLUSH } from "redux-persist";
 import useOrderHook from "../menuHooks/useOrderHook";
 import { unmarkClaimOrderOutcomeUnknown } from "../loyalty/orderOutcomeClaim";
 import { PAYMENT_IDLE_HOLD_MAX_MS, useIdleHold } from "../utils/useIdleTimeout";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
-import type {
-  OrderSuccessLocationState,
-  ReceiptPreference,
-} from "./usePayAtCounter";
 
 /**
  * usePaytmSettlement — the /paymentPolling settlement loop (P8b-06) for the
- * Paytm Dynamic QR and Paytm EDC sessions that /receipt's initiate opened.
+ * Paytm Dynamic QR and Paytm EDC sessions that /payment's initiate opened.
  *
  * THE BACKEND PLACES THE ORDER. The initiate parked the order payload; the
  * backend places it when Paytm reports the payment — by webhook OR by this
  * screen's own status read (a poll is itself a placement trigger). So:
  *   - the paid tail calls `recordOrderLocally` (bookkeeping only) and NEVER
- *     `pushOrder` — a kiosk-side place would be a second order;
+ *     `pushOrder` — a kiosk-side place would be a second order; then it
+ *     clears the session's ids (flushed) and goes to /receipt, the
+ *     post-payment receipt question (2026-10-13);
  *   - an outcome nobody can confirm is never re-initiated: it ends on the
  *     staff panel (CHECK AGAIN = one status read; FINISH = /start, whose
  *     mount releases the session status-first).
@@ -133,7 +133,6 @@ export default function usePaytmSettlement(): UsePaytmSettlement {
   const dispatch = useDispatch();
   const store = useStore();
   const navigate = useNavigate();
-  const location = useLocation();
   const { recordOrderLocally } = useOrderHook();
   const [checkDqrStatus] = useCheckPaytmDqrKioskStatusMutation() as [KioskCall];
   const [checkEdcStatus] = useCheckPaytmEdcKioskStatusMutation() as [KioskCall];
@@ -153,10 +152,6 @@ export default function usePaytmSettlement(): UsePaytmSettlement {
     );
     return { open: session, selection: row ?? null };
   });
-  const [receipt] = useState(
-    (): ReceiptPreference =>
-      (location.state as OrderSuccessLocationState | null)?.receipt ?? "none",
-  );
 
   const [session, dispatchSession] = useReducer(
     reducePaytmSession,
@@ -316,9 +311,13 @@ export default function usePaytmSettlement(): UsePaytmSettlement {
     });
   }, [effects.sendVoid, open, selection, store, voidEdc]);
 
-  // PAID — exactly once: local bookkeeping, analytics, then Order Complete.
-  // Payment state is NOT cleared here: /orderSuccess prints with it and
-  // /start's reset clears it.
+  // PAID — exactly once: local bookkeeping, analytics, the settle, then the
+  // post-payment receipt question. Only the ids are cleared: the type stays
+  // for /receipt's post-payment mode and the ticket's "Payment Mode"; /start's
+  // reset clears the rest. ORDER IS LOAD-BEARING: record → clear → flush →
+  // navigate — until the URL leaves /paymentPolling a reload must still find
+  // the session open (it re-settles as paid; a settled disk under this URL
+  // would send a paid guest with a full bag back to /payment).
   useEffect(() => {
     if (session.phase !== "paid" || !open || settledRef.current) return;
     settledRef.current = true;
@@ -340,12 +339,30 @@ export default function usePaytmSettlement(): UsePaytmSettlement {
         payment_type: PAYTM_PAYMENT_TYPES[open.kind],
         net_amount: Number(selectCartAmount(store.getState()) ?? 0),
       });
+      // SETTLED: off readOpenPaytmSession (memory AND disk) before the receipt
+      // question, so the resume guard renders /receipt and /start's release
+      // never reads a paid order (a reload in between finds it settled). Runs
+      // even if unmounted: a paid session is settled regardless.
+      dispatch(setBillPaymentInfo({ posBillNo: "", posBillTime: "" }));
+      // persistor.flush(), as redux-persist's persistor does it (persistStore.js
+      // flush): the FLUSH action — the web engine writes inside the dispatch.
+      // Not the store's persistor: importing the store here pulls the
+      // @cx-sdk/core barrel into this lazy chunk and splits the boot path
+      // (+5.9 KiB gzip-9, over the 355 budget). redux-persist swallows write
+      // failures (createPersistoid.js:92); the catch only guards a throw — a
+      // paid guest is never held here (Rule 2).
+      try {
+        const writes: unknown[] = [];
+        dispatch({ type: FLUSH, result: (write: unknown) => writes.push(write) });
+        await Promise.all(writes);
+      } catch {
+        // The memory clear stands.
+      }
       if (!mountedRef.current) return;
-      const successState: OrderSuccessLocationState = { receipt };
-      navigate("/orderSuccess", { state: successState });
+      navigate("/receipt");
     };
     void settlePaid();
-  }, [dispatch, navigate, open, receipt, session.phase, store]);
+  }, [dispatch, navigate, open, session.phase, store]);
 
   // NOT PAID — once. Only a definitive answer may undo the S7 claim mark.
   useEffect(() => {

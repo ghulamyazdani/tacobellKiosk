@@ -253,9 +253,8 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await expect(page.getByTestId("payment-screen")).toBeVisible();
     await page.getByTestId("payment-card").click();
     await expect(page.getByTestId("payment-buffer")).toBeVisible();
+    // The window's end is the initiate (the receipt question follows the payment).
     await page.clock.runFor(3_000);
-    await expect(page.getByTestId("receipt-screen")).toBeVisible();
-    await page.getByTestId("receipt-none").click();
 
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     await expectA11y(page, "d-01-paytm-edc", "paytm-cancel");

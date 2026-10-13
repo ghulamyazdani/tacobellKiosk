@@ -82,7 +82,7 @@ const ada = () => {
 const mount = () =>
   render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={[{ pathname: "/paymentPolling", state: { receipt: "none" } }]}>
+      <MemoryRouter initialEntries={["/paymentPolling"]}>
         <PaytmPayment />
       </MemoryRouter>
     </Provider>,
@@ -270,7 +270,7 @@ describe("PaytmPayment — /paymentPolling", () => {
     expect(m.navigate).toHaveBeenCalledWith("/payment");
   });
 
-  it("paid: PleaseWait while Order Complete is reached", async () => {
+  it("paid: PleaseWait while the post-payment receipt question is reached", async () => {
     seed("edc");
     statusImpl = () => Promise.resolve({ data: { status: "paid" } });
     mount();
@@ -278,7 +278,7 @@ describe("PaytmPayment — /paymentPolling", () => {
     expect(screen.getByTestId("paytm-confirming")).toHaveTextContent(i18n.t("paytm.wait.confirming"));
     // Over the EDC screen (no dialog) it reveals late (motion-v2 MV4): a fast settle never flashes it.
     expect(screen.getByTestId("paytm-confirming")).toHaveClass("tb-reveal-late");
-    expect(m.navigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt: "none" } });
+    expect(m.navigate.mock.calls).toEqual([["/receipt"]]);
   });
 
   it("the unknown panel's CHECK AGAIN answering paid: PleaseWait replaces the panel at once (motion-v2 review F1)", async () => {
@@ -293,7 +293,7 @@ describe("PaytmPayment — /paymentPolling", () => {
     await advance(0);
     expect(screen.queryByTestId("paytm-unknown")).not.toBeInTheDocument();
     expect(screen.getByTestId("paytm-confirming")).not.toHaveClass("tb-reveal-late");
-    expect(m.navigate).toHaveBeenCalledWith("/orderSuccess", { state: { receipt: "none" } });
+    expect(m.navigate.mock.calls).toEqual([["/receipt"]]);
   });
 
   it("the unknown panel: the order's last 5, the checking note, CHECK AGAIN / FINISH", async () => {
@@ -389,7 +389,7 @@ describe("PaytmPayment — motion (lane motion)", () => {
       <Provider store={store}>
         <MemoryRouter initialEntries={["/from"]}>
           <Routes>
-            <Route path="/from" element={<Navigate to="/paymentPolling" state={{ receipt: "none" }} />} />
+            <Route path="/from" element={<Navigate to="/paymentPolling" />} />
             <Route path="/paymentPolling" element={<PaytmPayment />} />
           </Routes>
         </MemoryRouter>

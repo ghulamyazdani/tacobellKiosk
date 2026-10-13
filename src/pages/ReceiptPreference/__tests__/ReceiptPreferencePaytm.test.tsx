@@ -1,25 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
-import { setPaymentSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import { pushOrderInOngoingOrders, setOrderId } from "@cx-sdk/ordering/state/order.slice";
+import { setIdealTimeout, setPaymentSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
-import {
-  getDetailedPaymentType,
-  getPaymentType,
-} from "@cx-sdk/ordering/order/orderBuilder";
 import { store } from "../../../redux/app/store";
+import { IdleHoldContext } from "../../../hooks/utils/useIdleTimeout";
 import ReceiptPreferenceScreen from "../index";
-import i18n from "../../../i18n";
 
 /*
-  P8b — /receipt's Paytm branch at the SCREEN: the real usePaytmCheckout and
-  usePayAtCounter, real PleaseWait / ErrorModal / i18n. Mocked edges: the two
-  initiate triggers, the id generator, useOrderHook (getPushOrderData for
-  Paytm, pushOrder for COD), navigate, analytics and the lazy /paymentPolling
-  screen loader (arrived, unless a case says not). The money rules live in
-  usePaytmCheckout.test; this suite pins what the customer sees and can tap.
+  /receipt AFTER a Paytm payment (user 2026-10-13: "the receipt question …
+  should be after that"). Only /paymentPolling's paid tail reaches /receipt
+  with a Paytm type — the order is placed (by the backend) and paid, the
+  session's ids already cleared. The mode comes from the PERSISTED type, never
+  router state, so every case mounts with none. The real usePayAtCounter and
+  usePaytmCheckout edges are spied to prove this screen pushes, initiates and
+  mints NOTHING: its only exit is /orderSuccess {receipt}. The paid tail has
+  recorded the order locally (`record()`, its bookkeeping) — unless a reload
+  dropped that record, which is not persisted.
 */
 
 const m = vi.hoisted(() => ({
@@ -29,7 +30,6 @@ const m = vi.hoisted(() => ({
   edc: vi.fn(),
   pushOrder: vi.fn(),
   ids: vi.fn(),
-  loadScreen: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -44,15 +44,6 @@ vi.mock("../../../hooks/menuHooks/useOrderHook", () => ({
   default: () => ({
     pushOrder: (...args: unknown[]) => m.pushOrder(...args),
     generateQROrderId: () => Promise.resolve("TB-ORDER-ABCDE12345"),
-    getPushOrderData: () => {
-      const type = (store.getState() as { payment: { paymentType: string } }).payment.paymentType;
-      return Promise.resolve({
-        toPush: {
-          payments: { type: getPaymentType(type) },
-          originalPayments: { cards: [{ detail: [{ otherName: getDetailedPaymentType(type) }] }] },
-        },
-      });
-    },
   }),
 }));
 vi.mock("@cx-sdk/payments/services/paymentSettingsFetchApi", async (importOriginal) => ({
@@ -64,9 +55,6 @@ vi.mock("@cx-sdk/payments/gateways/paymentSession", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   generatePaymentIds: () => m.ids(),
 }));
-vi.mock("../../PaytmPayment/loadPaytmScreen", () => ({
-  loadPaytmScreen: () => m.loadScreen(),
-}));
 
 const option = (label: string, fields: Record<string, string>) => ({
   _id: `pay_${label}`,
@@ -77,15 +65,7 @@ const option = (label: string, fields: Record<string, string>) => ({
 });
 const EDC = option("PaytmEdc", { paytm_device_id: "EDC-DEVICE-1" });
 const DQR = option("PaytmDynamicQr", { paytm_dqr_merchant_guid: "MID-1", paytm_dqr_secret_key: "KEY-1" });
-const BUSY = { error: { status: 400, data: { msg: "Multiple payment request not allowed" } } };
 
-const deferred = <T,>() => {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-};
 const flush = () =>
   act(async () => {
     for (let i = 0; i < 12; i += 1) await Promise.resolve();
@@ -95,168 +75,202 @@ const macrotask = () =>
   act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
   });
-const mount = () =>
-  render(
-    <Provider store={store}>
-      <MemoryRouter initialEntries={["/receipt"]}>
-        <ReceiptPreferenceScreen />
-      </MemoryRouter>
-    </Provider>,
-  );
-const tap = async (testId: string) => {
-  fireEvent.click(screen.getByTestId(testId));
-  await flush();
-};
-const modal = () => screen.getByTestId("paytm-initiate-failed");
-const posBillNo = (trigger: typeof m.edc, call: number) =>
-  (trigger.mock.calls[call]?.[0] as { posBillNo?: string }).posBillNo;
+
+const adjust = vi.fn<(delta: 1 | -1) => void>();
+/** IdleGuard's hold counter, as the screen drives it. */
+const holds = () => adjust.mock.calls.reduce((sum, [delta]) => sum + delta, 0);
+const Wrapper = ({ children }: { children: ReactNode }) => (
+  <Provider store={store}>
+    <IdleHoldContext.Provider value={adjust}>
+      <MemoryRouter initialEntries={["/receipt"]}>{children}</MemoryRouter>
+    </IdleHoldContext.Provider>
+  </Provider>
+);
+const mount = () => render(<ReceiptPreferenceScreen />, { wrapper: Wrapper });
 const receiptEvents = () =>
   m.capture.mock.calls.filter(([, props]) => (props as { screen?: string })?.screen === "receipt");
+const nothingSent = () => {
+  expect(m.pushOrder).not.toHaveBeenCalled();
+  expect(m.edc).not.toHaveBeenCalled();
+  expect(m.dqr).not.toHaveBeenCalled();
+  expect(m.ids).not.toHaveBeenCalled();
+};
+
+/** The paid order: its id persisted at initiate (order.orderId). */
+const ORDER = "17000000000011";
+/** The paid tail's local record (order.currentOrder — memory only). */
+const record = () => store.dispatch(pushOrderInOngoingOrders({ orderId: ORDER }));
 
 beforeEach(() => {
   Object.values(m).forEach((fn) => fn.mockReset());
-  let n = 0;
-  m.loadScreen.mockResolvedValue(() => null);
-  m.ids.mockImplementation(() => {
-    n += 1;
-    return Promise.resolve({ posBillNo: `1700000000000${n}`, posBillTime: 1_700_000_000_000 + n });
-  });
+  adjust.mockReset();
   store.dispatch({ type: "RESET_STATE" });
   store.dispatch(setCartItems([{ id: "cw", itemId: "cw-1", name: "Crunchwrap", quantity: 1, type: "ITEM", total_price: 9 }]));
   store.dispatch(setAmount(9));
   store.dispatch(setPaymentSettings([EDC, DQR]));
+  store.dispatch(setOrderId(ORDER));
 });
 
-describe("/receipt — the Paytm branch (P8b)", () => {
-  it("a receipt tap starts the Paytm initiate under PleaseWait; tiles and BACK are inert while it runs", async () => {
-    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
-    const answer = deferred<unknown>();
-    m.edc.mockReturnValue(answer.promise);
+describe("/receipt AFTER the payment (Paytm) — U8", () => {
+  it.each([
+    ["PaytmEdc", "YES", "receipt-print", "print"],
+    ["PaytmEdc", "NO", "receipt-none", "none"],
+    ["PaytmDynamicQr", "YES", "receipt-print", "print"],
+    ["PaytmDynamicQr", "NO", "receipt-none", "none"],
+  ] as const)("%s, %s: no BACK; a double tap goes to /orderSuccess ONCE with its choice — nothing pushed, initiated or minted", async (type, _label, testId, receipt) => {
+    store.dispatch(setKioskPaymentType({ type }));
+    record();
     mount();
+
+    // A placed, paid order: the question and its two answers, no way back.
+    expect(screen.queryByTestId("receipt-back")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toEqual([
+      screen.getByTestId("receipt-print"),
+      screen.getByTestId("receipt-none"),
+    ]);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId(testId));
+      fireEvent.click(screen.getByTestId(testId));
+    });
+    await flush();
+
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt } }]]);
+    expect(receiptEvents()).toEqual([["other", { screen: "receipt", receipt_preference: receipt }]]);
+    nothingSent();
     expect(screen.queryByTestId("paytm-preparing")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("payment-buffer")).not.toBeInTheDocument();
+  });
+});
 
-    await tap("receipt-print");
+describe("/receipt AFTER the payment — idle held, NO by itself at T − 20 s (U9)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
+    record();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-    const wait = screen.getByTestId("paytm-preparing");
-    expect(wait).toHaveAttribute("role", "status");
-    expect(wait).toHaveTextContent(i18n.t("paytm.wait.title"));
-    expect(wait).toHaveTextContent(i18n.t("paytm.wait.preparing"));
-    await tap("receipt-none");
-    await tap("receipt-print");
-    await tap("receipt-back");
-    expect(m.edc).toHaveBeenCalledTimes(1);
+  it("T = 60: idle held while it shows; nothing at 39 999 ms; at 40 000 ms ONE timed-out NO to Order Complete; released on leaving", () => {
+    store.dispatch(setIdealTimeout(60));
+    const view = mount();
+    expect(holds()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersByTime(39_999);
+    });
     expect(m.navigate).not.toHaveBeenCalled();
-    expect(m.pushOrder).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(receiptEvents()).toEqual([
+      ["other", { screen: "receipt", receipt_preference: "none", reason: "timeout" }],
+    ]);
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "none" } }]]);
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(m.navigate).toHaveBeenCalledTimes(1);
+    nothingSent();
+
+    view.unmount();
+    expect(holds()).toBe(0);
+  });
+
+  it("a guest who answered at 10 s is never answered for again by the timer", () => {
+    store.dispatch(setIdealTimeout(60));
+    mount();
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("receipt-print"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "print" } }]]);
     expect(receiptEvents()).toEqual([["other", { screen: "receipt", receipt_preference: "print" }]]);
+  });
 
-    await act(async () => answer.resolve({ data: { success: true } }));
-    await flush();
+  it("unmounted at 10 s: the timer never fires", () => {
+    store.dispatch(setIdealTimeout(60));
+    const view = mount();
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    view.unmount();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(m.navigate).not.toHaveBeenCalled();
+    expect(receiptEvents()).toEqual([]);
+  });
+
+  it("the slice default (180 s, clamped to Rule 1's 120): NO at 100 s, not before", () => {
+    mount();
+    act(() => {
+      vi.advanceTimersByTime(99_999);
+    });
+    expect(m.navigate).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "none" } }]]);
+  });
+});
+
+describe("/receipt AFTER the payment — the local order record is gone (review 1 F1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(["PaytmEdc", "PaytmDynamicQr"])("%s after a reload here (order.currentOrder is not persisted, so YES could not print): never asked — nothing rendered, on to /orderSuccess as NO, once", (type) => {
+    store.dispatch(setKioskPaymentType({ type }));
+    mount();
+
+    expect(screen.queryByTestId("receipt-screen")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "none" } }]]);
+    expect(receiptEvents()).toEqual([
+      ["other", { screen: "receipt", receipt_preference: "none", reason: "no_local_record" }],
+    ]);
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
     expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "print" } });
+    nothingSent();
   });
 
-  it("busy: the busy copy, TRY AGAIN re-initiates with NEW ids, and no PAY ANOTHER WAY", async () => {
+  it("a record of ANOTHER order (the last guest's — the session reset keeps currentOrder) is no record either: never asked", () => {
     store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
-    m.edc.mockResolvedValueOnce(BUSY).mockResolvedValueOnce({ data: { success: true } });
-    mount();
-    await tap("receipt-none");
-
-    expect(screen.queryByTestId("paytm-preparing")).not.toBeInTheDocument();
-    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.title"));
-    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.busy"));
-    expect(screen.getByTestId("paytm-initiate-retry")).toHaveTextContent(i18n.t("paytm.failed.tryAgain"));
-    expect(screen.queryByTestId("paytm-initiate-other")).not.toBeInTheDocument();
-
-    // The tiles stay inert under the modal.
-    await tap("receipt-print");
-    expect(m.edc).toHaveBeenCalledTimes(1);
-
-    await tap("paytm-initiate-retry");
-    expect(m.edc).toHaveBeenCalledTimes(2);
-    expect(posBillNo(m.edc, 1)).not.toBe(posBillNo(m.edc, 0));
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "none" } });
-  });
-
-  // motion-v2 MV4 + review F1: over the tiles PleaseWait reveals late (a fast initiate never flashes it); in
-  // place of the failure dialog (TRY AGAIN) it shows at once — a late layer would drop the dialog's scrim and
-  // leave the tiles bright, and dead to taps, for 300 ms.
-  it("PleaseWait reveals late over a tile tap, at once when TRY AGAIN replaces the failure dialog", async () => {
-    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
-    const first = deferred<unknown>();
-    const second = deferred<unknown>();
-    m.edc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    store.dispatch(pushOrderInOngoingOrders({ orderId: "17000000000009" }));
     mount();
 
-    await tap("receipt-none");
-    expect(screen.getByTestId("paytm-preparing")).toHaveClass("tb-reveal-late");
-    await act(async () => first.resolve(BUSY));
-    await flush();
-    expect(modal()).toBeInTheDocument();
-
-    await tap("paytm-initiate-retry");
-    expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
-    expect(screen.getByTestId("paytm-preparing")).not.toHaveClass("tb-reveal-late");
-    expect(m.edc).toHaveBeenCalledTimes(2);
-
-    await act(async () => second.resolve({ data: { success: true } }));
-    await flush();
-    expect(m.navigate).toHaveBeenCalledWith("/paymentPolling", { state: { receipt: "none" } });
+    expect(screen.queryByTestId("receipt-screen")).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(m.navigate.mock.calls).toEqual([["/orderSuccess", { state: { receipt: "none" } }]]);
   });
+});
 
-  it("a retryable failure: BACK TO BAG closes the modal and leaves for /cart", async () => {
-    store.dispatch(setKioskPaymentType({ type: "PaytmDynamicQr" }));
-    m.dqr.mockResolvedValue({ error: { status: 500, data: {} } });
-    mount();
-    await tap("receipt-print");
-
-    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-    expect(screen.getByTestId("paytm-initiate-bag")).toHaveTextContent(i18n.t("orderError.backToBag"));
-    await tap("paytm-initiate-bag");
-
-    expect(m.navigate).toHaveBeenCalledWith("/cart");
-    expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
-    expect(m.dqr).toHaveBeenCalledTimes(1);
-  });
-
-  it("a local refusal: PAY ANOTHER WAY → /payment (no TRY AGAIN), nothing sent", async () => {
-    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
-    store.dispatch(setPaymentSettings([DQR])); // no usable EDC option
-    mount();
-    await tap("receipt-none");
-
-    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-    expect(screen.queryByTestId("paytm-initiate-retry")).not.toBeInTheDocument();
-    expect(screen.getByTestId("paytm-initiate-other")).toHaveTextContent(i18n.t("paytm.failed.payAnotherWay"));
-    await tap("paytm-initiate-other");
-
-    expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/payment");
-    expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
-    expect(m.edc).not.toHaveBeenCalled();
-    expect(m.dqr).not.toHaveBeenCalled();
-  });
-
-  it("the /paymentPolling screen chunk did not arrive: the same refusal — PAY ANOTHER WAY (no TRY AGAIN), nothing sent, no ids", async () => {
-    store.dispatch(setKioskPaymentType({ type: "PaytmEdc" }));
-    m.loadScreen.mockResolvedValue(null);
-    mount();
-    await tap("receipt-none");
-
-    expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-    expect(screen.queryByTestId("paytm-initiate-retry")).not.toBeInTheDocument();
-    await tap("paytm-initiate-other");
-    expect(m.navigate).toHaveBeenCalledTimes(1);
-    expect(m.navigate).toHaveBeenCalledWith("/payment");
-    expect(m.ids).not.toHaveBeenCalled();
-    expect(m.edc).not.toHaveBeenCalled();
-    expect(m.dqr).not.toHaveBeenCalled();
-  });
-
+describe("/receipt BEFORE the push (pay at counter) — unchanged", () => {
   it("COD is untouched: PAY_AT_RESTAURANT pushes through usePayAtCounter, no Paytm initiate, no PleaseWait", async () => {
     store.dispatch(setKioskPaymentType({ type: "PAY_AT_RESTAURANT" }));
     m.pushOrder.mockResolvedValue({});
     mount();
-    await tap("receipt-print");
+    expect(screen.getByTestId("receipt-back")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("receipt-print"));
+    await flush();
     await macrotask();
     await flush();
 

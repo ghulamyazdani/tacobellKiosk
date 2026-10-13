@@ -15,7 +15,7 @@ interface PleaseWaitProps {
 /**
  * "PLEASE WAIT" (Figma 1:4456 = 1:6301, identical frames) — a full-page
  * layer (absolute inset-0, z-50: above page content, below ErrorModal z-80)
- * for the Paytm waits: the initiate on /receipt and the settle on
+ * for the Paytm waits: the initiate on /payment and the settle on
  * /paymentPolling. Pure presentation: no timers, no store writes; the owner
  * mounts and unmounts it. Entrance: tb-reveal-late (motion-v2 MV4) — the
  * opacity-only tb-fade-in after 300 ms, so a fast wait (a warm Paytm chunk,

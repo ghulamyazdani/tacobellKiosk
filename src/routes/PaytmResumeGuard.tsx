@@ -7,18 +7,14 @@ import {
   selectPosBillNo,
   setBillPaymentInfo,
 } from "@cx-sdk/payments/state/payment.slice";
-import type { OrderSuccessLocationState } from "../hooks/paymentsHooks/usePayAtCounter";
-
-/** The receipt choice was router state and died with the reload. */
-const RESUME_STATE: OrderSuccessLocationState = { receipt: "none" };
 
 /**
  * PaytmResumeGuard — pathless layout route around /payment and /receipt
  * (P8b follow-up F1, a money path).
  *
  * A reload keeps the route (ProtectedRoute only checks the token). Mid-EDC-
- * initiate it remounted /receipt IDLE over persisted ids whose terminal may be
- * armed: a re-tap minted NEW ids, a "busy" answer cleared them, and the first
+ * initiate it remounted the screen IDLE over persisted ids whose terminal may
+ * be armed: a re-tap minted NEW ids, a "busy" answer cleared them, and the first
  * terminal transaction was orphaned — payable on the machine while the guest
  * paid another way. Now a Paytm session still open when this layout MOUNTS
  * resumes on /paymentPolling, which settles it by status with the SAME ids.
@@ -28,10 +24,17 @@ const RESUME_STATE: OrderSuccessLocationState = { receipt: "none" };
  * initiate writes posBillNo (COD never does).
  *
  * - Decided ONCE per mount (state + ref latch), never reactive: the initiate
- *   on /receipt opens a session under this layout and must never be bounced
+ *   on /payment opens a session under this layout and must never be bounced
  *   or swept mid-call. /payment ↔ /receipt keeps the layout mounted.
+ * - /receipt is also the post-payment question for Paytm (2026-10-13): the
+ *   paid tail clears the ids (flushed) before it mounts, so a settled session
+ *   is never bounced back. The guard stays around /receipt as the backstop for
+ *   an open session there (junk, an unflushed write) — resuming is the safe
+ *   reading.
  * - Loop-free: /paymentPolling sends a guest here only after emptyPayment(),
- *   or from its no-session redirect, which reads the same definition.
+ *   after the paid tail's ids-only clear (flushed) — neither leaves an open
+ *   session — or from its no-session redirect, which reads the same
+ *   definition.
  * - Navigates only (hazard H1); the page never mounts under a redirect.
  * - Accepted trade-off: an initiate that never left shows the EDC screen
  *   until the window ends, then the unknown (staff) panel.
@@ -59,7 +62,7 @@ export default function PaytmResumeGuard() {
     if (doneRef.current) return;
     doneRef.current = true;
     if (resume) {
-      navigate("/paymentPolling", { replace: true, state: RESUME_STATE });
+      navigate("/paymentPolling", { replace: true });
       return;
     }
     const billNo: unknown = selectPosBillNo(store.getState());

@@ -1,14 +1,19 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { selectIdealTimeout } from "@cx-sdk/catalog/state/appSettings.slice";
+import { currentOrder, selectOrderId } from "@cx-sdk/ordering/state/order.slice";
+import { toPaytmKind } from "@cx-sdk/payments/gateways/paytmKiosk";
+import { selectKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
 import usePayAtCounter, {
+  type OrderSuccessLocationState,
   type ReceiptPreference as ReceiptChoice,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
-import usePaytmCheckout from "../../hooks/paymentsHooks/usePaytmCheckout";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
-import ErrorModal from "../../components/common/ErrorModal";
-import PleaseWait from "../../components/payment/PleaseWait";
+import { resolveIdleSeconds, useIdleHold } from "../../hooks/utils/useIdleTimeout";
+import { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../OrderSuccess";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -17,10 +22,10 @@ import tbBell from "../../assets/brand/tb-bell.svg";
  * /receipt — "DO YOU WANT TO PRINT THE RECEIPT?" with YES / NO (Figma 1:3377,
  * print-only since 2026-10-12).
  *
- * TB-design-only: the fork has no receipt-preference screen at all. It sits
- * AFTER the payment-method tap and BEFORE the order push, so the customer
- * answers it while nothing is in flight rather than being held on a spinner
- * after ordering.
+ * TB-design-only: the fork has no receipt-preference screen at all (it prints
+ * on its success screen). It sits BEFORE the push for pay-at-counter — the
+ * customer answers it while nothing is in flight — and AFTER the payment for
+ * Paytm (user 2026-10-13: "it should be after that"). Client sign-off.
  *
  * PRINT ONLY (user request 2026-10-12): one question and two of the frame's
  * 416×416 CTA Cards (1:3382) — YES = "print", NO = "none". The frame's EMAIL
@@ -28,24 +33,28 @@ import tbBell from "../../assets/brand/tb-bell.svg";
  * NO THANKS bar (CTA_Sheet_Fixed 1:3380) are gone. Design language beyond
  * the frame: client sign-off.
  *
- * THE CHOICE IS THE SCREEN'S ONLY OUTPUT. It is handed to
- * `confirmAndPush(choice)`, which carries it to /orderSuccess in router state
- * as `location.state.receipt` — see the seam note in usePayAtCounter. The
- * success screen honours "print" only when `print_bill` allows and the POS is
- * not printing the ticket itself.
+ * THE CHOICE IS THE SCREEN'S ONLY OUTPUT. It reaches /orderSuccess in router
+ * state as `location.state.receipt` — through `confirmAndPush(choice)` for
+ * COD (see the seam note in usePayAtCounter), directly for a paid Paytm
+ * order. The success screen honours "print" only when `print_bill` allows
+ * and the POS is not printing the ticket itself.
  *
  * ADA (P9c, design-language, flagged — 1:3377 has no ADA variant): the
- * 1122px reach zone with the bell dropped. BACK stays at 40; title 120–229
- * (3 Arabic lines: 283) · YES / NO 292–708. The headline is Title/H2 (Exp Bl
- * 64/54.4, −3, 856 wide). The buffer and order-error surfaces are
- * page-relative, so they follow along.
+ * 1122px reach zone with the bell dropped. BACK (COD only) stays at 40;
+ * title 120–229 (3 Arabic lines: 283) · YES / NO 292–708. The headline is
+ * Title/H2 (Exp Bl 64/54.4, −3, 856 wide). The buffer and order-error
+ * surfaces are page-relative, so they follow along.
  *
- * P8b PAYTM: when /payment armed a Paytm type, the choice starts the Paytm
- * INITIATE instead (usePaytmCheckout) — the COD path is untouched. While it
- * runs, PleaseWait (Figma 1:4456) covers the screen and the tiles and BACK
- * are inert; then /paymentPolling (NEW edge, Rule 1). A failure opens the
- * ErrorModal (1:6288 layout; copy and actions design-language, flagged): TRY
- * AGAIN (new ids) or PAY ANOTHER WAY → /payment, and BACK TO BAG → /cart.
+ * POST-PAYMENT (a Paytm type — only /paymentPolling's paid tail reaches
+ * /receipt with one): the order is placed and paid, so the screen has no
+ * BACK (the frame draws none — FIGMA_UI_GUIDE row 1:3377 "the top-left BACK
+ * is ours"), never pushes or initiates, and its only exit is /orderSuccess —
+ * by YES / NO or, idle held, by itself (NO) at T − 20 s, so Order Complete's
+ * 20 s still lands Splash at T (Rule 1). Order Complete's own hold takes over
+ * in the same commit. It is never asked when YES could not print: a reload
+ * here drops the paid tail's local order record (order.currentOrder is not
+ * persisted, and Order Complete prints only THAT order's record) — then it
+ * renders nothing and goes on as NO at once (review 1 F1).
  */
 export default function ReceiptPreferenceScreen() {
   const enter = usePageEnter();
@@ -70,43 +79,74 @@ export default function ReceiptPreferenceScreen() {
     retry: retryOrderPush,
     dismissError,
   } = usePayAtCounter();
-  const paytm = usePaytmCheckout();
-  const paytmBusy = paytm.status !== "idle";
-  const { kind: paytmKind, start: startPaytm, dismiss: dismissPaytm } = paytm;
+
+  // POST-PAYMENT mode (2026-10-13): only the paid tail reaches /receipt with a
+  // Paytm type (PaymentSelection pins COD before its hop). Read from the
+  // PERSISTED type — the value the print gate and the ticket read — so a
+  // reload or a relaunch keeps the mode; a navigation may forget router state.
+  const paid = toPaytmKind(useSelector(selectKioskPaymentType)) !== null;
+  // YES prints only from the paid tail's local record of THIS order — Order
+  // Complete's own test; a reload drops it (order.currentOrder is not persisted).
+  const orderId = (useSelector(selectOrderId) as string | undefined) ?? "";
+  const recordedId = (useSelector(currentOrder) as { orderId?: string } | undefined)?.orderId;
+  const recorded = orderId !== "" && recordedId === orderId;
+  const autoAnswerMs =
+    (resolveIdleSeconds(useSelector(selectIdealTimeout)) - ORDER_SUCCESS_COUNTDOWN_SECONDS) * 1000;
+  // Paid: never the idle prompt ("continue ordering / start again") over a
+  // paid order, never Splash before Order Complete. Released on leaving.
+  useIdleHold(paid);
+  const answeredRef = useRef(false);
+  const answerPaid = useCallback(
+    (choice: ReceiptChoice, reason?: "timeout" | "no_local_record") => {
+      if (answeredRef.current) return; // double tap / tap + timer: once
+      answeredRef.current = true;
+      captureKioskEvent(KioskEventName.other, {
+        screen: "receipt",
+        receipt_preference: choice,
+        ...(reason ? { reason } : {}),
+      });
+      const state: OrderSuccessLocationState = { receipt: choice };
+      navigate("/orderSuccess", { state });
+    },
+    [navigate]
+  );
+  // No answer: NO, when Order Complete's 20 s still lands Splash at T (Rule 1).
+  // A touch does not extend it (Order Complete's precedent). No record: NO at
+  // once — the question is never shown (below).
+  useEffect(() => {
+    if (!paid) return;
+    const id = window.setTimeout(
+      () => answerPaid("none", recorded ? "timeout" : "no_local_record"),
+      recorded ? autoAnswerMs : 0
+    );
+    return () => window.clearTimeout(id);
+  }, [answerPaid, autoAnswerMs, paid, recorded]);
 
   const choose = useCallback(
     (choice: ReceiptChoice) => {
+      if (paid) {
+        answerPaid(choice);
+        return;
+      }
       // In-flight guard on top of the hook's own latch: a double tap while
       // the push is running must never queue a second order (Rule 2). Once
       // the ladder has failed the tiles are inert as well — the panel below
       // is the only live surface until Retry or Back to bag is taken.
-      if (isPushing || hasFailed || paytmBusy) return;
+      if (isPushing || hasFailed) return;
       captureKioskEvent(KioskEventName.other, {
         screen: "receipt",
         receipt_preference: choice,
       });
-      if (paytmKind) startPaytm(choice);
-      else confirmAndPush(choice);
+      confirmAndPush(choice);
     },
-    [confirmAndPush, hasFailed, isPushing, paytmBusy, paytmKind, startPaytm]
+    [answerPaid, confirmAndPush, hasFailed, isPushing, paid]
   );
 
   /** Nothing has been pushed yet, so returning to the method choice is safe. */
   const handleBack = useCallback(() => {
-    if (isPushing || hasFailed || paytmBusy) return;
+    if (isPushing || hasFailed) return;
     navigate("/payment");
-  }, [hasFailed, isPushing, navigate, paytmBusy]);
-
-  /** Paytm failure exits: nothing is in flight once the modal is up. */
-  const handlePaytmOtherWay = useCallback(() => {
-    dismissPaytm();
-    navigate("/payment");
-  }, [dismissPaytm, navigate]);
-
-  const handlePaytmBackToBag = useCallback(() => {
-    dismissPaytm();
-    navigate("/cart");
-  }, [dismissPaytm, navigate]);
+  }, [hasFailed, isPushing, navigate]);
 
   /**
    * Terminal-failure exit. `dismissError()` returns the hook to "idle" so the
@@ -118,6 +158,10 @@ export default function ReceiptPreferenceScreen() {
     dismissError();
     navigate("/cart");
   }, [dismissError, navigate]);
+
+  // Paid with no local record: a question whose YES could not print is never
+  // shown (the timer above goes on as NO at once).
+  if (paid && !recorded) return null;
 
   return (
     // Motion §2.7: the title and the YES / NO row arrive (.tb-enter); texture,
@@ -140,14 +184,17 @@ export default function ReceiptPreferenceScreen() {
         }}
       />
 
-      <button
-        type="button"
-        data-testid="receipt-back"
-        onClick={handleBack}
-        className="tb-display absolute left-[40px] top-[40px] min-h-[64px] min-w-[120px] rounded-[8px] border-2 border-tb-surface px-[32px] py-[18px] text-[20px] leading-[20px] text-tb-surface"
-      >
-        {t("receipt.back")}
-      </button>
+      {/* Paid: no way back to an unpaid screen (Order Complete's precedent). */}
+      {!paid && (
+        <button
+          type="button"
+          data-testid="receipt-back"
+          onClick={handleBack}
+          className="tb-display absolute left-[40px] top-[40px] min-h-[64px] min-w-[120px] rounded-[8px] border-2 border-tb-surface px-[32px] py-[18px] text-[20px] leading-[20px] text-tb-surface"
+        >
+          {t("receipt.back")}
+        </button>
+      )}
 
       {!ada && (
         <img
@@ -267,37 +314,6 @@ export default function ReceiptPreferenceScreen() {
         </div>
       )}
 
-      {paytm.status === "initiating" && (
-        <PleaseWait testId="paytm-preparing" subtitle={t("paytm.wait.preparing")} />
-      )}
-
-      {paytm.status === "failed" && paytm.failure && (
-        <ErrorModal
-          testId="paytm-initiate-failed"
-          title={t("paytm.failed.title")}
-          message={t(
-            paytm.failure.reason === "busy" ? "paytm.failed.busy" : "paytm.failed.start"
-          )}
-          primary={
-            paytm.failure.retryable
-              ? {
-                  label: t("paytm.failed.tryAgain"),
-                  onClick: paytm.retry,
-                  testId: "paytm-initiate-retry",
-                }
-              : {
-                  label: t("paytm.failed.payAnotherWay"),
-                  onClick: handlePaytmOtherWay,
-                  testId: "paytm-initiate-other",
-                }
-          }
-          secondary={{
-            label: t("orderError.backToBag"),
-            onClick: handlePaytmBackToBag,
-            testId: "paytm-initiate-bag",
-          }}
-        />
-      )}
     </div>
   );
 }

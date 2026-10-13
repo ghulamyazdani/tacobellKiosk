@@ -118,8 +118,8 @@ function InSessionOverlays() {
  *   /tent        table-tent number capture (P8a; preflight route "tent")
  *   /payment     payment-method choice (P8a PAY AT COUNTER; P8b the Paytm
  *                card-machine / UPI QR tiles when configured)
- *   /receipt     receipt preference, after the method tap, before the push
- *                (pay-at-counter) or the Paytm initiate
+ *   /receipt     receipt preference: pay-at-counter BEFORE the push (after
+ *                the method tap); Paytm AFTER the payment (2026-10-13)
  *   /paymentPolling Paytm settlement (P8b): EDC instructions or the UPI QR,
  *                settled by status reads — the BACKEND places the order
  *   /orderSuccess order complete — no controls (Figma 1:5932 / 1:3437); its
@@ -144,29 +144,42 @@ function InSessionOverlays() {
  *   /phone        Continue → /customerName   (ONLY in checkout mode)
  *   /customerName Continue → directOrder ? push → /orderSuccess : /payment
  *   /payment      PAY AT COUNTER → /receipt → push → /orderSuccess
- *                 Paytm tile     → /receipt → initiate → /paymentPolling
- *   /paymentPolling paid            → /orderSuccess
+ *                 Paytm tile     → 3 s window → initiate (here) → /paymentPolling
+ *   /paymentPolling paid            → /receipt (post-payment) → /orderSuccess
  *                   customer cancel → /payment
  *                   not paid        → TRY AGAIN /payment · BACK TO BAG /cart
  *                   outcome unknown → FINISH /start (CHECK AGAIN = one status read)
  *                   no open session → /payment (bag has items) or /menu
  *   /payment, /receipt  Paytm session open at mount → /paymentPolling
- *                (PaytmResumeGuard: a reload mid-initiate resumes the SAME ids)
+ *                (PaytmResumeGuard: a reload mid-initiate resumes the SAME ids;
+ *                 a PAID session is settled — ids cleared — before /receipt mounts)
  *
  * SAFETY (P8b): exactly TWO money paths — pay-at-counter (usePayAtCounter
  * pushes the order) and Paytm Dynamic QR / Paytm EDC (usePaytmCheckout
- * initiates on /receipt; /paymentPolling settles by status and never places
- * an order — the backend does, from the order_details parked at initiate).
+ * initiates at the end of /payment's 3 s window; /paymentPolling settles by
+ * status and never places an order — the backend does, from the
+ * order_details parked at initiate).
  * Every other gateway stays unported and no terminal socket is opened: the
  * card machine is driven by the backend over HTTP. /paymentPolling sits
  * INSIDE IdleGuard: it holds idle while a payment is in flight
  * (PAYMENT_IDLE_HOLD_MAX_MS) and releases on its end panels, so Rule 1's
  * timeout still covers them; /start's mount releases any open session.
  *
- * Rule 1 (P8b): transitions ADDED — /receipt → /paymentPolling (initiate,
- * and the resume guard); /payment → /paymentPolling (resume guard only);
- * /paymentPolling → /orderSuccess, /payment, /cart, /start, /menu. Nothing
- * removed or renamed.
+ * Rule 1 (P8b; receipt-after-payment 2026-10-13):
+ *   /payment → /paymentPolling   the initiate (3 s window, CANCEL inside it)
+ *                                 and the resume guard
+ *   /payment → /cart             the initiate failure modal's BACK TO BAG
+ *                                 (PAY ANOTHER WAY closes it in place)
+ *   /receipt → /paymentPolling   the resume guard only (no initiate there)
+ *   /paymentPolling → /receipt   paid; the post-payment question has NO
+ *                                 BACK (a placed, paid order — Order
+ *                                 Complete's precedent) and answers NO by
+ *                                 itself at T − 20 s → /orderSuccess (at
+ *                                 once, unshown, when a reload dropped the
+ *                                 local order record: YES could not print)
+ *   /paymentPolling → /payment, /cart, /start, /menu   unchanged
+ *   COD: /payment → /receipt (BACK → /payment) → push → /orderSuccess,
+ *   unchanged. No route added, removed or renamed.
  */
 export function AppRoutes() {
   const location = useLocation();

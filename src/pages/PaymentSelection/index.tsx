@@ -18,6 +18,9 @@ import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import usePayAtCounter, {
   PAY_AT_COUNTER_PAYMENT_TYPE,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
+import usePaytmCheckout from "../../hooks/paymentsHooks/usePaytmCheckout";
+import ErrorModal from "../../components/common/ErrorModal";
+import PleaseWait from "../../components/payment/PleaseWait";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -27,10 +30,20 @@ interface CartLike {
 }
 
 /**
- * Cancel window between a method tap and the receipt step — the fork's
- * `paymentInitiationBufferTime` (3000ms). Nothing is sent inside it.
+ * Cancel window between a method tap and what it starts — COD: the hop to
+ * /receipt; Paytm: the initiate (fork `paymentInitiationBufferTime`, 3000 ms).
+ * Nothing is sent inside it.
  */
 const PAYMENT_BUFFER_MS = 3000;
+
+/**
+ * How long the screen swallows taps on arrival and after the window's CANCEL
+ * or the failure modal's PAY ANOTHER WAY (ReachZone's exit-guard pattern).
+ * Those close at once over the tiles, and /paymentPolling's TRY AGAIN lands
+ * its guest here under the same finger, so the second tap of a double tap
+ * would arm a tile — whose window now ENDS in an initiate (review 2 F1).
+ */
+const TAP_GUARD_MS = 500;
 
 /** One method tile in the row (D9). */
 interface MethodTile {
@@ -80,14 +93,20 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *   `payment-counter` PAY AT COUNTER  only when COD is available
  * The Paytm tiles come from the SDK's `pickPaytmSelections`, which offers an
  * option only when its credentials are usable (a tile that can only fail is
- * never shown), and they hide when there is nothing to charge. A tap only
- * ARMS `payment.paymentType` and opens the same 3 s cancel window as COD —
- * NOTHING is sent from this screen. The Paytm initiate runs on /receipt
- * (usePaytmCheckout), so Cancel is always strictly before money moves.
- * Credentials are never dispatched from here (D11).
+ * never shown), and they hide when there is nothing to charge. A Paytm tap
+ * ARMS the type and opens the same 3 s cancel window as COD — nothing is sent
+ * inside it. The window's end IS the initiate (usePaytmCheckout; fork parity:
+ * posistKiosk PaymentSelection.tsx:239-257 initiates in its buffer timer), so
+ * Cancel is still strictly before money moves, and the receipt question
+ * comes after the payment (user 2026-10-13). Its wait (PleaseWait 1:4456) and
+ * failure modal (1:6288 layout: TRY AGAIN · PAY ANOTHER WAY, which closes it
+ * in place · BACK TO BAG) sit over this screen. A tap guard keeps the second
+ * tap of a double tap off the tiles (TAP_GUARD_MS). Credentials are never
+ * dispatched from here (D11).
  *
- * Rule 1: /payment → /receipt for Paytm reuses the existing COD edge; no
- * transition is added or removed on this screen.
+ * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only)
+ * and the initiate failure modal's BACK TO BAG /payment → /cart (moved from
+ * /receipt). COD keeps /payment → /receipt.
  *
  * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
  * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
@@ -139,11 +158,26 @@ export default function PaymentSelection() {
   // latch). This screen only ARMS it: beginCheckout pins
   // payment.paymentType = "PAY_AT_RESTAURANT" before anything is pushed.
   const { beginCheckout, cancelCheckout } = usePayAtCounter();
+  const {
+    status: paytmStatus,
+    failure: paytmFailure,
+    start: startPaytm,
+    retry: retryPaytm,
+    dismiss: dismissPaytm,
+  } = usePaytmCheckout();
 
   // The payment type the open cancel window armed; null = window closed.
   const [armedType, setArmedType] = useState<string | null>(null);
   const bufferTimer = useRef<number | null>(null);
   const viewedFired = useRef(false);
+  // Armed at mount; CANCEL and PAY ANOTHER WAY re-arm it (TAP_GUARD_MS).
+  const [tapGuard, setTapGuard] = useState(true);
+  // Rule 5: the guard's timer never outlives it (or the screen).
+  useEffect(() => {
+    if (!tapGuard) return;
+    const id = window.setTimeout(() => setTapGuard(false), TAP_GUARD_MS);
+    return () => window.clearTimeout(id);
+  }, [tapGuard]);
 
   const tabType = getTabType();
   const cartCount = cart?.cartItems?.length ?? 0;
@@ -216,16 +250,23 @@ export default function PaymentSelection() {
     []
   );
 
+  // Never off the screen under a window or an initiate. The window and
+  // PleaseWait cover BACK for a finger; this covers keyboard / AT — and the
+  // frame between the window's timer and its commit, whose closure still reads
+  // paytmStatus "idle" but armedType set (review R1). Not refused on "failed":
+  // the unavailable branch has no modal and must keep its way back (Rule 2).
   const handleBack = useCallback(() => {
+    if (armedType !== null || paytmStatus === "initiating") return;
     captureKioskEvent(KioskEventName.PaymentDismissed, {});
     navigate(shouldSkipCRM() ? "/cart" : "/customerName");
-  }, [navigate, shouldSkipCRM]);
+  }, [armedType, navigate, paytmStatus, shouldSkipCRM]);
 
   /**
    * A method tile. ARMS the payment type (COD via beginCheckout, unchanged;
    * Paytm by setKioskPaymentType), then opens the cancel window. The window
-   * ends by navigating to the receipt step — the push / initiate happens
-   * THERE, so Cancel here is always strictly before anything is sent.
+   * ends by navigating to /receipt (COD, which pushes there) or by starting
+   * the Paytm initiate here, so Cancel is always strictly before anything is
+   * sent.
    *
    * The buffer lives in component state (the fork drove the equivalent effect
    * off `redirectionRef.current` in a dependency array — a ref mutation does
@@ -234,7 +275,7 @@ export default function PaymentSelection() {
    */
   const handleMethod = useCallback(
     (type: string) => {
-      if (armedType !== null || bufferTimer.current !== null) return;
+      if (armedType !== null || bufferTimer.current !== null || paytmStatus !== "idle") return;
       captureKioskEvent(KioskEventName.PaymentMethodSelected, {
         payment_type: type,
         net_amount: netAmountRdx,
@@ -248,18 +289,30 @@ export default function PaymentSelection() {
       setArmedType(type);
       bufferTimer.current = window.setTimeout(() => {
         bufferTimer.current = null;
-        navigate("/receipt");
+        if (type === PAY_AT_COUNTER_PAYMENT_TYPE) {
+          navigate("/receipt");
+          return;
+        }
+        // Paytm: the window is over. The initiate replaces it in ONE commit,
+        // so PleaseWait shows at once (it replaces a dialog — PleaseWait.tsx).
+        setArmedType(null);
+        startPaytm();
       }, PAYMENT_BUFFER_MS);
     },
-    [armedType, beginCheckout, dispatch, navigate, netAmountRdx]
+    [armedType, beginCheckout, dispatch, navigate, netAmountRdx, paytmStatus, startPaytm]
   );
 
   const handleCancelBuffer = useCallback(() => {
-    if (bufferTimer.current !== null) {
-      window.clearTimeout(bufferTimer.current);
-      bufferTimer.current = null;
-    }
+    // The window is over once its timer fired (the timer nulls the ref first):
+    // a CANCEL still painted for that frame runs THIS render's closure and
+    // would disarm the type under an initiate that has already left — the
+    // session vanishes from readOpenPaytmSession while the terminal stays
+    // armed (review R1).
+    if (bufferTimer.current === null) return;
+    window.clearTimeout(bufferTimer.current);
+    bufferTimer.current = null;
     setArmedType(null);
+    setTapGuard(true);
     if (armedType !== PAY_AT_COUNTER_PAYMENT_TYPE) {
       // Paytm: nothing was sent. Disarm, so no stale gateway type survives
       // into a later payload (planner refinement).
@@ -276,6 +329,20 @@ export default function PaymentSelection() {
       net_amount: netAmountRdx,
     });
   }, [armedType, cancelCheckout, dispatch, netAmountRdx]);
+
+  /** Initiate failure exits: nothing is in flight once the modal is up. */
+  const handlePaytmOtherWay = useCallback(() => {
+    dismissPaytm();
+    setTapGuard(true);
+    // Already on /payment: disarm like CANCEL, so no stale gateway type
+    // survives into a later payload.
+    dispatch(setKioskPaymentType({ type: "" }));
+  }, [dismissPaytm, dispatch]);
+
+  const handlePaytmBackToBag = useCallback(() => {
+    dismissPaytm();
+    navigate("/cart");
+  }, [dismissPaytm, navigate]);
 
   if (showUnavailable) {
     return (
@@ -365,6 +432,12 @@ export default function PaymentSelection() {
         {t("payment.backToMenu")}
       </button>
 
+      {/* Transparent but hit-testable, over the tiles and BACK; under the
+          window and PleaseWait (z-50) and the failure modal (z-80). */}
+      {tapGuard && (
+        <div aria-hidden="true" data-testid="payment-tap-guard" className="absolute inset-0 z-40" />
+      )}
+
       {armedType !== null && (
         <div
           data-testid="payment-buffer"
@@ -398,6 +471,38 @@ export default function PaymentSelection() {
             </button>
           </div>
         </div>
+      )}
+
+      {paytmStatus === "initiating" && (
+        <PleaseWait testId="paytm-preparing" subtitle={t("paytm.wait.preparing")} />
+      )}
+
+      {paytmStatus === "failed" && paytmFailure && (
+        <ErrorModal
+          testId="paytm-initiate-failed"
+          title={t("paytm.failed.title")}
+          message={t(
+            paytmFailure.reason === "busy" ? "paytm.failed.busy" : "paytm.failed.start"
+          )}
+          primary={
+            paytmFailure.retryable
+              ? {
+                  label: t("paytm.failed.tryAgain"),
+                  onClick: retryPaytm,
+                  testId: "paytm-initiate-retry",
+                }
+              : {
+                  label: t("paytm.failed.payAnotherWay"),
+                  onClick: handlePaytmOtherWay,
+                  testId: "paytm-initiate-other",
+                }
+          }
+          secondary={{
+            label: t("orderError.backToBag"),
+            onClick: handlePaytmBackToBag,
+            testId: "paytm-initiate-bag",
+          }}
+        />
       )}
     </div>
   );

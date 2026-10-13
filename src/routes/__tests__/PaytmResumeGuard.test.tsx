@@ -28,7 +28,7 @@ import PaytmResumeGuard from "../PaytmResumeGuard";
 import "../../i18n";
 
 /*
-  P8b F1 — a reload mid-EDC-initiate keeps /receipt (or /payment) in the URL.
+  P8b F1 — a reload mid-EDC-initiate keeps /payment (or /receipt) in the URL.
   A Paytm session still open when the guarded layout MOUNTS resumes on
   /paymentPolling with the SAME ids; everything else renders the page. The
   decision is latched per mount, so the initiate that opens a session under
@@ -162,11 +162,11 @@ describe("PaytmResumeGuard — /payment and /receipt", () => {
     ["/payment", "EDC", () => { arm("PaytmEdc"); ids(); }],
     ["/receipt", "DQR with its QR", () => { arm("PaytmDynamicQr"); ids(); qr(); }],
     ["/payment", "DQR with its QR", () => { arm("PaytmDynamicQr"); ids(); qr(); }],
-  ])("%s, %s session open at mount → /paymentPolling (replace, receipt none), the page never mounts, the ids are kept", (path, _label, seed) => {
+  ])("%s, %s session open at mount → /paymentPolling (replace, no router state), the page never mounts, the ids are kept", (path, _label, seed) => {
     seed();
     renderAt(path);
 
-    expect(probe()).toEqual({ name: "polling", path: "/paymentPolling", state: { receipt: "none" }, type: "REPLACE" });
+    expect(probe()).toEqual({ name: "polling", path: "/paymentPolling", state: null, type: "REPLACE" });
     expect(new Set(mounted.mock.calls.flat())).toEqual(new Set(["polling"]));
     expect(payment()).toMatchObject({ posBillNo: BILL, posBillTime: BILL_TIME });
   });
@@ -206,13 +206,13 @@ describe("PaytmResumeGuard — /payment and /receipt", () => {
     expect(new Set(mounted.mock.calls.flat())).toEqual(new Set([path.slice(1)]));
   });
 
-  it("LATCHED: a session the initiate opens under the mounted layout is never bounced or swept — not even on a later in-layout navigation", () => {
+  it("LATCHED: a session the initiate on /payment opens under the mounted layout is never bounced or swept — not even on a later in-layout navigation", () => {
     arm("PaytmEdc");
-    renderAt("/receipt");
+    renderAt("/payment");
     act(() => {
       ids(); // usePaytmCheckout stores the ids BEFORE its call
     });
-    expect(probe()).toMatchObject({ name: "receipt" });
+    expect(probe()).toMatchObject({ name: "payment" });
 
     fireEvent.click(screen.getByTestId("to-payment"));
     expect(probe()).toMatchObject({ name: "payment", path: "/payment" });
@@ -402,16 +402,23 @@ describe("PaytmResumeGuard + the real /paymentPolling — never a loop, never a 
     expect(gw.status.every((body) => body.posBillNo === BILL)).toBe(true);
   });
 
-  it("resumed, then paid → Order Complete, and nothing ever navigates back", async () => {
+  // U10 (2026-10-13): paid now lands on the post-payment receipt question,
+  // back under this guard — which must render it, not resume the session.
+  it.each([
+    ["DQR", "dqr"],
+    ["EDC", "edc"],
+  ] as const)("resumed (%s), then paid → the post-payment /receipt, which renders and STAYS: the settled session never re-arms the guard", async (_label, kind) => {
     kiosk();
-    open("dqr");
+    open(kind);
     gw.statusReply = answer("paid");
     renderApp("/receipt");
     await step(13_000);
 
-    expect(here()).toMatchObject({ name: "orderSuccess", path: "/orderSuccess" });
-    expect(journey).toEqual(["/receipt", "/paymentPolling", "/orderSuccess"]);
+    expect(here()).toMatchObject({ name: "receipt", path: "/receipt" });
+    expect(journey).toEqual(["/receipt", "/paymentPolling", "/receipt"]);
     expect(gw.status).toHaveLength(1); // nothing reads after "paid"
+    expect(payment()).toMatchObject({ posBillNo: "", posBillTime: "" });
+    expect(readOpenPaytmSession(payment())).toBeNull();
   });
 
   it("resumed with its credentials gone: the staff panel at once (never bounced back), FINISH → /start", async () => {

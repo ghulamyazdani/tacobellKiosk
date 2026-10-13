@@ -98,14 +98,13 @@ test.describe("Flow 3 — payment failure", () => {
     const paytm = await mockPaytmBackend(page, { dqrStatus: () => paytmStatus("cancelled") });
     await burgerToPayment(page);
 
+    // Frozen BEFORE the tile: the window's end is the initiate, and from here
+    // only the spec moves time — a Paytm budget never expires mid-request.
+    await freezeClock(page);
     await page.getByTestId("payment-qr").click();
     await expect(page.getByTestId("payment-buffer")).toBeVisible();
     await page.clock.runFor(3_000);
-    await expect(page.getByTestId("receipt-screen")).toBeVisible();
-    // From here only gated steps move time: a Paytm budget never expires mid-request.
-    await freezeClock(page);
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("paytm-screen")).toBeVisible();
+    await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
 
     const failed = page.getByTestId("paytm-failed");
     await stepClockUntil(page, async () => (await failed.count()) > 0, {

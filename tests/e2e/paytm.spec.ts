@@ -38,9 +38,11 @@ import {
 /**
  * P8b — Paytm Dynamic QR + Paytm EDC, end to end: a MONEY PATH.
  *
- * /payment arms a Paytm tile → /receipt INITIATES (the order is parked with
- * the gateway; the BACKEND places it) → /paymentPolling settles it by status
- * reads. Every case proves the money rules, not just the screens:
+ * /payment arms a Paytm tile → its 3 s window's END INITIATES (the order is
+ * parked with the gateway; the BACKEND places it) → /paymentPolling settles
+ * it by status reads → paid → the post-payment receipt question on /receipt
+ * (2026-10-13: never asked before the payment) → Order Complete. Every case
+ * proves the money rules, not just the screens:
  *   - the kiosk NEVER places a Paytm order itself (placeOrder stays 0);
  *   - exactly one initiate per tap; an initiate whose outcome is unknown is
  *     NEVER sent again — it is settled by status with the SAME ids;
@@ -61,10 +63,12 @@ import {
  * and `/api/cx/kiosk/createOrder` stay forbidden — the regression guard.
  * Loyalty is off, so no Xeno route is needed.
  *
- * ── TIME: page.clock, FROZEN BEFORE THE INITIATE ────────────────────────
+ * ── TIME: page.clock, FROZEN BEFORE THE TILE ────────────────────────────
  * `page.clock.install()` runs before the first goto (beforeEach). The boot
- * and the 3 s /payment buffer run on the flowing clock; on /receipt each
- * Paytm case FREEZES it ({@link freezeClock}) before tapping. From then on no
+ * runs on the flowing clock. The window IS the initiate, so each Paytm case
+ * FREEZES the clock ({@link freezeClock}) BEFORE tapping the tile
+ * ({@link armPaytm}) and steps the window's 3 s ({@link initiateToPolling}):
+ * a window firing on a flowing clock would shift every count. From then on no
  * poll, tick, deadline or budget fires unless the spec advances time, so
  * every count below is exact. The poll loop is a chained timeout re-armed
  * from React state, so time only moves through {@link stepClockUntil}: small
@@ -86,8 +90,8 @@ import {
  * ── THE DEV-ONLY STORE SEAM ─────────────────────────────────────────────
  * `window.__kioskStore` (src/redux/app/store.ts, dev builds only) reads the
  * payment slice, the auth token and the splash-reload flag (E19); E8b uses
- * it once to take the Paytm rows away between arming and the initiate (the
- * local-refusal branch).
+ * it once to take the Paytm rows away inside the window, before the initiate
+ * (the local-refusal branch).
  *
  * ── E8 vs the contract ──────────────────────────────────────────────────
  * Contract §P8b-16 E8 says busy → PAY ANOTHER WAY. The frozen SDK rule makes
@@ -213,7 +217,7 @@ async function burgerToPayment(page: Page) {
   await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** A method tile → the 3 s cancel window (nothing sent) → /receipt. */
+/** PAY AT COUNTER → the 3 s cancel window (nothing sent) → /receipt, asked BEFORE the push. */
 async function chooseMethod(page: Page, tile: string) {
   await page.getByTestId(tile).click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
@@ -221,16 +225,34 @@ async function chooseMethod(page: Page, tile: string) {
 }
 
 /**
- * Freeze the clock (fixtures/kiosk.ts `freezeClock`: +1 s, nothing due on
- * /receipt — from here on only {@link stepClockUntil} moves time, header
- * TIME), tap a receipt tile (the Paytm initiate) and land on /paymentPolling.
- * `double`: a {@link doubleTap} instead of one click.
+ * Freeze the clock (fixtures/kiosk.ts `freezeClock`: +1 s — from here on only
+ * the spec moves time, header TIME), then tap a Paytm tile: it ARMS the type
+ * and opens the 3 s window, inside which nothing is sent. `double`: a
+ * {@link doubleTap} on the tile.
  */
-async function initiateToPolling(page: Page, receipt = "receipt-none", double = false) {
+async function armPaytm(page: Page, tile: string, double = false) {
   await freezeClock(page);
-  await (double ? doubleTap(page, receipt) : page.getByTestId(receipt).click());
+  await (double ? doubleTap(page, tile) : page.getByTestId(tile).click());
+  await expect(page.getByTestId("payment-buffer")).toBeVisible();
+}
+
+/** The window's 3 s end in the ONE initiate, on /payment → /paymentPolling. */
+async function initiateToPolling(page: Page) {
+  await page.clock.runFor(3_000);
   await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\/paymentPolling$/);
+}
+
+/**
+ * Paid → the POST-PAYMENT receipt question (no BACK: the order is placed and
+ * paid) → `answer` → Order Complete. Gated steps until the question shows.
+ */
+async function answerReceipt(page: Page, paytm: PaytmMockHandle, answer = "receipt-none") {
+  await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+  await expect(page).toHaveURL(/\/receipt$/);
+  await expect(page.getByTestId("receipt-back")).toHaveCount(0);
+  await page.getByTestId(answer).click();
+  await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
 }
 
 /**
@@ -310,6 +332,28 @@ const paymentSlice = (page: Page) =>
 const persistedPayment = (page: Page): Promise<Partial<PaymentSlice>> =>
   page.evaluate(() => {
     const raw = window.localStorage.getItem("persist:root");
+    const slice = raw ? (JSON.parse(raw) as Record<string, string>).payment : undefined;
+    return slice ? JSON.parse(slice) : {};
+  });
+
+/**
+ * The same, as it stood at the router's PUSH to /receipt (the paid tail's
+ * navigation) — before any later timer could write it. Arm before the tile.
+ */
+const recordDiskAtReceipt = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __diskAtReceipt?: string | null };
+    const push = window.history.pushState.bind(window.history);
+    window.history.pushState = (data, unused, url) => {
+      if (w.__diskAtReceipt === undefined && String(url).endsWith("/receipt")) {
+        w.__diskAtReceipt = window.localStorage.getItem("persist:root");
+      }
+      push(data, unused, url);
+    };
+  });
+const diskAtReceipt = (page: Page): Promise<Partial<PaymentSlice>> =>
+  page.evaluate(() => {
+    const raw = (window as unknown as { __diskAtReceipt?: string | null }).__diskAtReceipt;
     const slice = raw ? (JSON.parse(raw) as Record<string, string>).payment : undefined;
     return slice ? JSON.parse(slice) : {};
   });
@@ -528,7 +572,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { dqrStatus: statusSequence("pending", "pending", "paid") },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
+    await armPaytm(page, "payment-qr");
     await initiateToPolling(page);
 
     const qr = page.getByTestId("paytm-qr");
@@ -542,7 +586,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(slice.paytmQrCode).toBe(PAYTM_QR);
     expect(JSON.stringify(slice)).not.toContain(PAYTM_DQR_SECRET);
 
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    await answerReceipt(page, paytm);
     await expect(page).toHaveURL(/\/orderSuccess$/);
 
     const init = paytm.bodies.dqrInit[0];
@@ -582,8 +626,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       });
     }
 
-    // Order Complete's own exit empties the payment first: /start finds no
-    // open session, so its release sends nothing.
+    // Settled at paid (the ids cleared before the question) and emptied again
+    // by Order Complete's exit: /start finds no open session, sends nothing.
     await page.clock.runFor(20_000);
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     expect(paytm.total).toBe(4);
@@ -601,26 +645,36 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcStatus: statusSequence("pending", "pending", "paid") },
     });
     const { checkout, paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    // A DOUBLE tap on PRINT: one terminal arming, never two (the initiate's
-    // in-flight latch — the tiles only go inert a render later).
-    await initiateToPolling(page, "receipt-print", true);
+    // A DOUBLE tap on the TILE: one window, so one terminal arming, never two
+    // (the window latch — the tile only goes inert a render later).
+    await armPaytm(page, "payment-card", true);
+    await initiateToPolling(page);
     await expect.poll(() => paytm.inFlight()).toBe(0);
     expect(paytm.counts.edcInit, "EDC initiate calls after a double tap").toBe(1);
     await expect(page.getByTestId("paytm-total")).toContainText("£9.00");
     await expect(page.getByTestId("paytm-countdown")).toBeVisible();
 
-    // A trusted Back never reaches the router (AppRoutes trap): no /receipt,
+    // A trusted Back never reaches the router (AppRoutes trap): no /payment,
     // so no second initiate can be tapped.
     const before = await paymentSlice(page);
     await page.goBack();
     await page.goBack();
     await expect(page).toHaveURL(/\/paymentPolling$/);
     await expect(page.getByTestId("paytm-screen")).toBeVisible();
-    await expect(page.getByTestId("receipt-screen")).toHaveCount(0);
+    await expect(page.getByTestId("payment-screen")).toHaveCount(0);
     expect((await paymentSlice(page)).posBillNo).toBe(before.posBillNo);
 
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    // Paid → the post-payment question. Back there re-reads nothing (the
+    // paid tail cannot re-run) and offers no way to an unpaid screen.
+    await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+    const readsAtPaid = paytm.counts.edcStatus;
+    await page.goBack();
+    await expect(page).toHaveURL(/\/receipt$/);
+    await expect(page.getByTestId("receipt-back")).toHaveCount(0);
+    await expect(page.getByTestId("paytm-screen")).toHaveCount(0);
+    expect(paytm.counts.edcStatus).toBe(readsAtPaid);
+    await page.getByTestId("receipt-print").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
     const init = paytm.bodies.edcInit[0];
     expect(init).toMatchObject({
       deployment_id: "dep1",
@@ -669,9 +723,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcStatus: statusSequence("paid") },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    await initiateToPolling(page, "receipt-print");
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    await answerReceipt(page, paytm, "receipt-print");
 
     await expect.poll(() => paytm.printBodies.length).toBe(1);
     expect(paytm.printBodies[0]).toContain("Payment Mode: Online");
@@ -702,7 +756,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       },
     });
     const { checkout, paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
 
@@ -743,14 +797,14 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     test.slow();
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
 
     // The guest completed the card payment as they tapped cancel.
     paytm.script.edcStatus = () => paytmStatus("paid");
     await cancelPayment(page, en.paytm.cancelConfirm.message);
-    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
+    await answerReceipt(page, paytm);
     await expect(page.getByTestId("order-number")).toHaveText(
       `#${paytm.bodies.edcInit[0].posBillNo.slice(-5)}`
     );
@@ -772,7 +826,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     const posBillTime = paytm.bodies.edcInit[0].posBillTime;
 
@@ -820,7 +874,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcCancel: () => httpError(500) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     const { posBillNo, posBillTime } = paytm.bodies.edcInit[0];
 
@@ -880,7 +934,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcCancel: () => httpError(504) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
 
     await cancelPayment(page, en.paytm.cancelConfirm.message);
@@ -895,7 +949,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
 
     paytm.script.edcStatus = () => paytmStatus("paid");
     await page.getByTestId("paytm-unknown-check").click();
-    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
+    await answerReceipt(page, paytm);
     await expect(page.getByTestId("order-number")).toHaveText(
       `#${paytm.bodies.edcInit[0].posBillNo.slice(-5)}`
     );
@@ -917,7 +971,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcStatus: () => httpError(500) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     await stepClockUntil(page, paytm, () => paytm.counts.edcStatus === 1);
 
@@ -948,7 +1002,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcCancel: () => httpError(500) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
 
     await cancelPayment(page, en.paytm.cancelConfirm.message);
@@ -991,12 +1045,12 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
         },
       });
       const { paytm } = mocks;
-      await chooseMethod(page, "payment-card");
+      await armPaytm(page, "payment-card");
       await initiateToPolling(page);
       await expect(page.getByTestId("paytm-initiate-failed")).toHaveCount(0);
       expect(paytm.counts.edcInit).toBe(1);
 
-      await stepClockUntil(page, paytm, visible(page, "order-success"));
+      await answerReceipt(page, paytm);
       const { posBillNo } = paytm.bodies.edcInit[0];
       await expect(page.getByTestId("order-number")).toHaveText(`#${posBillNo.slice(-5)}`);
       expect(paytm.counts.edcStatus).toBe(2);
@@ -1013,8 +1067,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     // The flowing clock on purpose: redux-persist flushes on timers (header).
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => paytm.counts.edcStatus, { timeout: 15_000 }).toBeGreaterThan(0);
 
@@ -1024,7 +1078,10 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(page.getByTestId("paytm-cancel")).toBeVisible();
     const reads = paytm.counts.edcStatus;
     paytm.script.edcStatus = () => paytmStatus("paid");
-    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("receipt-back")).toHaveCount(0);
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
 
     expect(paytm.counts.edcStatus).toBeGreaterThan(reads);
     expectEdcReadsCarry(paytm);
@@ -1035,7 +1092,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
 
-  test("E7d RELOAD mid-EDC-INITIATE on /receipt (F1): the reload resumes the SAME ids on /paymentPolling — never a re-tap with new ids — and settles paid", async ({
+  test("E7d RELOAD mid-EDC-INITIATE on /payment (F1): the reload resumes the SAME ids on /paymentPolling — never a re-tap with new ids — and settles paid", async ({
     page,
   }) => {
     test.slow();
@@ -1051,9 +1108,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await page.route(PAYTM_ENDPOINTS.edcInit, (route) => {
       parked.push(route.request().postDataJSON() as EdcInitBody);
     });
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("paytm-preparing")).toBeVisible();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
+    await expect(page.getByTestId("paytm-preparing")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => parked.length).toBe(1);
     const { posBillNo, posBillTime } = parked[0];
     // Stored BEFORE the call, and on disk before the reload.
@@ -1062,12 +1119,16 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       .toBe(posBillNo);
     // Still mid-initiate (the 10 s budget has not turned it into an EDC
     // outcome-unknown navigation of its own).
-    await expect(page).toHaveURL(/\/receipt$/);
+    await expect(page).toHaveURL(/\/payment$/);
 
     await page.reload();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 20_000 });
     await expect(page).toHaveURL(/\/paymentPolling$/);
-    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    // Paid → the post-payment question (the choice is asked after the
+    // resume, so a reload mid-payment never loses it).
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("order-number")).toHaveText(`#${posBillNo.slice(-5)}`);
 
     expect(parked, "initiates after the reload").toHaveLength(1);
@@ -1111,8 +1172,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     const { posBillNo } = paytm.bodies.edcInit[0];
     await expect.poll(async () => (await persistedPayment(page)).posBillNo).toBe(posBillNo);
@@ -1160,16 +1221,16 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await page.route(PAYTM_ENDPOINTS.edcInit, (route) => {
       parked.push(route.request().postDataJSON() as EdcInitBody);
     });
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
-    await expect(page.getByTestId("paytm-preparing")).toBeVisible();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
+    await expect(page.getByTestId("paytm-preparing")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => parked.length).toBe(1);
     const { posBillNo, posBillTime } = parked[0];
     const ids = { deployment_id: "dep1", posBillNo, posBillTime, deviceId: PAYTM_EDC_DEVICE_ID };
     await expect
       .poll(async () => (await persistedPayment(page)).posBillNo)
       .toBe(posBillNo);
-    await expect(page).toHaveURL(/\/receipt$/);
+    await expect(page).toHaveURL(/\/payment$/);
 
     await page.reload();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 20_000 });
@@ -1229,8 +1290,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     // The flowing clock on purpose: redux-persist flushes on timers (header).
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
-    await page.getByTestId("receipt-none").click();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-qr").click();
     const qr = page.getByTestId("paytm-qr");
     await expect(qr).toBeVisible({ timeout: 15_000 });
     const svg = await qr.locator("svg").innerHTML();
@@ -1251,7 +1312,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
 
     const reads = paytm.counts.dqrStatus;
     paytm.script.dqrStatus = () => paytmStatus("paid");
-    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("order-number")).toHaveText(`#${posBillId.slice(-5)}`);
     expect(paytm.counts.dqrStatus).toBeGreaterThan(reads);
     for (const body of paytm.bodies.dqrStatus) {
@@ -1284,9 +1347,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcStatus: statusSequence("pending", "paid") },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    await answerReceipt(page, paytm);
     const first = paytm.bodies.edcInit[0];
     const callsOfFirst = paytm.total;
     const readsOfFirst = paytm.counts.edcStatus;
@@ -1313,9 +1376,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(slice.paymentType).toBe("");
     await expect.poll(async () => (await persistedPayment(page)).posBillNo).toBe("");
 
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    await answerReceipt(page, paytm);
     const second = paytm.bodies.edcInit[1];
     expect(second.posBillNo).not.toBe(first.posBillNo);
     await expect(page.getByTestId("order-number")).toHaveText(
@@ -1337,18 +1400,22 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 2 });
   });
 
-  test("E8 EDC BUSY: the busy modal (retryable: TRY AGAIN with NEW ids, no PAY ANOTHER WAY), BACK TO BAG → intact bag; no status, no void", async ({
+  test("E8 EDC BUSY: the busy modal on /payment (retryable: TRY AGAIN with NEW ids, no PAY ANOTHER WAY), BACK TO BAG → intact bag; no status, no void", async ({
     page,
   }) => {
     test.slow();
     const mocks = await bootToPayment(page, { script: { edcInit: () => EDC_BUSY } });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
+    await armPaytm(page, "payment-card");
+    await page.clock.runFor(3_000);
 
     const modal = page.getByTestId("paytm-initiate-failed");
     await expect(modal).toBeVisible({ timeout: 15_000 });
     await expect(modal).toContainText(en.paytm.failed.busy);
+    // Over /payment's tiles (moved off /receipt, 2026-10-13).
+    await expect(page).toHaveURL(/\/payment$/);
+    await expect(page.getByTestId("payment-screen")).toBeAttached();
+    await expect(page.getByTestId("receipt-screen")).toHaveCount(0);
     await expect(page.getByTestId("paytm-initiate-retry")).toBeVisible();
     await expect(page.getByTestId("paytm-initiate-other")).toHaveCount(0);
     await expect(page.getByTestId("paytm-initiate-bag")).toBeVisible();
@@ -1370,32 +1437,42 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 2 });
   });
 
-  test("E8b a LOCAL refusal (no usable Paytm row at initiate time) sends nothing and offers PAY ANOTHER WAY → /payment", async ({
+  test("E8b a LOCAL refusal (no usable Paytm row at initiate time) sends nothing and offers PAY ANOTHER WAY, which closes the modal in place on /payment", async ({
     page,
   }) => {
     test.slow();
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    // The rows disappear between arming and the tap (DEV store seam).
+    await armPaytm(page, "payment-card");
+    // The rows disappear inside the window, before its end (DEV store seam).
     await page.evaluate(() =>
       (window as unknown as { __kioskStore: KioskStore }).__kioskStore.dispatch({
         type: "appSettings/setPaymentSettings",
         payload: [],
       })
     );
-    await page.getByTestId("receipt-none").click();
+    await page.clock.runFor(3_000);
 
     const modal = page.getByTestId("paytm-initiate-failed");
     await expect(modal).toBeVisible({ timeout: 15_000 });
     await expect(modal).toContainText(en.paytm.failed.start);
     await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/payment$/);
     await page.getByTestId("paytm-initiate-other").click();
+    await expect(modal).toHaveCount(0);
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/payment$/);
-    // Only the counter is left to offer.
+    // Disarmed: no stale gateway type survives into a later payload.
+    expect((await paymentSlice(page)).paymentType).toBe("");
+    // Only the counter is left to offer — and it is live once PAY ANOTHER
+    // WAY's tap guard has run out (500 ms; the clock is frozen).
     await expect(page.getByTestId("payment-counter")).toBeVisible();
     await expect(page.getByTestId("payment-card")).toHaveCount(0);
+    await expect(page.getByTestId("payment-tap-guard")).toHaveCount(1);
+    await page.clock.runFor(500);
+    await expect(page.getByTestId("payment-tap-guard")).toHaveCount(0);
+    await page.getByTestId("payment-counter").click();
+    await expect(page.getByTestId("payment-buffer")).toContainText(en.payment.placingOrder);
     expect(paytm.total).toBe(0);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 0 });
   });
@@ -1414,9 +1491,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
-    await freezeClock(page);
-    await page.getByTestId("receipt-none").click();
+    await armPaytm(page, "payment-qr");
+    await page.clock.runFor(3_000);
 
     const modal = page.getByTestId("paytm-initiate-failed");
     await expect(modal).toBeVisible({ timeout: 15_000 });
@@ -1430,7 +1506,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(second.payload.orderId).toBe(second.posBillId);
     expect(second.payload.orderId).not.toBe(first.payload.orderId);
 
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
+    await answerReceipt(page, paytm);
     await expect(page.getByTestId("order-number")).toHaveText(
       `#${second.posBillId.slice(-5)}`
     );
@@ -1445,7 +1521,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     test.setTimeout(150_000);
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
+    await armPaytm(page, "payment-qr");
     await initiateToPolling(page);
     await expect(page.getByTestId("paytm-qr")).toBeVisible();
     const deadline = Number((await paymentSlice(page)).posBillTime) + DQR_WINDOW_MS;
@@ -1481,7 +1557,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { dqrStatus: (call) => httpError(call % 2 === 1 ? 504 : 500) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
+    await armPaytm(page, "payment-qr");
     await initiateToPolling(page);
     const deadline = Number((await paymentSlice(page)).posBillTime) + DQR_WINDOW_MS;
 
@@ -1514,7 +1590,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     test.slow();
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
+    await armPaytm(page, "payment-qr");
     await initiateToPolling(page);
     await stepClockUntil(page, paytm, () => paytm.counts.dqrStatus === 1);
 
@@ -1536,7 +1612,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     test.setTimeout(150_000);
     const mocks = await bootToPayment(page, { idealTime: "60" });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     const { posBillTime } = paytm.bodies.edcInit[0];
     const everPrompted = await latchIfEverShown(page, "idle-modal");
@@ -1593,7 +1669,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     const navigations: string[] = [];
     page.on("framenavigated", (frame) => {
@@ -1624,9 +1700,12 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(navigations).not.toContain("/");
 
     paytm.script.edcStatus = () => paytmStatus("paid");
-    await stepClockUntil(page, paytm, visible(page, "order-success"));
-    // Not vacuous: the recorder sees in-app navigations too.
+    await answerReceipt(page, paytm);
+    // Not vacuous: the recorder sees in-app navigations too — the receipt
+    // question strictly after the payment, then Order Complete.
     expect(navigations).toContain("/orderSuccess");
+    expect(navigations.indexOf("/receipt")).toBeGreaterThan(-1);
+    expect(navigations.indexOf("/receipt")).toBeLessThan(navigations.indexOf("/orderSuccess"));
     expect(navigations).not.toContain("/");
     expectEdcReadsCarry(paytm);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
@@ -1684,7 +1763,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
       script: { edcCancel: () => httpError(500) },
     });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
 
     await expectReachable(page, page.getByTestId("reach-zone"));
@@ -1719,7 +1798,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     test.slow();
     const mocks = await bootToPayment(page, { ada: true });
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-qr");
+    await armPaytm(page, "payment-qr");
     await initiateToPolling(page);
 
     const qr = page.getByTestId("paytm-qr");
@@ -1754,9 +1833,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(page.getByTestId("payment-card")).toContainText(ar.payment.payWithCard);
     await expect(page.getByTestId("payment-qr")).toContainText(ar.paytm.methodQr);
     await noRawKeys();
-    await page.getByTestId("payment-card").click();
+    await armPaytm(page, "payment-card");
     await expect(page.getByTestId("payment-buffer")).toContainText(ar.paytm.redirecting);
-    await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
     await initiateToPolling(page);
 
     const screen = page.getByTestId("paytm-screen");
@@ -1809,18 +1887,17 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     const chunkRequests = countChunkRequests(page);
     const abort = (route: Route) => route.abort();
     await page.route(PAYTM_CHUNK, abort);
-    await chooseMethod(page, "payment-card");
     await markDocument(page);
-    await freezeClock(page);
-    await page.getByTestId("receipt-none").click();
+    await armPaytm(page, "payment-card");
+    await page.clock.runFor(3_000);
 
-    /** Refused BEFORE any id or request: the non-retryable modal, on /receipt. */
+    /** Refused BEFORE any id or request: the non-retryable modal, on /payment. */
     const expectRefusedWithNothingSent = async () => {
       const modal = page.getByTestId("paytm-initiate-failed");
       await expect(modal).toBeVisible({ timeout: 15_000 });
       await expect(modal).toContainText(en.paytm.failed.start);
       await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
-      await expect(page).toHaveURL(/\/receipt$/);
+      await expect(page).toHaveURL(/\/payment$/);
       expect(paytm.total, "Paytm calls without the screen").toBe(0);
       expect((await paymentSlice(page)).posBillNo).toBe("");
       expect(await sameDocument(page), "reloaded mid-session").toBe(true);
@@ -1831,15 +1908,15 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(await reloadFlagged(page)).toBe(true);
 
     // The network is back, but this document remembers the failed fetch (the
-    // module map): PAY ANOTHER WAY → the same tile → refused again, nothing
-    // sent — an initiate here would arm a terminal no screen can settle.
+    // module map): PAY ANOTHER WAY (closes in place) → the same tile → refused
+    // again, nothing sent — an initiate here would arm a terminal no screen
+    // can settle.
     await page.unroute(PAYTM_CHUNK, abort);
     await page.getByTestId("paytm-initiate-other").click();
+    await expect(page.getByTestId("paytm-initiate-failed")).toHaveCount(0);
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
-    await page.clock.resume();
-    await chooseMethod(page, "payment-card");
-    await freezeClock(page);
-    await page.getByTestId("receipt-none").click();
+    await armPaytm(page, "payment-card");
+    await page.clock.runFor(3_000);
     await expectRefusedWithNothingSent();
     expect(chunkRequests(), "the browser answered from its failure cache").toBe(1);
 
@@ -1881,7 +1958,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 20_000 });
     await burgerToPayment(page);
-    await chooseMethod(page, "payment-card");
+    await armPaytm(page, "payment-card");
     await initiateToPolling(page);
     await expect(page.getByTestId("paytm-cancel")).toBeVisible();
     expect(chunkRequests()).toBe(2);
@@ -1895,8 +1972,8 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     // The flowing clock on purpose: redux-persist flushes on timers (header).
     const mocks = await bootToPayment(page);
     const { paytm } = mocks;
-    await chooseMethod(page, "payment-card");
-    await page.getByTestId("receipt-none").click();
+    // The window's 3 s on the flowing clock: its end is the initiate.
+    await page.getByTestId("payment-card").click();
     await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => paytm.counts.edcStatus, { timeout: 15_000 }).toBeGreaterThan(0);
 
@@ -1923,6 +2000,295 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectEdcReadsCarry(paytm);
     expect((await paymentSlice(page)).posBillNo).toBe("");
     expect(await sameDocument(page), "reloaded before the splash dwell").toBe(true);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* The receipt question AFTER the payment (user 2026-10-13)          */
+  /* ---------------------------------------------------------------- */
+
+  test("R1 RECEIPT AFTER PAYMENT (EDC): never asked before paying — the tile's window initiates on /payment; paid → the post-payment question (no BACK); a double-tapped YES prints ONE ticket, 'Payment Mode: Online'; /start reads nothing", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, {
+      printBill: true,
+      printViaPos: false,
+      script: { edcStatus: statusSequence("pending", "paid") },
+    });
+    const { paytm } = mocks;
+    const everAsked = await latchIfEverShown(page, "receipt-screen");
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    expect(await everAsked(), "the receipt question before the payment").toBe(false);
+
+    await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+    await expect(page).toHaveURL(/\/receipt$/);
+    await expect(page.getByTestId("receipt-back")).toHaveCount(0);
+    await expect(page.getByTestId("paytm-screen")).toHaveCount(0);
+    const callsAtPaid = paytm.total;
+    await doubleTap(page, "receipt-print");
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("order-number")).toHaveText(
+      `#${paytm.bodies.edcInit[0].posBillNo.slice(-5)}`
+    );
+    await expect.poll(() => paytm.printBodies.length).toBe(1);
+    expect(paytm.printBodies[0]).toContain("Payment Mode: Online");
+    expect(paytm.printBodies[0]).not.toContain("(UnPaid)");
+
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    expect(paytm.printBodies).toHaveLength(1);
+    expect(paytm.total, "Paytm calls after paid — no release read").toBe(callsAtPaid);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  test("R2 RELOAD on the post-payment question: the session is settled on disk before it shows (ids cleared, type kept); the reload drops the local order record, so a YES could not print — it is never asked again: Order Complete with the same number, nothing printed, no resume, no read, no initiate", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, {
+      printBill: true,
+      printViaPos: false,
+      script: { edcStatus: statusSequence("paid") },
+    });
+    const { paytm } = mocks;
+    await recordDiskAtReceipt(page);
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+    const { posBillNo } = paytm.bodies.edcInit[0];
+    // The paid tail's explicit flush: settled on disk AT its navigation. Read
+    // there, not now: the stepped clock has since run redux-persist's own
+    // write timer, which would hide a missing flush.
+    const disk = await diskAtReceipt(page);
+    expect(disk.posBillNo).toBe("");
+    expect(disk.paymentType).toBe("PaytmEdc");
+    expect((await persistedPayment(page)).posBillNo).toBe("");
+    const reads = paytm.counts.edcStatus;
+
+    await page.clock.resume();
+    const navigations: string[] = [];
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) navigations.push(new URL(frame.url()).pathname);
+    });
+    // Before the reloaded document's own scripts: latch the question if it
+    // ever commits again.
+    await page.addInitScript(() => {
+      const w = window as unknown as { __askedAgain?: boolean };
+      w.__askedAgain = false;
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="receipt-screen"]')) w.__askedAgain = true;
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.reload();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveURL(/\/orderSuccess$/);
+    await expect(page.getByTestId("order-number")).toHaveText(`#${posBillNo.slice(-5)}`);
+    expect(
+      await page.evaluate(() => (window as unknown as { __askedAgain?: boolean }).__askedAgain),
+      "the question after the reload"
+    ).toBe(false);
+    expect(navigations, "a resume after the reload").not.toContain("/paymentPolling");
+    expect(paytm.counts.edcStatus).toBe(reads);
+
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    expect(paytm.printBodies, "a ticket nobody could be asked for").toEqual([]);
+    expect(navigations).not.toContain("/paymentPolling");
+    expect(paytm.counts.edcStatus, "status reads after paid, the release included").toBe(reads);
+    expect(paytm.counts.edcCancel).toBe(0);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  test("R3 IDLE on the post-payment question (ideal_time 60): never the idle prompt; at T − 20 s it answers NO by itself → Order Complete, nothing printed; its 20 s lands on /start — no Paytm call after paid", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, {
+      idealTime: "60",
+      printBill: true,
+      printViaPos: false,
+      script: { edcStatus: statusSequence("paid") },
+    });
+    const { paytm } = mocks;
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    await stepClockUntil(page, paytm, visible(page, "receipt-screen"));
+    const askedBy = await fakeNow(page);
+    const calls = paytm.total;
+    const everPrompted = await latchIfEverShown(page, "idle-modal");
+
+    // T = 60 s: a plain idle period would prompt at 40 s; the question holds
+    // idle and answers itself at T − 20 s = 40 s.
+    await page.clock.runFor(38_000);
+    await expect(page).toHaveURL(/\/receipt$/);
+    await expect(page.getByTestId("receipt-screen")).toBeVisible();
+    expect(await everPrompted()).toBe(false);
+    await stepClockUntil(page, paytm, visible(page, "order-success"), { timeout: 30_000 });
+    expect((await fakeNow(page)) - askedBy).toBeLessThanOrEqual(42_000);
+    await expect(page.getByTestId("order-number")).toHaveText(
+      `#${paytm.bodies.edcInit[0].posBillNo.slice(-5)}`
+    );
+
+    await page.clock.runFor(20_000);
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    expect(await everPrompted(), "the idle prompt over a paid order").toBe(false);
+    expect(paytm.printBodies, "a print nobody asked for").toEqual([]);
+    expect(paytm.total).toBe(calls);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  test("R4 DQR: never asked before the QR — the question follows the payment; NO → Order Complete; one createQR", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, {
+      script: { dqrStatus: statusSequence("pending", "paid") },
+    });
+    const { paytm } = mocks;
+    const everAsked = await latchIfEverShown(page, "receipt-screen");
+    await armPaytm(page, "payment-qr");
+    await initiateToPolling(page);
+    await expect(page.getByTestId("paytm-qr").locator("svg")).toHaveCount(1);
+    expect(await everAsked(), "the receipt question before the QR was paid").toBe(false);
+
+    await answerReceipt(page, paytm);
+    await expect(page.getByTestId("order-number")).toHaveText(
+      `#${paytm.bodies.dqrInit[0].posBillId.slice(-5)}`
+    );
+    expect(paytm.counts.dqrStatus).toBe(2);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 1, edcInit: 0 });
+  });
+
+  test("R5 EDC outcome unknown → FINISH asks nothing and prints nothing: /start, never the receipt question or Order Complete; /start's release sends one read + one void", async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    const mocks = await bootToPayment(page, {
+      printBill: true,
+      printViaPos: false,
+      script: { edcCancel: () => httpError(500) },
+    });
+    const { paytm } = mocks;
+    const everAsked = await latchIfEverShown(page, "receipt-screen");
+    const everCompleted = await latchIfEverShown(page, "order-success");
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    const { posBillTime } = paytm.bodies.edcInit[0];
+
+    await stepClockTo(page, paytm, posBillTime + EDC_WINDOW_MS - 4_000);
+    await stepClockUntil(page, paytm, visible(page, "paytm-unknown"), { timeout: 60_000 });
+    expect(paytm.counts.edcCancel).toBe(1);
+    const reads = paytm.counts.edcStatus;
+
+    await page.getByTestId("paytm-unknown-finish").click();
+    await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => paytm.counts.edcCancel).toBe(2);
+    expect(paytm.counts.edcStatus).toBe(reads + 1);
+    expect(await everAsked(), "the receipt question without a payment").toBe(false);
+    expect(await everCompleted(), "Order Complete without a payment").toBe(false);
+    expect(paytm.printBodies).toEqual([]);
+    expectEdcReadsCarry(paytm);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
+  });
+
+  test("R6 the initiate failure modal lives on /payment: busy over the tiles (never the receipt question) → TRY AGAIN (NEW ids) → paid → the post-payment question → NO → Order Complete", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, {
+      script: { edcInit: () => EDC_BUSY, edcStatus: statusSequence("paid") },
+    });
+    const { paytm } = mocks;
+    const everAsked = await latchIfEverShown(page, "receipt-screen");
+    await armPaytm(page, "payment-card");
+    await page.clock.runFor(3_000);
+
+    const modal = page.getByTestId("paytm-initiate-failed");
+    await expect(modal).toContainText(en.paytm.failed.busy, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/payment$/);
+    await expect(page.getByTestId("payment-screen")).toBeAttached();
+    delete paytm.script.edcInit; // the retry arms the terminal (fixture default)
+    await page.getByTestId("paytm-initiate-retry").click();
+    await expect(page.getByTestId("paytm-screen")).toBeVisible({ timeout: 15_000 });
+    const [first, second] = paytm.bodies.edcInit;
+    expect(second.posBillNo).not.toBe(first.posBillNo);
+    expect(await everAsked(), "the receipt question before the payment").toBe(false);
+
+    await answerReceipt(page, paytm);
+    await expect(page.getByTestId("order-number")).toHaveText(`#${second.posBillNo.slice(-5)}`);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 2 });
+  });
+
+  /*
+    Review 2 F1: a window's end is an initiate, so the second tap of a double
+    tap that falls through onto a tile moves money 3 s later. Two REAL taps
+    (page.mouse, two tasks — doubleTap's same-task pair never sees the screen
+    change between them), the second after the screen under the finger has
+    changed, on a frozen clock so /payment's 500 ms guard cannot run out.
+  */
+  const inside = (at: { x: number; y: number }, box: { x: number; y: number; width: number; height: number }) =>
+    at.x > box.x && at.x < box.x + box.width && at.y > box.y && at.y < box.y + box.height;
+
+  test("R7 a double tap on the window's CANCEL never arms the QR tile under it: the second tap meets the tap guard — nothing armed, nothing sent; 500 ms on, the same spot is live", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page);
+    const { paytm } = mocks;
+    const qr = await page.getByTestId("payment-qr").boundingBox();
+    await armPaytm(page, "payment-card");
+    const cancel = await page.getByTestId("payment-buffer-cancel").boundingBox();
+    if (!qr || !cancel) throw new Error("no QR tile or CANCEL box");
+    const at = { x: cancel.x + cancel.width / 2, y: cancel.y + cancel.height / 2 };
+    expect(inside(at, qr), "CANCEL sits over the QR tile").toBe(true);
+
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByTestId("payment-buffer")).toHaveCount(0);
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByTestId("payment-buffer")).toHaveCount(0);
+    expect((await paymentSlice(page)).paymentType).toBe("");
+    await page.clock.runFor(3_000);
+    await expect(page.getByTestId("paytm-preparing")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/payment$/);
+    expect(paytm.total).toBe(0);
+
+    // The guard was what held it: the same spot arms the QR tile now.
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByTestId("payment-buffer")).toBeVisible();
+    expect((await paymentSlice(page)).paymentType).toBe("PaytmDynamicQr");
+    await page.getByTestId("payment-buffer-cancel").click();
+    await expect(page.getByTestId("payment-buffer")).toHaveCount(0);
+    expect(paytm.total).toBe(0);
+    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 0 });
+  });
+
+  test("R8 a double tap on the not-paid panel's TRY AGAIN never arms the tile under it on /payment: its first 500 ms swallow the second tap — nothing more sent", async ({
+    page,
+  }) => {
+    test.slow();
+    const mocks = await bootToPayment(page, { script: { edcStatus: () => paytmStatus("cancelled") } });
+    const { paytm } = mocks;
+    const qr = await page.getByTestId("payment-qr").boundingBox();
+    await armPaytm(page, "payment-card");
+    await initiateToPolling(page);
+    await stepClockUntil(page, paytm, visible(page, "paytm-failed"));
+    const retry = await page.getByTestId("paytm-failed-retry").boundingBox();
+    if (!qr || !retry) throw new Error("no QR tile or TRY AGAIN box");
+    const at = { x: Math.max(retry.x, qr.x) + 12, y: retry.y + retry.height / 2 };
+    expect(inside(at, retry) && inside(at, qr), "TRY AGAIN sits over /payment's QR tile").toBe(true);
+    const sent = paytm.total;
+
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByTestId("payment-buffer")).toHaveCount(0);
+    expect((await paymentSlice(page)).paymentType).toBe("");
+    await page.clock.runFor(3_000);
+    await expect(page.getByTestId("paytm-preparing")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/payment$/);
+    expect(paytm.total).toBe(sent);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
 });
