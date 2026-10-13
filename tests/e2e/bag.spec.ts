@@ -898,6 +898,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("select-size-modal")).toHaveCount(0);
     await expect(page.getByTestId("pdp-variant-picker")).toHaveCount(0);
     await expect(page.getByTestId("pdp-change-size")).toHaveText(`Large · ${en.pdp.change}`);
+    // The chip takes its own line under the description's Show more (user 2026-10-13: it sat inline after it).
+    const more = await page.getByTestId("pdp-show-more").boundingBox();
+    const chip = await page.getByTestId("pdp-change-size").boundingBox();
+    expect(more && chip && chip.y >= more.y + more.height, "the size chip below Show more").toBe(true);
     await expect(page.getByTestId(`pdp-group-${PICKLES_GROUP}`)).toBeVisible();
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£7.00");
     await page.getByTestId(`pdp-option-${EXTRA_PICKLES}`).click();
