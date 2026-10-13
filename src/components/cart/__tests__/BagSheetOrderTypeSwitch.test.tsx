@@ -82,6 +82,7 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
 
 const AR_BURGER = "تشيز برجر";
 const AR_SALAD = "سلطة يونانية";
+const AR_TAKE_AWAY = "سفري";
 const AR = (value: string) => [{ value, name: "Arabic", code: "ar", dir: "rtl" }];
 
 /** Paid CUSTOMIZABLE row (BagSheet.test fixture) — a valid, non-zero bill. */
@@ -221,7 +222,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       expect(eatIn).toHaveAttribute("aria-disabled", "false");
       fireEvent.click(eatIn);
       const confirm = await screen.findByTestId("bag-ordertype-confirm");
-      expect(confirm).toHaveAccessibleName("Switch to Eat In?");
+      expect(confirm).toHaveAccessibleName("Switch to Dine In?");
       fireEvent.click(screen.getByTestId("bag-ordertype-confirm-yes"));
       expect(mocks.switchTo).toHaveBeenCalledWith(P1);
     });
@@ -257,11 +258,11 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       renderBag();
       const before = store.getState();
       const confirm = await openConfirm();
-      expect(confirm).toHaveAccessibleName("Switch to Take Out?");
+      expect(confirm).toHaveAccessibleName("Switch to Take Away?");
       expect(confirm).toHaveAccessibleDescription("Prices and availability may change.");
       expect(confirm.querySelector("img")).toBeNull();
       expect(screen.getByTestId("bag-ordertype-confirm-yes")).toHaveTextContent("Yes, switch");
-      expect(screen.getByTestId("bag-ordertype-confirm-no")).toHaveTextContent("No, keep Eat In");
+      expect(screen.getByTestId("bag-ordertype-confirm-no")).toHaveTextContent("No, keep Dine In");
 
       fireEvent.click(screen.getByTestId("bag-ordertype-confirm-no"));
       expect(screen.queryByTestId("bag-ordertype-confirm")).not.toBeInTheDocument();
@@ -323,7 +324,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       await openConfirm();
       fireEvent.click(screen.getByTestId("bag-ordertype-confirm-yes"));
       const failed = await screen.findByTestId("bag-ordertype-failed");
-      expect(failed).toHaveAccessibleName("We couldn't switch to Take Out");
+      expect(failed).toHaveAccessibleName("We couldn't switch to Take Away");
       expect(failed).toHaveAccessibleDescription("Your order hasn't changed. Please try again.");
       expect(failed.querySelector("img")).not.toBeNull(); // the warning mark
 
@@ -362,6 +363,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       store.dispatch(setTabType("dine_in"));
       mocks.switchTo.mockImplementation(async () => {
         // The executor's commit: the new tab serves nothing in the bag.
+        store.dispatch(setSelectedPipeline(P2));
         store.dispatch(setTabType("take_away"));
         store.dispatch(setCartItems([]));
         return OK([BURGER, SALAD]);
@@ -375,7 +377,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       expect(screen.queryByTestId("bag-sheet")).not.toBeInTheDocument(); // the bag closed itself
       expect(shown).toHaveAccessibleName("Your bag was updated");
       expect(messageOf("bag-ordertype-notice")).toBe(
-        "Not available for Take Out, removed: Cheese Burger and Greek Salad",
+        "Not available for Take Away, removed: Cheese Burger and Greek Salad",
       );
       expect(shown.querySelector("img")).toBeNull();
       expect(screen.getByTestId("bag-ordertype-notice-gotit")).toHaveClass("w-full");
@@ -389,12 +391,13 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
 
   describe("the notice", () => {
     it("renders in BOTH branches — the open bag and the closed one", async () => {
+      store.dispatch(setSelectedPipeline(P2));
       store.dispatch(setTabType("take_away"));
       store.dispatch(setOrderTypeSwitchNotice({ removed: [SALAD] }));
       const open = renderBag(true);
       expect(await screen.findByTestId("bag-ordertype-notice")).toBeInTheDocument();
       expect(screen.getByTestId("bag-sheet")).toBeInTheDocument();
-      expect(messageOf("bag-ordertype-notice")).toBe("Not available for Take Out, removed: Greek Salad");
+      expect(messageOf("bag-ordertype-notice")).toBe("Not available for Take Away, removed: Greek Salad");
       open.unmount();
 
       renderBag(false);
@@ -405,6 +408,7 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
     });
 
     it("EN: three names join as a serial list ('A, B, and C')", async () => {
+      store.dispatch(setSelectedPipeline(P2));
       store.dispatch(setTabType("take_away"));
       store.dispatch(
         setOrderTypeSwitchNotice({ removed: [BURGER, SALAD, { ...SALAD, itemId: "gs-2", name: "Fries", aliases: [] }] }),
@@ -412,11 +416,12 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       renderBag(false);
       await screen.findByTestId("bag-ordertype-notice");
       expect(messageOf("bag-ordertype-notice")).toBe(
-        "Not available for Take Out, removed: Cheese Burger, Greek Salad, and Fries",
+        "Not available for Take Away, removed: Cheese Burger, Greek Salad, and Fries",
       );
     });
 
     it("AR: the menu's Arabic names, joined by the Arabic list format, in the Arabic copy", async () => {
+      store.dispatch(setSelectedPipeline({ ...P2, secondary_name: AR_TAKE_AWAY }));
       store.dispatch(setTabType("take_away"));
       store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
       await act(async () => {
@@ -431,12 +436,148 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
         isolate(AR_SALAD),
       ]);
       const message = messageOf("bag-ordertype-notice") ?? "";
-      expect(message).toBe(i18n.t("bag.orderType.removedBody", { type: i18n.t("bag.takeOut"), items }));
+      expect(message).toBe(i18n.t("bag.orderType.removedBody", { type: isolate(AR_TAKE_AWAY), items }));
       expect(message).toContain(AR_BURGER);
       expect(message).toContain(AR_SALAD);
       expect(message).toContain(" و"); // the Arabic conjunction, not "and"
       expect(message).not.toContain("Cheese Burger");
       expect(screen.getByTestId("bag-ordertype-notice-gotit")).toHaveTextContent(i18n.t("offers.gotIt"));
+    });
+  });
+
+  /*
+    User 2026-10-13: the toggle names the pipelines as /second does
+    (useLocalized().pipelineName) — the active segment the current one, the
+    other the switch target; the fixed EAT IN / TAKE OUT copy only for a
+    pipeline with no name, or no target. The prompt and the notice agree.
+  */
+  describe("the labels — the pipelines' names", () => {
+    const AR_DINE = "تناول في المطعم";
+    const AR_P1: SwitchablePipeline = { ...P1, secondary_name: AR_DINE };
+    const AR_P2: SwitchablePipeline = { ...P2, secondary_name: AR_TAKE_AWAY };
+    const label = (key: "eatin" | "takeout") => screen.getByTestId(`bag-ordertype-${key}`).textContent;
+    const titleOf = (testId: string) => document.getElementById(`${testId}-title`)?.textContent;
+    const arabic = async () => {
+      store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+    };
+
+    it("EN: the active segment names the current pipeline, the other the switch target", () => {
+      renderBag();
+      expect(label("eatin")).toBe("Dine In");
+      expect(label("takeout")).toBe("Take Away");
+    });
+
+    it("the other segment names the target the switch resolves (the first OPEN one in list order)", () => {
+      store.dispatch(setPipelines([P1, P2, P3]));
+      store.dispatch(setPipelineStatuses({ p2: { status: false, reason: "closed" } }));
+      renderBag();
+      expect(label("takeout")).toBe("Collect");
+    });
+
+    it("TAKE OUT active: the right segment names the current pipeline, the left the eat-in target", () => {
+      store.dispatch(setSelectedPipeline(P2));
+      store.dispatch(setTabType("take_away"));
+      renderBag();
+      expect(label("takeout")).toBe("Take Away");
+      expect(label("eatin")).toBe("Dine In");
+    });
+
+    it("fallback: no target keeps the inert segment's fixed copy; a pipeline with no usable name shows its kind's copy", () => {
+      store.dispatch(setPipelines([P1]));
+      const single = renderBag();
+      expect(label("eatin")).toBe("Dine In");
+      expect(label("takeout")).toBe("Take Out");
+      single.unmount();
+
+      store.dispatch(setPipelines([P1, { ...P2, primary_name: "   " }]));
+      store.dispatch(setSelectedPipeline({ _id: "p1", tab_id: "t1", tab_type: "dine_in" }));
+      renderBag();
+      expect(label("eatin")).toBe("Eat In");
+      expect(label("takeout")).toBe("Take Out");
+    });
+
+    it("a long name: one line, truncated with an ellipsis; the button keeps the full name", () => {
+      const LONG = "Curbside Pickup At The Express Drive-Thru Window";
+      store.dispatch(setPipelines([P1, { ...P2, primary_name: LONG }]));
+      renderBag();
+      const segment = screen.getByTestId("bag-ordertype-takeout");
+      expect(segment).toHaveAccessibleName(LONG);
+      expect(segment.firstElementChild).toHaveClass("truncate");
+      // The leaf's own direction: an Arabic name is cut at its own (left) end, not its start.
+      expect(segment.firstElementChild).toHaveAttribute("dir", "auto");
+    });
+
+    it("AR: secondary_name, FSI-isolated; without one, primary_name; no target, the Arabic fixed copy", async () => {
+      store.dispatch(setPipelines([AR_P1, P2]));
+      store.dispatch(setSelectedPipeline(AR_P1));
+      await arabic();
+      const both = renderBag();
+      expect(label("eatin")).toBe(isolate(AR_DINE));
+      expect(label("takeout")).toBe(isolate("Take Away"));
+      both.unmount();
+
+      store.dispatch(setPipelines([AR_P1]));
+      renderBag();
+      expect(label("eatin")).toBe(isolate(AR_DINE));
+      expect(label("takeout")).toBe(i18n.t("bag.takeOut"));
+      expect(label("takeout")).toContain("طلب خارجي");
+    });
+
+    it("the switch prompt names both pipelines, the failure dialog the target", async () => {
+      mocks.switchTo.mockResolvedValue(FAILED);
+      renderBag();
+      await openConfirm();
+      expect(titleOf("bag-ordertype-confirm")).toBe("Switch to Take Away?");
+      expect(screen.getByTestId("bag-ordertype-confirm-no")).toHaveTextContent("No, keep Dine In");
+      fireEvent.click(screen.getByTestId("bag-ordertype-confirm-yes"));
+      await screen.findByTestId("bag-ordertype-failed");
+      expect(titleOf("bag-ordertype-failed")).toBe("We couldn't switch to Take Away");
+    });
+
+    it("the notice names the pipeline the switch committed — the new active segment", async () => {
+      mocks.switchTo.mockImplementation(async () => {
+        store.dispatch(setSelectedPipeline(P2));
+        store.dispatch(setTabType("take_away"));
+        store.dispatch(setCartItems([{ ...BURGER }]));
+        return OK([SALAD]);
+      });
+      store.dispatch(setCartItems([{ ...BURGER }, { ...SALAD }]));
+      renderBag();
+      await openConfirm();
+      fireEvent.click(screen.getByTestId("bag-ordertype-confirm-yes"));
+      await screen.findByTestId("bag-ordertype-notice");
+      expect(messageOf("bag-ordertype-notice")).toBe("Not available for Take Away, removed: Greek Salad");
+      expect(label("takeout")).toBe("Take Away");
+    });
+
+    it("AR: the prompt and the notice carry the Arabic names", async () => {
+      store.dispatch(setPipelines([AR_P1, AR_P2]));
+      store.dispatch(setSelectedPipeline(AR_P1));
+      await arabic();
+      mocks.switchTo.mockImplementation(async () => {
+        store.dispatch(setSelectedPipeline(AR_P2));
+        store.dispatch(setTabType("take_away"));
+        store.dispatch(setCartItems([{ ...BURGER }]));
+        return OK([SALAD]);
+      });
+      store.dispatch(setCartItems([{ ...BURGER }, { ...SALAD }]));
+      renderBag();
+      await openConfirm();
+      expect(titleOf("bag-ordertype-confirm")).toBe(
+        i18n.t("bag.orderType.confirmTitle", { type: isolate(AR_TAKE_AWAY) }),
+      );
+      expect(screen.getByTestId("bag-ordertype-confirm-no").textContent).toBe(
+        i18n.t("bag.orderType.confirmNo", { current: isolate(AR_DINE) }),
+      );
+      fireEvent.click(screen.getByTestId("bag-ordertype-confirm-yes"));
+      await screen.findByTestId("bag-ordertype-notice");
+      const message = messageOf("bag-ordertype-notice") ?? "";
+      expect(message).toContain(AR_TAKE_AWAY);
+      expect(message).toContain(AR_SALAD);
+      expect(message).not.toContain(i18n.t("bag.takeOut"));
     });
   });
 });

@@ -15,9 +15,10 @@ import { clippedText } from "./fixtures/clippedText";
  * in-flight overlay's scrim is 90 % (the bag's real-weight names read
  * through 80 % and ran into its status line).
  *
- * Covered: the bag's live EAT IN / TAKE OUT segment (both states), the
- * "edit how many" numpad (Figma 1:4460), the order-type switch confirm (both
- * ways — "No, keep Take Out" is the longest secondary label), its in-flight
+ * Covered: the bag's live EAT IN / TAKE OUT segment (both states, each
+ * segment named after its pipeline), the "edit how many" numpad (Figma
+ * 1:4460), the order-type switch confirm (both ways — "No, keep Take Away"
+ * is the longest secondary label), its in-flight
  * overlay, its failure dialog and its removal notice (design language, no
  * frame), the PDP completion warning (1:2855), the slot selection sheet
  * (1:2814: Included + Upgrades, the Customize link) and the tier-2 removal
@@ -439,6 +440,9 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       const takeOut = page.getByTestId("bag-ordertype-takeout");
       await expect(eatIn).toHaveAttribute("aria-pressed", "true");
       await expect(takeOut).toHaveAttribute("aria-disabled", "false");
+      // Each segment names its pipeline as /second does (user 2026-10-13).
+      await expect(eatIn).toContainText(mode === "ar" ? "تناول في المطعم" : "Dine In");
+      await expect(takeOut).toContainText(mode === "ar" ? "سفري" : "Take Away");
       // The stepper taps scrolled the 765 px ADA bag past its segment.
       await eatIn.scrollIntoViewIfNeeded();
       await capture(page, `bagpdp-${mode}-01-bag-eat-in`);
@@ -486,7 +490,7 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       await expect(takeOut).toHaveAttribute("aria-pressed", "true");
       await capture(page, `bagpdp-${mode}-07-bag-take-out`);
 
-      // The way back: the longest secondary label ("No, keep Take Out").
+      // The way back: the longest secondary label ("No, keep Take Away").
       await eatIn.click();
       await expect(confirm).toBeVisible();
       await capture(page, `bagpdp-${mode}-08-switch-confirm-back`);

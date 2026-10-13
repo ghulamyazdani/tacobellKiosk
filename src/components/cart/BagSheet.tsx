@@ -101,6 +101,7 @@ import {
 import { selectOrderTypeSwitchNotice } from "../../redux/features/menuSelections/menuSelections.slice";
 import useKioskOpenServices from "../../hooks/kioskOpen/useKioskOpenServices";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
+import useLocalized, { type PipelineLabel } from "../../hooks/utils/useLocalized";
 import { ErrorBoundary } from "../../ErrorBoundary";
 
 // Lazy bag parts — ONE dynamic module (see bagLazyParts: a second dynamic
@@ -308,9 +309,10 @@ export default function BagSheet({
   const autoAppliedOfferId = useSelector(selectAutoAppliedOfferId);
   const pipelines = useSelector(selectPipelines) as SwitchablePipeline[] | null;
   const selectedPipeline = useSelector(selectSelectedPipeline) as
-    | { _id?: string }
+    | (PipelineLabel & { _id?: string })
     | null;
   const orderTypeSwitchNotice = useSelector(selectOrderTypeSwitchNotice);
+  const { pipelineName } = useLocalized();
   const adaActive = useAdaActive();
   const cartRehydrated = useCartRehydrated();
 
@@ -1066,6 +1068,12 @@ export default function BagSheet({
     isPipelineOpen: (id) => checkPipelineClosedFromRedux(id).status,
   });
   const canSwitch = !!switchCandidate && !checkoutInProgress;
+  // Each segment — and the switch prompt — names its pipeline as /second
+  // does (user 2026-10-13); the fixed copy only for no name or no target.
+  const orderTypeName = (pipeline: PipelineLabel | null, takeOut: boolean) =>
+    pipelineName(pipeline) || t(takeOut ? "bag.takeOut" : "bag.eatIn");
+  const currentName = orderTypeName(selectedPipeline, isTakeOut);
+  const otherName = orderTypeName(switchCandidate, !isTakeOut);
 
   // Chevron — the decorative "opens a sheet" affordance of the bag's entry
   // rows (Rewards, cooking instructions).
@@ -1141,15 +1149,18 @@ export default function BagSheet({
       onClick={
         !active && canSwitch ? () => setSwitchTarget(switchCandidate) : undefined
       }
-      className={`tb-select flex h-[52px] min-w-[44px] flex-1 items-center justify-center gap-[8px] rounded-[30px] ${
+      className={`tb-select flex h-[52px] min-w-[44px] flex-1 items-center justify-center gap-[8px] rounded-[30px] px-[24px] ${
         active ? "bg-tb-surface" : ""
       }`}
     >
-      <span className="tb-display text-[18px] leading-[20px] text-tb-purple">
+      {/* One line: a long name ends in an ellipsis inside the pill, the
+          button keeps it whole for screen readers. dir="auto" on this LEAF
+          only: an Arabic name is cut at its own end. */}
+      <span dir="auto" className="tb-display min-w-0 truncate text-[18px] leading-[20px] text-tb-purple">
         {label}
       </span>
       {active ? (
-        <span className="tb-pop-in flex h-[20px] w-[20px] items-center justify-center rounded-full bg-tb-purple">
+        <span className="tb-pop-in flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full bg-tb-purple">
           {/* Check glyph (Figma icon 8544a14e) inlined. */}
           <svg viewBox="0 0 13.34 13.34" className="h-[13px] w-[13px]" aria-hidden="true">
             <path
@@ -1161,7 +1172,7 @@ export default function BagSheet({
           </svg>
         </span>
       ) : (
-        <span className="h-[20px] w-[20px] rounded-full border border-tb-purple" />
+        <span className="h-[20px] w-[20px] shrink-0 rounded-full border border-tb-purple" />
       )}
     </button>
   );
@@ -1200,12 +1211,13 @@ export default function BagSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="px-[24px]">
-            {/* EAT IN / TAKE OUT — active = the current pipeline; the other
+            {/* EAT IN / TAKE OUT (the eat-in kind left), each segment named
+                after its pipeline — active = the current pipeline; the other
                 segment opens the switch flow (inert without a target or
                 while PAY runs). */}
             <div className="mb-[24px] flex w-full items-center rounded-[60px] bg-tb-grey-4 p-[4px]">
-              {orderTypeSegment("eatin", t("bag.eatIn"), !isTakeOut)}
-              {orderTypeSegment("takeout", t("bag.takeOut"), isTakeOut)}
+              {orderTypeSegment("eatin", isTakeOut ? otherName : currentName, !isTakeOut)}
+              {orderTypeSegment("takeout", isTakeOut ? currentName : otherName, isTakeOut)}
             </div>
 
             <div className="flex w-full flex-col">
@@ -1568,7 +1580,8 @@ export default function BagSheet({
           <Suspense fallback={switchDismiss}>
             <OrderTypeSwitchFlow
               target={switchTarget}
-              targetKind={orderTypeKindOf(switchTarget.tab_type)}
+              type={orderTypeName(switchTarget, orderTypeKindOf(switchTarget.tab_type) === "takeOut")}
+              current={currentName}
               onDone={() => setSwitchTarget(null)}
               onRemoveLoyaltyRow={handleRemoveLoyaltyRow}
             />

@@ -1,12 +1,15 @@
 import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { selectTabType } from "@cx-sdk/catalog/state/pipeline.slice";
+import {
+  selectSelectedPipeline,
+  selectTabType,
+} from "@cx-sdk/catalog/state/pipeline.slice";
 import { orderTypeKindOf } from "@cx-sdk/ordering/cart/orderTypeTarget";
 import {
   clearOrderTypeSwitchNotice,
   selectOrderTypeSwitchNotice,
 } from "../../redux/features/menuSelections/menuSelections.slice";
-import useLocalized from "../../hooks/utils/useLocalized";
+import useLocalized, { type PipelineLabel } from "../../hooks/utils/useLocalized";
 import ErrorModal from "../common/ErrorModal";
 import "../../i18n/lazyCopy";
 
@@ -23,13 +26,15 @@ export default function OrderTypeSwitchNotice() {
   const dispatch = useDispatch();
   const notice = useSelector(selectOrderTypeSwitchNotice);
   const tabType: unknown = useSelector(selectTabType);
-  const { name } = useLocalized();
+  const selected = useSelector(selectSelectedPipeline) as PipelineLabel | null;
+  const { name, pipelineName } = useLocalized();
 
   if (!notice) return null;
 
-  const type = t(
-    orderTypeKindOf(tabType) === "takeOut" ? "bag.takeOut" : "bag.eatIn",
-  );
+  // The switch committed its target as the selection: the bag toggle's active label.
+  const type =
+    pipelineName(selected) ||
+    t(orderTypeKindOf(tabType) === "takeOut" ? "bag.takeOut" : "bag.eatIn");
   const items = new Intl.ListFormat(i18n.language, {
     type: "conjunction",
   }).format(notice.removed.map((row) => name(row)).filter(Boolean));

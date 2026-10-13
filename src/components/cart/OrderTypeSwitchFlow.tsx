@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { useTranslation } from "react-i18next";
-import type {
-  OrderTypeKind,
-  SwitchablePipeline,
-} from "@cx-sdk/ordering/cart/orderTypeTarget";
+import type { SwitchablePipeline } from "@cx-sdk/ordering/cart/orderTypeTarget";
 import useOrderTypeSwitch from "../../hooks/cartHooks/useOrderTypeSwitch";
 import { setOrderTypeSwitchNotice } from "../../redux/features/menuSelections/menuSelections.slice";
 import ErrorModal from "../common/ErrorModal";
@@ -12,7 +9,9 @@ import "../../i18n/lazyCopy";
 
 interface OrderTypeSwitchFlowProps {
   target: SwitchablePipeline;
-  targetKind: OrderTypeKind;
+  /** The target's and the current pipeline's names — the bag toggle's labels. */
+  type: string;
+  current: string;
   onDone: () => void;
   onRemoveLoyaltyRow: (row: unknown) => void;
 }
@@ -28,7 +27,8 @@ interface OrderTypeSwitchFlowProps {
  */
 export default function OrderTypeSwitchFlow({
   target,
-  targetKind,
+  type,
+  current,
   onDone,
   onRemoveLoyaltyRow,
 }: OrderTypeSwitchFlowProps) {
@@ -40,9 +40,6 @@ export default function OrderTypeSwitchFlow({
   const [phase, setPhase] = useState<"confirm" | "switching" | "failed">(
     "confirm",
   );
-
-  const type = t(targetKind === "takeOut" ? "bag.takeOut" : "bag.eatIn");
-  const current = t(targetKind === "takeOut" ? "bag.eatIn" : "bag.takeOut");
 
   const run = async () => {
     setPhase("switching");
