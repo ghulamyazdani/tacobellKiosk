@@ -9,6 +9,7 @@ import { Provider } from "react-redux";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { addGetItemsRdx, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
+  setAllowMultiplePunch,
   setCurrency,
   setDeploymentInfo,
   setDiscountOnAddon,
@@ -16,6 +17,7 @@ import {
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { findOrphanedFreebieRows } from "@cx-sdk/ordering/offer/offerCommitRules";
 import { store } from "../../../redux/app/store";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import FreebiePickerSheet from "../FreebiePickerSheet";
 import OfferTierHost from "../OfferTierHost";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
@@ -1695,5 +1697,102 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
     expect(chilli()).toHaveTextContent("£20.00");
     expect(chilli()).not.toHaveTextContent("£10.00");
     expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent("£5.00");
+  });
+});
+
+/*
+  walk-oos 2 (review oos-2 #4, user 2026-10-14 "Show it Unavailable"): a
+  freebie no guest can complete — a REQUIRED group with every option out —
+  is not offered, item entry or category entity: dropped the way the
+  converter drops a sold-out one, so an "and" grant goes on without it. The
+  verdict follows the stock data: an option back, the freebie is back.
+*/
+describe("FreebiePickerSheet — walk-oos 2: a freebie no guest can complete is not offered", () => {
+  const DIP = {
+    _id: "dip",
+    name: "Dip",
+    min: 1,
+    max: 1,
+    multiplePunchMin: 0,
+    isActive: true,
+    constituentItems: [{ id: "salsa", name: "Salsa", price: 0, isActive: true, outOfStock: true }],
+  };
+  const nachos = (id: string) => ({
+    ...catCustom(id, "Nachos", 4),
+    modifiers: ["dip"],
+    customizations: { dip: [] },
+    baseItem: { id, name: "Nachos", price: 4, modifiers: ["dip"] },
+  });
+  const nachosEntry = (relation: string) => ({
+    _id: "gi-nachos",
+    baseItemId: "nachos",
+    name: "Nachos",
+    relation,
+    discountType: "percent",
+    value: 100,
+    quantity: 1,
+    entities: nachos("nachos"),
+  });
+  const OR_OFFER = {
+    ...offerBase,
+    _id: "offer-dead-or",
+    name: "A free side",
+    isAndOffer: false,
+    getItems: {
+      items: [orEntry("tortilla-sauce", "Tortilla Sauce"), nachosEntry("or")],
+      categories: [
+        { ...SAUCES_GROUP, relation: "or", entities: [catPlain("caesar-dressing", "Caesar Dressing", 2), nachos("cat-nachos")] },
+        { ...SAUCES_GROUP, _id: "dips", name: "Dips", relation: "or", entities: [nachos("dip-nachos")] },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setModifiersMap({ modifiersMap: { dip: DIP } }));
+  });
+
+  it("the dead nachos are not offered — as an item or in a category; the live freebies are; PAY's map brings a dip back and they are", () => {
+    renderPicker(OR_OFFER);
+
+    expect(screen.queryByTestId("freebie-option-nachos")).toBeNull();
+    expect(screen.getByTestId("freebie-option-tortilla-sauce")).toBeInTheDocument();
+    expect(screen.queryByTestId("freebie-cat-option-sauces-cat-nachos")).toBeNull();
+    expect(screen.getByTestId("freebie-cat-option-sauces-caesar-dressing")).toBeInTheDocument();
+    // A group with nothing left to offer is no section at all.
+    expect(screen.queryByTestId("freebie-cat-dips")).toBeNull();
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({ salsa: { type: "addon", inStock: true } }));
+    });
+    expect(screen.getByTestId("freebie-option-nachos")).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-cat-option-sauces-cat-nachos")).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-cat-option-dips-dip-nachos")).toBeInTheDocument();
+  });
+
+  it("multi-punch on: its min decides — the dip asks for none, so the nachos are offered", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    renderPicker(OR_OFFER);
+
+    expect(screen.getByTestId("freebie-option-nachos")).toBeInTheDocument();
+  });
+
+  it("an 'and' grant goes on without its dead freebie: CONFIRM is live and lands the rest", async () => {
+    const AND = {
+      ...AND_OFFER,
+      _id: "offer-dead-and",
+      getItems: { items: [{ ...AND_OFFER.getItems.items[0] }, nachosEntry("and")] },
+    };
+    const { onClose } = renderPicker(AND);
+
+    expect(screen.queryByTestId("freebie-option-nachos")).toBeNull();
+    expect(screen.getByTestId("freebie-confirm")).toHaveAttribute("aria-disabled", "false");
+    await userEvent.click(screen.getByTestId("freebie-confirm"));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(getItemRows().map((row: any) => row.id)).toEqual(["greek-salad"]);
+    expect(cartState().cartOffer._id).toBe("offer-dead-and");
   });
 });
