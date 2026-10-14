@@ -230,22 +230,25 @@ export default function BuyStageSheet({
   };
 
   /**
-   * A header renders only when it says something the cards don't. A lone
+   * A header says something the cards don't — unless the group is a lone
    * item under its own name (the tenant's usual buy group: label = item name)
-   * or under no label goes without — unless it names a per-group need above 1
-   * (plain-and / plain-or). The label is English (no data), so the item's raw
-   * name counts as its name in an Arabic session too.
+   * or under no label, and names no per-group need above 1 (plain-and /
+   * plain-or). The label is English (no data), so the item's raw name counts
+   * as its name in an Arabic session too.
    */
-  const showsHeader = (group: BuyStageGroup) => {
+  const needsHeader = (group: BuyStageGroup) => {
     const [entity, ...others] = group.entities;
     const named =
       !group.label?.trim() ||
       sameText(group.label, tileName(group, entity)) ||
       sameText(group.label, entity?.name);
     const needShown = view.mode !== "least" && group.requiredQuantity > 1;
-    return view.groups.length > 1 && !(others.length === 0 && named && !needShown);
+    return others.length > 0 || !named || needShown;
   };
-  const headed = view.groups.map(showsHeader);
+  // Headers are on or off for the WHOLE stage: a heading groups every card
+  // below it, so a header-less card after a headed group would read as one
+  // of that group's options.
+  const headed = view.groups.length > 1 && view.groups.some(needsHeader);
 
   // Render helper, NOT a component (react-hooks/static-components) — Figma's
   // Menu-Item grid card as MenuItemCard draws it (1:2609: 240×277 grey-6 r8,
@@ -258,7 +261,6 @@ export default function BuyStageSheet({
     group: BuyStageGroup,
     entity: BuyMenuEntity,
     index: number,
-    newRow: boolean,
   ) => {
     const id = String(entity?.id ?? index);
     const qty = countCartQuantityForTile(
@@ -280,7 +282,7 @@ export default function BuyStageSheet({
         data-testid={`buy-stage-tile-${id}`}
         className={`tb-press-card relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
           qty > 0 ? "ring-[3px] ring-tb-purple" : ""
-        } ${newRow ? "col-start-1" : ""}`}
+        }`}
       >
         {/* line-clamp-2: a 70-character TB India name ends in an ellipsis,
             never a sliced third line; the photo yields (min-h-0) to a
@@ -356,7 +358,12 @@ export default function BuyStageSheet({
           </button>
         )}
         {unavailable ? (
-          <span className="tb-display absolute bottom-[16px] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface">
+          // Picked before it went out of stock: above the pill and the "−".
+          <span
+            className={`tb-display absolute ${
+              qty > 0 ? "bottom-[56px]" : "bottom-[16px]"
+            } left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface`}
+          >
             {t("menu.unavailable")}
           </span>
         ) : (
@@ -460,13 +467,13 @@ export default function BuyStageSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four
-              across, centred. Header-less groups share rows; after a headed
-              group, the next one starts its own row (its card would read as
-              one of that group's). */}
-          <div className="grid grid-cols-[repeat(4,240px)] justify-center gap-[16px] px-[24px] py-[32px]">
-            {view.groups.map((group: BuyStageGroup, groupIndex: number) => (
+              across, centred (auto-fit: a row of 1–3 collapses its empty
+              tracks; a full-width header keeps all four). Header-less
+              groups share rows. */}
+          <div className="grid grid-cols-[repeat(auto-fit,240px)] justify-center gap-[16px] px-[24px] py-[32px]">
+            {view.groups.map((group: BuyStageGroup) => (
               <Fragment key={group.key}>
-                {headed[groupIndex] && (
+                {headed && (
                   <p
                     data-testid={`buy-stage-group-${group.key}`}
                     className="col-span-full text-[22px] font-bold leading-[26px] text-black"
@@ -484,12 +491,7 @@ export default function BuyStageSheet({
                   </p>
                 )}
                 {group.entities.map((entity: BuyMenuEntity, index: number) =>
-                  renderTile(
-                    group,
-                    entity,
-                    index,
-                    index === 0 && !headed[groupIndex] && groupIndex > 0 && headed[groupIndex - 1],
-                  ),
+                  renderTile(group, entity, index),
                 )}
               </Fragment>
             ))}

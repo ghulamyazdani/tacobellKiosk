@@ -253,7 +253,7 @@ async function expectFreeRow(page: Page, name: string, live: string, struck: str
 }
 
 test.describe("Lane offers — BOGO buy stage (item 31)", () => {
-  test("E1 ADD ITEMS on 'Buy 2 Tortilla Sauce → Caesar free': 0 of 2 → ADD, + → Reward unlocked! → CONTINUE applies directly; sauce ×2 paid + free Caesar, Discounts −£2.00, Total £14.00; Remove + bag close keeps the paid sauces", async ({
+  test("E1 ADD ITEMS on 'Buy 2 Tortilla Sauce → Caesar free': 0 of 2 → card tap, + → Reward unlocked! → CONTINUE applies directly; sauce ×2 paid + free Caesar, Discounts −£2.00, Total £14.00; Remove + bag close keeps the paid sauces", async ({
     page,
   }) => {
     test.slow();
@@ -282,7 +282,7 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
     await expect(page.getByTestId("bag-rewards-applied")).toHaveCount(0);
 
-    // ADD lands ONE paid row; + raises the SAME row (dedupe add, no repeat sheet).
+    // A card tap lands ONE paid row; + raises the SAME row (dedupe add, no repeat sheet).
     await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
     await expect(page.getByTestId("buy-stage-counter")).toHaveText("1 of 2 added");
     await expect(bagRows(page)).toHaveCount(2);
@@ -446,15 +446,18 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("buy-stage-counter")).toHaveText("0 of 2 added");
     // User report 2026-10-14: each buy group is one item under its own name,
     // so no header repeats it and the cards share a row — Figma's 240×277
-    // Menu-Item card, 16 px apart (1:2595's grid).
+    // Menu-Item card, 16 px apart (1:2595's grid), the pair centred under the
+    // centred header (a short row never hugs the start edge).
     await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(0);
     const sauceCard = await page.getByTestId(`buy-stage-tile-${TORTILLA_SAUCE}`).boundingBox();
     const caesarCard = await page.getByTestId(`buy-stage-tile-${CAESAR_DRESSING}`).boundingBox();
-    if (!sauceCard || !caesarCard) throw new Error("the stage's cards are not laid out");
+    const panel = await page.getByTestId("buy-stage-sheet").getByRole("dialog").boundingBox();
+    if (!sauceCard || !caesarCard || !panel) throw new Error("the stage's cards are not laid out");
     expect(sauceCard.width).toBeCloseTo(240, 0);
     expect(sauceCard.height).toBeCloseTo(277, 0);
     expect(caesarCard.y).toBeCloseTo(sauceCard.y, 0);
     expect(caesarCard.x - sauceCard.x).toBeCloseTo(256, 0);
+    expect((sauceCard.x + caesarCard.x + caesarCard.width) / 2).toBeCloseTo(panel.x + panel.width / 2, 0);
     await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
     await expect(page.getByTestId("buy-stage-counter")).toHaveText("1 of 2 added");
     await page.getByTestId(`buy-stage-add-${CAESAR_DRESSING}`).click();
