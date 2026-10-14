@@ -240,6 +240,23 @@ describe("BagSheet with the lazy UI chunk failed (G2b): every part degrades loca
     });
   });
 
+  it("walk-oos 2 ('Block while marked'): the check cannot run, but a row the last PAY marked out of stock still holds PAY, named — the rule needs nothing from the failed chunk", async () => {
+    store.dispatch(setCartItems([{ ...BURGER, outOfStock: true }]));
+    await renderBag();
+
+    await tap("bag-pay");
+    await waitFor(() =>
+      expect(
+        (store.getState() as unknown as { appSettings: { errorMessageGlobal: string } }).appSettings
+          .errorMessageGlobal
+      ).toBe("Out of stock: Cheese Burger")
+    );
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.capture).toHaveBeenCalledWith("error_occurred", { error_source: "checkout_stock_sweep" });
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
+    expect(screen.queryByTestId("app-error")).not.toBeInTheDocument();
+  });
+
   it("the rail, the celebration and the freebie picker are simply absent", async () => {
     await renderBag();
 

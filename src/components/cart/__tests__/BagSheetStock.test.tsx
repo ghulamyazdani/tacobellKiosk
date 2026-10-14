@@ -627,6 +627,50 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     expect(screen.getByTestId("bag-pay")).toBeEnabled();
   });
 
+  /*
+    walk-oos 2 (user 2026-10-14, "Block while marked"): the feed down, PAY
+    holds while any row or pick still carries a mark — a nested pick too —
+    and names it; the guest edits or removes that line. Nothing marked: the
+    same failed feed fails OPEN, as before (D-A1-1).
+  */
+  it("walk-oos 2: the feed down — a nested pick still marked blocks PAY by name; the guest removes the line and the same failed feed lets PAY through", async () => {
+    const PACK = {
+      id: "pack", itemId: "k-1", name: "Taco Pack", quantity: 1, type: "CUSTOMIZABLE", price: 9, total_price: 9,
+      customizations: {
+        [BOX_GROUP._id]: [
+          {
+            id: "fries", name: "Fries", entityType: "Combo", isActive: true, price: 0, quantity: 1,
+            customizations: { [EXTRAS_GROUP._id]: [{ id: "salt", name: "Salt", isActive: true, price: 0, quantity: 1, outOfStock: true }] },
+          },
+        ],
+      },
+      baseItem: { id: "pack", name: "Taco Pack", modifiers: [BOX_GROUP._id] },
+    };
+    store.dispatch(setCartItems([PACK, { ...SALAD }]));
+    mocks.feed.mockRejectedValue(new Error("504"));
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Salt"));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
+    act(() => {
+      store.dispatch(setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" }));
+    });
+
+    // The guest removes the marked line: nothing is marked any more.
+    fireEvent.click(screen.getByTestId("bag-dec-k-1"));
+    fireEvent.click(await screen.findByTestId("remove-item-confirm"));
+    await waitFor(() => expect(row("k-1")).toBeUndefined());
+    await pay();
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledTimes(1));
+    expect(mocks.feed).toHaveBeenCalledTimes(2);
+    expect(sweepFailed()).toBe(true);
+    expect(st().appSettings.showGlobalError).toBe(false);
+  });
+
   it("walk-oos: the flagged add-on back in stock — its own flag names it until then; ONE write clears it and PAY proceeds on the bill it rendered", async () => {
     const flagged = structuredClone(BURRITO);
     flagged.customizations[EXTRAS_GROUP._id] = [
