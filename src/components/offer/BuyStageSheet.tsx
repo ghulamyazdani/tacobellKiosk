@@ -220,16 +220,19 @@ export default function BuyStageSheet({
     onContinue();
   };
 
+  /** The size a variant-id tile stands for (resolveBuyStageView subsets the entity's variants to it). */
+  const tileSize = (group: BuyStageGroup, entity: BuyMenuEntity) =>
+    group.requiredVariantId
+      ? entity?.variants?.find((variant) => variant?.id === group.requiredVariantId)
+      : undefined;
+
   /**
    * A tile's name: the menu name in the guest's language, and a variant-id
-   * entry's size, in the guest's language too (the tile entity's variants are
-   * subset to that size by resolveBuyStageView).
+   * entry's size, in the guest's language too.
    */
   const tileName = (group: BuyStageGroup, entity: BuyMenuEntity) => {
     const size = group.requiredVariantId
-      ? (entity?.variants?.find((variant) => variant?.id === group.requiredVariantId) ?? {
-          name: group.requiredVariantName,
-        })
+      ? (tileSize(group, entity) ?? { name: group.requiredVariantName })
       : null;
     const sizeName = size ? localName(size) : "";
     return `${localName(entity)}${sizeName ? ` (${sizeName})` : ""}`;
@@ -276,6 +279,9 @@ export default function BuyStageSheet({
       excludeLoyalty,
     );
     const name = tileName(group, entity);
+    // A size tile prices the size it names (its own calories when it has
+    // them) — the entity is the BASE item, priced alike for every size.
+    const size = tileSize(group, entity);
     const imageUrl = resolveEntityImage(entity);
     const unavailable = !!entity?.outOfStock;
     // handleAdd's own split, side-effect free: a variant or customizable
@@ -303,7 +309,7 @@ export default function BuyStageSheet({
           </p>
           <p className="flex items-center gap-[8px] text-[18px] leading-[20px] text-tb-ink-purple">
             <VegMark entity={entity} />
-            {formatMenuPriceLine(entity, currency, t)}
+            {formatMenuPriceLine(size ? { ...entity, ...size } : entity, currency, t)}
           </p>
         </div>
         {imageUrl && (

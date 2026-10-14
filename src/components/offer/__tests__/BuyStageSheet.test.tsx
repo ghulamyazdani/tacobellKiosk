@@ -421,6 +421,17 @@ describe("BuyStageSheet — tiles and modes", () => {
     expect(screen.getByTestId("buy-stage-tile-fries")).toHaveTextContent("Fries (Large)");
   });
 
+  it("walk 2026-10-14: a size tile prices the size it names, not the base item (Fries base £0, Large £5)", () => {
+    const view = viewFor(LARGE_FRIES_BOGO, {
+      "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },
+    });
+    renderStage(LARGE_FRIES_BOGO, view);
+    const tile = screen.getByTestId("buy-stage-tile-fries");
+    expect(tile).toHaveTextContent("Fries (Large)");
+    expect(tile).toHaveTextContent("£5");
+    expect(tile).not.toHaveTextContent("£0");
+  });
+
   it("a tile's price line carries the deployment's symbol (UB1 — never a bare amount)", () => {
     renderStage(BOGO);
     expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent("£2 | 50 Cal");
