@@ -9,6 +9,7 @@ import {
   resolveLegacyModifierGroups,
 } from "@cx-sdk/catalog/menu/legacyMenuConverters";
 import { getItemIdsFromCartItems } from "@cx-sdk/catalog/oos/outOfStockEngine";
+import { keepSweptPicksFlagged } from "@cx-sdk/catalog/oos/sweptPicks";
 import {
   runCheckoutStockSweep,
   sameCartRows,
@@ -466,6 +467,55 @@ describe("the stock sweep stays in the lazy UI chunk", () => {
       "components/cart/bagLazyParts.ts",
     ]);
     expect(staticImporters("@cx-sdk/catalog/oos/outOfStockEngine")).toEqual([]);
+    // walk-oos: the write-back (payStock, and the SDK helper it keeps a
+    // dropped pick with) rides with it.
+    expect(staticImporters("@cx-sdk/catalog/oos/sweptPicks")).toEqual(["components/cart/payStock.ts"]);
+    expect(staticImporters("\\./payStock")).toEqual(["components/cart/bagLazyParts.ts"]);
     expect(staticImporters("@cx-sdk/catalog")).toEqual([]);
+  });
+});
+
+/*
+  Lane walk-oos: BagSheet keeps a pick the real sweep dropped in its row,
+  flagged (keepSweptPicksFlagged over runCheckoutStockSweep's own rows), so
+  the row names it and PAY stays blocked until the guest edits it — and the
+  money stays what the bag showed: the bill bills every pick the row holds.
+*/
+describe("keepSweptPicksFlagged over the real sweep (walk-oos)", () => {
+  const kept = (sweep: CheckoutStockSweep | null, key: keyof typeof BAG) =>
+    keepSweptPicksFlagged(BAG[key], rowOf(sweep, key), getTotalValueWithApplyAddonPrice) as Obj;
+
+  it("an out-of-stock add-on comes back flagged; the row's total and the bill are the bag's", async () => {
+    const sweep = await sweepWith([oos(PICKLES, "addon")]);
+    const burger = kept(sweep, "burger");
+    const picks = burger.customizations as Record<string, Obj[]>;
+
+    expect(picks[PICKLES_GROUP]).toEqual([expect.objectContaining({ id: PICKLES, outOfStock: true })]);
+    expect(picks[CHEESE_GROUP]).toEqual([expect.objectContaining({ id: ADD_CHEESE, outOfStock: false })]);
+    expect(burger.total_price).toBe(BAG.burger.total_price);
+    expect(billOf([burger])).toEqual(billOf([BAG.burger]));
+    // The swept row alone dropped it (the fork's money): the flag is all that differs.
+    expect(rowOf(sweep, "burger").total_price).toBe(9);
+  });
+
+  it("an out-of-stock tier-2 pick comes back flagged inside its slot pick; the pack's money is the bag's", async () => {
+    const sweep = await sweepWith([oos(WITHOUT_SALT, "addon")]);
+    const pack = kept(sweep, "pack");
+    const [fries] = (pack.customizations as Record<string, Obj[]>)[BOX(2)];
+
+    expect(fries.id).toBe(LARGE_FRIES);
+    expect((fries.customizations as Record<string, Obj[]>)[FRIES_ADDONS]).toEqual([
+      expect.objectContaining({ id: WITHOUT_SALT, outOfStock: true }),
+    ]);
+    expect(pack.total_price).toBe(BAG.pack.total_price);
+    expect(billOf([pack])).toEqual(billOf([BAG.pack]));
+  });
+
+  it("nothing out of stock, or the ROW out of stock: the swept row as the engine wrote it", async () => {
+    const inStock = await sweepWith([]);
+    expect(kept(inStock, "burger")).toBe(rowOf(inStock, "burger"));
+    const rowOut = await sweepWith([oos(CHEESE_BURGER, "item")]);
+    expect(kept(rowOut, "burger")).toBe(rowOf(rowOut, "burger"));
+    expect(kept(rowOut, "burger").outOfStock).toBe(true);
   });
 });

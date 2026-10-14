@@ -37,6 +37,10 @@ const mocks = vi.hoisted(() => ({
   dropGroup: null as string | null,
   replace: vi.fn(),
   removal: vi.fn(),
+  /** The server clock's answer (getServerTime). */
+  serverTime: vi.fn<() => Promise<unknown>>(),
+  /** A scheduler that throws (a row it cannot read). */
+  schedulerError: null as Error | null,
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -72,7 +76,7 @@ vi.mock("../../../hooks/menuHooks/useMenuConverters", () => ({
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/settingsApi")>()),
-  useLazyGetServerTimeQuery: () => [() => ({ unwrap: () => Promise.resolve({}) })],
+  useLazyGetServerTimeQuery: () => [() => ({ unwrap: () => mocks.serverTime() })],
 }));
 
 vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
@@ -84,7 +88,9 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
   ...(await importOriginal<typeof import("../../../hooks/schedulerHooks/useSchedulerConverter")>()),
   default: () => ({
     isValidAsPerSchedulers: () => true,
-    updateCartItemsByMenu: async (rows: { id: string; customizations?: Record<string, unknown[]> }[]) => ({
+    updateCartItemsByMenu: async (rows: { id: string; customizations?: Record<string, unknown[]> }[]) => {
+      if (mocks.schedulerError) throw mocks.schedulerError;
+      return {
       updatedCart: structuredClone(rows).map((row) => {
         const copy = { ...row, isAvailable: !mocks.invalid.includes(row.id) };
         // The real engine splices an add-on out of its window from the copy
@@ -95,7 +101,8 @@ vi.mock("../../../hooks/schedulerHooks/useSchedulerConverter", async (importOrig
         return copy;
       }),
       invalidSchedulerItemIds: rows.filter((row) => mocks.invalid.includes(row.id)).map((row) => row.id),
-    }),
+      };
+    },
   }),
 }));
 
@@ -249,22 +256,25 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     });
     mocks.invalid = [];
     mocks.dropGroup = null;
+    mocks.schedulerError = null;
     mocks.fetchMenu.mockResolvedValue({});
     mocks.feed.mockResolvedValue([]);
+    mocks.serverTime.mockResolvedValue({});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("out of stock: PAY stays on the bag — the existing notice, ONE write flagging the row, both lists set, the row looks unavailable", async () => {
+  it("out of stock: PAY stays on the bag — the notice NAMES the item (walk-oos), ONE write flagging the row, both lists set, the row looks unavailable", async () => {
     store.dispatch(setCartItems([{ ...BURGER }, { ...SALAD }]));
     mocks.feed.mockResolvedValue([oos("burger")]);
     renderBag();
     await pay();
 
     await waitFor(() => expect(st().appSettings.showGlobalError).toBe(true));
-    expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.itemUnavailable"));
+    expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Cheese Burger");
+    expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.outOfStock", { names: "Cheese Burger" }));
     expect(mocks.navigate).not.toHaveBeenCalled();
     // The request: every row's id, the deployment and the tab.
     expect(mocks.feed).toHaveBeenCalledWith({ items_id: ["burger", "salad"], deployment_id: "dep1", tab_id: "t1" });
@@ -299,7 +309,8 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     expect(Object.keys(st().cart.cartOffer ?? {})).toHaveLength(0);
     expect(row("f-1")).toBeUndefined();
     expect(st().cart.offerRemovalModal.isOpen).toBe(false);
-    expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.itemUnavailable"));
+    // The notice names what the guest must resolve — never the auto-removed freebie.
+    expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Cheese Burger");
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
@@ -423,29 +434,35 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
 
   /*
     Fixer F1: a reward's auto-picked option goes out of stock. The reward has
-    no Edit and no stepper, so Remove is its only way out — after PAY 1 (the
-    lost pick) AND after PAY 2 (the group now short), or every PAY stays
-    blocked (Rule 1). Remove refunds the reward's points.
+    no Edit and no stepper, so Remove is its only way out — after PAY 1 AND
+    after PAY 2, or every PAY stays blocked (Rule 1). Remove refunds the
+    reward's points. walk-oos: the pick is KEPT, flagged (the fork drops it),
+    so the row names it and PAY 2 — the option still out — blocks the same
+    way, the notice naming it again.
   */
   it("a reward whose auto-picked option goes out of stock: Remove after PAY 1 and PAY 2, and it refunds the points", async () => {
     store.dispatch(setCartItems([{ ...BURGER }, structuredClone(REWARD)]));
-    mocks.feed.mockResolvedValueOnce([
+    mocks.feed.mockResolvedValue([
       { item_id: "bun", type: "addon", partners: { partner_name: "Kiosk", inStock: false } },
     ]);
     renderBag();
     await pay();
 
-    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.itemUnavailable")));
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Tortilla"));
     expect(st().menu.updatedBaseItems).toEqual(["r-1"]);
+    const reward = row("r-1") as Row & { customizations?: Record<string, { id: string; outOfStock?: boolean }[]> };
+    expect(reward.customizations?.[BUN_GROUP._id]).toEqual([
+      expect.objectContaining({ id: "bun", outOfStock: true }),
+    ]);
     expect(screen.getByTestId("bag-loyalty-remove-r-1")).toBeInTheDocument();
 
     act(() => {
       store.dispatch(setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" }));
     });
     await pay();
-    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.someNeedChanges")));
-    expect(st().menu.updatedBaseItems).toEqual([]);
-    expect(st().menu.minMaxErroredBaseItems).toEqual(["r-1"]);
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Tortilla"));
+    expect(st().menu.updatedBaseItems).toEqual(["r-1"]);
+    expect(screen.getByTestId("bag-loyalty-remove-r-1")).toBeInTheDocument();
     expect(mocks.navigate).not.toHaveBeenCalled();
 
     const points = st().loyalty.totalLoyaltyPoints;
@@ -495,7 +512,156 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     await pay();
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledTimes(1));
     expect(row("b-1")).toEqual(expect.objectContaining({ quantity: 2, outOfStock: true }));
-    expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.itemUnavailable"));
+    expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Cheese Burger");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  /*
+    walk-oos (user report 2026-10-14: "when customization is out of stock
+    proper error message and indication of which item is out of stock should
+    be there"). The fork's sweep DROPS the pick and lets the next PAY through
+    without it; TB keeps it in the row, flagged: the notice and the row name
+    it, its line still reads red, the money stays what the bag showed, and
+    PAY stays blocked until the guest edits or removes the row.
+  */
+  it("walk-oos: an out-of-stock ADD-ON — PAY stays, the notice and the row NAME it, the pick stays flagged in the row (its total unchanged), Edit kept, and the next PAY blocks again", async () => {
+    store.dispatch(setCartItems([structuredClone(BURRITO)]));
+    mocks.feed.mockResolvedValue([
+      { item_id: "egg", type: "addon", partners: { partner_name: "Kiosk", inStock: false } },
+    ]);
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Egg"));
+    expect(mocks.replace).toHaveBeenCalledTimes(1);
+    const burrito = () =>
+      row("w-1") as Row & { total_price?: number; customizations?: Record<string, { id: string; outOfStock?: boolean }[]> };
+    expect(burrito().customizations?.[EXTRAS_GROUP._id]).toEqual([
+      expect.objectContaining({ id: "egg", price: 2, outOfStock: true }),
+    ]);
+    expect(burrito().total_price).toBe(7);
+    expect(st().menu.updatedBaseItems).toEqual(["w-1"]);
+    expect(screen.getByTestId("bag-changed-w-1")).toHaveTextContent("Out of stock: Egg");
+    expect(screen.getByTestId("bag-pick-oos-w-1-egg")).toHaveClass("text-tb-red");
+    expect(screen.getByTestId("bag-pick-oos-w-1-egg")).toHaveTextContent("Egg +£2.00");
+    expect(screen.getByTestId("bag-edit-w-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("bag-unavailable-w-1")).not.toBeInTheDocument();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+
+    // Still out: PAY never goes through without it.
+    act(() => {
+      store.dispatch(setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" }));
+    });
+    await pay();
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Egg"));
+    expect(mocks.replace).toHaveBeenCalledTimes(2);
+    expect(burrito().customizations?.[EXTRAS_GROUP._id]).toEqual([
+      expect.objectContaining({ id: "egg", outOfStock: true }),
+    ]);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("walk-oos: the flagged add-on back in stock — its own flag names it until then; ONE write clears it and PAY proceeds on the bill it rendered", async () => {
+    const flagged = structuredClone(BURRITO);
+    flagged.customizations[EXTRAS_GROUP._id] = [
+      { ...flagged.customizations[EXTRAS_GROUP._id][0], outOfStock: true } as (typeof flagged.customizations)[string][number],
+    ];
+    store.dispatch(setCartItems([flagged]));
+    renderBag();
+    // The flag rides the row (persisted with it): no PAY list needed.
+    expect(screen.getByTestId("bag-changed-w-1")).toHaveTextContent("Out of stock: Egg");
+    const total = screen.getByTestId("bag-total").textContent;
+    await pay();
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledTimes(1));
+    expect(mocks.replace).toHaveBeenCalledTimes(1);
+    expect(
+      (row("w-1") as Row & { customizations?: Record<string, { outOfStock?: boolean }[]> }).customizations?.[
+        EXTRAS_GROUP._id
+      ],
+    ).toEqual([expect.objectContaining({ id: "egg", outOfStock: false })]);
+    expect(screen.queryByTestId("bag-changed-w-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bag-total").textContent).toBe(total);
+    expect(st().appSettings.showGlobalError).toBe(false);
+  });
+
+  it("walk-oos: a SIZE out of stock — the notice names the item and its size", async () => {
+    const pepsi = structuredClone(PEPSI_STALE_SIZE);
+    pepsi.selectedVariant.outOfStock = false;
+    store.dispatch(setCartItems([pepsi, { ...SALAD }]));
+    mocks.feed.mockResolvedValue([
+      { item_id: "pepsi-l", type: "variant", partners: { partner_name: "Kiosk", inStock: false } },
+    ]);
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Pepsi (Large)"));
+    expect(screen.getByTestId("bag-unavailable-p-1")).toBeInTheDocument();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  /*
+    Walk w4 #1: the first ORDER & PAY of an Arabic + ADA session waited with
+    no sign of life, then showed "Something went wrong"; a second tap went
+    through. PAY is busy while its checks run; the server clock — the one
+    check here that could throw on the network — no longer fails PAY; and a
+    step that does fail is reported by name.
+  */
+  it("w4 #1: PAY is busy — disabled, aria-busy, dimmed — while its checks run, and live again once they end", async () => {
+    store.dispatch(setCartItems([{ ...BURGER }]));
+    const feed = holdFeed();
+    renderBag();
+    const button = screen.getByTestId("bag-pay");
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-busy", "false");
+    await pay();
+    await waitFor(() => expect(mocks.feed).toHaveBeenCalledTimes(1));
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).toHaveClass("opacity-40");
+    // A second tap while it is busy starts nothing.
+    await pay();
+    expect(mocks.feed).toHaveBeenCalledTimes(1);
+
+    feed.answer([oos("burger")]);
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(button).toHaveAttribute("aria-busy", "false");
+    expect(button).not.toHaveClass("opacity-40");
+  });
+
+  it("w4 #1: the server clock fails (a timeout) — PAY goes on with the device clock, never 'Something went wrong', and reports stage server_time", async () => {
+    store.dispatch(setCartItems([{ ...BURGER }]));
+    mocks.serverTime.mockRejectedValue({ status: "TIMEOUT_ERROR", error: "TimeoutError: signal timed out" });
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledTimes(1));
+    expect(st().appSettings.showGlobalError).toBe(false);
+    expect(mocks.feed).toHaveBeenCalledTimes(1);
+    expect(mocks.capture).toHaveBeenCalledWith("error_occurred", {
+      error_source: "checkout",
+      stage: "server_time",
+      error_status: "TIMEOUT_ERROR",
+      error_detail: "TimeoutError: signal timed out",
+    });
+  });
+
+  it("w4 #1: a step that throws (the scheduler) — the generic notice, ErrorOccurred names the step and the error, PAY live again", async () => {
+    store.dispatch(setCartItems([{ ...BURGER }]));
+    mocks.schedulerError = new Error("row without customizations");
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.checkoutFailed")));
+    expect(mocks.capture).toHaveBeenCalledWith("error_occurred", {
+      error_source: "checkout",
+      stage: "scheduler",
+      error_status: "Error",
+      error_detail: "row without customizations",
+    });
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
+    expect(mocks.feed).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 

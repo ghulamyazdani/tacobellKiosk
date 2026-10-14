@@ -1,4 +1,4 @@
-import { test, expect, freezeClock, stepClockUntil, type Page, type Route } from "../fixtures/kiosk";
+import { test, expect, freezeClock, stepClockUntil, type Page } from "../fixtures/kiosk";
 import {
   mockKioskBackend,
   fixtureJson,
@@ -22,7 +22,15 @@ import {
   bootRegisteredToMenu,
   chooseLanguage,
 } from "../pages/boot";
-import { addViaPdp, addOneTap, openBag, bagRows, openRewardsSheet, typeDigits } from "../pages/order";
+import {
+  addViaPdp,
+  addOneTap,
+  openBag,
+  bagRows,
+  openRewardsSheet,
+  typeDigits,
+  breakPayPreflight,
+} from "../pages/order";
 
 /**
  * Rulebook flow 7 — accessibility (P9f §4.5): every screen and overlay a guest can meet, swept for
@@ -155,15 +163,13 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.getByTestId("bag-ordertype-confirm-no").click();
     await expect(page.getByTestId("bag-ordertype-confirm")).toHaveCount(0);
 
-    // A real global error: PAY's preflight fails (idle.spec GLOBAL ERROR).
-    const SERVER_TIME = "**/api/tenants/getServerTime";
-    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
-    await page.route(SERVER_TIME, serverTimeDown);
+    // A real global error: PAY's preflight fails (idle.spec GLOBAL ERROR;
+    // pages/order breakPayPreflight).
+    const restoreBag = await breakPayPreflight(page);
     await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("global-error")).toBeVisible();
     await expectA11y(page, "a-16-global-error", "global-error-ok");
-    // With its handler: the URL alone also drops the shared mock's 200 (same glob).
-    await page.unroute(SERVER_TIME, serverTimeDown);
+    await restoreBag();
     await page.getByTestId("global-error-ok").click();
     await expect(page.getByTestId("global-error")).toHaveCount(0);
 

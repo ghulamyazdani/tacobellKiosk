@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route, dexieRows, freezeClock } from "./fixtures/kiosk";
+import { test, expect, type Page, dexieRows, freezeClock } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   fixtureJson,
@@ -11,7 +11,7 @@ import {
 } from "./fixtures/backend";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import { bootRegisteredToMenu, startToSecond } from "./pages/boot";
-import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
+import { addOneTap, addViaPdp, openBag, bagRows, breakPayPreflight } from "./pages/order";
 
 /**
  * P7a — My Bag (cart) vertical: BagSheet over the Menu on /cart, remove-item
@@ -777,9 +777,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await addCheeseBurgerViaPdp(page, { expectedCta: "£8.00" });
     await openBag(page);
 
-    // The preflight's server-time read fails (it was silent before G1).
-    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
-    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    // A preflight that fails — silent before G1 (pages/order
+    // breakPayPreflight: a row the scheduler cannot read; a failed server
+    // clock no longer fails PAY, walk w4 #1).
+    const restoreBag = await breakPayPreflight(page);
     await page.getByTestId("bag-pay").click();
     const dialog = page.getByRole("alertdialog", { name: en.bag.checkoutFailed });
     await expect(dialog).toBeVisible();
@@ -802,8 +803,8 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-pay")).toBeEnabled();
     await expect(page.getByTestId("bag-pay")).toContainText("£9.00");
 
-    // The server is back: the same PAY proceeds to the checkout route.
-    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
+    // The bag is whole again: the same PAY proceeds to the checkout route.
+    await restoreBag();
     await page.getByTestId("bag-pay").click();
     await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
     await expect(page.getByTestId("phone-screen")).toBeVisible();
@@ -994,6 +995,9 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
   });
 });
 
+/** PAY's out-of-stock notice, naming what sold out (walk-oos: en.bag.outOfStock). */
+const outOfStock = (names: string) => en.bag.outOfStock.replace("{{names}}", names);
+
 /** The backend's out-of-stock feed: Kiosk partner rows (the PAY engine ignores any other partner). */
 const kioskOutOfStock = (itemId: string) => [
   { item_id: itemId, type: "item", partners: { partner_name: "Kiosk", inStock: false } },
@@ -1007,7 +1011,7 @@ async function bagRowItemIdOf(page: Page, entityId: string): Promise<string> {
 }
 
 test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instructions (U3)", () => {
-  test("PAY RE-CHECKS STOCK: the burger went out of stock after the menu loaded — PAY raises the existing notice, stays on /cart with the row Unavailable; removed, PAY proceeds", async ({
+  test("PAY RE-CHECKS STOCK: the burger went out of stock after the menu loaded — PAY's notice names it, stays on /cart with the row Unavailable; removed, PAY proceeds", async ({
     page,
   }) => {
     test.slow();
@@ -1028,7 +1032,7 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
     });
     await page.getByTestId("bag-pay").click();
 
-    const dialog = page.getByRole("alertdialog", { name: en.bag.itemUnavailable });
+    const dialog = page.getByRole("alertdialog", { name: outOfStock("Cheese Burger") });
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute("data-testid", "global-error");
     expect(sweepBodies).toHaveLength(1);
@@ -1136,7 +1140,7 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
     // The next PAY checks the bag as it is now: the salad blocks it, and the
     // write-back keeps the guest's ×2.
     await page.getByTestId("bag-pay").click();
-    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: outOfStock("Greek Salad") })).toBeVisible();
     expect(asked).toHaveLength(2);
     await page.getByTestId("global-error-ok").click();
     await expect(page.getByTestId(`bag-unavailable-${saladId}`)).toHaveText(en.menu.unavailable);
@@ -1158,7 +1162,7 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
       route.fulfill({ json: kioskOutOfStock(CHEESE_BURGER) })
     );
     await page.getByTestId("bag-pay").click();
-    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: outOfStock("Cheese Burger") })).toBeVisible();
     await page.getByTestId("global-error-ok").click();
     await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toBeVisible();
     await expect(page.getByTestId(`bag-inc-${burgerId}`)).toHaveAttribute("aria-disabled", "true");
@@ -1203,7 +1207,9 @@ test.describe("audit-fixes — PAY's stock re-check (A1) and cooking instruction
       });
     });
     await page.getByTestId("bag-pay").click();
-    await expect(page.getByRole("alertdialog", { name: en.bag.itemUnavailable })).toBeVisible();
+    await expect(
+      page.getByRole("alertdialog", { name: outOfStock("Kiddie Meal Beef Burger (Large)") })
+    ).toBeVisible();
     // The row carries its base item and its size (a hand-built row would
     // have thrown in the sweep and failed open onto /phone).
     expect(sweepBodies).toHaveLength(1);
