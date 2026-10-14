@@ -458,7 +458,9 @@ describe("CustomerPhone — the route entrance (lane motion)", () => {
   CONTINUE / BACK are /tent's CONFIRM / NO THANKS classes, bottom-anchored on
   /phone's footer (/tent has none): CONTINUE 1648, BACK 1756, footer 1864 —
   the same stage px in the ADA zone, which is bottom-aligned with the stage.
-  The rest is one flex column centred above CONTINUE (geometry measured in
+  The rest is one flex column centred between the bell and CONTINUE, 24px
+  off each (248–1624; ADA, no bell: 0–826 of the zone), so it sits as far
+  under the bell as above CONTINUE, as /tent's does (geometry measured in
   tests/e2e/phoneLayout.spec.ts).
 */
 describe("CustomerPhone — the bottom pair and the centred block (user 2026-10-14)", () => {
@@ -501,13 +503,15 @@ describe("CustomerPhone — the bottom pair and the centred block (user 2026-10-
       expect(order.indexOf(screen.getByTestId("phone-continue"))).toBe(order.indexOf(block()) + 1);
     });
 
-    it(`${mode}: title, subtitle, entry row, keypad and SKIP are one flex column centred above CONTINUE; the bell ${ada ? "is dropped" : "stays at /tent's 135, outside it"}`, () => {
+    it(`${mode}: title, subtitle, entry row, keypad and SKIP are one flex column centred ${ada ? "above CONTINUE" : "between the bell and CONTINUE"}; the bell ${ada ? "is dropped" : "stays at /tent's 135, outside it"}`, () => {
       if (ada) store.dispatch(toggleAccessibilityMode());
       mount();
 
-      expect(block().className.split(/\s+/)).toEqual(
-        expect.arrayContaining(["absolute", "inset-x-0", "top-0", "bottom-[296px]", "flex", "flex-col", "items-center", "justify-center"])
+      expect(classes("phone-content")).toEqual(
+        expect.arrayContaining(["absolute", "inset-x-0", "bottom-[296px]", "flex", "flex-col", "items-center", "justify-center"])
       );
+      // Normal: the room starts 24px under the bell (135 + 89 + 24), as it ends 24px above CONTINUE.
+      expect(classes("phone-content").filter((c) => /^top-/.test(c))).toEqual([ada ? "top-0" : "top-[248px]"]);
       const parts = [...block().children];
       expect(parts).toHaveLength(5);
       expect(parts[0]).toBe(screen.getByRole("heading", { level: 1 }));

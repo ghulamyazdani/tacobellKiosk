@@ -121,8 +121,9 @@ const maskExceptLast = (input: string) =>
  * its top, so CONTINUE 1648–1732 · BACK 1756–1840 · footer 1864. Bottom-
  * anchored, so the ADA zone (bottom-aligned with the stage) keeps the same
  * stage px. The bell stays at /tent's 135 (normal only). Title, subtitle,
- * entry row, keypad and SKIP are one flex column centred between the top
- * and CONTINUE's top minus 24px (0–1624): any title length stays centred.
+ * entry row, keypad and SKIP are one flex column centred between the bell
+ * and CONTINUE, 24px off each (248–1624): as on /tent, the block sits as far
+ * under the bell as above CONTINUE (253px each with SKIP), whatever its height.
  *
  * ADA (P9c, design-language, flagged): the same controls at the same sizes in
  * the 1122px reach zone. The bell is dropped (the brand zone carries the
@@ -456,10 +457,10 @@ export default function CustomerPhone() {
         />
       )}
 
-      {/* The content block, centred above CONTINUE (see LAYOUT). */}
+      {/* The content block, centred between the bell and CONTINUE (see LAYOUT). */}
       <div
         data-testid="phone-content"
-        className="absolute inset-x-0 top-0 bottom-[296px] flex flex-col items-center justify-center"
+        className={`absolute inset-x-0 ${ada ? "top-0" : "top-[248px]"} bottom-[296px] flex flex-col items-center justify-center`}
       >
         {/* Two lines tall at least: under a one-line title (Arabic) the
             subtitle keeps its place, clear of the title's descenders. */}
