@@ -1066,6 +1066,16 @@ const useCustomization = ({
     const getMergedCustomizations = () =>
       customization ? customization : selectedCustomizations;
 
+    // A paid add that returns to the bag (every bag-origin detour carries
+    // direction "cart": the Complete-Your-Meal rail, the repeat sheet's NEW
+    // CUSTOMIZATIONS) never opens the added modal — the bag row IS the
+    // confirmation, as for the bag's own in-place adds. Opened here, it
+    // waited under the bag and greeted the guest on /menu with a stale,
+    // pre-discount Total (walk 2026-10-14).
+    const addedModalOptions = {
+      suppressAddedModal: resolveCustomizationReturnPath(state) === "/cart",
+    };
+
     // helper: scroll & set errored state. The validation scan itself lives in
     // the engine (validateVariantSelections) — it stops at the first failing
     // modifier, exactly where the original applied this effect mid-scan.
@@ -1183,7 +1193,7 @@ const useCustomization = ({
             suppressAddedModal: true,
           });
         } else {
-          landed = addItemToCart(returnableFinalObject, "VARIANT");
+          landed = addItemToCart(returnableFinalObject, "VARIANT", addedModalOptions);
         }
       }
 
@@ -1275,7 +1285,7 @@ const useCustomization = ({
             { suppressAddedModal: true },
           );
         } else {
-          landed = addItemToCart(returnableFinalObject, "CUSTOMIZABLE");
+          landed = addItemToCart(returnableFinalObject, "CUSTOMIZABLE", addedModalOptions);
         }
 
         closeModalStates();
