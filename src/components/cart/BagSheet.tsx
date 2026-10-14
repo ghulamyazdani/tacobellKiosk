@@ -2,7 +2,7 @@
  * Cart rows / bill / menu data flow through untyped from the legacy slices
  * and converters; typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
@@ -65,7 +65,7 @@ import {
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { shouldDropAppliedOffer } from "@cx-sdk/ordering/offer/offerRevalidation";
-import useCartBill, { billTotal } from "../../hooks/cartHooks/useCartBill";
+import useCartBill, { billTotal, useBillEngine } from "../../hooks/cartHooks/useCartBill";
 import { formatPrice } from "../../utils/price";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
@@ -250,6 +250,21 @@ function AppliedRowPop({
 }
 
 /**
+ * The freebie picker's boundary fallback (its code failed to load or
+ * render): every offer handed to it settles like the picker's X — nothing
+ * chosen, a buy-stage journey rolled back — so a pending choice never holds
+ * revalidation or auto-apply for the rest of the bag. The boundary stays
+ * tripped until the bag closes, hence each offer, not only the first.
+ */
+function PickerFailed({ offer, onSettle }: { offer: unknown; onSettle: () => void }) {
+  const settle = useEffectEvent(onSettle);
+  useEffect(() => {
+    if (offer) settle();
+  }, [offer]);
+  return null;
+}
+
+/**
  * MY BAG — Figma "My Bag / Populated" (1:3171 / 1:3236): white rounded-top
  * sheet over the purple-tinted menu. Header MY BAG (n) + X, the EAT IN /
  * TAKE OUT toggle (bag-pdp lane: switches via OrderTypeSwitchFlow),
@@ -331,6 +346,7 @@ export default function BagSheet({
     useAppSettings();
   const { checkPipelineClosedFromRedux } = useKioskOpenServices();
   const { isLeastValueItemOffer } = useOfferHook();
+  const { getCalculatedBill } = useBillEngine();
   const { rank } = useOfferSavings();
   const { handleCartDrivenRemoval, removeAppliedOffer } = useOfferApply();
   const [getServerTimeApi] = useLazyGetServerTimeQuery();
@@ -494,15 +510,25 @@ export default function BagSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartRdx?.cartItems]);
 
+  // A buy-stage journey (the stage, then its picker) writes the REAL cart, and
+  // its "−" reaches pre-journey rows: revalidation waits for it, then judges
+  // the bag it leaves — restored on abandon, or under the journey's own offer.
+  // pickerOffer always clears: the picker's X, CONFIRM, or — when the picker
+  // cannot render — its boundary's PickerFailed.
+  const journeyOpen = !!stage.buyStage || !!pickerOffer;
+
   /**
    * REVALIDATION (contract) — drop the applied offer the moment the cart no
    * longer qualifies, via handleCartDrivenRemoval(false) → removal notice.
-   * Keyed on cart changes while the bag is open (+ on open). The six checks
-   * are fork Cart.tsx parity; minBillAmount is deliberately NOT revalidated
-   * (billCalculation refuses the discount instead — documented, keep).
+   * Keyed on cart changes while the bag is open (+ on open), held while a
+   * buy-stage journey is open. Checks 1–6 are fork Cart.tsx parity, 7 the
+   * sameOrLess ceiling, 8 the bill minimum (user decision 2026-10-14:
+   * billCalculation refused the discount on its own and the reward sat on
+   * the bill at −0.00 with no notice; now it goes like the min-items and
+   * BOGO checks, its notice naming the amount to add).
    */
   useEffect(() => {
-    if (!open) return;
+    if (!open || journeyOpen) return;
     if (!hasAppliedOffer) return;
     const items: any[] = cartRdx?.cartItems ?? [];
     // An EMPTY cart is the empty-cart exit's to settle (it removes the offer
@@ -510,14 +536,18 @@ export default function BagSheet({
     // would drop a persisted reward on the first render after a
     // crash-reload, before the Dexie rehydrate lands the rows.
     if (items.length === 0) return;
-    // The checks live in ONE place (SDK offerRevalidation): the menu's
-    // totals price the cart as this effect is about to leave it (settleCart).
-    const shouldRemove = shouldDropAppliedOffer(cartOffer, items);
+    // The checks live in ONE place (SDK offerRevalidation), 8 — the bill
+    // minimum — included: the menu's totals price the cart as this effect is
+    // about to leave it (settleCart, on the same bill engine).
+    const shouldRemove = shouldDropAppliedOffer(cartOffer, items, {
+      cart: cartRdx,
+      getCalculatedBill,
+    });
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cartOffer, cartRdx?.cartItems]);
+  }, [open, journeyOpen, cartOffer, cartRdx?.cartItems]);
 
   // Auto-apply (lane offers, item 34) — declared AFTER the revalidation
   // effect on purpose: effects run in declaration order, so it only ever
@@ -693,6 +723,14 @@ export default function BagSheet({
     } catch {
       if (mountedRef.current) setStageBlocked(t("offers.notApplicable"));
     }
+  };
+
+  // The picker's X (and its failed boundary's): a buy-stage journey that ends
+  // here without the offer landing rolls its paid rows back (no-op when no
+  // stage is armed).
+  const closePicker = () => {
+    stage.rollbackIfAbandoned();
+    setPickerOffer(null);
   };
 
   /**
@@ -1502,19 +1540,15 @@ export default function BagSheet({
           </Suspense>
         </ErrorBoundary>
       )}
-      {/* null fallback: only the rewards sheet or the buy stage (this same
-          chunk) can open the picker, so its code is always in by then. */}
-      <ErrorBoundary fallback={null}>
+      {/* Suspense null: only the rewards sheet or the buy stage (this same
+          chunk) can open the picker, so its code is always in by then. A
+          picker that fails to load or render settles like its X. */}
+      <ErrorBoundary fallback={<PickerFailed offer={pickerOffer} onSettle={closePicker} />}>
         <Suspense fallback={null}>
           <FreebiePickerSheet
             open={!!pickerOffer}
             offer={pickerOffer}
-            onClose={() => {
-              // A buy-stage journey that ends here without the offer landing
-              // rolls its paid rows back (no-op when no stage is armed).
-              stage.rollbackIfAbandoned();
-              setPickerOffer(null);
-            }}
+            onClose={closePicker}
           />
         </Suspense>
       </ErrorBoundary>

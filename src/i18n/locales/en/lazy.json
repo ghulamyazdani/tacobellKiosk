@@ -61,7 +61,7 @@
     "mechAmountItemsOnly": "{{amount}} off {{scope}}",
     "mechAmountItemsExcept": "{{amount}} off everything except {{scope}}",
     "scopeSeparator": ", ",
-    "scopeMore": "+{{qty}} more",
+    "scopeMore": ", +{{qty}} more",
     "upTo": "{{line}} · up to {{max}}",
     "lockedItemCriteriaExcept": "Not valid on {{scope}}",
     "lockedItemCriteriaOnly": "Add something from {{scope}}"

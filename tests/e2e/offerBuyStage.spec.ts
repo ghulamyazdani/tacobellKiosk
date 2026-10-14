@@ -1194,4 +1194,57 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
       .toBe("kept");
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(MIN_FOUR_BOGO.name);
   });
+
+  test("E-C10 (walk w3 review) a headed stage whose Sauces group outgrows a row: four across, then the other two — EVERY row centred on the stage, the 5th card never in column 1", async ({
+    page,
+  }) => {
+    test.slow();
+    // The slim menu's three sauces, plus three more: six cards in one group.
+    const menu = fixtureJson("slim-menu.json");
+    const sauces = menu.categories
+      .flatMap((category: { subCategories?: { id: string; entities: unknown[] }[] }) => category.subCategories ?? [])
+      .find((sub: { id: string }) => sub.id === SAUCES_SUB);
+    ["Garlic Dip", "Chilli Dip", "Ranch Dip"].forEach((name, index) =>
+      sauces.entities.push({ ...clone(sauces.entities[0]), id: `e2e-extra-sauce-${index}`, name, aliases: [] })
+    );
+    /** Any sauce (a category, so the stage is headed) AND a Cheese Burger. */
+    const SAUCE_AND_BURGER = itemOffer({
+      _id: "offer-sauce-and-burger",
+      name: "Any sauce and a burger, a Caesar free",
+      getItemOnly: false,
+      applicable: applicableBuy([buyCategory(SAUCES_SUB, "Sauces", "and"), buyRaw(CHEESE_BURGER, "Cheese Burger", 1)]),
+      getItems: { items: [getEntry("gi-sauce-burger-caesar", CAESAR_DRESSING, "Caesar Dressing", "and")], categories: [] },
+    });
+    await mockBackend(page, { offers: fixtureJson("offers.json"), menu });
+    await routeOffers(page, [SAUCE_AND_BURGER]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await openBuyStage(page, SAUCE_AND_BURGER._id);
+
+    await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(2);
+    const panel = await page.getByTestId("buy-stage-sheet").getByRole("dialog").boundingBox();
+    if (!panel) throw new Error("the stage is not laid out");
+    const rows = await page
+      .getByTestId(`buy-stage-group-${SAUCES_SUB}`)
+      .locator("xpath=following-sibling::*[1]")
+      .evaluate((row) => {
+        const byTop = new Map<number, { left: number; right: number; count: number }>();
+        for (const card of row.children) {
+          const rect = card.getBoundingClientRect();
+          const top = Math.round(rect.top);
+          const line = byTop.get(top) ?? { left: rect.left, right: rect.right, count: 0 };
+          byTop.set(top, {
+            left: Math.min(line.left, rect.left),
+            right: Math.max(line.right, rect.right),
+            count: line.count + 1,
+          });
+        }
+        return [...byTop.entries()].sort(([a], [b]) => a - b).map(([, line]) => line);
+      });
+    expect(rows.map((line) => line.count)).toEqual([4, 2]);
+    for (const line of rows) {
+      expect(Math.abs((line.left + line.right) / 2 - (panel.x + panel.width / 2))).toBeLessThanOrEqual(1);
+    }
+  });
 });

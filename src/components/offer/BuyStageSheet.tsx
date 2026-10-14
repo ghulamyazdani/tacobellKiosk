@@ -52,9 +52,12 @@ export interface BuyStageSheetProps {
 /** Decrement refusals, rendered inline (TB mounts no global error modal). */
 type GuardKey = "loyaltyRowGuard" | "cartEmptyGuard";
 
-/** Trimmed, case-insensitive text equality (the header rule). */
-const sameText = (a: unknown, b: unknown) =>
-  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+/**
+ * 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four across the
+ * 1032 px content box. A wrapping flex row, not a grid: EVERY row centres,
+ * so neither a short row nor a 5th card under a full four hugs column 1.
+ */
+const CARD_ROW = "flex flex-wrap justify-center gap-[16px]";
 
 /**
  * BOGO BUY STAGE — "unlock this reward" (offers lane, item 31). Opened from a
@@ -246,21 +249,15 @@ export default function BuyStageSheet({
   };
 
   /**
-   * A header says something the cards don't — unless the group is a lone
-   * item under its own name (the tenant's usual buy group: label = item name)
-   * or under no label, and names no per-group need above 1 (plain-and /
-   * plain-or). The label is English (no data), so the item's raw name counts
-   * as its name in an Arabic session too.
+   * A header says something the cards don't: which items a category group
+   * (several cards) draws from, or a lone item's per-group need above 1
+   * (plain-and / plain-or). A lone card already names the item and its size,
+   * whatever the backoffice label says — walk w3: 'Veg hakka noddles quarter'
+   * over 'Noodles (QUARTER)' headed each card alone in its row — and a least
+   * stage's threshold is shared.
    */
-  const needsHeader = (group: BuyStageGroup) => {
-    const [entity, ...others] = group.entities;
-    const named =
-      !group.label?.trim() ||
-      sameText(group.label, tileName(group, entity)) ||
-      sameText(group.label, entity?.name);
-    const needShown = view.mode !== "least" && group.requiredQuantity > 1;
-    return others.length > 0 || !named || needShown;
-  };
+  const needsHeader = (group: BuyStageGroup) =>
+    group.entities.length > 1 || (view.mode !== "least" && group.requiredQuantity > 1);
   // Headers are on or off for the WHOLE stage: a heading groups every card
   // below it, so a header-less card after a headed group would read as one
   // of that group's options.
@@ -299,7 +296,7 @@ export default function BuyStageSheet({
       <div
         key={`${group.key}-${id}`}
         data-testid={`buy-stage-tile-${id}`}
-        className={`tb-press-card relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
+        className={`tb-press-card relative flex h-[277px] w-[240px] flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
           qty > 0 ? "ring-[3px] ring-tb-purple" : ""
         }`}
       >
@@ -487,17 +484,21 @@ export default function BuyStageSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four
-              across, centred (auto-fit: a row of 1–3 collapses its empty
-              tracks; a full-width header keeps all four). Header-less
-              groups share rows. */}
-          <div className="grid grid-cols-[repeat(auto-fit,240px)] justify-center gap-[16px] px-[24px] py-[32px]">
-            {view.groups.map((group: BuyStageGroup) => (
-              <Fragment key={group.key}>
-                {headed && (
+          {/* Header-less groups share one card row. Headed, each group is
+              its header over its OWN card row (a header spanning a shared
+              grid kept all four tracks, so a lone card sat in column 1 —
+              walk w3); the 16 px rhythm stays. */}
+          <div className={`${headed ? "flex flex-col gap-[16px]" : CARD_ROW} px-[24px] py-[32px]`}>
+            {view.groups.map((group: BuyStageGroup) => {
+              const tiles = group.entities.map((entity: BuyMenuEntity, index: number) =>
+                renderTile(group, entity, index),
+              );
+              if (!headed) return <Fragment key={group.key}>{tiles}</Fragment>;
+              return (
+                <Fragment key={group.key}>
                   <p
                     data-testid={`buy-stage-group-${group.key}`}
-                    className="col-span-full text-[22px] font-bold leading-[26px] text-black"
+                    className="text-center text-[22px] font-bold leading-[26px] text-black"
                   >
                     {/* least: the threshold is shared, so a per-group
                         "Any N" would mislead — the label alone (fork). */}
@@ -510,12 +511,10 @@ export default function BuyStageSheet({
                             t("offers.buyStage.groupFallbackLabel"),
                         })}
                   </p>
-                )}
-                {group.entities.map((entity: BuyMenuEntity, index: number) =>
-                  renderTile(group, entity, index),
-                )}
-              </Fragment>
-            ))}
+                  <div className={CARD_ROW}>{tiles}</div>
+                </Fragment>
+              );
+            })}
           </div>
         </div>
 

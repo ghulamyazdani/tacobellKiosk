@@ -306,13 +306,15 @@ export default function OfferRow({
           )}
         </span>
         {secondLine && (
-          // dir="auto" on this LEAF only (never a container): a wrapped
-          // Arabic line right-aligns; text-start because the parent sets
-          // physical text-left.
+          // dir="auto" on this LEAF only (never a container): an Arabic line
+          // reads right to left, and — no text-start — takes the column's
+          // physical text-left, so a wrapped one starts at the title's left
+          // edge (walk w3: a scoped offer's description lands here, and
+          // right-aligned it read as a ragged block).
           <span
             id={lineId}
             dir="auto"
-            className="text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
+            className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
           >
             {secondLine}
           </span>
@@ -321,14 +323,17 @@ export default function OfferRow({
           // Figma 1:4069 "Offer conditions": 24 below the title block (10 +
           // 14), Text/Small Rg 18/20 Grey 1, 498 wide, 8 above the toggle.
           <span className="mt-[14px] flex flex-col items-start gap-[8px]">
-            {/* dir="auto" on this LEAF only: a wrapped Arabic description
-                right-aligns; w-fit keeps a single line at the start edge. */}
+            {/* dir="auto" on this LEAF only: an Arabic description still
+                reads right to left, but every line starts at the title's
+                left edge (text-left, not text-start — walk w3: wrapped and
+                right-aligned under the left-aligned title and Save line, it
+                read as a ragged block). */}
             <span
               ref={descRef}
               id={descId}
               data-testid={`offer-row-desc-${id}`}
               dir="auto"
-              className={`w-fit max-w-[498px] text-start text-[18px] leading-[20px] text-tb-grey-1 ${
+              className={`w-fit max-w-[498px] text-left text-[18px] leading-[20px] text-tb-grey-1 ${
                 expanded ? "" : "line-clamp-2"
               }`}
             >

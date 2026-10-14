@@ -474,6 +474,166 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.getByTestId("bag-row-pep-1")).toBeInTheDocument();
   });
 
+  /*
+    Walk 2026-10-14 + user decision: a min-bill reward the bag dropped under
+    stayed applied at "−£0.00" (the engine refused its discount) with no
+    notice. Revalidation check 8 removes it the way the min-items and BOGO
+    checks do, judged on posistKiosk's money (Cart.tsx offerQualifyingBill):
+    the guest's own spend — freebie and loyalty rows filtered out — as one
+    bill, its item subtotal. Every offer, onGrossTotal ones too: the engine
+    grants them on the items and the sheet ranks them there (posistKiosk
+    judges them on the net — an open question for the user).
+  */
+  const MIN_BILL_OFFER = {
+    ...offerBase,
+    _id: "offer-25-over-10",
+    name: "25% off orders over £10",
+    type: { name: "percent", value: 25 },
+    maxDiscount: 150,
+    minBillAmount: 10,
+  };
+
+  it("REVALIDATION (walk repro): deleting a line takes the bag under a min-bill reward's minimum — the reward goes WITH the notice, which says how much more to add; no −£0.00 row stays", async () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    store.dispatch(applyOffer({ offer: MIN_BILL_OFFER }));
+    const { onClose } = renderSheet();
+
+    // £14.60 clears the £10 minimum: applied, 25 % off.
+    expect(cartState().cartOffer._id).toBe("offer-25-over-10");
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£3.65");
+    expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
+    await userEvent.click(screen.getByTestId("remove-item-confirm"));
+
+    // £6.00 left: under the minimum.
+    await waitFor(() => expect(cartState().offerRemovalModal.isOpen).toBe(true));
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-25-over-10");
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    const notice = screen.getByTestId("offer-removal-notice");
+    expect(notice).toHaveTextContent("25% off orders over £10 no longer applies to your order.");
+    expect(notice).toHaveTextContent("Add £4+ to your order to be eligible to redeem this reward");
+    expect(notice).toHaveTextContent(/Your total is now £6(?![\d.])/);
+    expect(screen.queryByTestId("bag-rewards-applied")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bag-discounts")).not.toBeInTheDocument();
+    // The drink still holds the bag open.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("bag-row-pep-1")).toBeInTheDocument();
+  });
+
+  it("REVALIDATION: a bag AT the minimum keeps the reward; one unit under, it goes with the notice", async () => {
+    // 2 × £3 = £6.00 against a £6 minimum.
+    store.dispatch(setCartItems([{ ...DRINK_ROW }]));
+    store.dispatch(applyOffer({ offer: { ...MIN_BILL_OFFER, minBillAmount: 6 } }));
+    renderSheet();
+    expect(cartState().cartOffer._id).toBe("offer-25-over-10");
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£1.50");
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+
+    await userEvent.click(screen.getByTestId("bag-dec-pep-1"));
+    await waitFor(() => expect(cartState().offerRemovalModal.isOpen).toBe(true));
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £3+ to your order to be eligible to redeem this reward"
+    );
+  });
+
+  it("REVALIDATION: the minimum is the guest's OWN spend — a freebie row never holds a min-bill reward up (it goes, and its freebie with it)", () => {
+    // £8.60 paid + the £17 free salad: £25.60 in the bag, £8.60 of it the guest's.
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SALAD_FREEBIE_ROW }]));
+    store.dispatch(applyOffer({ offer: { ...FREE_SALAD_OFFER, minBillAmount: 10 } }));
+    renderSheet();
+
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-free-salad");
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(cartState().cartItems.map(({ itemId }: { itemId: string }) => itemId)).toEqual(["cb-1"]);
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £1.40+ to your order to be eligible to redeem this reward"
+    );
+  });
+
+  it("REVALIDATION: …nor does a XENO reward row — its £17 is the loyalty programme's, not the guest's spend", () => {
+    const REWARD_ROW = {
+      id: "greek-salad",
+      itemId: "lr-1",
+      uniqueItemId: "lr-1-u",
+      name: "Greek Salad",
+      quantity: 1,
+      type: "ITEM",
+      isLoyaltyItem: true,
+      isRedeemed: true,
+      discount_type: "percentage",
+      discount_value: 100,
+      price: 0,
+      total_price: 0,
+      undiscounted_price: 17,
+      undiscounted_total_price: 17,
+      extra_fields: [{ name: "Points Value", value: 3000 }],
+      customizations: {},
+    };
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, REWARD_ROW]));
+    store.dispatch(applyOffer({ offer: { ...FLAT_OFFER, minBillAmount: 10 } }));
+    renderSheet();
+
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-flat-2");
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    // The reward row is the loyalty flow's: it stays.
+    expect(cartState().cartItems.map(({ itemId }: { itemId: string }) => itemId)).toEqual(["cb-1", "lr-1"]);
+  });
+
+  it("REVALIDATION: an onGrossTotal reward is judged on the item subtotal like every other — where the engine grants it and the sheet ranks it — never on a net its own discount lowered", () => {
+    // £14.60 of items, £5 off, £10 minimum: net £9.60, subtotal £14.60.
+    const GROSS_FIVE = {
+      ...FLAT_OFFER,
+      _id: "offer-gross-5",
+      type: { name: "amount", value: 5 },
+      minBillAmount: 10,
+      onGrossTotal: true,
+    };
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    store.dispatch(applyOffer({ offer: GROSS_FIVE }));
+    renderSheet();
+
+    expect(cartState().cartOffer._id).toBe("offer-gross-5");
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£5.00");
+  });
+
+  it("REVALIDATION: an onGrossTotal reward under its minimum before tax goes with the notice, though tax lifts the net over it — the engine refused it there, so it would sit at −£0.00", () => {
+    // £9.60 + 15 % VAT: net £11.04, item subtotal £9.60 against £10.
+    const VAT15 = { _id: "vat15", name: "VAT@ 15%", type: "percentage", value: 15, isGSTOSC: false, cascadingTaxes: [] };
+    const TACO_ROW = { id: "taco", itemId: "t-1", name: "Taco", quantity: 1, type: "ITEM", price: 9.6, total_price: 9.6, taxes: [VAT15] };
+    store.dispatch(setCartItems([TACO_ROW]));
+    store.dispatch(applyOffer({ offer: { ...MIN_BILL_OFFER, onGrossTotal: true } }));
+    renderSheet();
+
+    expect(cartState().offerRemovalModal.isOpen).toBe(true);
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-25-over-10");
+    expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £0.40+ to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("bag-rewards-applied")).not.toBeInTheDocument();
+  });
+
+  it("crash-reload on /cart under a min-bill reward: never judged on the empty first render (no notice, no exit); the restored rows clear the minimum, so it stays", () => {
+    store.dispatch(applyOffer({ offer: MIN_BILL_OFFER }));
+    const { onClose } = renderSheet();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-25-over-10");
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+
+    act(() => {
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(cartState().cartOffer._id).toBe("offer-25-over-10");
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£3.65");
+    expect(screen.queryByTestId("offer-removal-notice")).not.toBeInTheDocument();
+  });
+
   it("scenario 7: a freebie-only cart auto-removes the offer, empty-exits, and the notice SURVIVES emptyCart", async () => {
     store.dispatch(setCartItems([{ ...SALAD_FREEBIE_ROW }]));
     store.dispatch(applyOffer({ offer: FREE_SALAD_OFFER }));

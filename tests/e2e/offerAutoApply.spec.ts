@@ -7,9 +7,10 @@ import {
   CHEESE_BURGER,
   GREEK_SALAD,
   CAESAR_DRESSING,
+  TORTILLA_SAUCE,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu, startOrderTo } from "./pages/boot";
-import { addViaPdp, openBag, bagRows } from "./pages/order";
+import { addViaPdp, addOneTap, openBag, bagRows } from "./pages/order";
 
 /**
  * Lane offers, item 34 — AUTO-APPLY. With the default scope
@@ -457,5 +458,45 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await expect(page.getByTestId("bag-discounts")).toContainText("£2.00");
     await expect(page.getByTestId("bag-total")).toContainText("£7.00");
     await expect(page).toHaveURL(/\/cart$/);
+  });
+
+  test("E10 walk 2026-10-14: a flagged £2-off-over-£10 onGrossTotal offer on burger + Tortilla (£10.00 of items) lands once and stays though its own £2 takes the bill to £9.00; delete the Tortilla (£8.00) and it goes with REWARD REMOVED 'Add £2+…'; GOT IT, nothing re-applies", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    await routeOffers(page, [{ ...AUTO_FLAT_MIN10, _id: "offer-flat-2-min10-gross", onGrossTotal: true }]);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page);
+    await addOneTap(page, TORTILLA_SAUCE, "(2)");
+    await openBag(page);
+
+    // Judged on its £10.00 of items, like the engine: applied, and kept.
+    await expect(page.getByTestId("bag-rewards-applied-for-you")).toHaveText("Applied for you");
+    await expect(page.getByTestId("bag-subtotal")).toContainText("£10.00");
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+    const start = Date.now();
+    await expect
+      .poll(
+        async () => {
+          if ((await page.getByTestId("offer-removal-notice").count()) > 0) return "removed";
+          return Date.now() - start >= 1_500 ? "kept" : "waiting";
+        },
+        { timeout: 5_000, intervals: [250] }
+      )
+      .toBe("kept");
+
+    // The walk's repro: a line deleted takes the bag under the minimum.
+    await bagRows(page).filter({ hasText: "Tortilla Sauce" }).locator('[data-testid^="bag-dec-"]').click();
+    await page.getByTestId("remove-item-confirm").click();
+    const notice = page.getByTestId("offer-removal-notice");
+    await expect(notice).toContainText("Reward Removed");
+    await expect(notice).toContainText("Add £2+ to your order to be eligible to redeem this reward");
+    await expect(notice).toContainText(/Your total is now £9(?![\d.])/);
+    await page.getByTestId("offer-removal-gotit").click();
+    await expect(notice).toHaveCount(0);
+    await expectNothingApplied(page);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 });

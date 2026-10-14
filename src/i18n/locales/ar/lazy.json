@@ -65,7 +65,7 @@
     "mechAmountItemsOnly": "خصم {{amount}} على {{scope}}",
     "mechAmountItemsExcept": "خصم {{amount}} على كل شيء ما عدا {{scope}}",
     "scopeSeparator": "، ",
-    "scopeMore": "و{{qty}} أخرى",
+    "scopeMore": " و{{qty}} أخرى",
     "upTo": "{{line}} · بحد أقصى {{max}}",
     "lockedItemCriteriaExcept": "غير صالح على {{scope}}",
     "lockedItemCriteriaOnly": "أضف شيئًا من {{scope}}"

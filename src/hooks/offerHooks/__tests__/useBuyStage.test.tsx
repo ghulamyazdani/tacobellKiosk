@@ -166,7 +166,6 @@ interface CartView {
   cartOffer?: { _id?: string } | null;
 }
 const cart = () => (store.getState() as unknown as { cart: CartView }).cart;
-const byItemId = (rows: Row[]) => [...rows].sort((a, b) => a.itemId.localeCompare(b.itemId));
 const setCart = (rows: Row[]) => act(() => void store.dispatch(setCartItems(rows)));
 const stageEvents = () =>
   mockCapture.mock.calls
@@ -204,7 +203,7 @@ describe("useBuyStage — snapshot and rollback", () => {
     ]);
   });
 
-  it("abandon restores the PAID rows exactly (redux + the IndexedDB replace), leaves loyalty rows alone, and reports Abandoned once", () => {
+  it("abandon restores the PAID rows exactly, in the snapshot's order (redux + the IndexedDB replace, the same list), leaves loyalty rows alone, and reports Abandoned once", () => {
     const sauce = sauceRow("s1");
     setCart([BURGER_ROW, sauce, LOYALTY_ROW]);
     const { result } = renderHook(() => useBuyStage(true), { wrapper });
@@ -214,9 +213,9 @@ describe("useBuyStage — snapshot and rollback", () => {
     setCart([sauceRow("s1", 3), LOYALTY_ROW, CAESAR_ROW]);
     act(() => result.current.abandon());
 
-    expect(byItemId(cart().cartItems)).toEqual(byItemId([BURGER_ROW, sauce, LOYALTY_ROW]));
+    expect(cart().cartItems).toEqual([BURGER_ROW, sauce, LOYALTY_ROW]);
     expect(mockReplaceIndexedDbCart).toHaveBeenCalledTimes(1);
-    expect(mockReplaceIndexedDbCart).toHaveBeenCalledWith([LOYALTY_ROW, BURGER_ROW, sauce]);
+    expect(mockReplaceIndexedDbCart).toHaveBeenCalledWith([BURGER_ROW, sauce, LOYALTY_ROW]);
 
     act(() => result.current.abandon()); // disarmed: a second abandon is a no-op
     expect(mockReplaceIndexedDbCart).toHaveBeenCalledTimes(1);
@@ -224,6 +223,49 @@ describe("useBuyStage — snapshot and rollback", () => {
       ["offer_buy_stage_opened", "least-2"],
       ["offer_buy_stage_abandoned", "least-2"],
     ]);
+  });
+
+  it("walk w3: a line trashed mid-journey comes back at its OWN place — 'Chilli, Latte' stays 'Chilli, Latte', never 'Latte, Chilli' — with its id, in redux and the IndexedDB mirror", () => {
+    const sauce = sauceRow("s1");
+    setCart([sauce, BURGER_ROW]);
+    const { result } = renderHook(() => useBuyStage(true), { wrapper });
+
+    act(() => result.current.start(LEAST, LEAST_VIEW));
+    setCart([BURGER_ROW]); // the sauce card's trash
+    act(() => result.current.abandon());
+
+    expect(cart().cartItems).toEqual([sauce, BURGER_ROW]);
+    expect(mockReplaceIndexedDbCart).toHaveBeenCalledWith([sauce, BURGER_ROW]);
+  });
+
+  it("a row the snapshot never had and the rollback keeps (a reward's freebie that landed mid-journey) follows the restored rows", () => {
+    const sauce = sauceRow("s1");
+    const freebie: Row = { ...CAESAR_ROW, itemId: "gi-1", isGetItem: true, total_price: 0 };
+    setCart([sauce, BURGER_ROW]);
+    const { result } = renderHook(() => useBuyStage(true), { wrapper });
+
+    act(() => result.current.start(LEAST, LEAST_VIEW));
+    setCart([freebie, BURGER_ROW]);
+    act(() => result.current.abandon());
+
+    expect(cart().cartItems).toEqual([sauce, BURGER_ROW, freebie]);
+  });
+
+  it("the rollback writes the LIVE cart: a row that landed before React re-rendered is never dropped by the wholesale write", () => {
+    const sauce = sauceRow("s1");
+    const freebie: Row = { ...CAESAR_ROW, itemId: "gi-1", isGetItem: true, total_price: 0 };
+    setCart([sauce, BURGER_ROW]);
+    const { result } = renderHook(() => useBuyStage(true), { wrapper });
+
+    act(() => result.current.start(LEAST, LEAST_VIEW));
+    setCart([BURGER_ROW]);
+    act(() => {
+      // Same tick: the freebie lands, and the stage is abandoned before any re-render.
+      store.dispatch(setCartItems([BURGER_ROW, freebie]));
+      result.current.abandon();
+    });
+
+    expect(cart().cartItems).toEqual([sauce, BURGER_ROW, freebie]);
   });
 
   it("starting offer B while A's journey is armed rolls A back first; B baselines on the restored cart", () => {

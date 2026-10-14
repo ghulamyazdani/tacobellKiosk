@@ -16,6 +16,7 @@ import {
   openOfferRemovalModal,
   setCartInstructions,
   setCartItems,
+  updateItemCartRdx,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import {
@@ -47,6 +48,38 @@ vi.mock("../bagLazyParts", async (importOriginal) => {
     BuyStageSheet: (props: ComponentProps<typeof Stage>) => {
       if (stall.promise) use(stall.promise);
       return createElement(Stage, props);
+    },
+  };
+});
+
+/**
+ * The real freebie picker — unless `pickerCrash.on` makes it fail to render
+ * while open. Mocked at its own module: the bag's picker loads with the bag's
+ * first render, and that early load reads the chunk above unmocked.
+ */
+const pickerCrash = vi.hoisted(() => ({ on: false }));
+vi.mock("../../offer/FreebiePickerSheet", async (importOriginal) => {
+  const picker = await importOriginal<typeof import("../../offer/FreebiePickerSheet")>();
+  const { createElement } = await import("react");
+  const Picker = picker.default;
+  return {
+    ...picker,
+    default: (props: ComponentProps<typeof Picker>) => {
+      if (pickerCrash.on && props.open) throw new Error("picker render failed");
+      return createElement(Picker, props);
+    },
+  };
+});
+
+/** The real snapshot planner — unless `plan.fail` makes the stage's rollback throw (Rule 2: it still closes). */
+const plan = vi.hoisted(() => ({ fail: false }));
+vi.mock("@cx-sdk/ordering/cart/cartEngine", async (importOriginal) => {
+  const engine = await importOriginal<typeof import("@cx-sdk/ordering/cart/cartEngine")>();
+  return {
+    ...engine,
+    planCartSnapshotRestore: (...args: Parameters<typeof engine.planCartSnapshotRestore>) => {
+      if (plan.fail) throw new Error("rollback failed");
+      return engine.planCartSnapshotRestore(...args);
     },
   };
 });
@@ -531,6 +564,95 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
     expect(caption()).toHaveTextContent("Applied for you");
   });
+
+  it("a flagged onGrossTotal offer whose own £2 takes the net under its £10 minimum lands ONCE and stays — the engine, the ranking and revalidation all judge the £11.60 item subtotal, so no notice and no re-apply loop", async () => {
+    const grossAuto = flat("gross-auto-2", 2, { autoApplied: true, minBillAmount: 10, onGrossTotal: true });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, drinkRow(1)]));
+    store.dispatch(setFilteredOffers([grossAuto]));
+    const spy = vi.spyOn(store, "dispatch");
+    render(<BagUi />);
+
+    await waitFor(() => expect(slotId()).toBe("gross-auto-2"));
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(swapCount(spy)).toBe(1);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+    spy.mockRestore();
+  });
+});
+
+/*
+  Review (lane walk-offers-2): check 8 prices the live bill, but the
+  ranking, the notice's "Add X+" gap and auto-apply read useOfferSavings'
+  caches, keyed on a cart signature that left add-ons out. An Edit that
+  only dropped one kept them on the old money: the notice lost its reason,
+  the sheet offered the reward again, and a flagged one came back after
+  every GOT IT — the guest never reached PAY.
+*/
+describe("BagSheet — an Edit that only drops an add-on, under a min-bill reward", () => {
+  /** The burger with a £3 Extra Cheese: £11.60 (its own itemId: no earlier test warmed the caches). */
+  const RICH: Row = {
+    ...BURGER_ROW,
+    itemId: "cb-rich",
+    uniqueItemId: "cb-rich-u",
+    total_price: 11.6,
+    customizations: {
+      sauce_group: [
+        { id: "onions", name: "Add Onions", price: 0.6, quantity: 1 },
+        { id: "cheese", name: "Extra Cheese", price: 3, quantity: 1 },
+      ],
+    },
+  };
+  /** The PDP's commit: the same itemId, price and quantity, the cheese gone — £8.60. */
+  const LEAN: Row = { ...BURGER_ROW, itemId: "cb-rich", uniqueItemId: "cb-rich-u" };
+  /** Edit from the bag: it closes for the PDP, the commit lands, it reopens. */
+  const editFromBag = (view: ReturnType<typeof render>) => {
+    view.rerender(<BagUi open={false} />);
+    act(() => void store.dispatch(updateItemCartRdx({ item: { ...LEAN } })));
+    view.rerender(<BagUi open />);
+  };
+  const NUDGE = "Add £1.40+ to your order to be eligible to redeem this reward";
+
+  it("a chosen reward goes with its 'Add £1.40+' line, and the reopened sheet nudges instead of offering it", async () => {
+    const min10 = flat("min10-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...RICH }]));
+    store.dispatch(setFilteredOffers([min10]));
+    store.dispatch(applyOffer({ offer: min10 }));
+    const view = render(<BagUi />);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+
+    editFromBag(view);
+
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(NUDGE);
+
+    await userEvent.click(screen.getByTestId("offer-removal-gotit"));
+    await userEvent.click(screen.getByTestId("bag-rewards-entry"));
+    expect(
+      await screen.findByTestId("offer-row-nudge-min10-flat-2", {}, { timeout: 5000 })
+    ).toHaveTextContent(NUDGE);
+    expect(screen.queryByTestId("offer-radio-min10-flat-2")).toBeNull();
+  });
+
+  it("a flagged reward goes ONCE: GOT IT never brings it back", async () => {
+    const autoMin10 = flat("auto-min10-flat-2", 2, { autoApplied: true, minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...RICH }]));
+    store.dispatch(setFilteredOffers([autoMin10]));
+    const spy = vi.spyOn(store, "dispatch");
+    const view = render(<BagUi />);
+    await waitFor(() => expect(slotId()).toBe("auto-min10-flat-2"));
+
+    editFromBag(view);
+
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(NUDGE);
+    await userEvent.click(screen.getByTestId("offer-removal-gotit"));
+
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(slotId()).toBeUndefined();
+    expect(swapCount(spy)).toBe(1);
+    spy.mockRestore();
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -639,6 +761,158 @@ describe("BagSheet — buy-stage hand-offs", () => {
 
     expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("buy-stage-guard")).toBeEmptyDOMElement();
+  });
+
+  /*
+    Review (lane walk-offers-2): the stage's "−" reaches a PRE-journey row of
+    its tile's item. Judged mid-journey, the applied reward that row held up
+    went — and BACK restored the rows but not the reward. Revalidation waits
+    for the journey, then judges the bag it leaves.
+  */
+  it.each([
+    ["a bill minimum (£10.60 → £8.60 under £10)", { minBillAmount: 10 }],
+    ["an item minimum (2 → 1 under 2)", { minItemCount: 2 }],
+  ])(
+    "a reward the stage's '−' takes under %s is not judged mid-journey: BACK restores the rows AND the reward, no notice",
+    async (_label, minimum) => {
+      const held = flat("held-flat-2", 2, minimum);
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW }]));
+      store.dispatch(setFilteredOffers([held, BUY_TWO_SAUCES]));
+      store.dispatch(applyOffer({ offer: held }));
+      render(<BagUi />);
+      await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+      await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+      await screen.findByTestId("buy-stage-sheet");
+
+      await userEvent.click(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`)); // the pre-journey sauce
+      expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1"]);
+      expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+      expect(slotId()).toBe("held-flat-2");
+
+      await userEvent.click(screen.getByTestId("buy-stage-back"));
+      expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1", "ts-1"]);
+      expect(slotId()).toBe("held-flat-2");
+      expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+      await userEvent.click(screen.getByTestId("rewards-close"));
+      expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+    }
+  );
+
+  it("the wait spans the stage → picker hand-off: CONTINUE into the picker with the bag still under the reward's minimum, then X — the rows AND the reward come back", async () => {
+    /** A burger AND 2 sauces, then a side of your choice (the picker). */
+    const BURGER_SAUCES_PICK = {
+      ...offerBase,
+      _id: "offer-burger-sauces-pick",
+      name: "A burger and 2 sauces, pick a side",
+      type: { name: "item", value: 0 },
+      isAndOffer: false,
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [
+          { item: { baseItemId: BURGER_ROW.id, name: "Cheese Burger" }, quantity: 1, relation: "and" },
+          { item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 2, relation: "and" },
+        ],
+      },
+      getItems: {
+        items: [getEntry("greek-salad", "Greek Salad", "or", 17), getEntry("caesar-dressing", "Caesar Dressing", "or", 2)],
+        categories: [],
+      },
+    };
+    const held = flat("held-flat-2", 2, { minBillAmount: 15 });
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE.id]: SAUCE, [BURGER_ROW.id as string]: BURGER_ROW.baseItem } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW, quantity: 2 }])); // £17.20
+    store.dispatch(setFilteredOffers([held, BURGER_SAUCES_PICK]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-burger-sauces-pick"));
+    await screen.findByTestId("buy-stage-sheet");
+
+    await userEvent.click(screen.getByTestId(`buy-stage-dec-${BURGER_ROW.id}`)); // a pre-journey burger: £8.60
+    await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
+    await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`)); // £12.60, still under £15
+    await userEvent.click(screen.getByTestId("buy-stage-continue"));
+    await screen.findByTestId("freebie-picker");
+    expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(slotId()).toBe("held-flat-2");
+
+    await userEvent.click(screen.getByTestId("freebie-close"));
+    expect(state().cart.cartItems).toEqual([{ ...BURGER_ROW, quantity: 2 }]);
+    expect(slotId()).toBe("held-flat-2");
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+  });
+
+  it("…and the moment the journey ends, the bag it leaves IS judged: a rollback that fails keeps the trashed bag, and the reward goes with its notice", async () => {
+    plan.fail = true;
+    onTestFinished(() => {
+      plan.fail = false;
+    });
+    const held = flat("held-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW }]));
+    store.dispatch(setFilteredOffers([held, BUY_TWO_SAUCES]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+    await screen.findByTestId("buy-stage-sheet");
+    await userEvent.click(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`));
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+
+    await userEvent.click(screen.getByTestId("buy-stage-close"));
+    expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
+    expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1"]);
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £1.40+ to your order to be eligible to redeem this reward"
+    );
+  });
+
+  /*
+    Review (lane walk-offers-2): the wait read pickerOffer, which only the
+    picker's own X cleared — a picker that failed to render (its boundary
+    showed nothing) held revalidation off for the rest of the bag. Its
+    fallback settles like X, for every choice handed to it.
+  */
+  it("a picker that fails to render settles like its X, each time — a journey rolls back, and the held reward is judged again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    pickerCrash.on = true;
+    onTestFinished(() => {
+      pickerCrash.on = false;
+    });
+    const held = flat("held-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, drinkRow(1)])); // £11.60
+    store.dispatch(setFilteredOffers([held, SAUCE_CHOICE, SOL_BOGO]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+
+    // A choice SAVEd off the rewards sheet: the picker fails, nothing is chosen.
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-offer-sauce-choice"));
+    await userEvent.click(screen.getByTestId("rewards-save"));
+    await waitFor(() => expect(screen.queryByTestId("rewards-sheet")).toBeNull());
+    expect(screen.queryByTestId("freebie-picker")).toBeNull();
+    expect(slotId()).toBe("held-flat-2");
+
+    // Its boundary still tripped, a buy stage CONTINUEs into it: the stage's sauce goes back.
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-sol-bogo"));
+    await userEvent.click(await screen.findByTestId(`buy-stage-add-${SAUCE.id}`));
+    await userEvent.click(screen.getByTestId("buy-stage-continue"));
+    await waitFor(() => expect(screen.queryByTestId("buy-stage-sheet")).toBeNull());
+    expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1", "pep-1"]);
+    expect(slotId()).toBe("held-flat-2");
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+
+    // Nothing holds revalidation: under the minimum, the reward goes with its notice.
+    setCart([{ ...BURGER_ROW }]); // £8.60
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £1.40+ to your order to be eligible to redeem this reward"
+    );
   });
 });
 

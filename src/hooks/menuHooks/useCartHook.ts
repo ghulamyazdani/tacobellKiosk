@@ -426,10 +426,13 @@ function useCartHook() {
    * flow (the BOGO buy stage's abandon rollback), and return the resulting
    * full cart list. The diff itself is planned by the engine
    * (planCartSnapshotRestore — see its doc comment for the paid-rows-only
-   * scoping rationale); this wrapper executes it.
+   * scoping rationale); this wrapper writes the list it converges to.
    *
-   * Redux is updated through the existing reducers (per-row diff); IndexedDB
-   * is replaced wholesale in ONE rw transaction with the final list —
+   * In the SNAPSHOT's order: a line trashed mid-journey goes back to its own
+   * place (walk w3 — the planner's per-row adds appended it to the end of
+   * the bag); a row the snapshot never had follows. So redux takes the list
+   * in ONE setCartItems, off the LIVE cart (a wholesale write must not drop
+   * a row this render has not seen), and IndexedDB in ONE rw transaction —
    * per-row idb ops could race the fire-and-forget increase/decrease
    * pipelines still in flight from the stage's steppers. Deliberately NOT
    * the analytics-emitting wrappers: a rollback is not customer cart
@@ -441,24 +444,16 @@ function useCartHook() {
   const restoreCartItemsSnapshot = (
     snapshotItems: CartSnapshotRow[],
   ): CartSnapshotRow[] => {
-    const currentItems: CartSnapshotRow[] = cart?.cartItems || [];
-    const { operations, finalItems } = planCartSnapshotRestore(
-      currentItems,
-      snapshotItems,
-    );
+    const liveItems = ((store.getState() as RecommendationLookupState)?.cart
+      ?.cartItems ?? []) as CartSnapshotRow[];
+    const { finalItems } = planCartSnapshotRestore(liveItems, snapshotItems);
+    const place = new Map(snapshotItems.map((row, index) => [row?.itemId, index]));
+    const at = (row: CartSnapshotRow) => place.get(row?.itemId) ?? snapshotItems.length;
+    const restored = [...finalItems].sort((a, b) => at(a) - at(b));
 
-    operations.forEach((op) => {
-      if (op.type === "remove") {
-        dispatch(removeItemFromCart({ id: op.itemId, IDKEY: "itemId" }));
-      } else if (op.type === "update") {
-        dispatch(updateItemCartRdx({ item: op.item }));
-      } else {
-        dispatch(addItemToCartRdx({ ...op.item }));
-      }
-    });
-
-    replaceIndexedDbCart(finalItems);
-    return finalItems;
+    dispatch(setCartItems(restored));
+    replaceIndexedDbCart(restored);
+    return restored;
   };
 
   /**

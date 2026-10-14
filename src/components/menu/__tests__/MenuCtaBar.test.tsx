@@ -312,6 +312,32 @@ describe("MenuCtaBar — TOTAL is the Total of the bag as it opens (settled)", (
     expect(cart().cartOffer).toEqual({});
     expect(bagTotal()).toBe("£6.00");
   });
+
+  // User decision 2026-10-14 (lane walk-offers-2): a min-bill reward the bag
+  // falls under comes off, judged on the guest's own spend (freebie rows
+  // out). That is revalidation's check 8 in the ONE shared rule, so the
+  // TOTAL leaves it out before the bag ever opens.
+  it("a min-bill reward the bag has fallen under: the TOTAL drops it and its freebie row — the Total the bag shows once it removes it", () => {
+    store.dispatch(setCartItems([main("burger", 8, 1), main("drink", 3, 2), HALF_PRICE_SALAD]));
+    store.dispatch(applyOffer({ offer: { ...BURGER_HALF_SALAD, minBillAmount: 12 } }));
+    renderBar();
+    // £14 of the guest's own clears £12: £8 + £6 + the salad at half price.
+    expect(total()).toBe("Total: £22.50");
+
+    act(() => {
+      store.dispatch(decreaseItemQuantity({ id: "row-drink", IDKEY: "itemId" }));
+    });
+    // £11 of the guest's own: only the bill minimum fails (the burger is
+    // in), and the reward's £8.50 salad goes with it — never £19.50.
+    expect(cart().cartOffer._id).toBe("bogo-burger");
+    expect(total()).toBe("Total: £11");
+
+    openBag();
+    expect(cart().cartOffer).toEqual({});
+    expect(screen.getByTestId("offer-removal-notice")).toBeInTheDocument();
+    expect(bagTotal()).toBe("£11.00");
+    expect(total()).toBe("Total: £11");
+  });
 });
 
 /*

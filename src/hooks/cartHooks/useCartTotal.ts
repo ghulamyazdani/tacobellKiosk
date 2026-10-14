@@ -12,7 +12,8 @@ import { billTotal, hasRows, useBillEngine } from "./useCartBill";
  * The bag's Total over `cart` for a surface outside the bag — the menu CTA
  * bar, the product-added modal: the SAME engine and billTotal as the bag's
  * Total, over the cart as the bag leaves it once it opens — settled
- * (settleCart: a reward that lapsed goes, a least-value lock moves), then
+ * (settleCart on this same engine: a reward that lapsed goes, its bill
+ * minimum included, a least-value lock moves), then
  * carrying the offer it applies by itself (useAutoApplyPreview), through the
  * cart slice's own swapCartOffer and settled again, as the bag's effects
  * run. So the two never disagree (walk 2026-10-14: the menu read the ﷼65.00
@@ -29,9 +30,9 @@ export default function useCartTotal(cart: any): number {
   return useMemo(() => {
     if (!hasRows(cart)) return 0;
     try {
-      const settled = settleCart(cart);
+      const settled = settleCart(cart, calculate);
       const opened = autoApply
-        ? settleCart(cartReducer(settled, swapCartOffer({ next: autoApply, source: "offer" })))
+        ? settleCart(cartReducer(settled, swapCartOffer({ next: autoApply, source: "offer" })), calculate)
         : settled;
       return billTotal(calculate(opened));
     } catch {
