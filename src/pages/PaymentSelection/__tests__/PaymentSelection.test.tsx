@@ -546,7 +546,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       ["one tile: the Figma 416", [], [416], "px-[32px]"],
       ["two tiles: 2 × 416", ["EDC"], [416, 416], "px-[32px]"],
       ["three tiles: 3 × 269.33, the narrow padding", ["EDC", "DQR"], [269.33, 269.33, 269.33], "px-[16px]"],
-    ] as const)("%s, labels in the frame's Cm Bd 48/44", (_label, configured, widths, padding) => {
+    ] as const)("%s, labels in the frame's Cm Bd 48/44 — an Arabic label leads 64 (its wrapped lines touched at 44)", (_label, configured, widths, padding) => {
       store.dispatch(setPaymentSettings(configured.map((kind) => (kind === "EDC" ? EDC : DQR))));
       mount();
 
@@ -555,7 +555,12 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       );
       for (const tile of tiles()) {
         expect(tile).toHaveClass(padding, "h-[416px]");
-        expect(tile.querySelector("span")).toHaveClass("tb-compressed", "text-[48px]", "leading-[44px]");
+        expect(tile.querySelector("span")).toHaveClass(
+          "tb-compressed",
+          "text-[48px]",
+          "leading-[44px]",
+          "[&:lang(ar)]:leading-[64px]",
+        );
       }
     });
 

@@ -430,7 +430,11 @@ export default function PaymentSelection() {
             style={{ width: tileWidth }}
             className={`flex h-[416px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
           >
-            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+            {/* Figma's Cm Bd 48/44 is a caps line height: Arabic (system
+                fallback, ink ~44 above and ~14 below the baseline) wraps to
+                2–3 lines that touched at 44 (walk 2026-10-14), so an Arabic
+                label leads 64 (4/3). A single line sits centred either way. */}
+            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple [&:lang(ar)]:leading-[64px]">
               {tile.label}
             </span>
           </button>

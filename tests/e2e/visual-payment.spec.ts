@@ -229,13 +229,26 @@ async function expectCompressed(scope: Locator, size: number, lineHeight: number
   }
 }
 
-/** The /payment CTA card labels on show, and the TOTAL bar's two halves. */
-const paymentLabels = (page: Page) =>
+/** The /payment CTA card labels on show. */
+const tileLabels = (page: Page) =>
   page.locator(
-    ["payment-card", "payment-qr", "payment-counter", "payment-total"]
-      .map((id) => `[data-testid="${id}"] span`)
-      .join(", ")
+    ["payment-card", "payment-qr", "payment-counter"].map((id) => `[data-testid="${id}"] span`).join(", ")
   );
+
+/**
+ * The /payment labels in the frame's Cm Bd 48/44: the TOTAL bar's two halves always, the card labels in English.
+ * An Arabic card label leads 64 (walk 2026-10-14: its 2–3 wrapped lines touched at 44) and its line boxes hold the
+ * whole font box — at 44 the walk measured scrollHeight 92 > clientHeight 88.
+ */
+async function expectPaymentLabels(page: Page, mode: Mode) {
+  await expectCompressed(page.locator('[data-testid="payment-total"] span'), 48, 44);
+  await expectCompressed(tileLabels(page), 48, mode === "ar" ? 64 : 44);
+  if (mode !== "ar") return;
+  const boxes = await tileLabels(page).evaluateAll((labels) =>
+    labels.map((label) => ({ text: label.textContent, scroll: label.scrollHeight, client: label.clientHeight }))
+  );
+  for (const box of boxes) expect.soft(box.scroll, `"${box.text}" overflows its lines`).toBeLessThanOrEqual(box.client);
+}
 
 /* ------------------------------------------------------------------ */
 /* Boot (copied house helpers)                                         */
@@ -530,7 +543,7 @@ test.describe("lane fonts — payment captures", () => {
       }
       await expect(page.getByTestId("payment-counter")).toContainText(t.payment.payAtRestaurant);
       await capture(page, `pay-01-payment-3-tiles-${mode}`);
-      await expectCompressed(paymentLabels(page), 48, 44);
+      await expectPaymentLabels(page, mode);
       // Figma 1:3371: the TOTAL bar is p-40 around the 44 px line.
       expect
         .soft(await page.getByTestId("payment-total").evaluate((bar) => (bar as HTMLElement).offsetHeight))
@@ -549,12 +562,12 @@ test.describe("lane fonts — payment captures", () => {
       await expect(page.getByTestId("payment-qr")).toHaveCount(0);
       await expect(page.getByTestId("payment-card")).toBeVisible();
       await capture(page, `pay-03-payment-2-tiles-${mode}`);
-      await expectCompressed(paymentLabels(page), 48, 44);
+      await expectPaymentLabels(page, mode);
       await servePayment(page, []);
       await expect(page.getByTestId("payment-card")).toHaveCount(0);
       await expect(page.getByTestId("payment-counter")).toBeVisible();
       await capture(page, `pay-04-payment-1-tile-${mode}`);
-      await expectCompressed(paymentLabels(page), 48, 44);
+      await expectPaymentLabels(page, mode);
       await servePayment(page, [], true);
       await expect(page.getByTestId("payment-unavailable")).toContainText(
         t.payment.unavailableBody
