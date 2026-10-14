@@ -3,6 +3,7 @@
  * slice; typed in later domain passes. Do not add NEW anys.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -448,14 +449,16 @@ export default function Customization({
   // the commit; a success navigated / closed, so it never opens then.
   // UB2: before a size is picked the button is live too — the warning names
   // the size and nothing is committed (the size grid is the only section).
-  // The grid open over a chosen size commits that size: it closes first, so
-  // a group the commit rings is on screen. ----
+  // The grid open over a chosen size commits that size. The grid closes
+  // SYNCHRONOUSLY first (flushSync): the commit's AutoScroll measures the
+  // ringed group's offsetTop, and a queued close left the groups out of the
+  // DOM (scrollTo top NaN → the pane jumped to the top, off the ring). ----
   const handleAddToBag = () => {
     if (sizePending) {
       setIncompleteTap((tap) => tap + 1);
       return;
     }
-    if (sizeGridOpen) setConfirmedVariant(true);
+    if (sizeGridOpen) flushSync(() => setConfirmedVariant(true));
     if (addCustomizationToCart(undefined) === false) setIncompleteTap((tap) => tap + 1);
   };
 
