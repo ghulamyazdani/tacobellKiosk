@@ -30,7 +30,8 @@ import { stageBox } from "./fixtures/a11y";
  * - STEPPER COUNTER (user report 2026-10-14): stepper rows carry "N of M"
  *   against the group max the "+" refuses at, a max of 1 included, at the
  *   header's right edge (the ADA view too); ADD TO BAG takes what they
- *   show. A 0 / 0 stepper has none (PROGRESS R13: the commit's cap is 0).
+ *   show. A 0 / 0 stepper takes no pick (user decision 2026-10-14,
+ *   posistKiosk parity): "0 of 0", its "+" refused up front.
  * - SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required
  *   stepper group on a size is met by one option ×2 — the sized item's
  *   commit counts units, as the counter does (it counted rows and refused).
@@ -344,7 +345,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(page.getByTestId("cta-total")).toContainText("£8.00");
   });
 
-  test("STEPPER COUNTER (user report 2026-10-14): a stepper group counts against the max its '+' refuses at, 1 included — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view; ADD TO BAG takes what the counters show; a 0 / 0 stepper has none", async ({
+  test("STEPPER COUNTER (user report 2026-10-14): a stepper group counts against the max its '+' refuses at, 1 included — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view; ADD TO BAG takes what the counters show; a 0 / 0 stepper reads '0 of 0' and refuses its '+'", async ({
     page,
   }) => {
     test.slow();
@@ -402,12 +403,23 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(counter(WITHOUT_GROUP, 3, 4)).toBeVisible();
     await expectAtRightEdge(WITHOUT_GROUP, 3, 4);
 
-    // 0 / 0 (no group max): stepper rows, no counter.
+    // 0 / 0 (no group max): stepper rows that take no pick (user decision
+    // 2026-10-14, posistKiosk parity) — "0 of 0" at the right edge, and the
+    // "+" is refused up front with the fork's group limit; nothing lands.
     const cheese = page.getByTestId(`pdp-group-${EXTRA_CHEESE_GROUP}`);
     await cheese.scrollIntoViewIfNeeded();
     await expect(plus("Add Cheese")).toBeVisible();
-    await expect(cheese).not.toContainText(/\d+ of \d+/);
+    await expect(counter(EXTRA_CHEESE_GROUP, 0, 0)).toBeVisible();
+    await expectAtRightEdge(EXTRA_CHEESE_GROUP, 0, 0);
     await test.info().attach("pdp-stepper-counter", { body: await page.screenshot(), contentType: "image/png" });
+    await plus("Add Cheese").click();
+    await expect(page.getByTestId("global-error")).toContainText(
+      (en.pdp.groupNoMax as string).replace("{{group}}", "Choose From Extra Cheese for Cheese Burger"),
+    );
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(counter(EXTRA_CHEESE_GROUP, 0, 0)).toBeVisible();
+    await expect(cheese.getByText("0", { exact: true })).toBeVisible();
 
     // The ADA reach-zone view: the same counters, still at the right edge.
     await page.getByTestId("footer-ada").click();

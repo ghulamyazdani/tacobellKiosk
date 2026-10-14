@@ -665,20 +665,34 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
   });
 
-  it("a stepper with no group max (0 / 0) has no counter, before or after picks (PROGRESS R13: the commit refuses them)", () => {
+  it("a stepper with no group max (0 / 0) takes no pick, as on the PDP (user decision 2026-10-14): '0 of 0', every '+' refused up front, and SAVE takes the empty group", async () => {
     seedOpenTier2(ENTITY, { ...SAUCES, max: 0, multiplePunchMax: 0 });
     renderSheet();
     const group = screen.getByTestId("tier2-group-dl_addons");
-    expect(group).not.toHaveTextContent(/\bof\b/);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
 
     fireEvent.click(stepperFor("Salsa") as HTMLElement);
-    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    expect(selectErrorMessageGlobal(store.getState())).toBe(i18n.t("pdp.groupNoMax", { group: "Sauces" }));
     fireEvent.click(stepperFor("Ranch") as HTMLElement);
-    expect(picks()).toEqual([
-      ["salsa", 2],
-      ["ranch", 1],
-    ]);
-    expect(group).not.toHaveTextContent(/\bof\b/);
+    expect(picks()).toEqual([]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+
+    await userEvent.click(screen.getByTestId("tier2-sheet-save"));
+    expect(tier1SelectedCustomization(store.getState())[SLOT_GROUP._id]).toHaveLength(1);
+    expect(MIAMTier2Open(store.getState())).toBe(false);
+  });
+
+  it("a card group with no max (a missing max) refuses CHOOSE up front too: '0 of 0', nothing picked", async () => {
+    const { max: _max, multiplePunchMax: _mpMax, ...noMax } = { ...ICE_GROUP, min: 0, multiplePunchMin: 0 };
+    seedOpenTier2(ENTITY, noMax);
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+
+    await userEvent.click(screen.getByTestId("tier2-option-ice"));
+    expect(selectErrorMessageGlobal(store.getState())).toBe(i18n.t("pdp.groupNoMax", { group: "Ice Level" }));
+    expect(picks()).toEqual([]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
   });
 });
 

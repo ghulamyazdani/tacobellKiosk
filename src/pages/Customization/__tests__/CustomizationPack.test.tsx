@@ -494,6 +494,21 @@ describe("Customization page — D5: one-option slots are pre-selected (item 42)
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£9.50");
   });
 
+  it("not seeded when the slot has no max (multi-punch ON, multi-punch 0 / 0): a group with no positive max takes no pick (user decision 2026-10-14)", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    seedD5();
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: { ...D5_MODIFIERS, [D5_SIDES._id]: { ...D5_SIDES, multiplePunchMin: 0, multiplePunchMax: 0 } },
+      })
+    );
+    renderPage();
+
+    expect(picksOf(D5_SIDES._id)).toEqual([]);
+    expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£9.00");
+    store.dispatch(setAllowMultiplePunch(false));
+  });
+
   it("not seeded: a two-option slot, an option that needs tier-2, an out-of-stock and an inactive option", () => {
     seedD5();
     renderPage();

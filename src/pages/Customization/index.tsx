@@ -202,6 +202,7 @@ export default function Customization({
     decreaseQuantity1,
     isAllowMultiplePunch,
     notifyGroupMax,
+    hasNoMax,
   } = useCustomization({
     cartRef,
     isOpenBottomSheet,
@@ -353,15 +354,21 @@ export default function Customization({
 
     // customizableItem / new: seed every active group; defaults pre-selected
     // (fork seeds [] then auto-selects isDefault in the group view — same
-    // outcome, done in one dispatch here), then the one-option slots (D5).
+    // outcome, done in one dispatch here) up to the EFFECTIVE max, then the
+    // one-option slots (D5). A group with no positive max takes no pick, so
+    // it opens empty (user decision 2026-10-14, posistKiosk parity).
     const groups = fetchModifierProperties(SelectedEntity.modifiers) ?? [];
     const seed: Record<string, any[]> = {};
     for (const group of groups) {
       if (group?.isActive === false) continue;
-      const max = Number(group?.max ?? 0);
+      const max = Number(getEffectiveMax(group, isAllowMultiplePunch()));
+      if (!(max > 0)) {
+        seed[group._id] = [];
+        continue;
+      }
       const defaults = (group?.constituentItems ?? [])
         .filter((i: any) => i?.isDefault && i?.isActive !== false)
-        .slice(0, max > 0 ? max : undefined)
+        .slice(0, max)
         .map((i: any) => ({ ...i, quantity: 1 }));
       seed[group._id] = defaults.length > 0 ? defaults : seedOneOptionSlot(group);
     }
@@ -483,7 +490,17 @@ export default function Customization({
     }
   };
 
-  const openTier2New = (group: any, item: any, variant: any) => {
+  /**
+   * The customize page NEW for a fresh pick — refused (the hook's message,
+   * nothing written) in a group with no max: the one add the hook's guard
+   * never sees. `tier1` (a card's plan) lands first, as before.
+   */
+  const openTier2New = (group: any, item: any, variant: any, tier1?: Record<string, unknown[]>) => {
+    if (hasNoMax(group)) {
+      notifyGroupMax(group);
+      return;
+    }
+    if (tier1) dispatch(setTier1SelectedCustomization(tier1));
     dispatch(
       setTeir2SelectedEntity({
         entity: buildTier2NewEntity({ variant, entity: item, group }),
@@ -532,10 +549,8 @@ export default function Customization({
       else if (plan.kind === "confirm-remove") setAddonPrompt({ kind: "remove", group, item, target, nextGroup });
       else if (plan.kind === "confirm-replace")
         setAddonPrompt({ kind: "replace", group, item, target, nextGroup, current: plan.current });
-      else if (plan.kind === "open-new") {
-        dispatch(setTier1SelectedCustomization(plan.tier1));
-        openTier2New(group, item, target?.variant);
-      } else if (plan.kind === "open-edit") {
+      else if (plan.kind === "open-new") openTier2New(group, item, target?.variant, plan.tier1);
+      else if (plan.kind === "open-edit") {
         dispatch(setTier1SelectedCustomization(plan.tier1));
         dispatch(
           openTier2EditModal({
@@ -678,12 +693,13 @@ export default function Customization({
       >
         {/* The max the "You can choose up to" guard refuses at, so the two
             agree; at 1 wherever a second unit or pick is refused (user report
-            2026-10-14). 0 / 0 shows none: the guard lets picks in that the
-            commit refuses (PROGRESS R13, an open call). */}
+            2026-10-14). No positive max: "0 of 0" — the group takes no pick
+            (user decision 2026-10-14, posistKiosk parity). */}
         <GroupHeader
           name={name(group)}
           count={pickedCount(selectionFor(group))}
           max={maxPicks}
+          noMax={!(maxPicks > 0)}
           atOne={stepper || (!oneOfOne && items.length > 1)}
           required={minPicks > 0}
           errored={errored}

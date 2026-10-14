@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import {
   openMakeItAMealSession,
   setTier1BottomSheetAndSelectedEntity,
+  setTier1SelectedCustomization,
   tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
@@ -21,9 +22,12 @@ import i18n from "../../../i18n";
   header counted only above a max of 1, so a group the PDP refuses at 1 (a
   stepper's second unit, a second card of a non-swap group) showed none.
   The counter's max is the one the "You can choose up to" guard refuses at,
-  and ADD TO BAG accepts what it shows. A group with a max of 0 has no
-  counter: the guard lets picks in there that the commit refuses (PROGRESS
-  R13, an open call), so no number can agree with both.
+  and ADD TO BAG accepts what it shows.
+  User decisions 2026-10-14 (PROGRESS R13 closed): a group with no positive
+  max (0 / 0, a multi-punch max of 0, a missing / null / non-numeric max)
+  takes no pick, as in posistKiosk — "0 of 0", every add refused up front
+  with the fork's group-limit message, its defaults cleared; and a SIZED
+  item's commit counts units like the counter (Missi Roti ×2 meets min 2).
 */
 
 const ROWS = [
@@ -224,69 +228,129 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expect(await addToBag()).toBe(true);
   });
 
+  /** posistKiosk's "maximum group limit", the refusal of every add to a group with no max. */
+  const noMaxRefusal = () => i18n.t("pdp.groupNoMax", { group: "Test 1" });
+
   it.each([
     ["min / max 0 / 0", { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 5, multiplePunchMaxItem: 3 }, false],
     ["multi-punch ON, multi-punch 0 / 0", { min: 0, max: 5, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, true],
   ])(
-    "a stepper with only per-item maxima (%s): no counter, before or after picks; each row stops at its cap; ADD TO BAG still refuses the picks (R13, open)",
+    "a stepper with only per-item maxima (%s) takes no pick (posistKiosk): '0 of 0'; every '+' is refused up front with the group limit, nothing lands; ADD TO BAG takes the item",
     async (_label, bounds, amp) => {
       store.dispatch(setAllowMultiplePunch(amp));
       seed(bounds);
 
       expect(within(header()).queryByText(i18n.t("pdp.required"))).not.toBeInTheDocument();
-      expectNoCounter();
-      for (let i = 0; i < 4; i += 1) await tap(plus("Missi Roti"));
-      expect(await dismissError()).toContain(i18n.t("toast.alreadyReachedMaximumLimit"));
+      expectCounter(0, 0);
+      await tap(plus("Missi Roti"));
+      expect(await dismissError()).toContain(noMaxRefusal());
       await tap(plus("Garlic Naan"));
-      expect(picks()).toEqual([
-        ["missi", 3],
-        ["garlic", 1],
-      ]);
-      expectNoCounter();
-      // The commit's cap is the 0 (findFirstMinMaxViolation). Rows × cap
-      // here read "4 of 9" over a group ADD TO BAG refuses.
-      expect(await addToBag()).toBe(false);
-      expect(section()).toHaveClass("ring-red-500");
-      expectNoCounter();
+      expect(await dismissError()).toContain(noMaxRefusal());
+      expect(picks()).toEqual([]);
+      expectCounter(0, 0);
+      // What the counter shows is what the commit takes: the empty group.
+      expect(await addToBag()).toBe(true);
     },
   );
 
-  it("an EMPTY stepper on 0 / 0 has no counter and ADD TO BAG takes the item", async () => {
+  it("an EMPTY stepper on 0 / 0 reads '0 of 0' and ADD TO BAG takes the item", async () => {
     seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
 
-    expectNoCounter();
+    expectCounter(0, 0);
     expect(await addToBag()).toBe(true);
   });
 
-  it("a required stepper with no max (min 1 / max 0): Required, no counter", () => {
+  it("a required stepper with no max (min 1 / max 0) mirrors posistKiosk: Required and '0 of 0', '+' refused — the item can never complete, so ADD TO BAG names it", async () => {
     seed({ min: 1, max: 0, multiplePunchMin: 1, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
 
     expect(plus("Missi Roti")).toBeInTheDocument();
     expect(within(header()).getByText(i18n.t("pdp.required"))).toBeInTheDocument();
-    expectNoCounter();
+    expectCounter(0, 0);
+    await tap(plus("Missi Roti"));
+    expect(await dismissError()).toContain(noMaxRefusal());
+    expect(picks()).toEqual([]);
+    expect(await addToBag()).toBe(false);
+    expect(section()).toHaveClass("ring-red-500");
+    expectCounter(0, 0);
   });
 
   it.each([
     ["null", { min: null, max: null, multiplePunchMaxItem: 3 }],
     ["missing", { multiplePunchMaxItem: 3 }],
     ["text", { min: "0", max: "x", multiplePunchMaxItem: 3 }],
-  ])("malformed bounds on a stepper (%s): no counter — no bound to count against", async (_label, bounds) => {
+  ])("malformed bounds on a stepper (%s): no positive max — '0 of 0', and '+' is refused up front", async (_label, bounds) => {
     seed(bounds);
 
     expect(plus("Missi Roti")).toBeInTheDocument();
-    expectNoCounter();
+    expectCounter(0, 0);
     await tap(plus("Missi Roti"));
-    expect(picks()).toEqual([["missi", 1]]);
-    expectNoCounter();
+    expect(await dismissError()).toContain(noMaxRefusal());
+    expect(picks()).toEqual([]);
+    expectCounter(0, 0);
   });
 
-  it("0 / 0 cards (the toggle group, item cap 1): no counter (R13, as the stepper); CHOOSE still adds", async () => {
+  it("0 / 0 cards (the toggle group, item cap 1): '0 of 0', as the stepper; CHOOSE is refused up front", async () => {
     seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 1 });
 
-    expectNoCounter();
+    expectCounter(0, 0);
     await tap(screen.getByTestId("pdp-option-missi"));
+    expect(await dismissError()).toContain(noMaxRefusal());
+    expect(picks()).toEqual([]);
+    expectCounter(0, 0);
+  });
+
+  it("a pick a 0 / 0 stepper holds anyway (a bag row, a menu change): its '+' is refused too, its '−' takes it back", async () => {
+    seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+    await act(async () => {
+      store.dispatch(setTier1SelectedCustomization({ [GROUP_ID]: [{ ...ROWS[0], quantity: 1 }] }));
+    });
+    expectCounter(1, 0);
+
+    await tap(plus("Missi Roti"));
+    expect(await dismissError()).toContain(noMaxRefusal());
     expect(picks()).toEqual([["missi", 1]]);
-    expectNoCounter();
+    await tap(minus("Missi Roti"));
+    expect(picks()).toEqual([]);
+    expect(screen.queryByTestId("global-error")).toBeNull();
+    expectCounter(0, 0);
+  });
+
+  it.each([
+    ["0 / 0 cards", { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 1 }, false],
+    ["0 / 0 steppers", { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, false],
+    ["a missing max", { min: 0, multiplePunchMaxItem: 1 }, false],
+    ["multi-punch ON, multi-punch max 0", { min: 0, max: 3, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 1 }, true],
+  ])("pre-selected defaults in a group with no max are cleared (%s): it opens empty at '0 of 0'", (_label, bounds, amp) => {
+    store.dispatch(setAllowMultiplePunch(amp));
+    seed(bounds, ROWS.map((row, i) => ({ ...row, isDefault: i < 2 })));
+
+    expect(picks()).toEqual([]);
+    expectCounter(0, 0);
+  });
+
+  it("a group WITH a max keeps its pre-selected defaults, up to that max (multi-punch ON: the multi-punch max of 1)", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    seed(
+      { min: 0, max: 3, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 1 },
+      ROWS.map((row) => ({ ...row, isDefault: true })),
+    );
+
+    expect(picks()).toEqual([["missi", 1]]);
+    expectCounter(1, 1);
+  });
+
+  it("Arabic: a group with no max reads '0 من 0' and refuses in Arabic", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+
+    expect(within(header()).getByText(counter(0, 0)).textContent).toContain("من");
+    await tap(plus("Missi Roti"));
+    const refusal = await dismissError();
+    expect(refusal).toContain(noMaxRefusal());
+    expect(refusal).toContain("الحد الأقصى");
+    expect(picks()).toEqual([]);
   });
 
   it("a required stepper keeps Required beside its counter, and ADD TO BAG on it empty turns Required red with the counter still at the right", async () => {

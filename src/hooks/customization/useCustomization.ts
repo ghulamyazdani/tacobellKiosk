@@ -169,20 +169,59 @@ const useCustomization = ({
   const { name } = useLocalized();
 
   /*
+    User decision 2026-10-14 ("match posistKiosk"): a group with no positive
+    EFFECTIVE max — 0 / 0, a multi-punch max of 0, a missing or null max —
+    takes no pick. Every add is refused up front, as the fork's
+    `groupQuantity >= max` refuses it; the SDK guard fails open there, and
+    the commit refused the picks only at ADD TO BAG.
+  */
+  const hasNoMax = (modifier: unknown) =>
+    !(Number(getEffectiveMax(modifier, isAllowMultiplePunch())) > 0);
+
+  /*
     UB2: the ONE answer to every GROUP-max refusal — the guard below on a
     tap / "+", and the engine's flexible max-limit branch — "You can choose
-    up to {{max}} {{group}}" over the PDP (GlobalErrorHost). The group name
-    is resolved in the guest's language at the tap (the completion
-    warning's precedent; the modal is modal, so it cannot go stale). The
-    per-ITEM cap keeps toast.alreadyReachedMaximumLimit.
+    up to {{max}} {{group}}" over the PDP (GlobalErrorHost); a group with no
+    max gets the fork's "maximum group limit" instead (no "up to 0"). The
+    group name is resolved in the guest's language at the tap (the
+    completion warning's precedent; the modal is modal, so it cannot go
+    stale). The per-ITEM cap keeps toast.alreadyReachedMaximumLimit.
   */
   const notifyGroupMax = (modifier: unknown) => {
     triggerNotification(
-      t("pdp.groupMaxReached", {
-        max: Number(getEffectiveMax(modifier, isAllowMultiplePunch())),
-        group: name(modifier),
-      }),
+      hasNoMax(modifier)
+        ? t("pdp.groupNoMax", { group: name(modifier) })
+        : t("pdp.groupMaxReached", {
+            max: Number(getEffectiveMax(modifier, isAllowMultiplePunch())),
+            group: name(modifier),
+          }),
     );
+  };
+
+  /*
+    Would this tap / "+" ADD a unit the group refuses? UB2's guard (units
+    past a positive max), or any add to a group with no max. A tap on a pick
+    takes it back (remove / decrement) and is never refused.
+  */
+  const refusesAdd = (
+    modifier: { _id?: string } | null | undefined,
+    item: { id?: unknown } | null | undefined,
+    kind: "tap" | "increase",
+  ) => {
+    if (hasNoMax(modifier)) {
+      const rows = selectedCustomizations?.[modifier?._id ?? ""];
+      return (
+        kind === "increase" ||
+        !(Array.isArray(rows) && rows.some((row) => row?.id === item?.id))
+      );
+    }
+    return wouldExceedGroupMax({
+      customizations: selectedCustomizations,
+      modifier,
+      item,
+      allowMultiplePunch: isAllowMultiplePunch(),
+      kind,
+    });
   };
 
   // const setIsOpenBottomSheet = (openType: any, status: any) => {
@@ -779,16 +818,9 @@ const useCustomization = ({
     nextModifier: any,
   ) => {
     // UB2: the "+" never takes the GROUP past its effective max (counted in
-    // units, like the commit). A refusal writes nothing.
-    if (
-      wouldExceedGroupMax({
-        customizations: selectedCustomizations,
-        modifier,
-        item,
-        allowMultiplePunch: isAllowMultiplePunch(),
-        kind: "increase",
-      })
-    ) {
+    // units, like the commit), nor adds to a group with no max. A refusal
+    // writes nothing.
+    if (refusesAdd(modifier, item, "increase")) {
       notifyGroupMax(modifier);
       return selectedCustomizations;
     }
@@ -884,20 +916,12 @@ const useCustomization = ({
     handleMultiAutoSelect?: any,
     selectedCustomizationsObject?: any,
   ) => {
-    // UB2: a tap that would ADD a unit past the group's effective max is
-    // refused out loud and writes nothing — no dispatch, no ModifierSelected,
-    // no contradictory update, no auto-advance. The engines' swap, a tap on a
-    // pick (remove / decrement) and the auto-select pass are never refused.
-    if (
-      !handleMultiAutoSelect &&
-      wouldExceedGroupMax({
-        customizations: selectedCustomizations,
-        modifier,
-        item,
-        allowMultiplePunch: isAllowMultiplePunch(),
-        kind: "tap",
-      })
-    ) {
+    // UB2: a tap that would ADD a unit past the group's effective max — or
+    // any unit to a group with no max — is refused out loud and writes
+    // nothing: no dispatch, no ModifierSelected, no contradictory update, no
+    // auto-advance. The engines' swap, a tap on a pick (remove / decrement)
+    // and the auto-select pass are never refused.
+    if (!handleMultiAutoSelect && refusesAdd(modifier, item, "tap")) {
       notifyGroupMax(modifier);
       return selectedCustomizations;
     }
@@ -1739,6 +1763,7 @@ const useCustomization = ({
     isStepperRequired,
     getTotalValueWithApplyAddonPrice,
     notifyGroupMax,
+    hasNoMax,
     // testFunction,
     contradictoryItems,
 

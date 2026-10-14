@@ -146,6 +146,7 @@
     "discardConfirm": "تجاهل",
     "groupCount": "{{count}} من {{max}}",
     "groupMaxReached": "يمكنك اختيار {{max}} من {{group}} كحد أقصى",
+    "groupNoMax": "لقد وصلت إلى الحد الأقصى من {{group}}",
     "keepItem": "لا، احتفظ بالعنصر الحالي",
     "removeThisItem": "إزالة هذا العنصر",
     "replaceTitle": "استبدال {{name}} في وجبتك؟",

@@ -380,13 +380,16 @@ export function OptionRow({
  * the group takes more than one — "count of max" right-aligned (1:4911).
  * `atOne` shows it at a max of 1 too, where the PDP refuses at 1 (user
  * report 2026-10-14): stepper rows (1:2614's Hot Sauces) and a card group of
- * several options that does not swap. A max of 0 or none has no counter.
+ * several options that does not swap. A max of 0 or none has no counter —
+ * unless `noMax`: a group with no positive max takes no pick, "count of 0"
+ * (user decision 2026-10-14, posistKiosk parity).
  */
 export function GroupHeader({
   name,
   count,
   max,
   atOne = false,
+  noMax = false,
   required = false,
   errored = false,
 }: {
@@ -394,6 +397,7 @@ export function GroupHeader({
   count?: number;
   max?: number;
   atOne?: boolean;
+  noMax?: boolean;
   required?: boolean;
   errored?: boolean;
 }) {
@@ -410,12 +414,12 @@ export function GroupHeader({
           {t("pdp.required")}
         </span>
       )}
-      {max !== undefined && max > (atOne ? 0 : 1) && (
+      {(noMax || (max !== undefined && max > (atOne ? 0 : 1))) && (
         <span
           key={count ?? 0}
           className="tb-bump ml-auto shrink-0 text-[20px] font-medium leading-[24px] tracking-[-0.5px] text-black"
         >
-          {t("pdp.groupCount", { count: count ?? 0, max })}
+          {t("pdp.groupCount", { count: count ?? 0, max: noMax ? 0 : max })}
         </span>
       )}
     </div>

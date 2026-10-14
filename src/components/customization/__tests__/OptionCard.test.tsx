@@ -590,6 +590,16 @@ describe("GroupHeader (Title/H7)", () => {
     expect(container.querySelector(".ml-auto")).toBeNull();
   });
 
+  it.each([
+    ["max 0", 0],
+    ["no max", undefined],
+    ["NaN", Number.NaN],
+  ])("noMax (a group that takes no pick, user decision 2026-10-14): 'count of 0' right-aligned when %s", (_label, max) => {
+    render(<GroupHeader name="Test 1" max={max} noMax />);
+
+    expect(screen.getByText("0 of 0")).toHaveClass("ml-auto");
+  });
+
   it("a missing count reads 0", () => {
     render(<GroupHeader name="Extras" max={3} />);
     expect(screen.getByText("0 of 3")).toBeInTheDocument();
