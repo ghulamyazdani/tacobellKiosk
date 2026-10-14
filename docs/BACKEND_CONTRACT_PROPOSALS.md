@@ -13,7 +13,7 @@
 | # | Feature (Figma) | Blocked on | Proposed contract | Kiosk today |
 |---|---|---|---|---|
 | 1 | Email receipt (1:3377, 1:3383) | No field for an address, and nothing sends receipts | `enable_email_receipt` setting + a `receipt` block on placeOrder | EMAIL tile is inert |
-| 2 | Order Complete QR codes (1:5932 guest, 1:3437 promo) | No source for the URL or the points | placeOrder response `order_complete.earn` + getMedia slot `order_complete` | Panel ships without a QR |
+| 2 | Order Complete QR codes (1:5932 guest, 1:3437 promo) | No source for the URL or the points | placeOrder response `order_complete.earn` + getMedia slot `order_complete` | No panel (removed by the user 2026-10-14), no QR |
 | 3 | Make-it-a-meal (MIAM) "SAVE £X" badge (1:3070) | No was-price in the menu | getMenu `comparePrice` on meal entities | Badge built but hidden |
 | 4 | ~~Bag rail vs `/forYou`~~ **Withdrawn 2026-10-11** | — (`/forYou` dropped; the flag now hides the bag rail and the PDP rail) | — | `/forYou` redirects to `/cart` |
 | 5 | Activity Center passcode | A static passcode in the JS bundle | `POST /api/cx/kiosk/verify_operator_passcode` | Hardcoded |
@@ -97,15 +97,15 @@
 - **Guest frame (1:5932):** "SCAN TO EARN 110 POINTS", for claiming points on this order.
 - **Logged-in frame (1:3437):** a campaign panel with a photo, the headline "CHECKOUT NEXT TUESDAY DROPS" and a QR.
 
-Nothing in the kiosk state, the order response or the loyalty data provides a URL, a points figure or a photo. The panel therefore ships without a QR and without the number, and shows the frame's photo without QR, points or campaign copy (lane order-success, 2026-10-12).
+Nothing in the kiosk state, the order response or the loyalty data provides a URL, a points figure or a photo. The screen therefore shows no QR, no points number and no campaign. Lane order-success (2026-10-12) shipped the frame's photo panel without them; the user removed that panel on 2026-10-14, so contracts A and B need a new surface on the screen (a client decision).
 
 **Plugs into**
 - `src/pages/OrderSuccess/index.tsx`:
-  - `:51-61`: the note on the omitted data.
-  - `:151-157`: the guest vs logged-in check and the unlock's loyalty gate.
-  - `:311-350`: the photo panel and the guest's UNLOCK FREEBIES WITH POINTS.
-  - `:96`, `:203-239`: the 20 s auto exit (the only exit; /start's mount runs the reset).
-  - `:31-34`: the screen makes no network call of its own.
+  - `:48-58`: the note on the omitted data (now also the removed photo panel and unlock pitch).
+  - `:136-140`: the guest vs logged-in check (the unlock's loyalty gate went with the panel).
+  - `:274-315`: the text block, now the screen's only content surface.
+  - `:93`, `:186-239`, `:317-350`: the 20 s countdown and its one exit (START NEW ORDER, which counts it down, or 0; /start's mount runs the reset).
+  - `:30-33`: the screen makes no network call of its own.
 - `src/hooks/menuHooks/useOrderHook.ts:177-180`: the placeOrder response body is thrown away today.
 - `src/hooks/paymentsHooks/usePayAtCounter.ts:330-333`: the push hands over to `/orderSuccess` through router state.
 - `src/hooks/utils/useLoaders.ts:186-199` and `sdk/catalog/src/media/splashMedia.ts:23-35`: getMedia is already fetched at boot, but only `home_screen` is kept.
@@ -146,10 +146,10 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
 ```
 
 **Kiosk behaviour**
-- **Which panel shows:**
+- **What shows** (on the new surface — there has been no panel since 2026-10-14):
   - A guest with loyalty on and a valid `earn.url` sees the QR and "SCAN TO EARN {points} POINTS", which restores the frame's wording.
   - Otherwise, a live campaign entry for that audience shows, if there is one.
-  - Otherwise, today's panel shows: the frame's photo without a QR (plus, for a guest on a loyalty deployment, UNLOCK FREEBIES WITH POINTS).
+  - Otherwise, today's screen shows (the text block, no QR).
 - The QR is drawn on the device from the URL string, using `react-qr-code` (the fork's QR component, which arrives with the P8b Paytm QR work). The success screen downloads no images for it.
 - **The `earn` data:**
   - The kiosk reads `earn` from the placeOrder 2xx body and passes it to the success screen with the receipt choice, in router state only (not redux, not storage).
@@ -160,23 +160,23 @@ Nothing in the kiosk state, the order response or the loyalty data provides a UR
   - If the campaign photo fails to load, the panel shows the text and QR without it. It is never blank.
   - The entry is stored as part of the boot's single atomic commit. If getMedia fails, the last known entry is kept.
 - Two decisions belong to the client, not the backend:
-  - The ADA view hides the panel today (P9c, invisible).
-  - The 20 s auto-reset is short for a guest to scan with a phone camera, and since lane order-success no control can extend it.
+  - Where the QR and the campaign go: the photo panel was removed by the user on 2026-10-14, so contracts A and B need a new surface (and its ADA placement: the reach zone shows only the text block and START NEW ORDER today).
+  - The 20 s auto-reset is short for a guest to scan with a phone camera. A touch still never extends it, but since 2026-10-14 it is visible: START NEW ORDER counts it down.
 
 **Privacy / security**
 - Whoever holds the claim URL can claim the points, so the token must be single-use, short-lived and bound to the order on the server, served over https on a brand domain. Points should be credited only after the order is settled at the POS, because pay-at-counter orders are pushed unpaid.
 - The kiosk never logs the URL and never sends it to analytics; analytics gets only `has_earn_qr: true`.
 - Guests will scan `qr_url`, and operators write it, so Cockpit should accept only https brand or campaign links.
 
-**Backward compatibility.** If the response has no `order_complete` and getMedia has no `order_complete` entry, the kiosk shows today's panel. The boot keeps storing only media keys it knows (`src/hooks/utils/useLoaders.ts:182-185`), because an unknown banner key can blank `/menu`.
+**Backward compatibility.** If the response has no `order_complete` and getMedia has no `order_complete` entry, the kiosk shows today's screen (the text block, no QR). The boot keeps storing only media keys it knows (`src/hooks/utils/useLoaders.ts:182-185`), because an unknown banner key can blank `/menu`.
 
 **Open questions**
 1. Who issues claim tokens: this backend or Xeno? Can Xeno credit an order after the fact?
-2. If per-order claims are out of scope for now, an `order_complete` entry with `audience: "guest"` (an app-join link, no points number) could fill the guest panel today. Is that acceptable?
+2. If per-order claims are out of scope for now, an `order_complete` entry with `audience: "guest"` (an app-join link, no points number) could fill a guest surface. Is that acceptable?
 3. Can `points` be computed at push time from the earn rules?
 4. Should the printed ticket carry the same claim QR?
 
-**Kiosk-side status: not started**, apart from the panel without a QR (P8a; the frame's photo since lane order-success, 2026-10-12). Still to build: reading the response, drawing the QR, and the getMedia slot.
+**Kiosk-side status: not started**, apart from the screen without a QR (P8a; no panel since 2026-10-14). Still to build: a surface for it (a client decision), reading the response, drawing the QR, and the getMedia slot.
 
 ---
 
