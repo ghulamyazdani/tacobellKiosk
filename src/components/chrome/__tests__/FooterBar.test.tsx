@@ -96,25 +96,32 @@ describe("FooterBar — ADA DISPLAY (P9c)", () => {
   });
 
   // Walk 2026-10-14: aria-pressed flipped but the button looked the same.
-  // On = the bag order-type pill's white fill, label and glyph in tb-purple;
-  // off = Figma's bare white label on the bar.
-  it("shows its on-state: a white fill with a purple label and glyph, gone again when off", () => {
+  // On = the bag order-type pill: a white, fully rounded fill inset 4 px in
+  // the 56 px bar (48 tall — never flush with the bar's edges), the label and
+  // glyph in tb-purple; off = Figma's bare white label on the bar. The 56 px
+  // button stays the hit area and never fills.
+  it("shows its on-state: an inset white pill with a purple label and glyph, gone again when off", () => {
     renderFooter();
-    const label = () => adaButton()?.querySelector("span");
-    expect(adaButton()).toHaveClass("text-tb-surface");
-    expect(adaButton()).not.toHaveClass("bg-tb-surface");
+    const pill = () => adaButton()?.querySelector(":scope > span");
+    const label = () => pill()?.querySelector("span");
+    expect(pill()).toHaveClass("h-[48px]", "rounded-full", "text-tb-surface");
+    expect(pill()).not.toHaveClass("bg-tb-surface");
+    expect(pill()).toContainElement(adaButton()?.querySelector("svg") ?? null);
 
     tapAda();
     expect(adaButton()).toHaveAttribute("aria-pressed", "true");
-    expect(adaButton()).toHaveClass("bg-tb-surface", "text-tb-purple");
-    expect(adaButton()).not.toHaveClass("text-tb-surface");
-    // The label and the glyph inherit the button's colour.
+    expect(pill()).toHaveClass("h-[48px]", "rounded-full", "bg-tb-surface", "text-tb-purple");
+    expect(pill()).not.toHaveClass("text-tb-surface");
+    expect(adaButton()?.className).not.toMatch(/\bbg-/);
+    // The label and the glyph take the pill's colour.
+    expect(label()).toHaveTextContent(i18n.t("footer.adaDisplay"));
     expect(label()?.className).not.toMatch(/\btext-tb-/);
 
     tapAda();
     expect(adaButton()).toHaveAttribute("aria-pressed", "false");
-    expect(adaButton()).toHaveClass("text-tb-surface");
-    expect(adaButton()).not.toHaveClass("bg-tb-surface");
+    expect(pill()).toHaveClass("text-tb-surface");
+    expect(pill()).not.toHaveClass("bg-tb-surface");
+    expect(adaButton()?.className).not.toMatch(/\bbg-/);
   });
 });
 
