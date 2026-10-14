@@ -507,9 +507,11 @@ export default function BagSheet({
   /**
    * REVALIDATION (contract) — drop the applied offer the moment the cart no
    * longer qualifies, via handleCartDrivenRemoval(false) → removal notice.
-   * Keyed on cart changes while the bag is open (+ on open). The six checks
-   * are fork Cart.tsx parity; minBillAmount is deliberately NOT revalidated
-   * (billCalculation refuses the discount instead — documented, keep).
+   * Keyed on cart changes while the bag is open (+ on open). Checks 1–6 are
+   * fork Cart.tsx parity, 7 the sameOrLess ceiling, 8 the bill minimum (user
+   * decision 2026-10-14: billCalculation refused the discount on its own and
+   * the reward sat on the bill at −0.00 with no notice; now it goes like the
+   * min-items and BOGO checks, its notice naming the amount to add).
    */
   useEffect(() => {
     if (!open) return;
@@ -532,6 +534,24 @@ export default function BagSheet({
           : acc,
       0,
     );
+    // 8: the money posistKiosk judges minBillAmount against (Cart.tsx
+    // offerQualifyingBill): the guest's own spend — loyalty and freebie rows
+    // filtered out, never subtracted — priced as ONE bill; onGrossTotal
+    // offers measure its net payable, the rest its item subtotal. No minimum,
+    // or a bill that cannot be priced, never removes a reward.
+    const isUnderMinBill = () => {
+      const minBill = parseFloat(cartOffer?.minBillAmount);
+      if (!(minBill > 0)) return false;
+      try {
+        const bill = getCalculatedBill({
+          ...cartRdx,
+          cartItems: items.filter((it: any) => !it?.isLoyaltyItem && !it?.isGetItem),
+        });
+        return minBill > Number(cartOffer?.onGrossTotal ? bill?.getNetAmount() : bill?.getSubtotal());
+      } catch {
+        return false;
+      }
+    };
     const shouldRemove =
       // 1 + 3: minItemCount against both quantity views.
       (cartOffer?.minItemCount && qtyExclLoyalty < cartOffer.minItemCount) ||
@@ -556,7 +576,9 @@ export default function BagSheet({
         !isBOGOOfferApplicable(cartOffer, cartOffer?.applicable, items)) ||
       // 7: sameOrLess ceiling (fork Cart.tsx:1327-1346) — false for every
       // offer that is not a sameOrLess plain BOGO.
-      isSameOrLessViolated(cartOffer, items);
+      isSameOrLessViolated(cartOffer, items) ||
+      // 8: last, so its bill run only prices a bag every other check kept.
+      isUnderMinBill();
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
     }
