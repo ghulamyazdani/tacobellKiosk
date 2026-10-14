@@ -39,7 +39,6 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
-  groupCountMax,
   optionCta,
   OptionRow,
   RadioMark,
@@ -677,11 +676,15 @@ export default function Customization({
         data-testid={`pdp-group-${group._id}`}
         className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
       >
+        {/* The max the "You can choose up to" guard refuses at, so the two
+            agree; at 1 wherever a second unit or pick is refused (user report
+            2026-10-14). 0 / 0 shows none: the guard lets picks in that the
+            commit refuses (PROGRESS R13, an open call). */}
         <GroupHeader
           name={name(group)}
           count={pickedCount(selectionFor(group))}
-          max={groupCountMax(group, amp, stepper ? items.length : 0)}
-          stepper={stepper}
+          max={maxPicks}
+          atOne={stepper || (!oneOfOne && items.length > 1)}
           required={minPicks > 0}
           errored={errored}
         />

@@ -27,9 +27,10 @@ import { stageBox } from "./fixtures/a11y";
  *   "0 of 6", several picks, and an empty group is accepted. (On a device
  *   this is a Posist menu-setting question, Q1 — the PDP now shows what the
  *   engine enforces.)
- * - STEPPER COUNTER (user report 2026-10-14): stepper rows always carry
- *   "N of M" — against the group max, or with none (0 / 0) against the
- *   rows' item caps — at the header's right edge, the ADA view included.
+ * - STEPPER COUNTER (user report 2026-10-14): stepper rows carry "N of M"
+ *   against the group max the "+" refuses at, a max of 1 included, at the
+ *   header's right edge (the ADA view too); ADD TO BAG takes what they
+ *   show. A 0 / 0 stepper has none (PROGRESS R13: the commit's cap is 0).
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
  * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
@@ -105,17 +106,19 @@ function multiPunchMenu(): MenuJson {
 }
 
 /**
- * User report 2026-10-14 (Honey BBQ Wings' "Test 1"): Cheese Burger's
- * "Extra" group on the toggle bounds 0 / 0 with an item cap of 3 (stepper
- * rows, no group max), and its "Without" group a 0 / 4 stepper (item cap 2).
+ * User report 2026-10-14 (Honey BBQ Wings' "Test 1"): Cheese Burger's three
+ * groups as stepper rows — "Extra" a 0 / 1 (item cap 3), "Without" a 0 / 4
+ * (item cap 2), "Extra Cheese" on 0 / 0 (item cap 3, no group max).
  */
 function stepperCounterMenu(): MenuJson {
   const menu = structuredClone(slimMenu) as MenuJson;
   const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
   const without = menu.modifiers.find((group) => group._id === WITHOUT_GROUP);
-  if (!extra || !without) throw new Error("fixture: no Extra / Without group");
-  Object.assign(extra, { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+  const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
+  if (!extra || !without || !cheese) throw new Error("fixture: no Extra / Without / Extra Cheese group");
+  Object.assign(extra, { min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
   Object.assign(without, { multiplePunchMaxItem: 2 });
+  Object.assign(cheese, { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
   return menu;
 }
 
@@ -329,7 +332,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(page.getByTestId("cta-total")).toContainText("£8.00");
   });
 
-  test("STEPPER COUNTER (user report 2026-10-14): a stepper group with no group max counts against its rows' caps and one with a max against it — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view", async ({
+  test("STEPPER COUNTER (user report 2026-10-14): a stepper group counts against the max its '+' refuses at, 1 included — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view; ADD TO BAG takes what the counters show; a 0 / 0 stepper has none", async ({
     page,
   }) => {
     test.slow();
@@ -352,40 +355,62 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
         const box = await stageBox(counter(groupId, picked, max));
         return box.x + box.width;
       }).toBe(1056);
+    /** The guard's "You can choose up to {max} …" refusal, then GOT IT. */
+    const expectRefusedAt = async (max: number) => {
+      await expect(page.getByTestId("global-error")).toContainText(
+        (en.pdp.groupMaxReached as string).replace("{{max}}", String(max)).replace(" {{group}}", ""),
+      );
+      await page.getByTestId("global-error-ok").click();
+      await expect(page.getByTestId("global-error")).toHaveCount(0);
+    };
 
-    // No group max: 3 rows × cap 3. Stepper rows, no "Required".
-    await expect(counter(EXTRA_GROUP, 0, 9)).toBeVisible();
+    // A group max of 1 (item cap 3): "0 of 1"; the second unit is refused at it.
+    await expect(counter(EXTRA_GROUP, 0, 1)).toBeVisible();
     await expect(page.getByTestId(`pdp-group-${EXTRA_GROUP}`)).not.toContainText(en.pdp.required);
-    await expectAtRightEdge(EXTRA_GROUP, 0, 9);
+    await expectAtRightEdge(EXTRA_GROUP, 0, 1);
     await plus("Extra Pickles").click();
-    await expect(counter(EXTRA_GROUP, 1, 9)).toBeVisible();
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeVisible();
     await plus("Extra Pickles").click();
-    await expect(counter(EXTRA_GROUP, 2, 9)).toBeVisible();
-    await plus("Extra Ketchup").click();
-    await expect(counter(EXTRA_GROUP, 3, 9)).toBeVisible();
-    await minus("Extra Pickles").click();
-    await expect(counter(EXTRA_GROUP, 2, 9)).toBeVisible();
-    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expectRefusedAt(1);
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeVisible();
 
-    // A group max: the 0 / 4 stepper counts against 4.
+    // A group max of 4 (item cap 2): + and − move it; the 5th unit is refused at it.
     const without = page.getByTestId(`pdp-group-${WITHOUT_GROUP}`);
     await without.scrollIntoViewIfNeeded();
     await expect(counter(WITHOUT_GROUP, 0, 4)).toBeVisible();
     await plus("Without Ketchup").click();
     await plus("Without Ketchup").click();
     await expect(counter(WITHOUT_GROUP, 2, 4)).toBeVisible();
-    await expectAtRightEdge(WITHOUT_GROUP, 2, 4);
+    await plus("Without Cheese").click();
+    await plus("Without Cheese").click();
+    await expect(counter(WITHOUT_GROUP, 4, 4)).toBeVisible();
+    await plus("Without Pickles").click();
+    await expectRefusedAt(4);
+    await minus("Without Ketchup").click();
+    await expect(counter(WITHOUT_GROUP, 3, 4)).toBeVisible();
+    await expectAtRightEdge(WITHOUT_GROUP, 3, 4);
+
+    // 0 / 0 (no group max): stepper rows, no counter.
+    const cheese = page.getByTestId(`pdp-group-${EXTRA_CHEESE_GROUP}`);
+    await cheese.scrollIntoViewIfNeeded();
+    await expect(plus("Add Cheese")).toBeVisible();
+    await expect(cheese).not.toContainText(/\d+ of \d+/);
     await test.info().attach("pdp-stepper-counter", { body: await page.screenshot(), contentType: "image/png" });
 
     // The ADA reach-zone view: the same counters, still at the right edge.
     await page.getByTestId("footer-ada").click();
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
-    await expect(counter(EXTRA_GROUP, 2, 9)).toBeAttached();
-    await expectAtRightEdge(EXTRA_GROUP, 2, 9);
-    await expectAtRightEdge(WITHOUT_GROUP, 2, 4);
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeAttached();
+    await expectAtRightEdge(EXTRA_GROUP, 1, 1);
+    await expectAtRightEdge(WITHOUT_GROUP, 3, 4);
     await without.scrollIntoViewIfNeeded();
-    await plus("Without Cheese").click();
-    await expect(counter(WITHOUT_GROUP, 3, 4)).toBeVisible();
+    await plus("Without Pickles").click();
+    await expect(counter(WITHOUT_GROUP, 4, 4)).toBeVisible();
     await test.info().attach("pdp-stepper-counter-ada", { body: await page.screenshot(), contentType: "image/png" });
+
+    // The commit agrees with the counters: "1 of 1" and "4 of 4" go to the bag.
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect.poll(() => cartRowCount(page)).toBe(1);
   });
 });

@@ -573,6 +573,23 @@ describe("GroupHeader (Title/H7)", () => {
     expect(container.querySelector(".ml-auto")).toBeNull();
   });
 
+  it("atOne (the PDP refuses at 1: stepper rows, a non-swap card group): '1 of 1' right-aligned", () => {
+    render(<GroupHeader name="Hot Sauces" count={1} max={1} atOne />);
+
+    expect(screen.getByText("1 of 1")).toHaveClass("ml-auto");
+  });
+
+  it.each([
+    ["max 0", 0],
+    ["no max", undefined],
+    ["NaN", Number.NaN],
+  ])("atOne: still no counter when %s", (_label, max) => {
+    const { container } = render(<GroupHeader name="Hot Sauces" count={2} max={max} atOne />);
+
+    expect(container).not.toHaveTextContent(/\bof\b/);
+    expect(container.querySelector(".ml-auto")).toBeNull();
+  });
+
   it("a missing count reads 0", () => {
     render(<GroupHeader name="Extras" max={3} />);
     expect(screen.getByText("0 of 3")).toBeInTheDocument();

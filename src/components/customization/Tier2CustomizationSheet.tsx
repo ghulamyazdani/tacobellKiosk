@@ -64,7 +64,6 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
-  groupCountMax,
   optionCta,
   OptionRow,
 } from "./OptionCard";
@@ -549,8 +548,9 @@ export default function Tier2CustomizationSheet() {
               sum + Number(s?.quantity ?? 0),
             0,
           )}
-          max={groupCountMax(group, amp, stepper ? items.length : 0)}
-          stepper={stepper}
+          // The PDP's counter: the guard's max, at 1 where it refuses at 1.
+          max={maxPicks}
+          atOne={stepper || (!oneOfOne && items.length > 1)}
           required={minPicks > 0}
           errored={errored}
         />

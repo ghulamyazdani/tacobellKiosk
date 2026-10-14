@@ -82,7 +82,6 @@ type CtaGroup = {
   max?: unknown;
   multiplePunchMin?: unknown;
   multiplePunchMax?: unknown;
-  multiplePunchMaxItem?: unknown;
   constituentItems?: unknown[];
 } | null | undefined;
 
@@ -111,31 +110,6 @@ export function optionCta(
     (group?.constituentItems?.length ?? 0) > 1;
   if (selected && swaps) return undefined;
   return { label: selected ? t("pack.remove") : t("pack.choose"), testId };
-}
-
-/**
- * What a group header counts against (user report 2026-10-14: a stepper
- * group showed no "count of max"). A positive EFFECTIVE max: the bound the
- * tap / "+" guard refuses at ("You can choose up to …"). A stepper group on
- * the engines' toggle bounds (0 / 0, strict as applyMultiPunchSelection) has
- * no group total, so it counts against what its rows hold — item cap × rows,
- * the "+" stopping each row at the cap ("You've already reached the maximum
- * for this option"); the commit still reads that 0 as a hard cap and refuses
- * those picks (an open call, not the counter's). Else undefined, no counter:
- * card toggles, and malformed bounds (null, missing, text), on which the
- * engine silently takes one row only.
- */
-// eslint-disable-next-line react-refresh/only-export-components -- shared by the PDP and the tier-2 page; HMR falls back to a reload for this file
-export function groupCountMax(
-  group: CtaGroup,
-  allowMultiplePunch: boolean,
-  stepperRows: number,
-): number | undefined {
-  const max = getEffectiveMax(group, allowMultiplePunch);
-  if (Number.isFinite(Number(max)) && Number(max) > 0) return Number(max);
-  const rowsHold = Number(group?.multiplePunchMaxItem) * stepperRows;
-  const toggle = max === 0 && getEffectiveMin(group, allowMultiplePunch) === 0;
-  return toggle && Number.isFinite(rowsHold) && rowsHold > 0 ? rowsHold : undefined;
 }
 
 const CTA =
@@ -403,21 +377,23 @@ export function OptionRow({
 
 /**
  * Title/H7 group label (S4 #8): the name, TB's Required marker, and — when
- * the group takes more than one — "count of max" right-aligned (1:4911). A
- * `stepper` group counts its units at any max (1:2614's Hot Sauces rows).
+ * the group takes more than one — "count of max" right-aligned (1:4911).
+ * `atOne` shows it at a max of 1 too, where the PDP refuses at 1 (user
+ * report 2026-10-14): stepper rows (1:2614's Hot Sauces) and a card group of
+ * several options that does not swap. A max of 0 or none has no counter.
  */
 export function GroupHeader({
   name,
   count,
   max,
-  stepper = false,
+  atOne = false,
   required = false,
   errored = false,
 }: {
   name: string;
   count?: number;
   max?: number;
-  stepper?: boolean;
+  atOne?: boolean;
   required?: boolean;
   errored?: boolean;
 }) {
@@ -434,7 +410,7 @@ export function GroupHeader({
           {t("pdp.required")}
         </span>
       )}
-      {max !== undefined && max > (stepper ? 0 : 1) && (
+      {max !== undefined && max > (atOne ? 0 : 1) && (
         <span
           key={count ?? 0}
           className="tb-bump ml-auto shrink-0 text-[20px] font-medium leading-[24px] tracking-[-0.5px] text-black"

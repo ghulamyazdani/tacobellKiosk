@@ -18,11 +18,12 @@ import i18n from "../../../i18n";
   User report 2026-10-14 ("max and total selected quantity is not coming in
   some items"): Honey BBQ Wings' "Test 1" — stepper rows, Missi Roti ×2 —
   had no "count of max" while its card groups read "0 of 3" / "2 of 4". The
-  header counted against the group's effective max only when it was above 1,
-  so a stepper group with no group max (0 or missing: the "+" guard sets no
-  total, each row stops at its item cap) and a stepper group with a max of 1
-  showed none. Every shape below asserts the header's counter: its text and
-  its numbers, the numbers being the ones the PDP refuses at.
+  header counted only above a max of 1, so a group the PDP refuses at 1 (a
+  stepper's second unit, a second card of a non-swap group) showed none.
+  The counter's max is the one the "You can choose up to" guard refuses at,
+  and ADD TO BAG accepts what it shows. A group with a max of 0 has no
+  counter: the guard lets picks in there that the commit refuses (PROGRESS
+  R13, an open call), so no number can agree with both.
 */
 
 const ROWS = [
@@ -31,18 +32,16 @@ const ROWS = [
   { id: "tandoori", name: "Tandoori Roti", price: 0, isActive: true },
 ];
 const GROUP_ID = "wings_test1_addons";
-const group = (bounds: Record<string, unknown>) => ({
-  _id: GROUP_ID,
-  name: "Test 1",
-  order: 1,
-  isActive: true,
-  constituentItems: ROWS,
-  ...bounds,
-});
 
-const seed = (bounds: Record<string, unknown>) => {
+const seed = (bounds: Record<string, unknown>, rows = ROWS) => {
   store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
-  store.dispatch(setModifiersMap({ modifiersMap: { [GROUP_ID]: group(bounds) } }));
+  store.dispatch(
+    setModifiersMap({
+      modifiersMap: {
+        [GROUP_ID]: { _id: GROUP_ID, name: "Test 1", order: 1, isActive: true, constituentItems: rows, ...bounds },
+      },
+    }),
+  );
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
     setTier1BottomSheetAndSelectedEntity({
@@ -82,11 +81,17 @@ const picks = () =>
   (tier1SelectedCustomization(store.getState())[GROUP_ID] ?? []).map(
     (row: { id: string; quantity: number }) => [row.id, row.quantity],
   );
+const bagRows = () => (store.getState() as { cart: { cartItems: unknown[] } }).cart.cartItems.length;
 /** The global error's text, then GOT IT. */
 const dismissError = async () => {
   const text = screen.getByTestId("global-error").textContent;
   await tap(screen.getByTestId("global-error-ok"));
   return text;
+};
+/** ADD TO BAG; true when it committed (no completion warning, one bag row). */
+const addToBag = async () => {
+  await tap(screen.getByTestId("pdp-add-to-bag"));
+  return !screen.queryByTestId("pdp-incomplete") && bagRows() === 1;
 };
 
 describe("PDP group header — 'count of max' on every group shape (user report 2026-10-14)", () => {
@@ -107,13 +112,14 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     });
   });
 
-  it("a single choice (1/1 over three options): radio cards, Required, no counter — the radio says it all", async () => {
+  it("a single choice (1/1 over three options): radio cards, Required, no counter — a tap swaps, nothing is refused", async () => {
     seed({ min: 1, max: 1, multiplePunchMin: 1, multiplePunchMax: 1, multiplePunchMaxItem: 1 });
 
     expect(within(header()).getByText(i18n.t("pdp.required"))).toBeInTheDocument();
     expectNoCounter();
     await tap(screen.getByTestId("pdp-option-missi"));
-    expect(picks()).toEqual([["missi", 1]]);
+    await tap(screen.getByTestId("pdp-option-garlic"));
+    expect(picks()).toEqual([["garlic", 1]]);
     expectNoCounter();
   });
 
@@ -126,7 +132,30 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expectCounter(2, 3);
   });
 
-  it("a stepper with a group max (0 / 4, item cap 2): '0 of 4' → '3 of 4'; the 5th unit is refused AT the counter's max", async () => {
+  it("a pick-one card group that refuses (0 / 1 over three options): '0 of 1' → '1 of 1'; a second card is refused saying 'up to 1', and ADD TO BAG takes the one", async () => {
+    seed({ min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 1 });
+
+    expect(screen.queryByRole("button", { name: `${i18n.t("pdp.increase")} Missi Roti` })).toBeNull(); // cards
+    expectCounter(0, 1);
+    await tap(screen.getByTestId("pdp-option-missi"));
+    expectCounter(1, 1);
+    await tap(screen.getByTestId("pdp-option-garlic"));
+    expect(await dismissError()).toContain(i18n.t("pdp.groupMaxReached", { max: 1, group: "Test 1" }));
+    expect(picks()).toEqual([["missi", 1]]);
+    expectCounter(1, 1);
+    expect(await addToBag()).toBe(true);
+  });
+
+  it("a pick-one card group of ONE option (0 / 1): no counter — nothing can be refused", async () => {
+    seed({ min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 1 }, ROWS.slice(0, 1));
+
+    expectNoCounter();
+    await tap(screen.getByTestId("pdp-option-missi"));
+    expect(picks()).toEqual([["missi", 1]]);
+    expectNoCounter();
+  });
+
+  it("a stepper with a group max (0 / 4, item cap 2): '0 of 4' → '4 of 4'; the 5th unit is refused AT the counter's max, − counts down, and ADD TO BAG takes '4 of 4'", async () => {
     seed({ min: 0, max: 4, multiplePunchMin: 0, multiplePunchMax: 4, multiplePunchMaxItem: 2 });
 
     expectCounter(0, 4);
@@ -139,9 +168,14 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     await tap(plus("Garlic Naan"));
     expect(await dismissError()).toContain(i18n.t("pdp.groupMaxReached", { max: 4, group: "Test 1" }));
     expectCounter(4, 4);
+    await tap(minus("Missi Roti"));
+    expectCounter(3, 4);
+    await tap(plus("Garlic Naan"));
+    expectCounter(4, 4);
+    expect(await addToBag()).toBe(true);
   });
 
-  it("a stepper with a group max of 1 (item cap 3): '0 of 1' → '1 of 1'; the second unit is refused saying 'up to 1'", async () => {
+  it("a stepper with a group max of 1 (item cap 3): '0 of 1' → '1 of 1'; the second unit is refused saying 'up to 1', and ADD TO BAG takes '1 of 1'", async () => {
     seed({ min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
 
     // Steppers (0 / 1 is not the 1/1 swap), and now a counter.
@@ -153,35 +187,10 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expect(await dismissError()).toContain(i18n.t("pdp.groupMaxReached", { max: 1, group: "Test 1" }));
     expect(picks()).toEqual([["missi", 1]]);
     expectCounter(1, 1);
+    expect(await addToBag()).toBe(true);
   });
 
-  it.each([
-    ["min / max 0 / 0", { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 5, multiplePunchMaxItem: 3 }, false],
-    ["multi-punch ON, multi-punch 0 / 0", { min: 0, max: 5, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, true],
-  ])(
-    "a stepper with only per-item maxima (%s — Test 1's shape): '0 of 9' (3 rows × cap 3); each row stops at 3 with the per-option notice",
-    async (_label, bounds, amp) => {
-      store.dispatch(setAllowMultiplePunch(amp));
-      seed(bounds);
-
-      expect(within(header()).queryByText(i18n.t("pdp.required"))).not.toBeInTheDocument();
-      expectCounter(0, 9);
-      await tap(plus("Missi Roti"));
-      await tap(plus("Missi Roti"));
-      expectCounter(2, 9);
-      await tap(plus("Missi Roti"));
-      await tap(plus("Missi Roti"));
-      expect(await dismissError()).toContain(i18n.t("toast.alreadyReachedMaximumLimit"));
-      expect(picks()).toEqual([["missi", 3]]);
-      expectCounter(3, 9);
-      await tap(plus("Garlic Naan"));
-      expectCounter(4, 9);
-      await tap(minus("Missi Roti"));
-      expectCounter(3, 9);
-    },
-  );
-
-  it("a stepper whose limit is the TOTAL quantity: Missi Roti ×2 counts 2 (one row, two units) — '2 of 3', and the next unit anywhere is refused", async () => {
+  it("a stepper whose limit is the TOTAL quantity: Missi Roti ×2 counts 2 (one row, two units) — '2 of 3', the next unit anywhere is refused, and ADD TO BAG takes '3 of 3'", async () => {
     seed({ min: 0, max: 3, multiplePunchMin: 0, multiplePunchMax: 3, multiplePunchMaxItem: 3 });
 
     await tap(plus("Missi Roti"));
@@ -197,6 +206,49 @@ describe("PDP group header — 'count of max' on every group shape (user report 
       ["garlic", 1],
     ]);
     expectCounter(3, 3);
+    expect(await addToBag()).toBe(true);
+  });
+
+  it.each([
+    ["min / max 0 / 0", { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 5, multiplePunchMaxItem: 3 }, false],
+    ["multi-punch ON, multi-punch 0 / 0", { min: 0, max: 5, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, true],
+  ])(
+    "a stepper with only per-item maxima (%s): no counter, before or after picks; each row stops at its cap; ADD TO BAG still refuses the picks (R13, open)",
+    async (_label, bounds, amp) => {
+      store.dispatch(setAllowMultiplePunch(amp));
+      seed(bounds);
+
+      expect(within(header()).queryByText(i18n.t("pdp.required"))).not.toBeInTheDocument();
+      expectNoCounter();
+      for (let i = 0; i < 4; i += 1) await tap(plus("Missi Roti"));
+      expect(await dismissError()).toContain(i18n.t("toast.alreadyReachedMaximumLimit"));
+      await tap(plus("Garlic Naan"));
+      expect(picks()).toEqual([
+        ["missi", 3],
+        ["garlic", 1],
+      ]);
+      expectNoCounter();
+      // The commit's cap is the 0 (findFirstMinMaxViolation). Rows × cap
+      // here read "4 of 9" over a group ADD TO BAG refuses.
+      expect(await addToBag()).toBe(false);
+      expect(section()).toHaveClass("ring-red-500");
+      expectNoCounter();
+    },
+  );
+
+  it("an EMPTY stepper on 0 / 0 has no counter and ADD TO BAG takes the item", async () => {
+    seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+
+    expectNoCounter();
+    expect(await addToBag()).toBe(true);
+  });
+
+  it("a required stepper with no max (min 1 / max 0): Required, no counter", () => {
+    seed({ min: 1, max: 0, multiplePunchMin: 1, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+
+    expect(plus("Missi Roti")).toBeInTheDocument();
+    expect(within(header()).getByText(i18n.t("pdp.required"))).toBeInTheDocument();
+    expectNoCounter();
   });
 
   it.each([
@@ -213,7 +265,7 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expectNoCounter();
   });
 
-  it("no limit (0 / 0 cards — the toggle group, item cap 1): no counter, as posistKiosk has no bound to print; CHOOSE still adds", async () => {
+  it("0 / 0 cards (the toggle group, item cap 1): no counter (R13, as the stepper); CHOOSE still adds", async () => {
     seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 1 });
 
     expectNoCounter();
@@ -228,20 +280,20 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     const required = within(header()).getByText(i18n.t("pdp.required"));
     expect(required).not.toHaveClass("text-red-600");
     expectCounter(0, 2);
-    await tap(screen.getByTestId("pdp-add-to-bag"));
+    expect(await addToBag()).toBe(false);
     expect(section()).toHaveClass("ring-red-500");
     expect(within(header()).getByText(i18n.t("pdp.required"))).toHaveClass("font-bold", "text-red-600");
     expectCounter(0, 2);
   });
 
-  it("Arabic: Test 1's shape reads the Arabic 'count من max' at the header's right", async () => {
+  it("Arabic: a stepper's counter reads the Arabic 'count من max' at the header's right", async () => {
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
-    seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+    seed({ min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
 
     await tap(plus("Missi Roti"));
-    const el = within(header()).getByText(counter(1, 9));
+    const el = within(header()).getByText(counter(1, 1));
     expect(el.textContent).toContain("من");
     expect(el).not.toHaveTextContent("of");
     expect(header().lastElementChild).toBe(el);

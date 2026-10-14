@@ -633,19 +633,44 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     dispatch.mockRestore();
   });
 
-  it("user report 2026-10-14: stepper rows count at any bound — a group max of 1 reads '0 of 1'; no group max (0 / 0) counts the rows' caps, '0 of 4' → '3 of 4'", () => {
+  it("user report 2026-10-14: a stepper with a group max of 1 reads '0 of 1' → '1 of 1', refuses the second unit 'up to 1', and SAVE takes '1 of 1'", async () => {
     seedOpenTier2(ENTITY, { ...SAUCES, max: 1, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
     renderSheet();
-    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 1 }));
+    const group = screen.getByTestId("tier2-group-dl_addons");
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 1 }));
 
-    cleanup();
-    act(() => {
-      store.dispatch({ type: "RESET_STATE" });
-    });
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 1 Sauces");
+    expect(picks()).toEqual([["salsa", 1]]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
+
+    await userEvent.click(screen.getByTestId("tier2-sheet-save"));
+    expect(tier1SelectedCustomization(store.getState())[SLOT_GROUP._id]).toHaveLength(1);
+    expect(MIAMTier2Open(store.getState())).toBe(false);
+  });
+
+  it("user report 2026-10-14: a 0 / 1 card group over two options reads '0 of 1' → '1 of 1' and refuses the second card 'up to 1'", async () => {
+    seedOpenTier2(ENTITY, { ...ICE_GROUP, min: 0, multiplePunchMin: 0 });
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 1 }));
+
+    await userEvent.click(screen.getByTestId("tier2-option-ice"));
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
+    await userEvent.click(screen.getByTestId("tier2-option-no-ice"));
+    expect(selectErrorMessageGlobal(store.getState())).toBe("You can choose up to 1 Ice Level");
+    expect(picks()).toEqual([["ice", 1]]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
+  });
+
+  it("a stepper with no group max (0 / 0) has no counter, before or after picks (PROGRESS R13: the commit refuses them)", () => {
     seedOpenTier2(ENTITY, { ...SAUCES, max: 0, multiplePunchMax: 0 });
     renderSheet();
     const group = screen.getByTestId("tier2-group-dl_addons");
-    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 4 }));
+    expect(group).not.toHaveTextContent(/\bof\b/);
+
     fireEvent.click(stepperFor("Salsa") as HTMLElement);
     fireEvent.click(stepperFor("Salsa") as HTMLElement);
     fireEvent.click(stepperFor("Ranch") as HTMLElement);
@@ -653,7 +678,7 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
       ["salsa", 2],
       ["ranch", 1],
     ]);
-    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 3, max: 4 }));
+    expect(group).not.toHaveTextContent(/\bof\b/);
   });
 });
 
