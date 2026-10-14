@@ -19,7 +19,11 @@ import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
-import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
+import {
+  selectAddToCartItem,
+  selectAddToCartModal,
+  setSelectedEntity,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import MakeItAMealPrompt from "../MakeItAMealPrompt";
 import i18n from "../../../i18n";
@@ -143,6 +147,10 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
       total_price: 3.5,
     });
     expect(cart.subTotal).toBe(3.5);
+    // A plain add confirms (user 2026-10-14): the prompt's decline adds from
+    // the menu, so the product-added modal opens on the original.
+    expect(selectAddToCartModal(state)).toBe(true);
+    expect(selectAddToCartItem(state)).toMatchObject({ id: "burger-1" });
     // declined → never re-prompt for this item
     expect(blackListedItems(state)["burger-1"]).toBe(true);
     // prompt + session torn down, force latch cleared
@@ -165,6 +173,9 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
       quantity: 1,
       total_price: 7.99,
     });
+    // …and confirms with the product-added modal on the combo (user 2026-10-14).
+    expect(selectAddToCartModal(state)).toBe(true);
+    expect(selectAddToCartItem(state)).toMatchObject({ id: "combo-1" });
     // the original item was NOT blacklisted on accept
     expect(blackListedItems(state)["burger-1"]).toBeUndefined();
     expect(makeItAMealIsOpen(state)).toBe(false);

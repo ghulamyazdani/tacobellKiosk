@@ -3,6 +3,7 @@ import { APP_ORIGIN } from "./fixtures/origin";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { LOGIN_OK, isBackendApi, mockKioskBackend } from "./fixtures/backend";
+import { dismissAddedModal } from "./pages/order";
 
 /**
  * Boot/auth flows with a MOCKED backend — the posistKiosk-parity behavior:
@@ -294,6 +295,8 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
     await salad.scrollIntoViewIfNeeded();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     await salad.click();
+    // Every menu add confirms (user 2026-10-14).
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page.getByTestId("cta-total")).toContainText("£17.00");
 
@@ -301,6 +304,7 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
     // The CTA counts units — the bag header's count (walk 2026-10-14) — so the
     // one row reads "(2)"; the row count comes from the store.
     await salad.click();
+    await dismissAddedModal(page); // the +1 confirms too
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
     await expect(page.getByTestId("cta-total")).toContainText("£34.00");
     expect(
