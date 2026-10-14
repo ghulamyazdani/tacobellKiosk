@@ -632,6 +632,29 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 2, max: 2 }));
     dispatch.mockRestore();
   });
+
+  it("user report 2026-10-14: stepper rows count at any bound — a group max of 1 reads '0 of 1'; no group max (0 / 0) counts the rows' caps, '0 of 4' → '3 of 4'", () => {
+    seedOpenTier2(ENTITY, { ...SAUCES, max: 1, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
+    renderSheet();
+    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 1 }));
+
+    cleanup();
+    act(() => {
+      store.dispatch({ type: "RESET_STATE" });
+    });
+    seedOpenTier2(ENTITY, { ...SAUCES, max: 0, multiplePunchMax: 0 });
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 4 }));
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    fireEvent.click(stepperFor("Salsa") as HTMLElement);
+    fireEvent.click(stepperFor("Ranch") as HTMLElement);
+    expect(picks()).toEqual([
+      ["salsa", 2],
+      ["ranch", 1],
+    ]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 3, max: 4 }));
+  });
 });
 
 /*

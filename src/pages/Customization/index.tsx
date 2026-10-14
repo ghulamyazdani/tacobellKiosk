@@ -39,6 +39,7 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
+  groupCountMax,
   optionCta,
   OptionRow,
   RadioMark,
@@ -679,7 +680,8 @@ export default function Customization({
         <GroupHeader
           name={name(group)}
           count={pickedCount(selectionFor(group))}
-          max={maxPicks}
+          max={groupCountMax(group, amp, stepper ? items.length : 0)}
+          stepper={stepper}
           required={minPicks > 0}
           errored={errored}
         />

@@ -64,6 +64,7 @@ import OptionCard, {
   CtaBar,
   formatOptionMeta,
   GroupHeader,
+  groupCountMax,
   optionCta,
   OptionRow,
 } from "./OptionCard";
@@ -548,7 +549,8 @@ export default function Tier2CustomizationSheet() {
               sum + Number(s?.quantity ?? 0),
             0,
           )}
-          max={maxPicks}
+          max={groupCountMax(group, amp, stepper ? items.length : 0)}
+          stepper={stepper}
           required={minPicks > 0}
           errored={errored}
         />

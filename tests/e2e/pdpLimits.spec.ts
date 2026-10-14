@@ -8,6 +8,7 @@ import {
   EXTRA_PICKLES,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
+import { stageBox } from "./fixtures/a11y";
 
 /**
  * audit-fixes UB2 + U1 on the PDP, end to end over the REAL converters and
@@ -26,6 +27,9 @@ import { bootRegisteredToMenu } from "./pages/boot";
  *   "0 of 6", several picks, and an empty group is accepted. (On a device
  *   this is a Posist menu-setting question, Q1 — the PDP now shows what the
  *   engine enforces.)
+ * - STEPPER COUNTER (user report 2026-10-14): stepper rows always carry
+ *   "N of M" — against the group max, or with none (0 / 0) against the
+ *   rows' item caps — at the header's right edge, the ADA view included.
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
  * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
@@ -46,6 +50,8 @@ const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
+// Cheese Burger's "Choose From Without" group (order 2, four options, 0 / 4).
+const WITHOUT_GROUP = `${CHEESE_BURGER}_1573980470_addons`;
 // The last of Cheese Burger's three groups (order 3, one option, 0 / 1).
 const EXTRA_CHEESE_GROUP = `${CHEESE_BURGER}_1686482941_addons`;
 
@@ -95,6 +101,21 @@ function multiPunchMenu(): MenuJson {
   const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
   if (!extra) throw new Error("fixture: no Extra group");
   Object.assign(extra, { min: 1, max: 1, multiplePunchMin: 0, multiplePunchMax: 6, multiplePunchMaxItem: 1 });
+  return menu;
+}
+
+/**
+ * User report 2026-10-14 (Honey BBQ Wings' "Test 1"): Cheese Burger's
+ * "Extra" group on the toggle bounds 0 / 0 with an item cap of 3 (stepper
+ * rows, no group max), and its "Without" group a 0 / 4 stepper (item cap 2).
+ */
+function stepperCounterMenu(): MenuJson {
+  const menu = structuredClone(slimMenu) as MenuJson;
+  const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
+  const without = menu.modifiers.find((group) => group._id === WITHOUT_GROUP);
+  if (!extra || !without) throw new Error("fixture: no Extra / Without group");
+  Object.assign(extra, { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
+  Object.assign(without, { multiplePunchMaxItem: 2 });
   return menu;
 }
 
@@ -306,5 +327,65 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+  });
+
+  test("STEPPER COUNTER (user report 2026-10-14): a stepper group with no group max counts against its rows' caps and one with a max against it — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { menu: stepperCounterMenu(), kioskSettings: { accessibility_mode: true } });
+    await bootRegisteredToMenu(page);
+    await openPdp(page, CHEESE_BURGER);
+
+    const counter = (groupId: string, picked: number, max: number) =>
+      page
+        .getByTestId(`pdp-group-${groupId}`)
+        .getByText(
+          (en.pdp.groupCount as string).replace("{{count}}", String(picked)).replace("{{max}}", String(max)),
+          { exact: true },
+        );
+    const plus = (option: string) => page.getByRole("button", { name: `${en.pdp.increase} ${option}` });
+    const minus = (option: string) => page.getByRole("button", { name: `${en.pdp.decrease} ${option}` });
+    /** The extreme right of the 1032 px contents (x 24): stage x 1056 in both views. */
+    const expectAtRightEdge = async (groupId: string, picked: number, max: number) =>
+      expect.poll(async () => {
+        const box = await stageBox(counter(groupId, picked, max));
+        return box.x + box.width;
+      }).toBe(1056);
+
+    // No group max: 3 rows × cap 3. Stepper rows, no "Required".
+    await expect(counter(EXTRA_GROUP, 0, 9)).toBeVisible();
+    await expect(page.getByTestId(`pdp-group-${EXTRA_GROUP}`)).not.toContainText(en.pdp.required);
+    await expectAtRightEdge(EXTRA_GROUP, 0, 9);
+    await plus("Extra Pickles").click();
+    await expect(counter(EXTRA_GROUP, 1, 9)).toBeVisible();
+    await plus("Extra Pickles").click();
+    await expect(counter(EXTRA_GROUP, 2, 9)).toBeVisible();
+    await plus("Extra Ketchup").click();
+    await expect(counter(EXTRA_GROUP, 3, 9)).toBeVisible();
+    await minus("Extra Pickles").click();
+    await expect(counter(EXTRA_GROUP, 2, 9)).toBeVisible();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+
+    // A group max: the 0 / 4 stepper counts against 4.
+    const without = page.getByTestId(`pdp-group-${WITHOUT_GROUP}`);
+    await without.scrollIntoViewIfNeeded();
+    await expect(counter(WITHOUT_GROUP, 0, 4)).toBeVisible();
+    await plus("Without Ketchup").click();
+    await plus("Without Ketchup").click();
+    await expect(counter(WITHOUT_GROUP, 2, 4)).toBeVisible();
+    await expectAtRightEdge(WITHOUT_GROUP, 2, 4);
+    await test.info().attach("pdp-stepper-counter", { body: await page.screenshot(), contentType: "image/png" });
+
+    // The ADA reach-zone view: the same counters, still at the right edge.
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+    await expect(counter(EXTRA_GROUP, 2, 9)).toBeAttached();
+    await expectAtRightEdge(EXTRA_GROUP, 2, 9);
+    await expectAtRightEdge(WITHOUT_GROUP, 2, 4);
+    await without.scrollIntoViewIfNeeded();
+    await plus("Without Cheese").click();
+    await expect(counter(WITHOUT_GROUP, 3, 4)).toBeVisible();
+    await test.info().attach("pdp-stepper-counter-ada", { body: await page.screenshot(), contentType: "image/png" });
   });
 });
