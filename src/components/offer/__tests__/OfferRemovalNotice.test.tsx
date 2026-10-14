@@ -10,7 +10,7 @@ import { openOfferRemovalModal, setCartItems } from "@cx-sdk/ordering/state/cart
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import OfferRemovalNotice from "../OfferRemovalNotice";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 const row = (itemId: string) => ({
   id: "tortilla",
@@ -66,13 +66,9 @@ describe("OfferRemovalNotice — the min-items reason", () => {
 });
 
 describe("OfferRemovalNotice — the offer name (walk 2026-10-14)", () => {
-  // The rows title-case a name with CSS capitalize; inside this sentence the
-  // name gets the same casing ("amount ic" read raw here, "Amount Ic" there).
-  it.each([
-    ["amount ic", "Amount Ic"],
-    ["Maha Offer 50% on all item", "Maha Offer 50% On All Item"],
-    ["(free) cookie MOV", "(Free) Cookie MOV"],
-  ])("'%s' reads '%s'", (name, shown) => {
+  // The rows case a name with CSS capitalize ("amount ic" shows "Amount
+  // Ic"); in this sentence the name is its own element with the same class.
+  const renderNamed = (name: string) => {
     store.dispatch(setCartItems([row("p0"), row("p1"), row("p2")]));
     store.dispatch(openOfferRemovalModal({ ...MIN_THREE, name }));
     render(
@@ -82,6 +78,28 @@ describe("OfferRemovalNotice — the offer name (walk 2026-10-14)", () => {
         </MemoryRouter>
       </Provider>
     );
-    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(`${shown} no longer applies to your order.`);
+  };
+
+  it("the name is its own capitalize element inside the whole sentence", () => {
+    renderNamed("amount ic");
+    const name = screen.getByTestId("offer-removal-name");
+    expect(name).toHaveTextContent(/^amount ic$/);
+    expect(name).toHaveClass("capitalize");
+    expect(name.parentElement).toHaveTextContent(/^amount ic no longer applies to your order\.$/);
+  });
+
+  it("Arabic: the sentence stays whole around the name, and the name stays an isolate", async () => {
+    await i18n.changeLanguage("ar");
+    try {
+      renderNamed("amount ic");
+      const name = screen.getByTestId("offer-removal-name");
+      const sentence = name.parentElement as HTMLElement;
+      // The same sentence i18n renders with the name in its slot.
+      expect(sentence.textContent).toBe(i18n.t("offers.removedBody", { name: "amount ic" }));
+      expect(sentence.textContent).toMatch(/\p{Script=Arabic}/u);
+      expect(sentence.textContent).toContain("⁨amount ic⁩");
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 });

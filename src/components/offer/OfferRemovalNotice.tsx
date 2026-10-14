@@ -26,15 +26,12 @@ interface OfferRemovalNoticeProps {
 }
 
 /**
- * The offer name's one casing — every row prints it under CSS capitalize;
- * inside this sentence CSS cannot reach the name alone, so the same rule is
- * applied here: each word's first letter, past any leading punctuation.
+ * Stands in for the offer name so the translated sentence can be split
+ * around it: the name then renders as its own element, in the one casing
+ * every other surface gives it (CSS capitalize). In Arabic the slot's
+ * isolate marks land either side of the name, so it stays isolated.
  */
-const capitalizeWords = (name: string): string =>
-  name.replace(
-    /(^|\s)([^\s\p{L}\p{N}]*)(\p{Ll})/gu,
-    (_, gap, lead, letter) => `${gap}${lead}${letter.toUpperCase()}`,
-  );
+const NAME_SLOT = "\u0000";
 
 /**
  * REWARD REMOVED notice — locked decision 6: design-language centered modal
@@ -119,6 +116,7 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
   };
 
   const reason = reasonLine(gap?.reason);
+  const [bodyBefore, bodyAfter = ""] = t("offers.removedBody", { name: NAME_SLOT }).split(NAME_SLOT);
 
   return (
     // `fixed`, not `absolute` (RemoveItemModal precedent): the bag can
@@ -137,7 +135,11 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         </h2>
         {removedOffer?.name ? (
           <p className="mx-auto mb-[16px] max-w-[560px] text-[26px] leading-[34px] text-black">
-            {t("offers.removedBody", { name: capitalizeWords(String(removedOffer.name)) })}
+            {bodyBefore}
+            <span data-testid="offer-removal-name" className="capitalize">
+              {removedOffer.name}
+            </span>
+            {bodyAfter}
           </p>
         ) : null}
         {reason ? (
