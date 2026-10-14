@@ -251,6 +251,23 @@ describe("useBuyStage — snapshot and rollback", () => {
     expect(cart().cartItems).toEqual([sauce, BURGER_ROW, freebie]);
   });
 
+  it("the rollback writes the LIVE cart: a row that landed before React re-rendered is never dropped by the wholesale write", () => {
+    const sauce = sauceRow("s1");
+    const freebie: Row = { ...CAESAR_ROW, itemId: "gi-1", isGetItem: true, total_price: 0 };
+    setCart([sauce, BURGER_ROW]);
+    const { result } = renderHook(() => useBuyStage(true), { wrapper });
+
+    act(() => result.current.start(LEAST, LEAST_VIEW));
+    setCart([BURGER_ROW]);
+    act(() => {
+      // Same tick: the freebie lands, and the stage is abandoned before any re-render.
+      store.dispatch(setCartItems([BURGER_ROW, freebie]));
+      result.current.abandon();
+    });
+
+    expect(cart().cartItems).toEqual([sauce, BURGER_ROW, freebie]);
+  });
+
   it("starting offer B while A's journey is armed rolls A back first; B baselines on the restored cart", () => {
     setCart([BURGER_ROW]);
     const { result } = renderHook(() => useBuyStage(true), { wrapper });
