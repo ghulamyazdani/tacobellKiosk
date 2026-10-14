@@ -64,10 +64,8 @@ import {
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import useCartBill, {
-  billTotal,
-  shouldDropAppliedOffer,
-} from "../../hooks/cartHooks/useCartBill";
+import { shouldDropAppliedOffer } from "@cx-sdk/ordering/offer/offerRevalidation";
+import useCartBill, { billTotal } from "../../hooks/cartHooks/useCartBill";
 import { formatPrice } from "../../utils/price";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
@@ -512,8 +510,8 @@ export default function BagSheet({
     // would drop a persisted reward on the first render after a
     // crash-reload, before the Dexie rehydrate lands the rows.
     if (items.length === 0) return;
-    // The checks live in ONE place (useCartBill): the menu's totals price
-    // the cart as this effect is about to leave it (settleCart).
+    // The checks live in ONE place (SDK offerRevalidation): the menu's
+    // totals price the cart as this effect is about to leave it (settleCart).
     const shouldRemove = shouldDropAppliedOffer(cartOffer, items);
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
