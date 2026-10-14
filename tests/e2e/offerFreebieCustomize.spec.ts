@@ -342,12 +342,13 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await expect(host).toHaveCount(0);
     await expect(page).toHaveURL(/\/cart$/);
 
-    // Held, not committed: the picker shows it picked, priced as CONFIRM will.
+    // Held, not committed: the picker shows it picked, priced as CONFIRM
+    // will — in posistKiosk's OfferItem format (moduloCalcaledValue).
     await expect(page.getByTestId("freebie-picker")).toBeVisible();
     await expect(burgerOption).toHaveAttribute("aria-pressed", "true");
     await expect(burgerOption).toContainText("Customized");
-    await expect(burgerOption.locator(".line-through")).toHaveText("£9.00");
-    await expect(burgerOption).toContainText("£1.00");
+    await expect(burgerOption.locator(".line-through")).toHaveText("£9");
+    await expect(burgerOption).toContainText(/£9£1$/);
     await expect(bagRows(page)).toHaveCount(1);
     await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
 
@@ -648,7 +649,7 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     // Held: one unit of the two, priced as CONFIRM will charge it.
     await expect(burgerOption).toHaveAttribute("aria-pressed", "true");
     await expect(burgerOption).toContainText("Customized");
-    await expect(burgerOption).toContainText("£1.00");
+    await expect(burgerOption).toContainText(/£9£1$/);
     await expect(page.getByTestId("freebie-group-hint")).toHaveText(
       "Select 1 more item to continue"
     );

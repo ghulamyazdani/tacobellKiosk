@@ -74,7 +74,7 @@ async function addGreekSalad(page: Page) {
   await expect(salad).toContainText("₹17");
   await salad.click();
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-  await expect(page.getByTestId("cta-total")).toContainText("₹17.00");
+  await expect(page.getByTestId("cta-total")).toHaveText(/: ₹20$/);
 }
 
 /** VIEW MY BAG → /cart. */
@@ -226,14 +226,15 @@ test.describe("Walk 2026-10-14 — a ﷼ price reads left to right", () => {
     await expectLeftOf(glyphX(line, "﷼", "17"), "card: the symbol leads its price");
     await expectLeftOf(glyphX(line, "17", "254"), "card: the price precedes the calories");
 
-    // The PDP price line: "﷼8.00 | 740 Cal".
+    // The PDP price line: "﷼8 | 740 Cal" (posistKiosk's price format,
+    // user decision 2026-10-14).
     const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
     await burger.scrollIntoViewIfNeeded();
     await burger.click();
     const price = page.getByTestId("pdp-price");
-    await expect(price).toContainText("8.00 | 740 Cal");
-    await expectLeftOf(glyphX(price, "﷼", "8.00"), "PDP: the symbol leads its price");
-    await expectLeftOf(glyphX(price, "8.00", "740"), "PDP: the price precedes the calories");
+    await expect(price).toHaveText(/8 \| 740 Cal$/);
+    await expectLeftOf(glyphX(price, "﷼", "8"), "PDP: the symbol leads its price");
+    await expectLeftOf(glyphX(price, "8", "740"), "PDP: the price precedes the calories");
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
 

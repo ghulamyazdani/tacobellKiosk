@@ -73,7 +73,8 @@ test.describe("B5 Select-a-Size fast lane — one money shape", () => {
     await page.getByTestId(`size-${SIZE_LARGE}`).click();
     await page.getByTestId("size-continue").click();
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
-    await expect(page.getByTestId("added-total")).toContainText("£7.00");
+    // The bag's own Total (user decision 2026-10-14): round(7 × 1.15) = £8.
+    await expect(page.getByTestId("added-total")).toHaveText(/ £8$/);
     await page.getByTestId("added-continue").click();
 
     await openBag(page);

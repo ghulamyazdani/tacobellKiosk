@@ -162,8 +162,9 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await routeOffers(page, [AUTO_FLAT]);
     await bootRegisteredToMenu(page);
     await addCheeseBurgerViaPdp(page);
-    // The menu never auto-applies: its bar keeps the plain subtotal.
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    // The menu never auto-applies: its bar shows the bag's Total with no
+    // reward yet — £8 + VAT, rounded (user decision 2026-10-14).
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
     await openBag(page);
 
     await expectFlatAutoApplied(page);

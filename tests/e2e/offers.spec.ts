@@ -220,9 +220,10 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     await expect(page.getByTestId("bag-pay")).toContainText("Order & Pay");
     await expect(page.getByTestId("bag-pay")).toContainText("£7.00");
 
-    // The menu cta bar under the sheet still shows the UNdiscounted
-    // subtotal (bag.spec precedent: toContainText reads the covered bar).
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    // The menu cta bar under the sheet shows the bag's own Total, the
+    // reward and VAT in it (user decision 2026-10-14; it showed the
+    // undiscounted subtotal) — bag.spec precedent: the covered bar's text.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £7$/);
   });
 
   test("SWAP + LOCKED→ELIGIBLE: rail add to £25.00 unlocks percent-25 (radio, no nudge); SAVE swaps atomically — applied row/Discounts −£6.25, Total £22.00, flat-2 gone", async ({
@@ -396,11 +397,11 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
       page.getByTestId(`freebie-option-${CAESAR_DRESSING}`)
     ).toBeVisible();
     await expect(page.locator('[data-testid^="freebie-option-"]')).toHaveCount(2);
-    // Each plain option prices what CONFIRM will charge: £0.00, the menu
-    // price struck (the offer → menu conversion, audit-fixes C1a).
+    // Each plain option prices what CONFIRM will charge: £0, the menu price
+    // struck (the offer → menu conversion, audit-fixes C1a) — posistKiosk's
+    // OfferItem format (moduloCalcaledValue): the struck £2, then £0.
     const tortilla = page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`);
-    await expect(tortilla).toContainText("£0.00");
-    await expect(tortilla).toContainText("£2.00");
+    await expect(tortilla).toContainText(/£2£0$/);
 
     // An "or" choice needs a selection — CONFIRM without one is inert
     // (aria-disabled; Playwright rightly refuses to click it, which is
@@ -531,7 +532,7 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     // discount, empty cart.
     await page.getByTestId("offer-removal-gotit").click();
     await expect(page.getByTestId("offer-removal-notice")).toHaveCount(0);
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("PAY DROPS AN OUT-OF-STOCK FREEBIE (audit-fixes A1): the free salad sold out after it was granted — PAY removes the offer with the removal notice and sweeps its row, no stock error, still /cart; the next PAY goes on with the paid row", async ({

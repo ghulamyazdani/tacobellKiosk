@@ -233,7 +233,7 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await startToSecond(page);
     await pickPipelineToMenu(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
     expect(checkout.placeOrderCount).toBe(1);
     expectNothingDangerousWasContacted(checkout);
   });

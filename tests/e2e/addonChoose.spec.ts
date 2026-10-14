@@ -47,13 +47,13 @@ test.describe("add-on cards carry CHOOSE (user report 2026-10-09)", () => {
     }
     // Named by the item, DESCRIBED by its price line and CTA: a screen reader hears the price.
     await expect(card(page, EXTRA_PICKLES)).toHaveAccessibleName("Extra Pickles");
-    await expect(card(page, EXTRA_PICKLES)).toHaveAccessibleDescription(new RegExp(`^\\+£1\\.00 ${en.pack.choose}$`, "i"));
+    await expect(card(page, EXTRA_PICKLES)).toHaveAccessibleDescription(new RegExp(`^\\+£1 ${en.pack.choose}$`, "i"));
 
     await cta(page, EXTRA_PICKLES).click();
     await expect(card(page, EXTRA_PICKLES)).toHaveAttribute("aria-pressed", "true");
     await expect(group).toContainText(count(1));
     await expect(cta(page, EXTRA_PICKLES)).toHaveText(en.pack.remove);
-    await expect(card(page, EXTRA_PICKLES)).toHaveAccessibleDescription(new RegExp(`^\\+£1\\.00 ${en.pack.remove}$`, "i"));
+    await expect(card(page, EXTRA_PICKLES)).toHaveAccessibleDescription(new RegExp(`^\\+£1 ${en.pack.remove}$`, "i"));
     await expect(cta(page, EXTRA_KETCHUP)).toHaveText(en.pack.choose);
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
 

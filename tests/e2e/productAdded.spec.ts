@@ -195,7 +195,14 @@ const cta = (page: Page) => page.getByTestId("added-continue");
 const overlay = (card: Locator) => card.locator(":scope > button:not([aria-hidden]):not([data-testid])");
 const tileIds = (page: Page) =>
   tiles(page).evaluateAll((els) => els.map((el) => (el.getAttribute("data-testid") ?? "").replace("added-rec-", "")));
-const totalText = (amount: number) => `${en.menu.total} £${amount.toFixed(2)}`;
+/**
+ * The Total the modal shows (user decision 2026-10-14): the bag's own Total with the picks in it — VAT and round
+ * off included — printed as posistKiosk prints this total (moduloCalcaledValue: whole). Every fixture item carries
+ * exclusive VAT 15 % and the engine rounds the Total to the whole pound (bag.spec header: round(SubTotal × 1.15)),
+ * so the subtotals the tests name read as these bag Totals.
+ */
+const BAG_TOTAL: Record<number, number> = { 17: 20, 19: 22, 21: 24, 23: 26, 24: 28, 26: 30 };
+const totalText = (subtotal: number) => `${en.menu.total} £${BAG_TOTAL[subtotal]}`;
 const selectedText = (count: number) => en.added.selected.replace("{{value}}", String(count));
 /** The "−"'s glyph file: the trash at one pick, "−" from two. */
 const minusGlyph = (page: Page, id: string) => minus(page, id).locator("img").getAttribute("src");
@@ -251,7 +258,7 @@ const running = (target: Locator) =>
   );
 
 test.describe("the product-added modal stages its suggestions (posistKiosk parity)", () => {
-  test("P1 PLAIN: the Tortilla Sauce card's photo, then its name, then its '+' each PICK one — pill 1 → 2 → 3, 'N selected', Total £19 → £21 → £23 — with the bag untouched; its '−' takes one back; ADD TO ORDER buys Tortilla Sauce ×2 in one row and closes", async ({
+  test("P1 PLAIN: the Tortilla Sauce card's photo, then its name, then its '+' each PICK one — pill 1 → 2 → 3, 'N selected', Total £22 → £24 → £26 (the bag's, VAT in) — with the bag untouched; its '−' takes one back; ADD TO ORDER buys Tortilla Sauce ×2 in one row and closes", async ({
     page,
   }) => {
     await bootToMenu(page);

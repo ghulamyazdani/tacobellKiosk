@@ -6,6 +6,7 @@ import {
   GREEK_SALAD,
   LARGE_FRIES,
   CHEESE_BURGER,
+  CAESAR_DRESSING,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
 
@@ -201,5 +202,77 @@ test.describe("UB4 menu-card photo (Figma 1:2609 / 1:2597)", () => {
       overflowing: p.scrollHeight > p.clientHeight + 1,
     }));
     expect(nameBox).toEqual({ lines: 2, overflowing: true });
+  });
+});
+
+/**
+ * Walk 2026-10-14: an item without a photo showed a bare grey band — its
+ * menu card, its PDP hero — that read as a failed load. The band carries the
+ * faint brand bell instead (NoImageBell / index.css .tb-no-image-bell):
+ * tb-purple at 25 %, masked by the bell SVG (never a solid square), centred;
+ * never over a real photo. Design language — the captures are attached for
+ * the client's sign-off.
+ */
+function noPhotoMenu() {
+  const menu = cardMenu();
+  for (const category of menu.categories)
+    for (const sub of category.subCategories)
+      for (const entity of sub.entities)
+        if (entity.id === CAESAR_DRESSING || entity.id === CHEESE_BURGER) {
+          entity.aggregator_image = [];
+          entity.image_url = ""; // no master image either: resolveEntityImage → null
+        }
+  return menu;
+}
+
+/** The bell box and its masked fill, in stage design px. */
+const bellLook = (bell: Locator) =>
+  bell.evaluate((box, stageHeight) => {
+    const stage = document.querySelector('[data-testid="kiosk-stage"]');
+    if (!stage) throw new Error("kiosk-stage is not mounted");
+    const k = stage.getBoundingClientRect().height / stageHeight;
+    const rect = box.getBoundingClientRect();
+    const fill = getComputedStyle(box.firstElementChild as HTMLElement);
+    return {
+      width: Math.round(rect.width / k),
+      height: Math.round(rect.height / k),
+      mask: fill.maskImage.slice(0, 4),
+      repeat: fill.maskRepeat,
+      position: fill.maskPosition,
+      opacity: fill.opacity,
+      color: fill.backgroundColor,
+    };
+  }, STAGE_HEIGHT);
+
+const MASKED = { mask: "url(", repeat: "no-repeat", position: "50% 50%", opacity: "0.25", color: "rgb(80, 16, 152)" };
+
+test.describe("no photo: the faint bell (walk 2026-10-14)", () => {
+  test("NO PHOTO: an imageless card's 240 × 172 band and its PDP's 1080 × 450 hero carry the masked bell; a card with a photo never does", async ({
+    page,
+  }, testInfo) => {
+    // The operator's show_no_image_item: off, the menu hides imageless items (the tenant has it on).
+    await mockBackend(page, { menu: noPhotoMenu(), settings: { show_no_image_item: true } });
+    await page.route("https://itemsposistnet.s3.ap-south-1.amazonaws.com/**", (r) =>
+      r.fulfill({ body: PHOTO, contentType: "image/png" })
+    );
+    await bootRegisteredToMenu(page);
+
+    const plain = page.getByTestId(`item-${CAESAR_DRESSING}`);
+    await plain.scrollIntoViewIfNeeded();
+    await expect(plain.locator('img[src^="https://itemsposistnet"]')).toHaveCount(0);
+    expect(await bellLook(plain.getByTestId("no-image-bell"))).toEqual({ width: 240, height: 172, ...MASKED });
+    await testInfo.attach("no-photo-card", { body: await plain.screenshot(), contentType: "image/png" });
+
+    const pictured = page.getByTestId(`item-${GREEK_SALAD}`);
+    await expect(pictured.locator('img[src^="https://itemsposistnet"]')).toHaveCount(1);
+    await expect(pictured.getByTestId("no-image-bell")).toHaveCount(0);
+
+    const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
+    await burger.scrollIntoViewIfNeeded();
+    await burger.click();
+    const hero = page.getByTestId("customization-screen").getByTestId("no-image-bell").first();
+    await expect(hero).toBeVisible();
+    expect(await bellLook(hero)).toEqual({ width: 1080, height: 450, ...MASKED });
+    await testInfo.attach("no-photo-pdp", { body: await page.screenshot(), contentType: "image/png" });
   });
 });

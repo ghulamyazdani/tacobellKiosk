@@ -580,7 +580,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
       timeout: 15_000,
     });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
 
     // The reset must not have re-sent anything.
     expect(checkout.placeOrderCount).toBe(1);

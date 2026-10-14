@@ -249,7 +249,7 @@ test.describe("figma-polish G2 — a failed lazy chunk degrades in place", () =>
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£30.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £35$/);
     await expect(page.getByTestId("app-error")).toHaveCount(0);
   });
 
