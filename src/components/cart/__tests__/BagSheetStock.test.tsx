@@ -41,6 +41,8 @@ const mocks = vi.hoisted(() => ({
   serverTime: vi.fn<() => Promise<unknown>>(),
   /** A scheduler that throws (a row it cannot read). */
   schedulerError: null as Error | null,
+  /** The checkout-preflight step that throws once ("<step> broke"). */
+  throwAt: null as "entry" | "decision" | "route" | null,
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -78,6 +80,26 @@ vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/settingsApi")>()),
   useLazyGetServerTimeQuery: () => [() => ({ unwrap: () => mocks.serverTime() })],
 }));
+
+/** The PAY decisions, real — each throws once while mocks.throwAt names its step. */
+vi.mock("@cx-sdk/ordering/checkout/checkoutPreflight", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@cx-sdk/ordering/checkout/checkoutPreflight")>();
+  const armed =
+    <A extends unknown[], R>(step: NonNullable<typeof mocks.throwAt>, fn: (...args: A) => R) =>
+    (...args: A): R => {
+      if (mocks.throwAt === step) {
+        mocks.throwAt = null;
+        throw new Error(`${step} broke`);
+      }
+      return fn(...args);
+    };
+  return {
+    ...actual,
+    evaluateCheckoutEntryGuards: armed("entry", actual.evaluateCheckoutEntryGuards),
+    resolveCheckoutStockDecision: armed("decision", actual.resolveCheckoutStockDecision),
+    getCheckoutNetAmount: armed("route", actual.getCheckoutNetAmount),
+  };
+});
 
 vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/outOfStockApi")>()),
@@ -257,6 +279,7 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     mocks.invalid = [];
     mocks.dropGroup = null;
     mocks.schedulerError = null;
+    mocks.throwAt = null;
     mocks.fetchMenu.mockResolvedValue({});
     mocks.feed.mockResolvedValue([]);
     mocks.serverTime.mockResolvedValue({});
@@ -705,6 +728,39 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     });
     expect(screen.getByTestId("bag-pay")).toBeEnabled();
     expect(mocks.feed).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  // Review: every step PAY's catch can be reached from reports its own name
+  // — a wrong label sends the next walk to the wrong step.
+  it.each([
+    ["entry", () => void (mocks.throwAt = "entry")],
+    ["menu", () => void mocks.fetchMenu.mockRejectedValue(new Error("menu broke"))],
+    [
+      "write_back",
+      () => {
+        mocks.feed.mockResolvedValue([oos("burger")]);
+        mocks.replace.mockImplementationOnce(() => {
+          throw new Error("write_back broke");
+        });
+      },
+    ],
+    ["decision", () => void (mocks.throwAt = "decision")],
+    ["route", () => void (mocks.throwAt = "route")],
+  ])("w4 #1: a throw at step '%s' — the generic notice, ErrorOccurred names that step, PAY live again", async (stage, arrange) => {
+    store.dispatch(setCartItems([{ ...BURGER }]));
+    renderBag();
+    arrange();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe(i18n.t("bag.checkoutFailed")));
+    expect(mocks.capture).toHaveBeenCalledWith("error_occurred", {
+      error_source: "checkout",
+      stage,
+      error_status: "Error",
+      error_detail: `${stage} broke`,
+    });
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 

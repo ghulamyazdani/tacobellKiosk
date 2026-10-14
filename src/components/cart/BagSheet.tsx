@@ -741,19 +741,15 @@ export default function BagSheet({
   const handlePay = async () => {
     // w4 #1: the step the catch reports (ErrorOccurred — Rule 4: no console).
     let step = "entry";
-    const entryGuard = evaluateCheckoutEntryGuards({
-      bill,
-      isLoyaltyOn: getIsLoyaltyOn(),
-      isCheckoutInProgress: checkoutInProgress,
-      cartItems: cartRdx?.cartItems,
-    });
-    if (
-      !entryGuard.allowed &&
-      (entryGuard.reason === "invalidBill" || entryGuard.reason === "zeroNetAmount")
-    ) {
-      return;
-    }
     try {
+      // Inside the try: a bill that throws here is reported and answered,
+      // never a silent dead PAY (an unhandled rejection).
+      const entryGuard = evaluateCheckoutEntryGuards({
+        bill,
+        isLoyaltyOn: getIsLoyaltyOn(),
+        isCheckoutInProgress: checkoutInProgress,
+        cartItems: cartRdx?.cartItems,
+      });
       if (!entryGuard.allowed) {
         if (entryGuard.reason === "emptyCart") {
           dispatch(
@@ -763,7 +759,7 @@ export default function BagSheet({
             }),
           );
         }
-        // "checkoutInProgress" returns silently, as in the fork.
+        // The other reasons return silently, as in the fork.
         return;
       }
       setCheckoutInProgress(true);
@@ -825,8 +821,8 @@ export default function BagSheet({
       // failed / timed-out feed (10 s transport bound), a non-array feed or
       // any throw lets PAY through on today's path — past nothing a row
       // still flags (review F1, below). No second check before the Paytm
-      // initiate (D-A1-4).
-      step = "stock_sweep";
+      // initiate (D-A1-4). Its own report (checkout_stock_sweep), never the
+      // catch's: this try swallows every throw.
       let sweep: CheckoutStockSweep | null = null;
       let parts: typeof import("./bagLazyParts") | null = null;
       try {
