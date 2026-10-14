@@ -83,7 +83,12 @@ const COLA = {
   name: "Cola",
   price: 0,
   hasVariant: true,
-  variants: [{ id: "cola-l", name: "Large", price: 3, isActive: true, modifiers: [ICE._id, STRAW._id] }],
+  // Two sizes: a lone pickable size opens already chosen (walk 2026-10-14),
+  // and this test picks Large on the picker.
+  variants: [
+    { id: "cola-l", name: "Large", price: 3, isActive: true, modifiers: [ICE._id, STRAW._id] },
+    { id: "cola-s", name: "Small", price: 2, isActive: true, modifiers: [] },
+  ],
 };
 
 const seed = (entity: Record<string, unknown>, type = "customizableItem") => {

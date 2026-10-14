@@ -119,6 +119,24 @@ const CARD =
   "relative flex h-full w-full flex-col justify-between gap-[24px] rounded-[8px] bg-tb-grey-6 p-[24px] text-left";
 
 /**
+ * Radio (Type=Radio): 36 px, absolute at `corner` — a 1 px purple ring, or a
+ * purple fill with the exported check at inset 16.67 % (it pops in). The
+ * option cards' and the PDP size grid's.
+ */
+export function RadioMark({ on, corner }: { on: boolean; corner: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
+        on ? "bg-tb-purple" : "border border-tb-purple"
+      }`}
+    >
+      {on && <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />}
+    </span>
+  );
+}
+
+/**
  * Menu-Item_Medium: a 172 px image box, then the name / meta and an optional
  * outlined CTA (wraps — "SELECT SANDWICH" already fills 230 of its 232 px).
  * Radio (Type=Radio): 36 px at top-right 12 — a 1 px purple ring, or a purple
@@ -243,18 +261,7 @@ export default function OptionCard({
           reserveCta && <span aria-hidden="true" className={`${CTA} invisible`} />
         )}
       </span>
-      {radio && (
-        <span
-          aria-hidden="true"
-          className={`absolute right-[12px] top-[12px] flex h-[36px] w-[36px] items-center justify-center rounded-full ${
-            radio === "on" ? "bg-tb-purple" : "border border-tb-purple"
-          }`}
-        >
-          {radio === "on" && (
-            <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
-          )}
-        </span>
-      )}
+      {radio && <RadioMark on={radio === "on"} corner="right-[12px] top-[12px]" />}
     </>
   );
 

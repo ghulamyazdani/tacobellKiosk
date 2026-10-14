@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import type { RankedOffer } from "@cx-sdk/core/types/offer";
 import {
@@ -8,6 +8,7 @@ import {
 import { lockedGapPresentation } from "@cx-sdk/ordering/offer/offersSheetLogic";
 import { mechanicSpecFor } from "@cx-sdk/ordering/offer/savingsLinePolicy";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import useLineClamp from "../../hooks/utils/useLineClamp";
 
 export interface OfferRowProps {
   /** One ranked entry from useOfferSavings().rank() — offer + saving + gap. */
@@ -216,28 +217,13 @@ export default function OfferRow({
   const showDesc = descText !== "" && descText !== secondLine;
 
   // Show more / Show less (CTA/Show more 1:1687): only when the COLLAPSED
-  // block overflows. Measured collapsed only — on resize (the observer's
-  // first report included), once the fonts settle and whenever the text
-  // changes (a language switch); expanded, the toggle stays.
-  const descRef = useRef<HTMLSpanElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [clamped, setClamped] = useState(false);
-  useEffect(() => {
-    const el = descRef.current;
-    if (!el || expanded || typeof ResizeObserver === "undefined") return undefined;
-    let live = true;
-    const measure = () => {
-      if (live) setClamped(el.scrollHeight - el.clientHeight > 1);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    document.fonts?.ready.then(measure, () => undefined);
-    const cleanup = () => {
-      live = false;
-      observer.disconnect();
-    };
-    return cleanup;
-  }, [descText, expanded, showDesc]);
+  // block overflows (useLineClamp — shared with the PDP description).
+  const {
+    ref: descRef,
+    expanded,
+    setExpanded,
+    clamped,
+  } = useLineClamp<HTMLSpanElement>(showDesc ? descText : "");
 
   const addItemsButton = (
     // A sibling of the row's text inside a div — never a nested button.

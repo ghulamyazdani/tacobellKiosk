@@ -40,9 +40,11 @@ import OptionCard, {
   GroupHeader,
   optionCta,
   OptionRow,
+  RadioMark,
 } from "../../components/customization/OptionCard";
 import YouMightLikeRail from "../../components/customization/YouMightLikeRail";
 import VegMark from "../../components/menu/VegMark";
+import { formatMenuPriceLine } from "../../components/menu/MenuItemCard";
 import FooterBar from "../../components/chrome/FooterBar";
 import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
@@ -55,6 +57,7 @@ import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
+import useLineClamp from "../../hooks/utils/useLineClamp";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import { loadedPdpParts, loadPdpLazyParts } from "./loadPdpLazyParts";
 
@@ -85,6 +88,15 @@ interface AddonPrompt {
 /** Σ quantities picked in a group (the "count of max" label, 1:4911). */
 const pickedCount = (selection: ReadonlyArray<{ quantity?: unknown } | null>) =>
   selection.reduce((sum, s) => sum + Number(s?.quantity ?? 0), 0);
+
+type Size = { id?: string; isActive?: boolean; isGetVariantDisabled?: boolean };
+/** The sizes a guest may pick: active, and not above an offer's sameOrLess ceiling (isGetVariantDisabled). */
+const pickableSizes = (entity: { variants?: unknown } | null | undefined): Size[] => {
+  const sizes = entity?.variants;
+  return Array.isArray(sizes)
+    ? sizes.filter((v: Size | null) => v?.isActive !== false && !v?.isGetVariantDisabled)
+    : [];
+};
 
 /**
  * PDP / customization — Figma "PDP - Single Product" (1:2614 / 1:5823) +
@@ -204,7 +216,6 @@ export default function Customization({
     setTier2BottomSheetInRdx,
   } = useMakeItAMeal();
 
-  const [showFullDescription, setShowFullDescription] = useState(false);
   // Which pack slot group's SELECT sheet is open (null = closed) — the one
   // SlotSelectionSheet instance is driven by this id.
   const [openSlotGroupId, setOpenSlotGroupId] = useState<string | null>(null);
@@ -280,14 +291,14 @@ export default function Customization({
       getVariantProperties(SelectedEntity);
       // S1: the Select-a-Size fast lane already chose this size — open the
       // builder on it (the edit branch's trio). Unknown, inactive or
-      // offer-capped id → the size picker, as before.
+      // offer-capped id → the size picker, as before. A lone pickable size
+      // (a buy-stage size tile's entity, a one-size item) is the choice
+      // already: it opens chosen too (walk 2026-10-14).
+      const sizes = pickableSizes(SelectedEntity);
       const preselectedId = isOpenBottomSheet?.preselectedVariantId;
-      const preselected = preselectedId
-        ? (Array.isArray(SelectedEntity.variants) ? SelectedEntity.variants : []).find(
-            (v: { id?: string; isActive?: boolean; isGetVariantDisabled?: boolean } | null) =>
-              v?.id === preselectedId && v?.isActive !== false && !v?.isGetVariantDisabled
-          )
-        : undefined;
+      const preselected =
+        (preselectedId ? sizes.find((v) => v?.id === preselectedId) : undefined) ??
+        (sizes.length === 1 ? sizes[0] : undefined);
       if (preselected) {
         setSelectedVariant(preselected);
         fetchAddonsForSelectedVariant(preselected);
@@ -392,6 +403,14 @@ export default function Customization({
   const total = (Number(addonsValue || 0) + basePrice) * quantity;
   const heroImage = resolveEntityImage(SelectedEntity);
   const pdpDescription = description(SelectedEntity);
+  // Show more only when the 2-line clamp actually cuts the description
+  // (OfferRow's measured clamp): a one-line one had a dead toggle.
+  const {
+    ref: descriptionRef,
+    expanded: showFullDescription,
+    setExpanded: setShowFullDescription,
+    clamped: descriptionClamped,
+  } = useLineClamp<HTMLParagraphElement>(pdpDescription);
 
   const calLabel = useMemo(() => {
     const cal = SelectedEntity?.calorieCount;
@@ -404,14 +423,20 @@ export default function Customization({
   const isFreebie = Boolean(SelectedEntity?.isGetItem);
   // isGetVariantDisabled = the offer's sameOrLess ceiling (only freebie
   // entities ever carry it, so menu items filter exactly as before).
-  const variants: any[] = Array.isArray(SelectedEntity?.variants)
-    ? SelectedEntity.variants.filter(
-        (v: any) => v?.isActive !== false && !v?.isGetVariantDisabled
-      )
-    : [];
-  const needsVariantPick = isVariantFlow && !confirmedVariant;
+  const variants = pickableSizes(SelectedEntity);
+  // The grid shows until a size is confirmed — and again after "Change",
+  // over the CURRENT size (marked; its add-ons, price and CTA kept). No size
+  // at all is the hook's own commit rule (an empty selectedVariant).
+  const sizeGridOpen = isVariantFlow && !confirmedVariant;
+  const sizePending = isVariantFlow && Object.keys(selectedVariant ?? {}).length === 0;
 
   const pickVariant = (variant: any) => {
+    // The current size again: close the grid, keep its add-ons
+    // (fetchAddonsForSelectedVariant would reset them).
+    if (variant?.id != null && variant.id === selectedVariant?.id) {
+      setConfirmedVariant(true);
+      return;
+    }
     setSelectedVariant(variant);
     fetchAddonsForSelectedVariant(variant);
     setCurrentIndex(0);
@@ -422,12 +447,15 @@ export default function Customization({
   // names every incomplete group. The ring + AutoScroll already ran inside
   // the commit; a success navigated / closed, so it never opens then.
   // UB2: before a size is picked the button is live too — the warning names
-  // the size and nothing is committed (the size grid is the only section). ----
+  // the size and nothing is committed (the size grid is the only section).
+  // The grid open over a chosen size commits that size: it closes first, so
+  // a group the commit rings is on screen. ----
   const handleAddToBag = () => {
-    if (needsVariantPick) {
+    if (sizePending) {
       setIncompleteTap((tap) => tap + 1);
       return;
     }
+    if (sizeGridOpen) setConfirmedVariant(true);
     if (addCustomizationToCart(undefined) === false) setIncompleteTap((tap) => tap + 1);
   };
 
@@ -770,55 +798,66 @@ export default function Customization({
             text stays in ONE span: bare runs in a flex <p> each take the gap.
             ponytail: the mark reads the item's own tags — every reference
             size carries its parent's diet tag (66 / 66); pass the picked
-            size if a menu ever differs. */}
+            size if a menu ever differs. Before a size is chosen the line
+            reads as the item's menu card does — never a fake £0.00. */}
         <p className="mt-[16px] flex items-center gap-[12px] text-[28px] leading-[32px] text-tb-ink-purple">
           <VegMark entity={SelectedEntity} size={24} />
-          <span>
-            {currency}
-            {basePrice.toFixed(2)}
-            {calLabel}
+          <span data-testid="pdp-price">
+            {sizePending
+              ? formatMenuPriceLine(SelectedEntity, currency, t)
+              : `${currency}${basePrice.toFixed(2)}${calLabel}`}
           </span>
         </p>
         {pdpDescription && (
           <>
             {/* w-fit (P9f S2): a single Arabic line keeps the layout's left
                 edge; only a wrapped one fills 682 px and right-aligns. */}
-            <p dir="auto" className={`mt-[55px] w-fit max-w-[682px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-black ${showFullDescription ? "" : "line-clamp-2"}`}>
+            <p ref={descriptionRef} dir="auto" className={`mt-[55px] w-fit max-w-[682px] text-start text-[24px] leading-[24px] tracking-[-0.12px] text-black ${showFullDescription ? "" : "line-clamp-2"}`}>
               {pdpDescription}
             </p>
-            {/* CTA/Show more (1:1687). Outside the clamp: inside it, a long
-                description hid the toggle in the clipped overflow. 44 px tall. */}
-            <button
-              type="button"
-              data-testid="pdp-show-more"
-              onClick={() => setShowFullDescription((v) => !v)}
-              className="tb-display inline-flex min-h-[44px] items-center text-[16px] font-bold normal-case leading-[24px] tracking-[-0.08px] text-tb-purple underline"
-            >
-              {showFullDescription ? t("pdp.showLess") : t("pdp.showMore")}
-            </button>
+            {/* CTA/Show more (1:1687), only when the clamp cuts the text.
+                Outside the clamp: inside it, a long description hid the
+                toggle in the clipped overflow. 44 px tall. */}
+            {descriptionClamped && (
+              <button
+                type="button"
+                data-testid="pdp-show-more"
+                aria-expanded={showFullDescription}
+                onClick={() => setShowFullDescription((v) => !v)}
+                className="tb-display inline-flex min-h-[44px] items-center text-[16px] font-bold normal-case leading-[24px] tracking-[-0.08px] text-tb-purple underline"
+              >
+                {showFullDescription ? t("pdp.showLess") : t("pdp.showMore")}
+              </button>
+            )}
           </>
         )}
 
-        {needsVariantPick ? (
+        {sizeGridOpen ? (
           <section className="mt-[40px]" data-testid="pdp-variant-picker">
             <h3 className="tb-display mb-[24px] text-[30px] tracking-[-1px] text-tb-purple-vibrant">
               {t("size.title")}
             </h3>
+            {/* After "Change" the current size is marked (Select a Size's
+                36 px radio — design language: no frame draws this grid). */}
             <div className="grid grid-cols-2 gap-[16px]">
               {variants.map((v: any) => {
                 const imageUrl = resolveEntityImage(v);
+                const current = v?.id != null && v.id === selectedVariant?.id;
                 return (
                   <button
                     key={v.id}
                     type="button"
                     data-testid={`pdp-variant-${v.id}`}
+                    aria-pressed={current}
                     onClick={() => pickVariant(v)}
-                    className="flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[20px] min-h-[44px]"
+                    className="relative flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[20px] min-h-[44px]"
                   >
+                    <RadioMark on={current} corner="right-[12px] top-[12px]" />
                     {imageUrl && (
                       <img alt="" src={imageUrl} className="mb-2 h-[140px] w-full object-contain" />
                     )}
-                    <p className="text-[20px] font-medium capitalize text-black">{name(v)}</p>
+                    {/* pr: an imageless tile's name stays clear of the radio. */}
+                    <p className="pr-[36px] text-[20px] font-medium capitalize text-black">{name(v)}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
                       {currency}
                       {Number(v.price ?? 0).toFixed(2)}
@@ -911,7 +950,9 @@ export default function Customization({
           label (the guest's only pre-commit total). A freebie's price is the
           offer's call (redeemGetItem at CONFIRM), so its CTA makes no price
           claim — not even "free": a 50% grant or a paid add-on still charges
-          (fork "Add to offer" parity). */}
+          (fork "Add to offer" parity). Before a size is chosen there is no
+          price to claim: the label alone, as Figma's 1:2614 / 1:2728 /
+          1:5540 draw it. */}
       <CtaBar
         backTestId="pdp-back"
         backLabel={t("pdp.back")}
@@ -921,6 +962,8 @@ export default function Customization({
         action={
           isFreebie ? (
             t("offers.picker.addFreebie")
+          ) : sizePending ? (
+            t("pdp.addToBag")
           ) : (
             <>
               {isEditMode ? t("bag.update") : t("pdp.addToBag")} · {currency}
@@ -1016,7 +1059,7 @@ export default function Customization({
             customizations={selectedCustomizations}
             fetchModifierProperties={fetchModifierProperties}
             isBox={isSlotGroup}
-            sizeMissing={needsVariantPick}
+            sizeMissing={sizePending}
             onClose={() => setIncompleteTap(0)}
           />
         </ErrorBoundary>

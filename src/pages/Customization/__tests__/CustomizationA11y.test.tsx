@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -16,8 +16,35 @@ import i18n from "../../../i18n";
   P9f on the PDP: the calories (§2.6) and the multi-punch stepper names go
   through i18n (EN byte-identical, never "Cal" in AR), and "Show more" is a
   44 px toggle OUTSIDE the line-clamped description — inside it, a long
-  description clipped the only control that reveals the rest.
+  description clipped the only control that reveals the rest. Walk
+  2026-10-14: the toggle renders only when the clamp cuts the text
+  (useLineClamp, OfferRow's measure) — jsdom lays nothing out, so a test
+  states the measure: `clamped()` (the block overflows) or `fits()`.
 */
+
+/** A ResizeObserver that reports at once (the browser's first observation). */
+class FiringResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+  observe(target: Element) {
+    this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+  }
+  unobserve() {}
+  disconnect() {}
+}
+// setupTests installs a silent, writable (not configurable) ResizeObserver.
+const silentResizeObserver = window.ResizeObserver;
+/** Every element measures `scroll` tall inside a `client` box, observed at once. */
+const measure = (scroll: number, client: number) => {
+  window.ResizeObserver = FiringResizeObserver as unknown as typeof ResizeObserver;
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(scroll);
+  vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(client);
+};
+const clamped = () => measure(72, 48);
+const fits = () => measure(24, 24);
+afterEach(() => {
+  vi.restoreAllMocks();
+  window.ResizeObserver = silentResizeObserver;
+});
 
 const EXTRAS = {
   _id: "pdp_extras",
@@ -131,6 +158,7 @@ describe("PDP copy and controls (P9f)", () => {
   });
 
   it("Show more sits after the clamped description (never inside it), is ≥44 px, and toggles the label AND the clamp", () => {
+    clamped();
     renderPdp();
 
     const description = screen.getByText(DESCRIPTION);
@@ -140,15 +168,28 @@ describe("PDP copy and controls (P9f)", () => {
     expect(description.nextElementSibling).toBe(toggle);
     expect(toggle).toHaveClass("min-h-[44px]");
     expect(toggle).toHaveAccessibleName(i18n.t("pdp.showMore"));
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(description).toHaveClass("line-clamp-2");
 
+    // Expanded, the block is not re-measured: the toggle stays to collapse it.
     fireEvent.click(toggle);
     expect(toggle).toHaveAccessibleName(i18n.t("pdp.showLess"));
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(description).not.toHaveClass("line-clamp-2");
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAccessibleName(i18n.t("pdp.showMore"));
     expect(description).toHaveClass("line-clamp-2");
+  });
+
+  // Walk 2026-10-14 (Noodles, "Aggregator desc noodles"): the toggle showed
+  // under a one-line description and a tap changed only its own label.
+  it("a description the clamp does not cut (one line) has no Show more", () => {
+    fits();
+    renderPdp();
+
+    expect(screen.getByText(DESCRIPTION)).toHaveClass("line-clamp-2");
+    expect(screen.queryByTestId("pdp-show-more")).not.toBeInTheDocument();
   });
 });
 
@@ -228,6 +269,7 @@ describe("PDP names and the Show more style (item 42)", () => {
   });
 
   it("Show more = CTA/Show more (Exp Bd 16/24, −0.08, purple, underlined), still a ≥ 44 px inline-flex target", () => {
+    clamped();
     renderPdp();
 
     expect(screen.getByTestId("pdp-show-more")).toHaveClass(
