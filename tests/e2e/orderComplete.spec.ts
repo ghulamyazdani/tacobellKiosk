@@ -201,16 +201,24 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await expect(newOrder(page)).toHaveText(`${en.success.startNewOrder} ${secs(20)}`);
     await expect(newOrder(page)).toHaveAccessibleName(en.success.startNewOrder);
     await expect(countdown(page)).toHaveAttribute("aria-hidden", "true");
-    await expect(success(page).getByRole("status")).toHaveText(
-      en.success.countdownA11y.replace("{{seconds}}", "20")
-    );
+    // The screen reader's one sentence: the live region is there, EMPTY, before its text (a region
+    // that mounts already filled is not announced)…
+    const status = success(page).getByRole("status");
+    await expect(status).toHaveCount(1);
+    await expect(status).toHaveText("");
     // The suite runs reduced motion: the fill is not rendered there — the digits carry the countdown.
     await expect(fill(page)).toBeHidden();
     await shot(page, "oc-01-guest-en");
 
     const committed = await watchUntilGone(page);
-    await page.clock.runFor(5_000);
+    // …the first tick fills it with that tick's seconds, and it never changes after.
+    await page.clock.runFor(1_000);
+    await expect(countdown(page)).toHaveText(secs(19));
+    const announced = en.success.countdownA11y.replace("{{seconds}}", "19");
+    await expect(status).toHaveText(announced);
+    await page.clock.runFor(4_000);
     await expect(countdown(page)).toHaveText(secs(15));
+    await expect(status).toHaveText(announced);
     await page.clock.runFor(14_000);
     await expect(countdown(page)).toHaveText(secs(1));
     await expect(success(page)).toBeVisible();
@@ -250,7 +258,7 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("GUEST, loyalty on (1:5932): the plain guest frame — no unlock pitch, no photo, no points copy; with motion on, START NEW ORDER's fill is ONE linear CSS transform run over the 20 s from the left edge (inline-start), and nothing waits on it", async ({
+  test("GUEST, loyalty on (1:5932): the plain guest frame — no unlock pitch, no photo, no points copy; with motion on, START NEW ORDER's fill is ONE linear CSS transform run over the 20 s from the left edge, at 15 % white, and nothing waits on it", async ({
     page,
   }) => {
     test.slow();
@@ -311,8 +319,9 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await fill(page).evaluate((el) => {
       el.getAnimations()[0].currentTime = 10_000;
     });
-    // tb-surface at 20 % (Tailwind 4 mixes the alpha in oklab).
-    await expect(fill(page)).toHaveCSS("background-color", /^(rgba\(255, 255, 255, 0\.2\)|oklab\(0\.99\d* \S+ \S+ \/ 0\.2\))$/);
+    // tb-surface at 15 % (Tailwind 4 mixes the alpha in oklab): the white label over it keeps large
+    // text's 3:1 on tb-orchid (20 % gave 2.93 — contrast.test).
+    await expect(fill(page)).toHaveCSS("background-color", /^(rgba\(255, 255, 255, 0\.15\)|oklab\(0\.99\d* \S+ \S+ \/ 0\.15\))$/);
     await shotAsIs(page, "oc-06-countdown-half-en");
 
     // The exit never waits on the fill: paused, the page clock still ends the screen at 0.
@@ -371,13 +380,15 @@ test.describe("Order Complete — Figma 1:5932 / 1:3437 (lane order-success)", (
     await expect(countdown(page)).not.toContainText(/[\u0660-\u0669]/);
     // One dir=auto leaf: the label and its seconds resolve right to left (the name on the right).
     await expect(countdown(page).locator("xpath=..")).toHaveCSS("direction", "rtl");
-    await expect(success(page).getByRole("status")).toContainText(ar.success.countdownA11y.split("{{seconds}}")[0].trim());
-    for (const english of [en.success.proceedToCounter, en.success.startNewOrder, secs(20).slice(2), "seconds"]) {
-      await expect(success(page)).not.toContainText(english);
-    }
+    await expect(success(page).getByRole("status")).toHaveText(""); // filled by the first tick
     await shot(page, "oc-04-guest-loyalty-ar");
     await page.clock.runFor(1_000);
     await expect(countdown(page)).toContainText("19");
+    await expect(success(page).getByRole("status")).toContainText(ar.success.countdownA11y.split("{{seconds}}")[0].trim());
+    await expect(success(page).getByRole("status")).toContainText("19");
+    for (const english of [en.success.proceedToCounter, en.success.startNewOrder, secs(19).slice(2), "seconds"]) {
+      await expect(success(page)).not.toContainText(english);
+    }
   });
 
   test("ADA guest, loyalty on: no panel and no unlock, no bell; the text block centred in the reach zone, START NEW ORDER counting down at its foot, and nothing of the screen shows above it", async ({

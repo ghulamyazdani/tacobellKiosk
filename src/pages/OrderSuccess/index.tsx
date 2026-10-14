@@ -192,6 +192,10 @@ export default function OrderSuccess() {
   // disagree — and a late (throttled) tick catches up instead of drifting.
   // The interval stops once the exit is decided and on unmount (Rule 5).
   const [secondsLeft, setSecondsLeft] = useState(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+  // The sr-only status's seconds, latched by the FIRST tick: a live region
+  // must exist before its text does (screen readers skip a region that
+  // mounts already filled), so it mounts empty and is filled once.
+  const [announced, setAnnounced] = useState(0);
   const deadlineRef = useRef(0);
   useEffect(() => {
     if (exitBy) return;
@@ -199,6 +203,7 @@ export default function OrderSuccess() {
     const id = window.setInterval(() => {
       const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
       setSecondsLeft(left);
+      setAnnounced((first) => first || left);
       if (left === 0) setExitBy((by) => by ?? "timeout");
     }, 1000);
     return () => window.clearInterval(id);
@@ -301,23 +306,25 @@ export default function OrderSuccess() {
         >
           {t("success.proceedToCounter")}
         </p>
-        {/* The countdown for a screen reader, ONCE: the arrival value, never
-            ticked (the idle prompt's countdownA11y) — no per-second live
-            region. */}
+        {/* The countdown for a screen reader, ONCE: mounted empty, filled by
+            the first tick with that tick's value, never ticked after (the
+            idle prompt's countdownA11y) — no per-second live region. */}
         <p data-testid="order-success-countdown-a11y" role="status" className="sr-only">
-          {t("success.countdownA11y", { seconds: ORDER_SUCCESS_COUNTDOWN_SECONDS })}
+          {announced > 0 && t("success.countdownA11y", { seconds: announced })}
         </p>
       </div>
 
       {/* START NEW ORDER (user 2026-10-13) and its countdown (user
           2026-10-14) — design language, Figma draws neither: the
           CTA_Sheet_Fixed outline at 1812 (ADA: the zone's foot). The label
-          carries the seconds left; behind it a 20 % white fill slides in
-          from the inline-start edge over the same countdown (.tb-countdown-
-          fill: CSS only and nothing waits on it — the interval above owns
-          the exit; hidden under reduced motion, where the digits carry it).
-          The accessible name never ticks: aria-label, the digits
-          aria-hidden. */}
+          carries the seconds left; behind it a 15 % white fill slides in
+          from the left edge — LTR in Arabic too, like the idle prompt's
+          START AGAIN — over the same countdown (.tb-countdown-fill: CSS only
+          and nothing waits on it — the interval above owns the exit; hidden
+          under reduced motion, where the digits carry it). 15 %, not 20:
+          the white 24 px label over the fill on tb-orchid must keep large
+          text's 3:1 (20 % gave 2.93; contrast.test). The accessible name
+          never ticks: aria-label, the digits aria-hidden. */}
       <button
         type="button"
         data-testid="order-success-new-order"
@@ -328,7 +335,7 @@ export default function OrderSuccess() {
         <span
           aria-hidden="true"
           data-testid="order-success-countdown-fill"
-          className="tb-countdown-fill absolute inset-0 bg-tb-surface/20"
+          className="tb-countdown-fill absolute inset-0 bg-tb-surface/15"
           style={COUNTDOWN_FILL}
         />
         {/* dir="auto" on this LEAF only: in Arabic the label and its

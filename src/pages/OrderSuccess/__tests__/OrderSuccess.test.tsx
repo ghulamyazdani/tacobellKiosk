@@ -151,7 +151,8 @@ const newOrder = () => screen.getByTestId("order-success-new-order");
 const countdown = () => screen.getByTestId("order-success-countdown").textContent;
 const label = (seconds: number) => ` · ${i18n.t("success.countdown", { seconds })}`;
 const fill = () => screen.getByTestId("order-success-countdown-fill");
-const sentence = () => i18n.t("success.countdownA11y", { seconds: ORDER_SUCCESS_COUNTDOWN_SECONDS });
+/** The sr-only status as the first tick fills it (19 s left, unless that tick was late). */
+const sentence = (seconds = ORDER_SUCCESS_COUNTDOWN_SECONDS - 1) => i18n.t("success.countdownA11y", { seconds });
 /** Figma copy with no data source (QR, points, campaign) and the old panel's promo copy. */
 const OMITTED_COPY = /scan to earn|110 points|for your meal|earn points|decades|merch|tuesday drops/i;
 
@@ -390,12 +391,13 @@ describe("OrderSuccess — Order Complete", () => {
       expect(analyticsLog.filter(([, event]) => event === KioskEventName.startOverFromOrderSuccessTimeoutTriggered)).toHaveLength(1);
     });
 
-    it("reads the deadline, not a tick count: a late tick catches up, and one past the deadline exits", () => {
+    it("reads the deadline, not a tick count: a late tick catches up — the screen reader's sentence too — and one past the deadline exits", () => {
       mount();
       // A throttled timer: the wall clock runs on 5 s with no tick.
       vi.setSystemTime(Date.now() + 5_000);
       tick(1);
       expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 6));
+      expect(screen.getByRole("status").textContent).toBe(sentence(ORDER_SUCCESS_COUNTDOWN_SECONDS - 6));
       expect(mockNavigate).not.toHaveBeenCalled();
 
       vi.setSystemTime(Date.now() + 60_000);
@@ -423,18 +425,22 @@ describe("OrderSuccess — Order Complete", () => {
       );
     });
 
-    it("the accessible name never ticks (aria-label; the digits aria-hidden) and the screen reader gets the countdown ONCE: one sr-only status sentence with the arrival value, never updated", () => {
+    it("the accessible name never ticks (aria-label; the digits aria-hidden) and the screen reader gets the countdown ONCE: one sr-only status that mounts EMPTY (a live region must exist before its text does), is filled by the first tick, and never changes after", () => {
       mount();
       const button = screen.getByRole("button", { name: i18n.t("success.startNewOrder") });
       expect(button).toHaveAttribute("aria-label", i18n.t("success.startNewOrder"));
       expect(screen.getByTestId("order-success-countdown")).toHaveAttribute("aria-hidden", "true");
       const status = screen.getByRole("status");
       expect(status).toHaveClass("sr-only");
+      expect(status.textContent).toBe("");
+
+      tick(1);
+      expect(screen.getByRole("status")).toBe(status);
       expect(status.textContent).toBe(sentence());
 
       tick(7);
 
-      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 7));
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 8));
       expect(button).toHaveAccessibleName(i18n.t("success.startNewOrder"));
       expect(screen.getByRole("status")).toBe(status);
       expect(status.textContent).toBe(sentence());
@@ -446,7 +452,8 @@ describe("OrderSuccess — Order Complete", () => {
       mount();
       const slide = fill();
       expect(slide).toHaveAttribute("aria-hidden", "true");
-      expect(slide).toHaveClass("tb-countdown-fill", "absolute", "inset-0", "bg-tb-surface/20");
+      // 15 %: the white label over it keeps 3:1 on tb-orchid (contrast.test; 20 % gave 2.93).
+      expect(slide).toHaveClass("tb-countdown-fill", "absolute", "inset-0", "bg-tb-surface/15");
       expect(slide.style.getPropertyValue("--tb-countdown")).toBe(`${ORDER_SUCCESS_COUNTDOWN_SECONDS}s`);
       expect([slide.style.transform, slide.style.animation, slide.style.width]).toEqual(["", "", ""]);
       expect(slide.parentElement).toBe(newOrder());
@@ -472,9 +479,11 @@ describe("OrderSuccess — Order Complete", () => {
       expect(countdown()).toContain("ث");
       expect(screen.getByTestId("order-success-countdown").parentElement).toHaveAttribute("dir", "auto");
       expect(newOrder()).toHaveAccessibleName(i18n.t("success.startNewOrder"));
-      expect(screen.getByRole("status").textContent).toBe(sentence());
+      expect(screen.getByRole("status").textContent).toBe("");
       tick(1);
       expect(countdown()).toContain(`${ORDER_SUCCESS_COUNTDOWN_SECONDS - 1}`);
+      expect(screen.getByRole("status").textContent).toBe(sentence());
+      expect(screen.getByRole("status").textContent).toContain("ثانية");
     });
   });
 

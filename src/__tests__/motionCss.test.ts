@@ -419,10 +419,10 @@ describe("lane motion-v2", () => {
   Order Complete's START NEW ORDER countdown (user 2026-10-14; design
   language). The page feeds the duration from ORDER_SUCCESS_COUNTDOWN_SECONDS
   (the unit suite checks that side); the CSS is ONE linear transform run
-  that nothing waits on, from the inline-start edge.
+  that nothing waits on, from the left edge (LTR in Arabic too).
 */
 describe("the Order Complete countdown fill (user 2026-10-14)", () => {
-  /** The first `.tb-countdown-fill { … }` in `scope` (the [dir] rule is separate). */
+  /** The first `.tb-countdown-fill { … }` in `scope`. */
   const fillRule = (scope: string) =>
     declarations(scope.match(/(?:^|[};])\s*\.tb-countdown-fill\s*\{([^}]*)\}/)?.[1] ?? "");
 
@@ -435,8 +435,10 @@ describe("the Order Complete countdown fill (user 2026-10-14)", () => {
     expect(TOKENS["--tb-countdown"]).toBeUndefined();
   });
 
-  it("grows from the inline-start edge: an rtl ancestor mirrors it (the app's Arabic is RTL text in an LTR layout, so it never does today)", () => {
-    expect(rule('[dir="rtl"] .tb-countdown-fill')).toEqual({ depth: 1, decl: { "--tb-countdown-from": "100%" } });
+  it("grows from the left edge in Arabic too, like the idle prompt's START AGAIN (RTL text, LTR layout): no [dir] / :lang rule re-aims it — nothing ever sets dir=rtl, so one would be dead", () => {
+    const heads = [...CODE.matchAll(/([^{};]+)\{/g)].map(([, head]) => head.trim());
+    // The run and its reduce rule, nothing else.
+    expect(heads.filter((head) => head.includes(".tb-countdown-fill"))).toEqual([".tb-countdown-fill", ".tb-countdown-fill"]);
   });
 
   it("hidden under reduce: at rest it would be FULL all along, and its empty from-frame never paints — the digits carry the countdown", () => {
