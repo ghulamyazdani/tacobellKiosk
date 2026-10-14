@@ -285,15 +285,13 @@ test("boot → /second → /menu → PDP with ₹ prices: real screens draw .tb-
   await expectFont(footerLabel, "125%", "500");
 
   // /menu: the CategoryRail (Cm Bd), a card name (body Md) and its ₹ price
-  // (body Rg) — the ₹ glyph pulls latin-ext on demand. Since audit-fixes U1
-  // the rail's first button is the VEG chip (Cm Bd too); its category rows
-  // are probed beside it.
+  // (body Rg) — the ₹ glyph pulls latin-ext on demand. The diet chips are
+  // hidden for now (user 2026-10-14), so the rail's first button is its
+  // first category row.
   await page.getByTestId("pipeline-p1").click();
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
   const railItem = page.getByTestId("category-rail").getByRole("button").first();
-  await expect(railItem).toHaveAttribute("data-testid", "menu-filter-veg");
-  await expectFont(railItem, "62%", "700");
-  await expect.poll(() => renderedBy(cdp, railItem)).toEqual(["web"]);
+  await expect(railItem).toHaveAttribute("data-testid", /^rail-/);
   const railRow = page.getByTestId("category-rail").locator('[data-testid^="rail-"]').first();
   await expectFont(railRow, "62%", "700");
   await expect.poll(() => renderedBy(cdp, railRow)).toEqual(["web"]);

@@ -57,7 +57,7 @@ describe("selection (§3.2)", () => {
   it("the diet chips carry tb-select, driven by aria-pressed", () => {
     store.dispatch(setTags({ tags: ["veg", "non-veg"] }));
     store.dispatch(setFilters(["veg"]));
-    render(<MenuFilterChips />, { wrapper });
+    render(<MenuFilterChips enabled />, { wrapper });
     expect(screen.getByTestId("menu-filter-veg")).toHaveClass("tb-select");
     expect(screen.getByTestId("menu-filter-veg")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("menu-filter-non-veg")).toHaveClass("tb-select");

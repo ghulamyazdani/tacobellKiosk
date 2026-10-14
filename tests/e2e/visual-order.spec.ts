@@ -584,7 +584,9 @@ test.describe("visual capture — ordering screens", () => {
   });
 
   for (const mode of MODES) {
-    test(`VEG FILTER (${mode}): every card's diet mark and the rail's VEG / NON-VEG chips — NON-VEG on narrows the rail and the grid`, async ({
+    // Paused: menu filters hidden for now (user 2026-10-14, "for now disable the filters dont show it on
+    // menu left side bar"). Re-enable: pass `enabled` to MenuFilterChips in pages/Menu, un-skip.
+    test.skip(`VEG FILTER (${mode}): every card's diet mark and the rail's VEG / NON-VEG chips — NON-VEG on narrows the rail and the grid`, async ({
       page,
     }) => {
       test.slow();
