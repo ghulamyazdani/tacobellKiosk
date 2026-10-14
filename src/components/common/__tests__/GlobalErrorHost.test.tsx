@@ -90,7 +90,7 @@ describe("GlobalErrorHost (G1 — Figma Icon Modal 1:6288 for the global error f
     const ok = screen.getByTestId("global-error-ok");
     expect(screen.getAllByRole("button")).toEqual([ok]);
     expect(ok).toHaveTextContent(i18n.t("offers.gotIt"));
-    expect(ok).toHaveClass("h-[60px]", "w-full");
+    expect(ok).toHaveClass("min-h-[60px]", "w-full");
     expect(ok).toHaveFocus();
 
     fireEvent.click(ok);

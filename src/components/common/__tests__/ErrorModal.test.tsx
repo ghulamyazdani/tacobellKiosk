@@ -97,11 +97,23 @@ describe("ErrorModal (Figma 1:988 Icon Modal + 1:4514 CTAs)", () => {
   it("CTAs are the 280×60 Figma pair — well over the 44×44 minimum target", () => {
     renderModal();
     for (const id of ["x-retry", "x-back"]) {
-      expect(screen.getByTestId(id)).toHaveClass("h-[60px]", "w-[280px]");
+      expect(screen.getByTestId(id)).toHaveClass("min-h-[60px]", "w-[280px]");
       expect(screen.getByTestId(id)).toHaveAttribute("type", "button");
     }
     expect(screen.getByTestId("x-retry")).toHaveTextContent("Try again");
     expect(screen.getByTestId("x-back")).toHaveTextContent("Back");
+  });
+
+  // Walk 2026-10-14: "NO, KEEP RESTAURANTS CO." (a pipeline name — data) ran
+  // past its 280 px button under YES, SWITCH. The geometry is pinned in
+  // tests/e2e/orderTypeSwitch.spec.ts (LONG NAME CONFIRM, EN / AR / ADA).
+  it("a label never spills out of its CTA: both wrap, grow from 60 px and break an over-long word", () => {
+    renderModal();
+    for (const id of ["x-retry", "x-back"]) {
+      const cta = screen.getByTestId(id);
+      expect(cta.className).not.toMatch(/(?:^|\s)(?:whitespace-nowrap|truncate|text-nowrap|h-\[60px\])(?:\s|$)/);
+      expect(cta).toHaveClass("min-h-[60px]", "[overflow-wrap:anywhere]");
+    }
   });
 
   it("no secondary prop → a single CTA", () => {
@@ -159,7 +171,7 @@ describe("ErrorModal (Figma 1:988 Icon Modal + 1:4514 CTAs)", () => {
   it("danger: true → the red primary (white on #DE1313, ≈ 5:1), still the focused 280×60 CTA", () => {
     renderModal({ primary: { label: "Yes, delete", testId: "x-delete", onClick: vi.fn(), danger: true } });
     const primary = screen.getByTestId("x-delete");
-    expect(primary).toHaveClass("bg-tb-red", "text-tb-surface", "h-[60px]", "w-[280px]");
+    expect(primary).toHaveClass("bg-tb-red", "text-tb-surface", "min-h-[60px]", "w-[280px]");
     expect(primary).not.toHaveClass("bg-tb-purple");
     expect(primary).toHaveFocus();
     expect(screen.getByTestId("x-back")).not.toHaveClass("bg-tb-red");

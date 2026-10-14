@@ -95,6 +95,10 @@ export default function ErrorModal({
             </p>
           )}
         </div>
+        {/* The 280 × 60 CTAs WRAP (the OptionCard CTA's design language): a
+            label carrying data — "No, keep <pipeline name>" — grows its
+            button, never spills out of it. Every fixed label fits one line
+            (≤ 234 px of the 256 inside the padding). */}
         <div className={wide ? "flex w-full" : "flex gap-[26px]"}>
           {/* autoFocus: an alertdialog takes focus (same as the idle modal) —
               on the CTA `initialFocus` names. */}
@@ -104,7 +108,7 @@ export default function ErrorModal({
               data-testid={secondary.testId}
               autoFocus={initialFocus === "secondary"}
               onClick={secondary.onClick}
-              className="tb-display h-[60px] w-[280px] whitespace-nowrap rounded-[4px] border border-tb-purple text-[18px] leading-[16px] text-tb-purple"
+              className="tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-[18px] leading-[20px] text-tb-purple [overflow-wrap:anywhere]"
             >
               {secondary.label}
             </button>
@@ -114,7 +118,7 @@ export default function ErrorModal({
             data-testid={primary.testId}
             autoFocus={initialFocus === "primary" || !secondary}
             onClick={primary.onClick}
-            className={`tb-display h-[60px] ${wide ? "w-full" : "w-[280px]"} whitespace-nowrap rounded-[4px] ${primary.danger ? "bg-tb-red active:bg-tb-red-press" : "bg-tb-purple"} text-[18px] leading-[16px] text-tb-surface`}
+            className={`tb-display flex min-h-[60px] ${wide ? "w-full" : "w-[280px]"} items-center justify-center rounded-[4px] px-[12px] py-[8px] ${primary.danger ? "bg-tb-red active:bg-tb-red-press" : "bg-tb-purple"} text-[18px] leading-[20px] text-tb-surface [overflow-wrap:anywhere]`}
           >
             {primary.label}
           </button>

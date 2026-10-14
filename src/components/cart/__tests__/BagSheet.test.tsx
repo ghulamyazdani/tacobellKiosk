@@ -229,8 +229,8 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       expect(confirm).toBe(screen.getByTestId("remove-item-confirm"));
       expect(cancel).toHaveTextContent("No, Back to Cart");
       expect(confirm).toHaveTextContent("Yes, Delete");
-      expect(confirm).toHaveClass("bg-tb-red", "h-[60px]", "w-[280px]");
-      expect(cancel).toHaveClass("border-tb-purple", "h-[60px]", "w-[280px]");
+      expect(confirm).toHaveClass("bg-tb-red", "min-h-[60px]", "w-[280px]");
+      expect(cancel).toHaveClass("border-tb-purple", "min-h-[60px]", "w-[280px]");
       // Walk 2026-10-14: a keypad Enter on open keeps the row.
       expect(cancel).toHaveFocus();
       expect(confirm).not.toHaveFocus();

@@ -19,10 +19,11 @@ const BASE = {
   title: "tb-display text-[32px] leading-[32px] tracking-[-1px] text-tb-purple",
   message: "text-[28px] leading-[32px] text-tb-ink-purple",
   row: "flex gap-[26px]",
+  // Walk 2026-10-14: the pair WRAPS (a label never spills out of its CTA).
   secondary:
-    "tb-display h-[60px] w-[280px] whitespace-nowrap rounded-[4px] border border-tb-purple text-[18px] leading-[16px] text-tb-purple",
+    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-[18px] leading-[20px] text-tb-purple [overflow-wrap:anywhere]",
   primary:
-    "tb-display h-[60px] w-[280px] whitespace-nowrap rounded-[4px] bg-tb-purple text-[18px] leading-[16px] text-tb-surface",
+    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] px-[12px] py-[8px] bg-tb-purple text-[18px] leading-[20px] text-tb-surface [overflow-wrap:anywhere]",
 };
 
 const renderModal = (props: Partial<Parameters<typeof ErrorModal>[0]> = {}) =>
@@ -115,6 +116,6 @@ describe("ErrorModal variants (lane bag-pdp, I3)", () => {
     expect(dialog.querySelector("img")).toBeNull();
     expect(dialog.querySelectorAll("button")).toHaveLength(1);
     expect(screen.getByTestId("x-primary")).toHaveFocus();
-    expect(screen.getByTestId("x-primary")).toHaveClass("w-full", "h-[60px]");
+    expect(screen.getByTestId("x-primary")).toHaveClass("w-full", "min-h-[60px]");
   });
 });
