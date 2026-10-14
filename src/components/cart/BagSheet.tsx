@@ -536,9 +536,13 @@ export default function BagSheet({
     );
     // 8: the money posistKiosk judges minBillAmount against (Cart.tsx
     // offerQualifyingBill): the guest's own spend — loyalty and freebie rows
-    // filtered out, never subtracted — priced as ONE bill; onGrossTotal
-    // offers measure its net payable, the rest its item subtotal. No minimum,
-    // or a bill that cannot be priced, never removes a reward.
+    // filtered out, never subtracted — priced as ONE bill, its item subtotal.
+    // onGrossTotal offers too: posistKiosk measures them on the net with
+    // their OWN discount taken off, but the engine grants them on the items
+    // and the rewards sheet ranks them there — so an auto-applied one was
+    // removed, re-applied after GOT IT and removed again, and tax could lift
+    // a refused one over its minimum at −0.00. Open question for the user.
+    // No minimum, or a bill that cannot be priced, never removes a reward.
     const isUnderMinBill = () => {
       const minBill = parseFloat(cartOffer?.minBillAmount);
       if (!(minBill > 0)) return false;
@@ -547,7 +551,7 @@ export default function BagSheet({
           ...cartRdx,
           cartItems: items.filter((it) => !it?.isLoyaltyItem && !it?.isGetItem),
         });
-        return minBill > Number(cartOffer?.onGrossTotal ? bill?.getNetAmount() : bill?.getSubtotal());
+        return minBill > Number(bill?.getSubtotal());
       } catch {
         return false;
       }

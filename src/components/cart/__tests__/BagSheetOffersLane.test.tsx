@@ -531,6 +531,20 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     await waitFor(() => expect(slotId()).toBe("auto-flat-2"));
     expect(caption()).toHaveTextContent("Applied for you");
   });
+
+  it("a flagged onGrossTotal offer whose own £2 takes the net under its £10 minimum lands ONCE and stays — the engine, the ranking and revalidation all judge the £11.60 item subtotal, so no notice and no re-apply loop", async () => {
+    const grossAuto = flat("gross-auto-2", 2, { autoApplied: true, minBillAmount: 10, onGrossTotal: true });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, drinkRow(1)]));
+    store.dispatch(setFilteredOffers([grossAuto]));
+    const spy = vi.spyOn(store, "dispatch");
+    render(<BagUi />);
+
+    await waitFor(() => expect(slotId()).toBe("gross-auto-2"));
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(swapCount(spy)).toBe(1);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+    spy.mockRestore();
+  });
 });
 
 /* ------------------------------------------------------------------ *

@@ -578,7 +578,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(cartState().cartItems.map(({ itemId }: { itemId: string }) => itemId)).toEqual(["cb-1", "lr-1"]);
   });
 
-  it("REVALIDATION (posistKiosk parity): an onGrossTotal reward is measured on the NET payable — this bill's own discount included — the rest on the item subtotal", () => {
+  it("REVALIDATION: an onGrossTotal reward is judged on the item subtotal like every other — where the engine grants it and the sheet ranks it — never on a net its own discount lowered", () => {
     // £14.60 of items, £5 off, £10 minimum: net £9.60, subtotal £14.60.
     const GROSS_FIVE = {
       ...FLAT_OFFER,
@@ -588,17 +588,29 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
       onGrossTotal: true,
     };
     store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...DRINK_ROW }]));
-    store.dispatch(applyOffer({ offer: { ...GROSS_FIVE, onGrossTotal: false } }));
-    const { unmount } = renderSheet();
-    expect(cartState().cartOffer._id).toBe("offer-gross-5");
-    expect(cartState().offerRemovalModal.isOpen).toBe(false);
-    unmount();
-
     store.dispatch(applyOffer({ offer: GROSS_FIVE }));
     renderSheet();
+
+    expect(cartState().cartOffer._id).toBe("offer-gross-5");
+    expect(cartState().offerRemovalModal.isOpen).toBe(false);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£5.00");
+  });
+
+  it("REVALIDATION: an onGrossTotal reward under its minimum before tax goes with the notice, though tax lifts the net over it — the engine refused it there, so it would sit at −£0.00", () => {
+    // £9.60 + 15 % VAT: net £11.04, item subtotal £9.60 against £10.
+    const VAT15 = { _id: "vat15", name: "VAT@ 15%", type: "percentage", value: 15, isGSTOSC: false, cascadingTaxes: [] };
+    const TACO_ROW = { id: "taco", itemId: "t-1", name: "Taco", quantity: 1, type: "ITEM", price: 9.6, total_price: 9.6, taxes: [VAT15] };
+    store.dispatch(setCartItems([TACO_ROW]));
+    store.dispatch(applyOffer({ offer: { ...MIN_BILL_OFFER, onGrossTotal: true } }));
+    renderSheet();
+
     expect(cartState().offerRemovalModal.isOpen).toBe(true);
-    expect(cartState().offerRemovalModal.data._id).toBe("offer-gross-5");
+    expect(cartState().offerRemovalModal.data._id).toBe("offer-25-over-10");
     expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £0.40+ to your order to be eligible to redeem this reward"
+    );
+    expect(screen.queryByTestId("bag-rewards-applied")).not.toBeInTheDocument();
   });
 
   it("crash-reload on /cart under a min-bill reward: never judged on the empty first render (no notice, no exit); the restored rows clear the minimum, so it stays", () => {
