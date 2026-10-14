@@ -26,6 +26,8 @@ import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import inputClear from "../../assets/icons/input-clear.svg";
+import bgTexture from "../../assets/splash/bg-texture.png";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 
 /** One CRM record from `POST /api/cx/kiosk/getCustomerNameByNumber`. */
 interface CrmRecord {
@@ -318,6 +320,29 @@ export default function CustomerName() {
       data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
+      {/* The splash's backdrop (user 2026-10-14: "phone number and customer
+          name screen the background should be the same which is in start
+          screen"): the texture tiles + the plastic sheen at 50 %, stage-
+          registered (bottom-anchored, 1920 tall) as on /second, so ADA's
+          reach zone continues the stage's. */}
+      <div
+        aria-hidden
+        data-testid="customer-name-backdrop"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px]"
+        style={{
+          backgroundImage: `url(${bgTexture})`,
+          backgroundSize: "240px 240px",
+          backgroundPosition: "top left",
+        }}
+      />
+      <img
+        aria-hidden
+        alt=""
+        draggable={false}
+        data-testid="customer-name-sheen"
+        src={plasticOverlay}
+        className="pointer-events-none absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
+      />
       <button
         type="button"
         data-testid="customer-name-back"

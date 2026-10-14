@@ -145,6 +145,22 @@ describe("CustomerPhone placeholder (P9f contrast)", () => {
     expect(placeholder).toHaveClass("text-black/55");
     expect(placeholder).not.toHaveClass("text-black/35");
   });
+
+  it("the start screen's backdrop: the texture tiles and the 50 % plastic sheen, stage-registered (user 2026-10-14)", () => {
+    mount();
+
+    const backdrop = screen.getByTestId("phone-backdrop");
+    expect(backdrop.style.backgroundImage).toContain("bg-texture");
+    expect(backdrop.style.backgroundSize).toBe("240px 240px");
+    expect(backdrop).toHaveClass("bottom-0", "h-[1920px]", "w-[1080px]");
+    const sheen = screen.getByTestId("phone-sheen");
+    expect(sheen.getAttribute("src")).toContain("plastic-overlay");
+    expect(sheen).toHaveClass("opacity-50", "pointer-events-none", "bottom-0", "h-[1920px]");
+    // Painted first: every control stacks above the two layers.
+    const root = screen.getByTestId("phone-screen");
+    expect(root.children[0]).toBe(backdrop);
+    expect(root.children[1]).toBe(sheen);
+  });
 });
 
 /*

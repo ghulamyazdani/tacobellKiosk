@@ -29,6 +29,8 @@ import CountryPicker from "../../components/phone/CountryPicker";
 import CountryFlag from "../../components/phone/CountryFlag";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
+import bgTexture from "../../assets/splash/bg-texture.png";
+import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import chevronUp from "../../assets/icons/chevron-up.svg";
 
 /** `{code, dialCode, min, max}` (+ `picked`) — core/auth `selectedCountryCode`. */
@@ -415,6 +417,29 @@ export default function CustomerPhone() {
       data-enter={enter}
       className="relative h-full w-[1080px] overflow-hidden bg-tb-purple"
     >
+      {/* The splash's backdrop (user 2026-10-14: "phone number and customer
+          name screen the background should be the same which is in start
+          screen"): the texture tiles + the plastic sheen at 50 %, stage-
+          registered (bottom-anchored, 1920 tall) as on /second, so ADA's
+          reach zone continues the stage's. */}
+      <div
+        aria-hidden
+        data-testid="phone-backdrop"
+        className="absolute bottom-0 left-0 h-[1920px] w-[1080px]"
+        style={{
+          backgroundImage: `url(${bgTexture})`,
+          backgroundSize: "240px 240px",
+          backgroundPosition: "top left",
+        }}
+      />
+      <img
+        aria-hidden
+        alt=""
+        draggable={false}
+        data-testid="phone-sheen"
+        src={plasticOverlay}
+        className="pointer-events-none absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
+      />
       <button
         type="button"
         data-testid="phone-back"
