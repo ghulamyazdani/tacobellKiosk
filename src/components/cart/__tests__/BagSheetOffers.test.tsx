@@ -477,7 +477,9 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     notice. Revalidation check 8 removes it the way the min-items and BOGO
     checks do, judged on posistKiosk's money (Cart.tsx offerQualifyingBill):
     the guest's own spend — freebie and loyalty rows filtered out — as one
-    bill; onGrossTotal offers its net payable, the rest its item subtotal.
+    bill, its item subtotal. Every offer, onGrossTotal ones too: the engine
+    grants them on the items and the sheet ranks them there (posistKiosk
+    judges them on the net — an open question for the user).
   */
   const MIN_BILL_OFFER = {
     ...offerBase,
