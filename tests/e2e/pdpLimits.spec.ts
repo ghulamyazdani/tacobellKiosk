@@ -177,7 +177,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£5.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £6$/);
   });
 
   test("CHANGE, then ADD TO BAG on an incomplete size: the grid closes, the warning names the group, and after GOT IT the ringed group is on screen", async ({
@@ -216,7 +216,8 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await openPdp(page, CHEESE_BURGER);
     const vegLine = pdpPriceLine(page, "veg");
     await expect(vegLine).toHaveCount(1);
-    await expect(vegLine).toHaveText("£8.00");
+    // posistKiosk's price format (moduloCalcaledValue): a whole price whole.
+    await expect(vegLine).toHaveText("£8");
     await expect(vegLine.getByRole("img", { name: en.menu.veg })).toBeVisible();
     const box = await vegLine.getByTestId("veg-mark-veg").boundingBox();
     expect(box && { w: Math.round(box.width), h: Math.round(box.height) }).toEqual({ w: 24, h: 24 });
@@ -225,7 +226,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
 
     await openPdp(page, LARGE_FRIES);
     const nonVegLine = pdpPriceLine(page, "non-veg");
-    await expect(nonVegLine).toHaveText("£9.00");
+    await expect(nonVegLine).toHaveText("£9");
     await expect(nonVegLine.getByRole("img", { name: en.menu.nonVeg })).toBeVisible();
     await expect(pdpPriceLine(page, "veg")).toHaveCount(0);
   });
@@ -239,7 +240,7 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await openPdp(page, CHEESE_BURGER);
 
     await expect(page.getByTestId("customization-screen").getByTestId(/^veg-mark-/)).toHaveCount(0);
-    await expect(page.getByTestId("customization-screen").getByText("£8.00", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("customization-screen").getByText("£8", { exact: true })).toBeVisible();
   });
 
   test("ONE OF ONE IS A RADIO: a 1/1 group whose item cap is 3 draws radio cards, never steppers — a second pick swaps the first, never refused", async ({
@@ -305,6 +306,6 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
   });
 });

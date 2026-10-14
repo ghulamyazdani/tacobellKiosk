@@ -303,7 +303,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £29$/);
   });
 
   test("VALIDATION: an empty required slot blocks ADD TO BAG — errored ring on that slot, bag stays empty", async ({
@@ -354,7 +354,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("COMPLETION → FILL: after GOT IT the guest fills the named slot and ADD TO BAG lands the pack at £25.00", async ({
@@ -380,7 +380,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £29$/);
   });
 
   test("TIER-2 REMOVE (item 24): '−' at qty 1 in a tier-2 EDIT asks first; YES removes the Sides pick (the slot is back to SELECT, no 'undefined' group) and the completion warning then names sides", async ({
@@ -469,7 +469,7 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £29$/);
   });
 
   test("TIER-2 REMOVE, NEXT CUSTOMER (item 24): a removal confirm left open when the session idles out does not greet the next customer's tier-2 EDIT", async ({
@@ -755,7 +755,7 @@ test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE p
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£30.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £35$/);
   });
 
   test("STEPPER ROW (D6): the trash glyph replaces '−' only at quantity 1 — '−' at 2 — and both are the same −1 control with the same name", async ({
@@ -906,7 +906,7 @@ test.describe("figma-polish item 42 — FIXED slots, the full-screen CUSTOMIZE p
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£35.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £40$/);
     expect(await groupPicks(page, G_SNACKS, "bag")).toEqual([[CHILI_NUGGETS, 2]]);
 
     // The bag row says the same: Nuggets ×2, no Donuts.
@@ -977,7 +977,8 @@ test.describe("P6c MIAM upsell prompt (enable_combo_upsell on)", () => {
     const comboCard = prompt.getByTestId(`miam-combo-${DREAM_BOX}`);
     await expect(comboCard).toBeVisible();
     await expect(comboCard).toContainText("Dream box 1,");
-    await expect(comboCard).toContainText("£25.00");
+    // posistKiosk's OptionsUpSell format (moduloCalcaledValue): "£25".
+    await expect(comboCard).toContainText(/£25$/);
     // Figma 1:3070's secondary CTA is copy-only ("NOT TODAY") — the original
     // item's price moved off this label; it is still asserted below on
     // pdp-add-to-bag and cta-total.
@@ -997,7 +998,7 @@ test.describe("P6c MIAM upsell prompt (enable_combo_upsell on)", () => {
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
 
     // Second tap opens the REPEAT sheet, NOT the prompt: with the item
     // already in the cart, classifyAddIntent's repeat branch wins before
@@ -1018,7 +1019,7 @@ test.describe("P6c MIAM upsell prompt (enable_combo_upsell on)", () => {
     await expect(page.getByTestId("repeat-sheet")).toHaveCount(0);
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
   });
 
   test("accepting via the combo card lands on /customization with the pack open", async ({

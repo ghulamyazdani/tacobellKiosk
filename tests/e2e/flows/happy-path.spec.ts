@@ -79,7 +79,7 @@ test.describe("Flow 1 — happy path", () => {
     // 4 — one item through the PDP, one with a tap.
     await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
     await addOneTap(page, GREEK_SALAD, "(2)");
-    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £29$/);
 
     // 5 — the bag: 25.00 + 15 % VAT = 28.75 → £29.00.
     await openBag(page);
@@ -132,7 +132,7 @@ test.describe("Flow 1 — happy path", () => {
     await pickPipelineToMenu(page);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
     expect(checkout.placeOrderCount).toBe(1);
   });
 });

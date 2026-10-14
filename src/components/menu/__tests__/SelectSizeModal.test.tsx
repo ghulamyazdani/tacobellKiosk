@@ -50,6 +50,38 @@ describe("SelectSizeModal (Figma 1:5628)", () => {
     }
   });
 
+  // User decision 2026-10-14: posistKiosk's price format (moduloCalcaledValue)
+  // — whole prices and deltas print whole, fractions to two decimals.
+  it("whole prices and deltas print whole: '£5', '+£5', '+£10'; a fraction keeps two decimals", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    try {
+      render(
+        <Provider store={store}>
+          <SelectSizeModal
+            entity={{
+              id: "noodles",
+              name: "Noodles",
+              variants: [
+                { id: "v-q", name: "Quarter", price: 5, isActive: true },
+                { id: "v-h", name: "Half", price: 10, isActive: true },
+                { id: "v-f", name: "Full", price: 15, isActive: true },
+                { id: "v-m", name: "Mega", price: 15.5, isActive: true },
+              ],
+            }}
+            onClose={vi.fn()}
+            onContinue={vi.fn()}
+          />
+        </Provider>
+      );
+      expect(screen.getByTestId("size-v-q")).toHaveTextContent(/£5$/);
+      expect(screen.getByTestId("size-v-h")).toHaveTextContent(/\+£5$/);
+      expect(screen.getByTestId("size-v-f")).toHaveTextContent(/\+£10$/);
+      expect(screen.getByTestId("size-v-m")).toHaveTextContent(/\+£10\.50$/);
+    } finally {
+      store.dispatch({ type: "RESET_STATE" });
+    }
+  });
+
   it("CONTINUE stays disabled until a size is selected, then returns the variant", async () => {
     const { onContinue } = renderModal();
     const cont = screen.getByTestId("size-continue");

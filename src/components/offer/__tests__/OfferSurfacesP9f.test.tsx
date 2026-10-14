@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -38,7 +38,7 @@ const AR_SAUCE = "صلصة التورتيلا";
 const AR_FRIES = "بطاطس";
 const AR_LARGE = "كبير";
 
-const NACHOS = { id: "nachos", name: "Nachos", price: 20, aliases: AR(AR_NACHOS) };
+const NACHOS = { id: "nachos", name: "Nachos", price: 5.5, aliases: AR(AR_NACHOS) };
 
 // The rail's source: one plain (add-intent) suggestion with an ar alias.
 // importOriginal: RewardsSheet also reads selectMenuSellableEntityMap (UB6).
@@ -241,6 +241,20 @@ describe("named dialogs", () => {
   it("the buy stage is named by its offer heading, NOT aria-modal (same reason)", () => {
     renderStage();
     expect(screen.getByRole("dialog", { name: BOGO.name })).not.toHaveAttribute("aria-modal");
+  });
+});
+
+// Walk 2026-10-14 (user decisions).
+describe("the rewards rail card", () => {
+  it("prints its price as posistKiosk does (moduloCalcaledValue): £5.50, never £5.5", () => {
+    renderRewards();
+    expect(screen.getByTestId("offer-suggested-item-nachos")).toHaveTextContent(/^Nachos£5\.50$/);
+  });
+
+  it("a card without a photo carries the faint bell in its photo band", () => {
+    renderRewards();
+    const card = screen.getByTestId("offer-suggested-item-nachos");
+    expect(within(card).getByTestId("no-image-bell").parentElement).toHaveClass("block", "min-h-0", "w-full");
   });
 });
 

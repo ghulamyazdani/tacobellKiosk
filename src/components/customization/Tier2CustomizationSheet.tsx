@@ -54,6 +54,7 @@ import { closeBottomSheet } from "../../redux/features/menuSelections/menuSelect
 import useCustomization from "../../hooks/customization/useCustomization";
 import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServices";
 import { resolveEntityImage } from "../../utils/entityImage";
+import NoImageBell from "../common/NoImageBell";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
@@ -688,8 +689,10 @@ export default function Tier2CustomizationSheet() {
             {t("pack.customize")}
           </p>
           <span className="mt-[42px] flex h-[202px] w-[328px] items-center justify-center">
-            {heroImage && (
+            {heroImage ? (
               <img alt="" src={heroImage} className="h-full w-full object-contain" />
+            ) : (
+              <NoImageBell />
             )}
           </span>
           <div className="mt-[42px] flex w-[768px] flex-col items-center gap-[8px] text-center">

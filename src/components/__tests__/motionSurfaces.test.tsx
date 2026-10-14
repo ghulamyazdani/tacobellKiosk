@@ -32,7 +32,8 @@ import LoyaltySuccessModal from "../loyalty/LoyaltySuccessModal";
 */
 
 const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
-const ROW = { id: "r1", itemId: "x", name: "X", total_price: 2.5, quantity: 1 };
+// A real cart row: the bag's bill (the menu bar's TOTAL) prices `price`.
+const ROW = { id: "r1", itemId: "x", name: "X", type: "ITEM", price: 2.5, total_price: 2.5, quantity: 1 };
 
 afterEach(() => {
   store.dispatch({ type: "RESET_STATE" });
@@ -142,13 +143,13 @@ describe("counts re-key a small leaf (§3.3)", () => {
 
     act(() => {
       // + on the same row: one row, two units — the count is the bag
-      // header's (units), the subtotal moves with it.
+      // header's (units), the bag's Total moves with it.
       store.dispatch(setCartItems([{ ...ROW, quantity: 2 }]));
     });
     const incremented = bag();
     expect(incremented).not.toBe(added);
     expect(screen.getByTestId("cta-view-bag")).toHaveTextContent("(2)");
-    expect(screen.getByTestId("cta-total")).toHaveTextContent("£5.00");
+    expect(screen.getByTestId("cta-total")).toHaveTextContent(/£5$/);
 
     act(() => {
       store.dispatch(setCartItems([{ ...ROW, quantity: 2 }])); // nothing moved

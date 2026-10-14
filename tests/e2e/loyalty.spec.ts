@@ -441,7 +441,7 @@ test.describe("P7c XENO loyalty", () => {
 
     await closeRewardsSheet(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("AUTO-REVERSAL: losing the last paid row removes the reward, refunds its points and revokes the claim", async ({

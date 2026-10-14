@@ -372,7 +372,7 @@ test.describe("visual capture — ordering screens", () => {
 
     // Rail + the grid (a NEW-badged item included) + a CTA bar carrying a total.
     await quickAddGreekSalad(page, "(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
     await expect(page.getByTestId("category-rail")).toContainText("Side Orders");
     // The pane scrolls an inner container: back to its top for the first shot.
     await page

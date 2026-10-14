@@ -35,6 +35,7 @@ import useGridView from "../../hooks/customization/useGridView";
 import useTagFilter from "../../hooks/menuHooks/useTagFilter";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
+import { formatPrice } from "../../utils/price";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -216,7 +217,7 @@ function SheetBody({ sheet }: { sheet: any }) {
         </div>
         <p className="w-[130px] shrink-0 text-right text-[24px] font-medium text-black">
           {currency}
-          {(Number(row?.total_price ?? 0) * qty).toFixed(2)}
+          {formatPrice(Number(row?.total_price ?? 0) * qty)}
         </p>
         <div className="flex h-[72px] w-[188px] shrink-0 items-center justify-between rounded-full border-2 border-tb-grey-4 bg-tb-surface px-[6px]">
           <button

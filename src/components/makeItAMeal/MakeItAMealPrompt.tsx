@@ -42,6 +42,7 @@ import useTagFilter from "../../hooks/menuHooks/useTagFilter";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import closeIcon from "../../assets/icons/close.svg";
 
@@ -316,7 +317,7 @@ export default function MakeItAMealPrompt() {
             const imageUrl = resolveEntityImage(combo);
             const saving = savingsFor(combo);
             const cal = calorieValue(combo);
-            const price = `${currency}${Number(combo?.price ?? 0).toFixed(2)}`;
+            const price = `${currency}${formatPrice(combo?.price)}`;
             const priceLine = cal
               ? `${price} | ${t("pack.cal", { value: cal })}`
               : price;
@@ -337,7 +338,7 @@ export default function MakeItAMealPrompt() {
                 {saving !== null && (
                   <span className="tb-compressed self-start bg-tb-yellow px-[8px] py-[9px] text-[24px] leading-[18px] text-black">
                     {t("miam.save", {
-                      amount: `${currency}${saving.toFixed(2)}`,
+                      amount: `${currency}${formatPrice(saving)}`,
                     })}
                   </span>
                 )}

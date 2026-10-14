@@ -29,6 +29,8 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface FreebiePickerSheetProps {
@@ -351,7 +353,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       return t("offers.percentOff", { value: entry?.value });
     }
     return t("offers.amountOff", {
-      amount: `${currency}${Number(entry?.value ?? 0).toFixed(2)}`,
+      amount: `${currency}${formatPrice(entry?.value)}`,
     });
   };
 
@@ -481,6 +483,36 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
     onClose();
   };
 
+  /**
+   * A row's price pair (render helper, NOT a component): the struck full
+   * price, then what CONFIRM charges — "Free" when that is nothing, never
+   * "£0" (posistKiosk OfferItem: effectivePrice <= 0 → offer.badgeFree). A
+   * paid add-on or a partial discount keeps its figure — NOT posistKiosk
+   * parity: its tile prices the menu entity, so it reads FREE over a paid
+   * add-on, and before any customization (TB shows no pair until then).
+   * Deliberate — TB prices what CONFIRM charges; client sign-off.
+   */
+  const renderPrice = (undiscounted: number, discounted: number) => (
+    <>
+      {undiscounted > discounted && (
+        <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
+          {currency}
+          {formatPrice(undiscounted)}
+        </span>
+      )}
+      <span className="text-[24px] font-medium leading-[28px] text-black">
+        {discounted <= 0 ? (
+          t("offers.free")
+        ) : (
+          <>
+            {currency}
+            {formatPrice(discounted)}
+          </>
+        )}
+      </span>
+    </>
+  );
+
   // Render helper, NOT a component (house pattern).
   const renderRow = (entry: any) => {
     const key = rowKeyOf(entry);
@@ -542,7 +574,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
           />
         ) : (
-          <span className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+          <NoImageBell className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
           <span className="text-[24px] font-bold capitalize leading-[28px] text-black">
@@ -567,18 +599,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         <span className="flex shrink-0 items-center gap-[16px]">
           {/* An uncustomized row has no price pair — the converter stamps
               none and the figure depends on the customization. */}
-          {showPrice && undiscounted > discounted && (
-            <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
-              {currency}
-              {undiscounted.toFixed(2)}
-            </span>
-          )}
-          {showPrice && (
-            <span className="text-[24px] font-medium leading-[28px] text-black">
-              {currency}
-              {discounted.toFixed(2)}
-            </span>
-          )}
+          {showPrice && renderPrice(undiscounted, discounted)}
           <SelectionGlyph
             selected={selected}
             mode={orMode && !groupWise ? "or" : "and"}
@@ -672,7 +693,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
               className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
             />
           ) : (
-            <span className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+            <NoImageBell className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
           )}
           <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
             <span className="text-[24px] font-bold capitalize leading-[28px] text-black">
@@ -689,18 +710,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             )}
           </span>
           <span className="flex shrink-0 items-center gap-[16px]">
-            {showPrice && undiscounted > discounted && (
-              <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
-                {currency}
-                {undiscounted.toFixed(2)}
-              </span>
-            )}
-            {showPrice && (
-              <span className="text-[24px] font-medium leading-[28px] text-black">
-                {currency}
-                {discounted.toFixed(2)}
-              </span>
-            )}
+            {showPrice && renderPrice(undiscounted, discounted)}
             <SelectionGlyph selected={units > 0} mode="and" />
           </span>
         </button>

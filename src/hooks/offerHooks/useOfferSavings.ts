@@ -33,7 +33,7 @@ import { useSelector } from "react-redux";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap, selectVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
-import useOrderHook from "../menuHooks/useOrderHook";
+import { useBillEngine } from "../cartHooks/useCartBill";
 import useOfferHook from "./useOfferHook";
 import {
   computeRealisedSaving,
@@ -49,7 +49,7 @@ import {
 } from "@cx-sdk/ordering/offer/offerAvailability";
 import type { RankedOffer, RealisedSaving } from "@cx-sdk/core/types/offer";
 
-interface KioskCart {
+export interface KioskCart {
   cartItems?: SavingsCartItem[];
   cartOffer?: Record<string, unknown>;
   lockedFreebieAllocation?: Record<string, number>;
@@ -142,8 +142,14 @@ const sharedBaselineCache: { signature: string; subtotal: number | null } = {
   subtotal: null,
 };
 
-function useOfferSavings() {
-  const cartRdx = useSelector(selectCart) as KioskCart | undefined;
+/**
+ * `cart` — quote THIS cart instead of the store's: one a surface prices
+ * before it reaches the store (the added modal's picks, useAutoApplyPreview).
+ * Omitted (every other caller), the live cart.
+ */
+function useOfferSavings(cart?: KioskCart | null) {
+  const liveCart = useSelector(selectCart) as KioskCart | undefined;
+  const cartRdx = cart ?? liveCart;
   const entityMap = useSelector(selectEntityMap) as
     | Record<string, MenuEntity | undefined>
     | null
@@ -160,7 +166,9 @@ function useOfferSavings() {
   // enable_dis_addon: a get discount covers the add-ons too (redeemGetItem),
   // so a reward the guest builds with add-ons has no "up to" to quote.
   const addonsDiscounted = Boolean(useSelector(selectDiscountOnAddon));
-  const { getCalculatedBill } = useOrderHook();
+  // The bill useOrderHook prices with, without its router and order
+  // machinery, so a menu surface can quote too (useAutoApplyPreview).
+  const { getCalculatedBill } = useBillEngine();
   const { isItemWiseOfferApplicable, isBOGOOfferApplicable } = useOfferHook();
 
   const signature = cartSignature(cartRdx);
@@ -181,7 +189,7 @@ function useOfferSavings() {
    * comes through here as well, so it is that bag's too.
    */
   /**
-   * getCalculatedBill and cartRdx get fresh identities from useOrderHook /
+   * getCalculatedBill and cartRdx get fresh identities from useBillEngine /
    * useSelector on every render, so a useCallback keyed on them is a new
    * function every render — which cascaded into context/quoteDiscount/netAfter
    * and re-ran a full baseline bill probe on EVERY render of any subscriber,

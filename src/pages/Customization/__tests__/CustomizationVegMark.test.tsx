@@ -16,7 +16,7 @@ import i18n from "../../../i18n";
   audit-fixes U1 — the PDP's diet mark (design language, no Figma frame):
   the foundation's VegMark (24 px) leads the price line; the price text
   stays in ONE span (bare runs in the flex <p> would each take the gap), so
-  the line still reads "£8.00" for every text matcher. Tri-state: an
+  the line still reads "£8" for every text matcher. Tri-state: an
   untagged item shows no mark; the operator's hide_veg_non_veg hides it.
   Seam: navigation (the no-session guard).
 */
@@ -51,7 +51,7 @@ const renderPdp = () =>
 
 /** The price line: the <p> holding the price span. */
 const priceLine = () => {
-  const line = screen.getByText("£8.00").closest("p");
+  const line = screen.getByText("£8").closest("p");
   if (!line) throw new Error("no price line");
   return line;
 };
@@ -75,7 +75,7 @@ describe("PDP diet mark (U1)", () => {
     expect(mark).toHaveStyle({ width: "24px", height: "24px" });
     expect(line.firstElementChild).toBe(mark);
     expect(line).toHaveClass("flex", "items-center", "gap-[12px]");
-    expect(line).toHaveTextContent(/^£8\.00$/);
+    expect(line).toHaveTextContent(/^£8$/);
     expect(line.querySelectorAll(":scope > span")).toHaveLength(2);
   });
 
@@ -103,6 +103,6 @@ describe("PDP diet mark (U1)", () => {
     renderPdp();
 
     expect(screen.queryByTestId("veg-mark-veg")).not.toBeInTheDocument();
-    expect(priceLine()).toHaveTextContent(/^£8\.00$/);
+    expect(priceLine()).toHaveTextContent(/^£8$/);
   });
 });

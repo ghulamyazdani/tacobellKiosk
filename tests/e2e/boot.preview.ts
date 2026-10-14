@@ -21,7 +21,8 @@ test("PRODUCTION BUNDLE: the licence boots to the splash, the menu renders with 
   await bootRegisteredToMenu(page);
   await expect(page.getByTestId("category-rail")).toContainText("Side Orders");
   await addOneTap(page, GREEK_SALAD, "(1)");
-  await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+  // The menu TOTAL is the bag's own (VAT 15 % in, rounded): round(17 × 1.15) = £20.
+  await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
 
   // A build, not the dev server: no dev module was served; /menu's entry pulled the lazy UI chunk; analytics off.
   expect(scripts.filter((path) => /^\/(src|node_modules|@)/.test(path))).toEqual([]);

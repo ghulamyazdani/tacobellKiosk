@@ -2,6 +2,8 @@ import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -41,8 +43,8 @@ export interface ForYouCardProps {
   title: string;
   /**
    * The RAW menu price, currency-symbol-free and untaxed — the same number
-   * the menu tile shows. The bill's taxed total is a cart concept and must
-   * never appear on a suggestion card.
+   * the menu tile shows, formatted here as it does (formatPrice). The bill's
+   * taxed total is a cart concept and must never appear on a suggestion card.
    */
   price?: number | string;
   /** Currency symbol, resolved by the consumer via useCurrencySymbol(). */
@@ -112,7 +114,7 @@ function ForYouCardBase({
 
   const imageUrl = resolveEntityImage(entity);
   const cal = calorieValue(entity);
-  const priceLine = `${currency}${price ?? ""}${
+  const priceLine = `${currency}${formatPrice(price)}${
     cal ? ` | ${t("pack.cal", { value: cal })}` : ""
   }`;
 
@@ -156,8 +158,10 @@ function ForYouCardBase({
   ) : (
     // Reserve the band rather than collapsing it: the card height is
     // fixed, so an imageless item must keep its text where its neighbours
-    // keep theirs.
-    <span className={`block min-h-0 ${imageClass}`} style={imageStyle} />
+    // keep theirs. The band carries the bell.
+    <span className={`block min-h-0 ${imageClass}`} style={imageStyle}>
+      <NoImageBell />
+    </span>
   );
 
   return (

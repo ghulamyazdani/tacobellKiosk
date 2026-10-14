@@ -544,8 +544,9 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
   it("a minBill gap names the amount (the addNudge copy)", () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
     renderStage({ ...MIN_FOUR, _id: "offer-min-bill", minItemCount: null, minBillAmount: 20 });
+    // £20 − (£8 + £2), printed as posistKiosk's lockedMinBill: "£10", never "£10.00".
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      /^Add £\d+\.\d{2}\+ to your order to be eligible to redeem this reward$/
+      /^Add £10\+ to your order to be eligible to redeem this reward$/
     );
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
   });
@@ -639,6 +640,15 @@ describe("BuyStageSheet — Figma's Menu-Item card", () => {
       "group-active:bg-tb-lilac"
     );
     expect(plus.querySelector("img")).toHaveClass("h-[16px]", "w-[16px]");
+  });
+
+  // Walk 2026-10-14: an imageless card's 172 px band read as a failed load.
+  it("an imageless card carries the faint bell in its 172 px band; a card with a photo never does", () => {
+    renderStage(LEAST, viewWith(LEAST, { [SAUCE.id]: { ...SAUCE, image_url: PHOTO } }));
+
+    expect(within(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).queryByTestId("no-image-bell")).toBeNull();
+    const bell = within(screen.getByTestId(`buy-stage-tile-${CAESAR.id}`)).getByTestId("no-image-bell");
+    expect(bell).toHaveClass("h-[172px]", "min-h-0", "w-full");
   });
 
   it("the WHOLE card adds: an empty overlay (a direct child — the card presses) named 'Quick add <name>', the add target at every quantity; the '+' is its aria-hidden twin that never takes focus", async () => {

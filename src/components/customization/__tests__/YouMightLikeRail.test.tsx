@@ -144,12 +144,12 @@ describe("YouMightLikeRail (R1 — PDP 'You Might Like')", () => {
     expect(screen.getByTestId("pdp-rail-item-fries")).toHaveAccessibleName(`${i18n.t("menu.quickAdd")} Large Fries`);
   });
 
-  it("the ProductSuggestion card (1:1829): the photo-top ForYouCard, prices in the PDP's money format", () => {
+  it("the ProductSuggestion card (1:1829): the photo-top ForYouCard, priced as the menu card prints it (posistKiosk's moduloCalcaledValue)", () => {
     renderRail("burger");
     const card = screen.getByTestId("pdp-rail-item-fries");
 
-    expect(card).toHaveTextContent("£2.00 | 360 Cal");
-    expect(screen.getByTestId("pdp-rail-item-pepsi")).toHaveTextContent("£3.00");
+    expect(card).toHaveTextContent(/^Large Fries£2 \| 360 Cal$/);
+    expect(screen.getByTestId("pdp-rail-item-pepsi")).toHaveTextContent(/^Pepsi£3$/);
     // Photo first (192 × 85, 76 px down), then the 72 px name / price block.
     expect(card.firstElementChild).toHaveClass("mt-[76px]", "h-[85px]", "w-[192px]");
     expect(card.children[1]).toHaveClass("h-[72px]", "mb-[24px]");

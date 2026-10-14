@@ -1,7 +1,9 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import useLocalized from "../../hooks/utils/useLocalized";
+import NoImageBell from "../common/NoImageBell";
 import VegMark from "./VegMark";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -26,16 +28,16 @@ type PriceLineEntity = {
 
 /**
  * "£5.59 | 360 Cal" — the menu card's price line, shared with the
- * product-added tiles (Figma 1:2609 / 1:4589). The calories only when > 0
- * (every reference entity carries 0). ponytail: whole units as the menu
- * sends them (client question Q7 — this is the one place to change it).
+ * product-added tiles (Figma 1:2609 / 1:4589). The price as posistKiosk
+ * prints it (formatPrice: "£100", "£5.50"); the calories only when > 0
+ * (every reference entity carries 0).
  */
 // eslint-disable-next-line react-refresh/only-export-components -- shared with ProductAddedModal; HMR falls back to a reload for this file
 export function formatMenuPriceLine(entity: unknown, currency: string, t: TFunction): string {
   const item = entity as PriceLineEntity;
   const cal = item?.calorieCount ?? item?.nutritionalInfo?.calorieCount;
   const value = typeof cal === "object" ? (cal as { value?: unknown } | null)?.value : cal;
-  return `${currency}${item?.price ?? ""}${Number(value) > 0 ? ` | ${t("pack.cal", { value })}` : ""}`;
+  return `${currency}${formatPrice(item?.price)}${Number(value) > 0 ? ` | ${t("pack.cal", { value })}` : ""}`;
 }
 
 /**
@@ -90,12 +92,14 @@ export default function MenuItemCard({
           {priceLine}
         </p>
       </div>
-      {imageUrl && (
+      {imageUrl ? (
         <img
           alt=""
           src={imageUrl}
           className={`h-[172px] min-h-0 w-full object-cover mix-blend-multiply ${unavailable ? "opacity-40 grayscale" : ""}`}
         />
+      ) : (
+        <NoImageBell className={`h-[172px] min-h-0 w-full ${unavailable ? "opacity-40" : ""}`} />
       )}
       {!unavailable && (
         <button

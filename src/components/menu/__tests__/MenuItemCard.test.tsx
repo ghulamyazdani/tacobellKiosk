@@ -155,7 +155,10 @@ describe("MenuItemCard", () => {
 
 /*
   B4 / UB1 — the ONE price-line formatter, shared by the menu cards and the
-  product-added tiles (client question Q7: whole units as sent).
+  product-added tiles. The price is posistKiosk's moduloCalcaledValue (user
+  decision 2026-10-14; walk: "£0.5", "£5.5" on cards beside "£100.00" on
+  the PDP): a whole amount as it is, a fraction to two decimals. A missing
+  price reads £0, as posistKiosk's moduloCalcaledValue(undefined) does.
 */
 describe("formatMenuPriceLine", () => {
   const t = i18n.t.bind(i18n);
@@ -164,14 +167,20 @@ describe("formatMenuPriceLine", () => {
     [{ price: 5.59, calorieCount: 360 }, "£5.59 | 360 Cal"],
     [{ price: 5.59, calorieCount: 0 }, "£5.59"],
     [{ price: 17 }, "£17"],
+    [{ price: 100, calorieCount: 254 }, "£100 | 254 Cal"],
+    [{ price: 5.5 }, "£5.50"],
+    [{ price: 0.5 }, "£0.50"],
+    [{ price: "5.5" }, "£5.50"],
+    [{ price: 1.005 }, "£1.01"],
     [{ price: "8", calorieCount: "360" }, "£8 | 360 Cal"],
     [{ price: 3, nutritionalInfo: { calorieCount: 120 } }, "£3 | 120 Cal"],
     [{ price: 3, calorieCount: { value: 90 } }, "£3 | 90 Cal"],
     [{ price: 3, calorieCount: { value: 0 } }, "£3"],
     [{ price: 3, calorieCount: null }, "£3"],
     [{ price: 3, calorieCount: -5 }, "£3"],
-    [{}, "£"],
-    [null, "£"],
+    [{}, "£0"],
+    [{ price: null }, "£0"],
+    [null, "£0"],
   ])("%j → %s", (entity, expected) => {
     expect(formatMenuPriceLine(entity, "£", t)).toBe(expected);
   });

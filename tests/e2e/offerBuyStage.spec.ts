@@ -303,7 +303,7 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await page.getByTestId("buy-stage-continue").click();
     await expect(page.getByTestId("offer-applied-celebration")).toBeVisible();
     await expect(page.getByTestId("offer-applied-celebration")).toContainText(
-      "You save £2.00"
+      /You save £2(?![\d.])/
     );
     await expect(page.getByTestId("buy-stage-sheet")).toHaveCount(0);
     await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
@@ -323,7 +323,7 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await expect(page.getByTestId("bag-pay")).toContainText("Order & Pay");
     await expect(page.getByTestId("bag-pay")).toContainText("£14.00");
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(BOGO_SAUCE.name);
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(new RegExp(`${MINUS}£2(?![\\d.])`));
     await expect(page).toHaveURL(/\/cart$/);
 
     // The landed offer completed the journey: the paid sauces are the
@@ -1052,7 +1052,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 
-  test("E-C3 same-or-less category: 'Save up to £8.00' (the bought burger caps it, F5); the picker offers the Cheese Burger only → embedded PDP → CONFIRM → −£8.00, Total £9.00", async ({
+  test("E-C3 same-or-less category: 'Save up to £8' (the bought burger caps it, F5); the picker offers the Cheese Burger only → embedded PDP → CONFIRM → −£8.00, Total £9.00", async ({
     page,
   }) => {
     test.slow();
@@ -1062,7 +1062,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await addCheeseBurgerViaPdp(page);
     await openBag(page);
     await openRewardsSheet(page);
-    await expect(page.getByTestId(`offer-row-body-${SOL_CAT._id}`)).toContainText("Save up to £8.00");
+    await expect(page.getByTestId(`offer-row-body-${SOL_CAT._id}`)).toContainText(/Save up to £8(?![\d.])/);
     await page.getByTestId(`offer-row-${SOL_CAT._id}`).click();
     await page.getByTestId("rewards-save").click();
     await expect(page.getByTestId("freebie-picker")).toBeVisible();
@@ -1085,7 +1085,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 
-  test("E-C8 (review 1 F-1/F-2) the list agrees with the picker: 'Any 4 from Kiddie Meal' is not listed (nor its BOGO twin's ADD ITEMS); 'Any 2 from Boxes' saves up to £57.00, never 2 × £32", async ({
+  test("E-C8 (review 1 F-1/F-2) the list agrees with the picker: 'Any 4 from Kiddie Meal' is not listed (nor its BOGO twin's ADD ITEMS); 'Any 2 from Boxes' saves up to £57, never 2 × £32", async ({
     page,
   }) => {
     test.slow();
@@ -1095,7 +1095,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await addTortillaSauceOneTap(page);
     await openBag(page);
     await openRewardsSheet(page);
-    await expect(page.getByTestId(`offer-row-body-${TWO_BOXES._id}`)).toContainText("Save up to £57.00");
+    await expect(page.getByTestId(`offer-row-body-${TWO_BOXES._id}`)).toContainText(/Save up to £57(?![\d.])/);
     for (const offer of [FOUR_KIDDIE, BOGO_FOUR_KIDDIE]) {
       await expect(page.getByTestId(`offer-row-${offer._id}`)).toHaveCount(0);
       await expect(page.getByTestId(`offer-row-body-${offer._id}`)).toHaveCount(0);

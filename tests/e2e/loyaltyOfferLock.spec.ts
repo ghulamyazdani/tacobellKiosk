@@ -256,7 +256,7 @@ async function expectNothingAppliedOverWindow(page: Page) {
 }
 
 test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock, F1)", () => {
-  test("E5 F1: an offer applied BEFORE the reward keeps its own saving on the applied row (Save £2.00 / −£2.00) while Discounts carries offer + reward (−£19.00); Total and ORDER & PAY stay the bill's £7.00", async ({
+  test("E5 F1: an offer applied BEFORE the reward keeps its own saving on the applied row (Save £2 / −£2) while Discounts carries offer + reward (−£19.00); Total and ORDER & PAY stay the bill's £7.00", async ({
     page,
   }) => {
     test.slow();
@@ -268,7 +268,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await openOffersFromEntry(page);
     await pickAndSave(page, FLAT_2._id);
     const applied = page.getByTestId("bag-rewards-applied");
-    await expect(applied).toContainText("Save £2.00");
+    await expect(applied).toContainText(/Save £2(?![\d.])/);
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£7.00");
     // The row pops once per applied VALUE (AppliedRowPop): a bag reopen
@@ -278,7 +278,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await page.getByTestId("bag-close").click();
     await expect(page).toHaveURL(/\/menu$/);
     await openBag(page);
-    await expect(applied).toContainText("Save £2.00");
+    await expect(applied).toContainText(/Save £2(?![\d.])/);
     await expect(pop).toHaveCount(0);
 
     await redeemSaladFromBag(page);
@@ -288,9 +288,9 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
 
     // The applied row is the OFFER's: £2, never the bill's £19.
     await expect(applied).toContainText("£2 off your order");
-    await expect(applied).toContainText("Save £2.00");
-    await expect(applied).toContainText(`${MINUS}£2.00`);
-    await expect(applied).not.toContainText("19.00");
+    await expect(applied).toContainText(/Save £2(?![\d.])/);
+    await expect(applied).toContainText(new RegExp(`${MINUS}£2(?![\\d.])`));
+    await expect(applied).not.toContainText(/£19(?!\d)/);
     await expect(pop).toHaveCount(0);
     // The bill keeps both: the reward's £17 rides in Sub Total and returns
     // on Discounts beside the offer's £2 (header money).
@@ -328,10 +328,14 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
       width: 152,
       height: 152,
     });
-    await expect(flatRow.getByText(FLAT_2.name, { exact: true })).toHaveCSS("font-size", "32px");
+    // The title by its id: the mechanic line under it now reads the same
+    // "£2 off your order" (posistKiosk's amt(): a whole amount whole).
+    const flatTitle = flatRow.locator('[id$="-title"]');
+    await expect(flatTitle).toHaveText(FLAT_2.name);
+    await expect(flatTitle).toHaveCSS("font-size", "32px");
     await expect(page.getByTestId("rewards-loyalty-lock")).toHaveCount(0);
     await expect(page.getByTestId(`offer-radio-${FLAT_2._id}`)).toBeVisible();
-    await expect(page.getByTestId(`offer-row-nudge-${MIN_25._id}`)).toContainText("£17.00");
+    await expect(page.getByTestId(`offer-row-nudge-${MIN_25._id}`)).toContainText("Add £17+");
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();
     await page.getByTestId("rewards-close").click();
     await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
@@ -387,7 +391,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     await expect(page.getByTestId("bag-rewards-applied-for-you")).toHaveText(
       en.offers.auto.appliedForYou
     );
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(new RegExp(`${MINUS}£2(?![\\d.])`));
     await expect(page.getByTestId("bag-total")).toContainText("£7.00");
     await page.getByTestId("bag-rewards-applied").click();
     await expect(page.getByTestId("rewards-sheet")).toBeVisible();
@@ -416,7 +420,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     // Both stay: the reward row AND the offer.
     await expect(loyaltyRows(page)).toHaveCount(1);
     await expect(applied).toContainText("£2 off your order");
-    await expect(applied).toContainText(`${MINUS}£2.00`);
+    await expect(applied).toContainText(new RegExp(`${MINUS}£2(?![\\d.])`));
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£19.00`);
 
     // Reopened from the applied row the sheet is NOT locked — and on this
@@ -435,11 +439,11 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     // The swap still works; its celebration shows £3, not the bill's £20.
     await pickAndSave(page, FLAT_3._id);
     await expect(page.getByTestId("offer-applied-celebration")).toContainText(
-      "You save £3.00"
+      /You save £3(?![\d.])/
     );
     await expect(applied).toContainText("£3 off your order");
-    await expect(applied).toContainText("Save £3.00");
-    await expect(applied).toContainText(`${MINUS}£3.00`);
+    await expect(applied).toContainText(/Save £3(?![\d.])/);
+    await expect(applied).toContainText(new RegExp(`${MINUS}£3(?![\\d.])`));
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£20.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£6.00");
     await expect(loyaltyRows(page)).toHaveCount(1);

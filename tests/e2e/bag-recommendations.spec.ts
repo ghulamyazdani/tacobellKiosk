@@ -472,7 +472,8 @@ test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, pe
     expect(await pdpRailIds(page)).toEqual([TORTILLA_SAUCE, GREEK_SALAD]);
     const sauce = page.getByTestId(`pdp-rail-item-${TORTILLA_SAUCE}`);
     await expect(sauce).toHaveAccessibleName(`${en.menu.quickAdd} Tortilla Sauce`);
-    await expect(sauce).toContainText("£2.00");
+    // The menu card's price, posistKiosk's way (moduloCalcaledValue): "£2".
+    await expect(sauce).toContainText(/£2(?![\d.])/);
     await expect(quantityPill(sauce)).toHaveCount(0);
 
     await sauce.click();
@@ -492,13 +493,14 @@ test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, pe
 
     // The customised burger still lands beside them: two rows (cartRows
     // below), three units — the CTA's "(n)" counts units, as MY BAG (n)
-    // does (walk 2026-10-14) — 2 × £2 + £9 on the menu's CTA.
+    // does (walk 2026-10-14) — and its TOTAL is the bag's (user decision
+    // 2026-10-14): 2 × £2 + £9 = £13 + VAT 15 % = £14.95, rounded to £15.
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(3)");
-    await expect(page.getByTestId("cta-total")).toContainText("£13.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(`${en.menu.total}: £15`);
     expect(await cartRows(page)).toEqual([
       [TORTILLA_SAUCE, 2],
       [CHEESE_BURGER, 1],

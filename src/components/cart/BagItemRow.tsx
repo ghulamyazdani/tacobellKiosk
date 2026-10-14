@@ -13,6 +13,7 @@ import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import VegMark from "../menu/VegMark";
+import NoImageBell from "../common/NoImageBell";
 import plusIcon from "../../assets/icons/plus.svg";
 
 /** The stock / schedule flags PAY writes onto a cart row. */
@@ -226,7 +227,7 @@ export default function BagItemRow({
           }`}
         />
       ) : (
-        <span
+        <NoImageBell
           className={`h-[152px] w-[152px] shrink-0 rounded-[8px] bg-tb-grey-6${
             unavailable ? " opacity-50" : ""
           }`}

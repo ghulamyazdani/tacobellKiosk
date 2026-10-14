@@ -3,7 +3,7 @@
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -89,6 +89,16 @@ describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
     expect(row).toHaveTextContent("Add Onions"); // flattened summary
     expect(row).toHaveTextContent("£8.60"); // unit × qty(1)
     expect(screen.getByTestId("repeat-new-customizations")).toBeInTheDocument();
+  });
+
+  // User decision 2026-10-14: posistKiosk's RepeatItem prints the line with
+  // moduloCalcaledValue — a whole amount whole.
+  it("a whole line price prints whole: £8, never £8.00", () => {
+    seedOpenSheet([{ ...BURGER_ROW, total_price: 8 }]);
+    renderSheet();
+    const row = screen.getByTestId("repeat-row-cb-1");
+    expect(within(row).getByText("£8")).toBeInTheDocument();
+    expect(row).not.toHaveTextContent("£8.00");
   });
 
   it("motion D-M3: the panel rises (tb-sheet-enter), the scrim never animates, no inline keyframes remain", () => {

@@ -177,7 +177,7 @@ const dexieCartQuantities = async (page: Page): Promise<number[]> =>
   (await dexieRows(page)).map((row) => Number(row.quantity)).sort((a, b) => a - b);
 
 test.describe("P7a My Bag (bag sheet on /cart)", () => {
-  test("BAG BASICS: PDP add lands a £8.00 row; stepper doubles to £16.00 (cta-total agrees) and back", async ({
+  test("BAG BASICS: PDP add lands a £8.00 row; stepper doubles to £16.00 (the cta TOTAL is the bag's) and back", async ({
     page,
   }) => {
     test.slow();
@@ -215,8 +215,9 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     expect(Math.abs(payShortfall)).toBeLessThanOrEqual(1);
 
     // Increase: every money surface agrees (cta-total sits under the sheet —
-    // toContainText reads the covered bar's text, which is the point; the
-    // cta bar shows the SUBTOTAL, the bag total the taxed net).
+    // toHaveText reads the covered bar's text, which is the point). The cta
+    // bar shows the bag's own Total (user decision 2026-10-14; it was the
+    // subtotal), as posistKiosk's menu footer prints it: whole, "£18".
     const itemId = await firstBagRowItemId(page);
     await page.getByTestId(`bag-inc-${itemId}`).click();
     await expect(page.getByTestId("bag-subtotal")).toContainText("£16.00");
@@ -224,7 +225,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-round-off")).toHaveText("−£0.40");
     await expect(page.getByTestId("bag-total")).toContainText("£18.00");
     await expect(page.getByTestId("bag-pay")).toContainText("£18.00");
-    await expect(page.getByTestId("cta-total")).toContainText("£16.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £18$/);
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (2)");
 
     // ×5: £40 × 1.15 is a whole £46 — nothing to round, so the Round off
@@ -243,7 +244,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("remove-item-modal")).toHaveCount(0);
     await expect(page.getByTestId("bag-subtotal")).toContainText("£8.00");
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
   });
 
   test("REMOVE CONFIRM: decrease at qty 1 asks first; cancel keeps the row, confirm removes and the empty bag exits to /menu", async ({
@@ -275,7 +276,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
     await expect(page).toHaveURL(/\/menu$/);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("EDIT FROM BAG: PDP reopens seeded with the row's addon, UPDATE rewrites the same row (no duplicate) at the new total", async ({
@@ -531,11 +532,12 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     const repeatTestId = await repeatRow.getAttribute("data-testid");
     const itemId = (repeatTestId ?? "").replace("repeat-row-", "");
 
-    // Stepper: qty 2 → £16.00 on the row AND in redux (cta bar under the
-    // sheet agrees).
+    // Stepper: qty 2 → £16 on the row (posistKiosk's RepeatItem format) AND
+    // in redux (the cta bar under the sheet shows the bag's Total: £18.40,
+    // rounded).
     await page.getByTestId(`repeat-inc-${itemId}`).click();
-    await expect(repeatRow).toContainText("£16.00");
-    await expect(page.getByTestId("cta-total")).toContainText("£16.00");
+    await expect(repeatRow.getByText("£16", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £18$/);
 
     // + NEW CUSTOMIZATIONS → fresh customization session (ADD, not UPDATE).
     await page.getByTestId("repeat-new-customizations").click();
@@ -550,7 +552,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
-    await expect(page.getByTestId("cta-total")).toContainText("£16.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £18$/);
   });
 
   test("CANCEL ORDER: footer cancel confirms before tearing down; confirm resets to /start and Dexie stays empty across a reload", async ({
@@ -560,7 +562,8 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
     await addGreekSaladOneTap(page, "(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    // The bag's Total, round(17 * 1.15) = £20 (user decision 2026-10-14).
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
 
     // Cancel path 1: dismiss keeps the order (no teardown without confirm).
     // Focus moves in on NO, BACK TO MENU (walk 2026-10-14).
@@ -582,14 +585,14 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await page.getByTestId("pipeline-p1").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
 
     // Reload: the Dexie rehydrate must find NOTHING (clearIndexedDbCart ran
     // in the reset) — the bag stays empty; the persisted "£" stays (header).
     await page.reload();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("CRASH RECOVERY: a reload rehydrates the cart from Dexie — count/total restored on /menu and the bag renders the row", async ({
@@ -599,7 +602,8 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await mockKioskBackend(page);
     await bootRegisteredToMenu(page);
     await addGreekSaladOneTap(page, "(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    // The bag's Total, round(17 * 1.15) = £20, before the bag ever opened.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
 
     // Crash/reload. The token cookie persists, so ProtectedRoute keeps the
     // /menu URL (no registration bounce — this IS how the app re-boots);
@@ -610,7 +614,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     // The currency survives with the cart: currencySettings is persisted and
     // this path never refetches get_data (header) — ₹ here = a lost currency.
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
 
     // The bag renders the restored row.
     await openBag(page);
@@ -829,17 +833,18 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await quickAdd.scrollIntoViewIfNeeded();
     await quickAdd.click();
     // UB1: the size tiles price in the deployment's symbol — the cheapest
-    // whole, a bigger size as its step up.
-    await expect(page.getByTestId(`size-${SIZE_REGULAR}`)).toContainText("£5.00");
-    await expect(page.getByTestId(`size-${SIZE_LARGE}`)).toContainText("+£2.00");
+    // whole, a bigger size as its step up; posistKiosk's format, "£5" / "+£2".
+    await expect(page.getByTestId(`size-${SIZE_REGULAR}`)).toContainText(/£5$/);
+    await expect(page.getByTestId(`size-${SIZE_LARGE}`)).toContainText(/\+£2$/);
     await page.getByTestId(`size-${SIZE_LARGE}`).click();
     await page.getByTestId("size-continue").click();
 
-    // A VARIANT add always confirms; its total is the bar's live subtotal
-    // (it read the bag-only netAmount mirror: £0.00 before the bag opened).
+    // A VARIANT add always confirms; its Total is the bar's: the bag's own
+    // Total before the bag opened (it read the bag-only netAmount mirror,
+    // £0.00, then the pre-tax subtotal) — round(7 * 1.15) = £8.
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
-    await expect(page.getByTestId("cta-total")).toContainText("£7.00");
-    await expect(page.getByTestId("added-total")).toContainText("£7.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £8$/);
+    await expect(page.getByTestId("added-total")).toHaveText(/ £8$/);
     await page.getByTestId("added-continue").click();
 
     // The bill prices a VARIANT row by its variantPrice (the row lacked it:
@@ -999,7 +1004,8 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
-    await expect(page.getByTestId("cta-total")).toContainText("£8.00");
+    // £8 + VAT = £9.20: the bag's £9.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
   });
 });
 

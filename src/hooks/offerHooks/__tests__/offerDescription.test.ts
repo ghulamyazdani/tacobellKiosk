@@ -254,8 +254,9 @@ describe("U1 — the buy/get sentence, per mechanic (EN)", () => {
     );
   });
 
-  it("bogo 'and', categories with an amount discount → 'with £50.00 off'", () => {
-    expect(text(PIZZA)).toBe("Buy 1 item from Pizza category & get 1 item from Cold Drinks category with £50.00 off");
+  // Amounts as posistKiosk's useOfferHook prints them (moduloCalcaledValue).
+  it("bogo 'and', categories with an amount discount → 'with £50 off'", () => {
+    expect(text(PIZZA)).toBe("Buy 1 item from Pizza category & get 1 item from Cold Drinks category with £50 off");
   });
 
   it("bogo 'and': dead buy entries are skipped and the separators stay right", () => {
@@ -376,7 +377,7 @@ describe("U1 — the composer picks the connector from the BODIES (PK buyGetCopy
       ...PIZZA,
       applicable: { on: "complete", rawItems: [buyCategory("Chakhna", 2, "and", false)] },
     });
-    expect(text(deadBuy)).toBe("Get 1 item from Cold Drinks category with £50.00 off");
+    expect(text(deadBuy)).toBe("Get 1 item from Cold Drinks category with £50 off");
   });
 
   it("a dead get side → 'Buy …'", () => {
@@ -515,19 +516,19 @@ describe("U2 — the item-criteria scope line, through useOfferDescription", () 
     });
   });
 
-  it("'£100.00 off Burger', locked: 'Add something from Burger'", () => {
+  it("'£100 off Burger', locked: 'Add something from Burger'", () => {
     expect(describer().current(ONLY_BURGER)).toEqual({
-      text: "£100.00 off Burger",
+      text: "£100 off Burger",
       lockLine: "Add something from Burger",
     });
   });
 
-  it("two names then '+N more', and the percent cap: '· up to £150.00' (F5)", () => {
-    expect(text(SEVEN)).toBe("50% off Burger, Afghani Chaap, +5 more · up to £150.00");
+  it("two names then '+N more', and the percent cap: '· up to £150' (F5)", () => {
+    expect(text(SEVEN)).toBe("50% off Burger, Afghani Chaap, +5 more · up to £150");
   });
 
   it("the amount cap prints min(value, maxDiscount) (F5)", () => {
-    expect(text(AMOUNT_CAPPED)).toBe("£45.00 off everything except Breads, Burger");
+    expect(text(AMOUNT_CAPPED)).toBe("£45 off everything except Breads, Burger");
   });
 
   it("a mixed item + category exclude list cannot be stated honestly → '' and no lock line", () => {

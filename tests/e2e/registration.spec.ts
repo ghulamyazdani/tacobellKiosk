@@ -298,15 +298,17 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
     // Every menu add confirms (user 2026-10-14).
     await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    // TOTAL is the bag's (user decision 2026-10-14): round(17 × 1.15) = £20.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
 
-    // Re-add the same simple item → same row, quantity bumps, total doubles.
+    // Re-add the same simple item → same row, quantity bumps, the subtotal
+    // doubles: TOTAL round(34 × 1.15) = £39.
     // The CTA counts units — the bag header's count (walk 2026-10-14) — so the
     // one row reads "(2)"; the row count comes from the store.
     await salad.click();
     await dismissAddedModal(page); // the +1 confirms too
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
-    await expect(page.getByTestId("cta-total")).toContainText("£34.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £39$/);
     expect(
       await page.evaluate(
         () =>
@@ -444,6 +446,7 @@ test.describe("P6b PDP customization (real converter + useCustomization + commit
     await page.getByTestId("added-continue").click();
 
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£9.00");
+    // £8 + Extra Pickles £1, VAT in: round(9 × 1.15) = the bag's £10.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £10$/);
   });
 });

@@ -752,8 +752,9 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await page.getByTestId(`bag-edit-${itemId}`).click();
     await expect(page.getByTestId("customization-screen")).toBeVisible();
     await page.getByTestId("pdp-change-size").click();
-    await expect(page.getByTestId(`pdp-variant-${SIZE_REGULAR}`)).toContainText("£6.00");
-    await expect(page.getByTestId(`pdp-variant-${SIZE_LARGE}`)).toContainText("£9.00");
+    // The size grid prices posistKiosk's way (moduloCalcaledValue): "£6".
+    await expect(page.getByTestId(`pdp-variant-${SIZE_REGULAR}`)).toContainText(/£6$/);
+    await expect(page.getByTestId(`pdp-variant-${SIZE_LARGE}`)).toContainText(/£9$/);
     await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
     await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
     await page.getByTestId("pdp-add-to-bag").click();
@@ -989,7 +990,7 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await page.getByTestId("bag-ordertype-notice-gotit").click();
     await expect(page.getByTestId("bag-ordertype-notice")).toHaveCount(0);
     await expect(page).toHaveURL(/\/menu$/);
-    await expect(page.getByTestId("cta-total")).toContainText("£0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("CHARGES 500: a failed take-away charges fetch shows the failure dialog and changes nothing — not the bag, not the store, not the menu beneath; BACK keeps EAT IN", async ({

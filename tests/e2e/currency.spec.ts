@@ -75,7 +75,7 @@ async function addGreekSalad(page: Page) {
   await salad.click();
   await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
-  await expect(page.getByTestId("cta-total")).toContainText("₹17.00");
+  await expect(page.getByTestId("cta-total")).toHaveText(/: ₹20$/);
 }
 
 /** VIEW MY BAG → /cart. */
@@ -216,7 +216,7 @@ test.describe("Walk 2026-10-14 — a ﷼ price reads left to right", () => {
     await openRewardsSheet(page);
   };
 
-  test("EN: the card and the PDP lead with the price, the rewards row's '﷼2.00 off your order' leaf is LTR", async ({
+  test("EN: the card and the PDP lead with the price, the rewards row's '﷼2 off your order' leaf is LTR", async ({
     page,
   }) => {
     test.slow();
@@ -228,28 +228,31 @@ test.describe("Walk 2026-10-14 — a ﷼ price reads left to right", () => {
     await expectLeftOf(glyphX(line, "﷼", "17"), "card: the symbol leads its price");
     await expectLeftOf(glyphX(line, "17", "254"), "card: the price precedes the calories");
 
-    // The PDP price line: "﷼8.00 | 740 Cal".
+    // The PDP price line: "﷼8 | 740 Cal" (posistKiosk's price format,
+    // user decision 2026-10-14).
     const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
     await burger.scrollIntoViewIfNeeded();
     await burger.click();
     const price = page.getByTestId("pdp-price");
-    await expect(price).toContainText("8.00 | 740 Cal");
-    await expectLeftOf(glyphX(price, "﷼", "8.00"), "PDP: the symbol leads its price");
-    await expectLeftOf(glyphX(price, "8.00", "740"), "PDP: the price precedes the calories");
+    await expect(price).toHaveText(/8 \| 740 Cal$/);
+    await expectLeftOf(glyphX(price, "﷼", "8"), "PDP: the symbol leads its price");
+    await expectLeftOf(glyphX(price, "8", "740"), "PDP: the price precedes the calories");
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
 
     // The rewards row: the dir="auto" description leaf and the pink nudge.
     await toRewards(page);
     const desc = page.getByTestId("offer-row-desc-offer-flat-2");
-    await expect(desc).toContainText("2.00 off your order");
+    // posistKiosk's amt() (moduloCalcaledValue): a whole amount whole.
+    await expect(desc).toContainText("2 off your order");
     await expect(desc).toHaveCSS("direction", "ltr");
-    await expectLeftOf(glyphX(desc, "﷼", "2.00"), "rewards row: the symbol leads its amount");
-    await expectLeftOf(glyphX(desc, "2.00", "off"), "rewards row: the amount precedes 'off your order'");
+    await expectLeftOf(glyphX(desc, "﷼", "2"), "rewards row: the symbol leads its amount");
+    await expectLeftOf(glyphX(desc, "2", "off"), "rewards row: the amount precedes 'off your order'");
     const nudge = page.getByTestId("offer-row-nudge-offer-percent-25");
     await expect(nudge).toHaveCSS("direction", "ltr");
     await expectLeftOf(glyphX(nudge, "Add", "﷼"), "nudge: 'Add' first");
-    await expectLeftOf(glyphX(nudge, "﷼", "8.00"), "nudge: the symbol leads its amount");
+    await expect(nudge).toContainText("8+ to your order");
+    await expectLeftOf(glyphX(nudge, "﷼", "8"), "nudge: the symbol leads its amount");
   });
 
   test("AR: the price stays one LTR unit (﷼ before its digits) — on the card and inside the RTL rewards line", async ({
@@ -266,10 +269,10 @@ test.describe("Walk 2026-10-14 — a ﷼ price reads left to right", () => {
 
     await toRewards(page);
     const desc = page.getByTestId("offer-row-desc-offer-flat-2");
-    // "خصم ﷼2.00 على طلبك": Arabic copy, so the leaf resolves RTL — the
+    // "خصم ﷼2 على طلبك": Arabic copy, so the leaf resolves RTL — the
     // first word reads first, at the right; the amount inside stays LTR.
     await expect(desc).toHaveCSS("direction", "rtl");
-    await expectLeftOf(glyphX(desc, "﷼", "2.00"), "AR rewards row: the symbol leads its amount");
-    await expectLeftOf(glyphX(desc, "2.00", "خصم"), "AR rewards row: 'خصم' reads first (right of the amount)");
+    await expectLeftOf(glyphX(desc, "﷼", "2"), "AR rewards row: the symbol leads its amount");
+    await expectLeftOf(glyphX(desc, "2", "خصم"), "AR rewards row: 'خصم' reads first (right of the amount)");
   });
 });

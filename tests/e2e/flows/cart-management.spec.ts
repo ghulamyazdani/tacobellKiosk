@@ -19,10 +19,10 @@ test.describe("Flow 2 — cart management", () => {
     await bootRegisteredToMenu(page);
 
     await addOneTap(page, GREEK_SALAD, "(1)");
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
     await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
-    await expect(page.getByTestId("cta-total")).toContainText("£25.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £29$/);
 
     await openBag(page);
     const sheet = page.getByTestId("bag-sheet");
@@ -42,7 +42,7 @@ test.describe("Flow 2 — cart management", () => {
     await expect(page.getByTestId("bag-subtotal")).toContainText("£41.00");
     await expect(page.getByTestId("bag-total")).toContainText("£47.00"); // 47.15
     await expect(page.getByTestId("bag-pay")).toContainText("£47.00");
-    await expect(page.getByTestId("cta-total")).toContainText("£41.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £47$/);
 
     // Down to one: a decrement above 1 never asks.
     for (let tap = 0; tap < 2; tap++) {
@@ -66,7 +66,7 @@ test.describe("Flow 2 — cart management", () => {
     await expect(sheet).toContainText("My Bag (1)");
     await expect(page.getByTestId("bag-subtotal")).toContainText("£17.00");
     await expect(page.getByTestId("bag-total")).toContainText("£20.00"); // 19.55
-    await expect(page.getByTestId("cta-total")).toContainText("£17.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £20$/);
     await expect.poll(async () => (await dexieRows(page)).length).toBe(1);
   });
 });

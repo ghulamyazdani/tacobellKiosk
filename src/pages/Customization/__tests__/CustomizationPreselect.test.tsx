@@ -133,7 +133,10 @@ describe("PDP opens on the preselected size (S1)", () => {
   selectedVariant): the item looked free. Before a size the line reads as
   the item's menu card does (formatMenuPriceLine) and the CTA carries no
   price — Figma's PDP CTA (1:2614 / 1:2728 / 1:5540) is the label alone.
-  A size picked: today's live price.
+  A size picked: today's live price. Prices print as posistKiosk's
+  moduloCalcaledValue does (user decision 2026-10-14): whole amounts whole,
+  fractions to two decimals; ADD TO BAG keeps two decimals (posistKiosk's
+  PDP total is calculationWrapper).
 */
 describe("PDP price before a size is chosen (walk 2026-10-14)", () => {
   const NOODLES = {
@@ -146,6 +149,7 @@ describe("PDP price before a size is chosen (walk 2026-10-14)", () => {
       { id: "noodles-half", name: "Half", price: 10, isActive: true, modifiers: [EXTRAS._id] },
       { id: "noodles-quarter", name: "Quarter", price: 5, isActive: true, modifiers: [] },
       { id: "noodles-full", name: "Full", price: 15, isActive: true, modifiers: [] },
+      { id: "noodles-mini", name: "Mini", price: 5.5, isActive: true, modifiers: [] },
     ],
   };
 
@@ -167,9 +171,18 @@ describe("PDP price before a size is chosen (walk 2026-10-14)", () => {
     expect(cta).toHaveTextContent(/^Add to bag$/);
     expect(screen.getByTestId("customization-screen")).not.toHaveTextContent("£0.00");
 
+    // The size grid prices each size posistKiosk's way.
+    expect(screen.getByTestId("pdp-variant-noodles-half")).toHaveTextContent(/^Half£10$/);
+    expect(screen.getByTestId("pdp-variant-noodles-mini")).toHaveTextContent(/^Mini£5\.50$/);
+
     fireEvent.click(screen.getByTestId("pdp-variant-noodles-half"));
-    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£10.00 \| 254 Cal$/);
+    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£10 \| 254 Cal$/);
     expect(cta).toHaveTextContent("Add to bag · £10.00");
+
+    fireEvent.click(screen.getByTestId("pdp-change-size"));
+    fireEvent.click(screen.getByTestId("pdp-variant-noodles-mini"));
+    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£5\.50 \| 254 Cal$/);
+    expect(cta).toHaveTextContent("Add to bag · £5.50");
   });
 });
 
@@ -209,7 +222,7 @@ describe("PDP opens on a lone pickable size (walk 2026-10-14)", () => {
     expect(screen.queryByTestId("pdp-variant-picker")).not.toBeInTheDocument();
     expect(screen.getByTestId("pdp-change-size")).toHaveTextContent(`Medium · ${i18n.t("pdp.change")}`);
     expect(screen.getByTestId(`pdp-group-${EXTRAS._id}`)).toBeInTheDocument();
-    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£4.00$/);
+    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£4$/);
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£4.00");
   });
 });
@@ -247,7 +260,7 @@ describe("PDP Change size keeps the current size (walk 2026-10-14)", () => {
     expect(screen.getByTestId("pdp-variant-cola-s")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("pdp-variant-cola-l").querySelector("img[src*='radio-check']")).not.toBeNull();
     expect(screen.getByTestId("pdp-variant-cola-s").querySelector("img[src*='radio-check']")).toBeNull();
-    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£3.00$/);
+    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£3$/);
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£4.00");
     expect(picks()[EXTRAS._id]?.map((pick) => pick?.id)).toEqual(["pickles"]);
   });
@@ -276,7 +289,7 @@ describe("PDP Change size keeps the current size (walk 2026-10-14)", () => {
     expect(screen.queryByTestId("pdp-variant-picker")).not.toBeInTheDocument();
     expect(screen.getByTestId("pdp-change-size")).toHaveTextContent(`Small · ${i18n.t("pdp.change")}`);
     expect(picks()).toEqual({});
-    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£2.00$/);
+    expect(screen.getByTestId("pdp-price")).toHaveTextContent(/^£2$/);
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£2.00");
   });
 });

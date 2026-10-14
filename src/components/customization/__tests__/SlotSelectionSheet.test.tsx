@@ -72,6 +72,27 @@ describe("SlotSelectionSheet (Figma 1:4761/1:4692 — SELECT sheet)", () => {
     expect(fries).toHaveTextContent("+£0.75 | 360 Cal");
   });
 
+  // User decision 2026-10-14: posistKiosk's price format (moduloCalcaledValue).
+  it("a whole upgrade price prints whole: '+£2', never '+£2.00'", () => {
+    renderSheet({ options: [COLA, { ...FRIES, price: 2 }] });
+    const fries = screen.getByTestId("slot-option-opt-fries").parentElement as HTMLElement;
+
+    expect(fries).toHaveTextContent("+£2 | 360 Cal");
+    expect(fries).not.toHaveTextContent("+£2.00");
+  });
+
+  // Walk 2026-10-14: a photo-less row's plate read as a failed load.
+  it("a row without a photo carries the faint bell on its 152 px plate, never one with a photo", () => {
+    const photo = "https://cdn.example.com/kiosk/cola.png";
+    renderSheet({ options: [{ ...COLA, image_url: photo }, FRIES] });
+    const cola = screen.getByTestId("slot-option-opt-cola").parentElement as HTMLElement;
+    const fries = screen.getByTestId("slot-option-opt-fries").parentElement as HTMLElement;
+
+    expect(within(fries).getByTestId("no-image-bell").parentElement).toHaveClass("h-[152px]", "w-[152px]", "bg-tb-grey-6");
+    expect(within(cola).queryByTestId("no-image-bell")).toBeNull();
+    expect(cola.querySelector(`img[src="${photo}"]`)).not.toBeNull();
+  });
+
   it("SAVE is locked while min > 0 and nothing is picked; a pick unlocks it and returns the item", async () => {
     const { onSave } = renderSheet();
     const save = screen.getByTestId("slot-sheet-save");

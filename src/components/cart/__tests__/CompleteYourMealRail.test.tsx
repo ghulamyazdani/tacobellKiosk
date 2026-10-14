@@ -84,7 +84,8 @@ describe("CompleteYourMealRail (locked decision 6 — source-2 isCartRecommended
     expect(screen.getByTestId("bag-rail-item-fries")).toHaveTextContent(
       "Large Fries"
     );
-    expect(screen.getByTestId("bag-rail-item-fries")).toHaveTextContent("£2.5");
+    // posistKiosk's moduloCalcaledValue: a fraction to two decimals.
+    expect(screen.getByTestId("bag-rail-item-fries")).toHaveTextContent("£2.50");
     expect(screen.getByTestId("bag-rail-item-pepsi")).toBeInTheDocument();
     expect(screen.queryByTestId("bag-rail-item-burger")).not.toBeInTheDocument();
     expect(

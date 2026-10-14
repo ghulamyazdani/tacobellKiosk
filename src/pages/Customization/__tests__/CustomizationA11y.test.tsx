@@ -118,24 +118,26 @@ describe("PDP copy and controls (P9f)", () => {
 
   // Item 42: the rows' meta is formatOptionMeta — calories only when the
   // item carries them (the old row claimed "0 Cal" for every free option).
-  it("EN is unchanged: '£8.00 | 740 Cal', the free row reads '5 Cal'", () => {
+  // The price as posistKiosk prints it (moduloCalcaledValue): whole amounts
+  // whole ("£8"), fractions to two decimals ("+£0.60").
+  it("EN: '£8 | 740 Cal', the free row reads '5 Cal'", () => {
     renderPdp();
 
-    expect(screen.getByText("£8.00 | 740 Cal")).toBeInTheDocument();
+    expect(screen.getByText("£8 | 740 Cal")).toBeInTheDocument();
     expect(screen.getByText("5 Cal")).toBeInTheDocument();
     expect(screen.getByText("+£0.60")).toBeInTheDocument();
   });
 
   it("AR — switched on the PDP itself — renders t('pack.cal') for the price line and the free row, never 'Cal'", async () => {
     renderPdp();
-    expect(screen.getByText("£8.00 | 740 Cal")).toBeInTheDocument();
+    expect(screen.getByText("£8 | 740 Cal")).toBeInTheDocument();
 
     // The PDP mounts its own LanguageSheet: the memoised price line must follow t.
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
 
-    const priceLine = screen.getByText(`£8.00 | ${i18n.t("pack.cal", { value: 740 })}`);
+    const priceLine = screen.getByText(`£8 | ${i18n.t("pack.cal", { value: 740 })}`);
     const freeRow = screen.getByText(i18n.t("pack.cal", { value: 5 }));
     expect(priceLine).not.toHaveTextContent("Cal");
     expect(freeRow).not.toHaveTextContent("Cal");
@@ -201,7 +203,9 @@ describe("PDP copy and controls (P9f)", () => {
     store.dispatch(setCurrency({ currency: "SAR", text: RIAL, uniDec: "65020", uniHex: "FDFC" }));
     renderPdp();
 
-    expect(screen.getByTestId("pdp-price").textContent).toBe(`${LRM}${RIAL}${LRM}8.00 | 740 Cal`);
+    // The price posistKiosk's way ("8"); ADD TO BAG keeps two decimals
+    // (posistKiosk's PDP total: calculationWrapper).
+    expect(screen.getByTestId("pdp-price").textContent).toBe(`${LRM}${RIAL}${LRM}8 | 740 Cal`);
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent(`· ${LRM}${RIAL}${LRM}8.00`, {
       normalizeWhitespace: false,
     });

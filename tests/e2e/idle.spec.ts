@@ -217,7 +217,7 @@ test.describe("P9a idle timeout + session integrity", () => {
 
     await startOrderToMenu(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
-    await expect(page.getByTestId("cta-total")).toContainText("0.00");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £0$/);
   });
 
   test("CONTINUE: CONTINUE ORDERING at ~110 s keeps the cart and the screen, re-arms a FULL period, and the backdrop continues too", async ({

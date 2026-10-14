@@ -51,9 +51,11 @@ import ScrollIndicator from "../../components/chrome/ScrollIndicator";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import ErrorModal from "../../components/common/ErrorModal";
+import NoImageBell from "../../components/common/NoImageBell";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import { selectRecommendationDetour } from "../../redux/features/menuSelections/menuSelections.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -775,10 +777,13 @@ export default function Customization({
           The pane is the page's one arriving block (motion §2.7); the
           scrollbar, the CTA bar, the footer and the sheets stay. */}
       <div ref={pdpScrollRef} id="scrollCustomizableItem" className="tb-enter [--i:0] min-h-0 flex-1 overflow-y-auto px-[24px] pb-[72px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* Hero (1:598): the band always renders; imageless items show it bare. */}
+        {/* Hero (1:598): the band always renders; an imageless item's
+            carries the bell (NoImageBell). */}
         <div className="-mx-[24px] flex h-[450px] w-[1080px] items-center justify-center bg-tb-grey-6">
-          {heroImage && (
+          {heroImage ? (
             <img alt="" src={heroImage} className="h-[354px] w-[680px] object-contain" />
+          ) : (
+            <NoImageBell />
           )}
         </div>
         <div className="mt-[24px] flex items-start justify-between gap-[24px]">
@@ -808,7 +813,7 @@ export default function Customization({
           <span data-testid="pdp-price">
             {sizePending
               ? formatMenuPriceLine(SelectedEntity, currency, t)
-              : `${currency}${basePrice.toFixed(2)}${calLabel}`}
+              : `${currency}${formatPrice(basePrice)}${calLabel}`}
           </span>
         </p>
         {pdpDescription && (
@@ -863,7 +868,7 @@ export default function Customization({
                     <p className="pr-[36px] text-[20px] font-medium capitalize text-black">{name(v)}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
                       {currency}
-                      {Number(v.price ?? 0).toFixed(2)}
+                      {formatPrice(v.price)}
                     </p>
                   </button>
                 );

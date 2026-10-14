@@ -19,7 +19,6 @@ import {
   reconcileFreebieAllocation,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
-import { isSameOrLessViolated } from "@cx-sdk/ordering/offer/offerCommitRules";
 import { getBillOfferDiscount } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import {
   addLoyaltyPoints,
@@ -65,7 +64,9 @@ import {
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import useOrderHook from "../../hooks/menuHooks/useOrderHook";
+import { shouldDropAppliedOffer } from "@cx-sdk/ordering/offer/offerRevalidation";
+import useCartBill, { billTotal } from "../../hooks/cartHooks/useCartBill";
+import { formatPrice } from "../../utils/price";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
 import useAppSettings from "../../hooks/utils/useAppSettings";
@@ -323,15 +324,13 @@ export default function BagSheet({
     replaceCartItems,
   } = useCartHook();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
-  const { getCalculatedBill } = useOrderHook();
   const { fetchMenu, isAllowMultiplePunch, fetchModifierProperties } =
     useMenuConverters();
   const { updateCartItemsByMenu } = useSchedulerConverter();
   const { getIsLoyaltyOn, shouldSkipCRM, getDeactivatedPipelines } =
     useAppSettings();
   const { checkPipelineClosedFromRedux } = useKioskOpenServices();
-  const { isItemWiseOfferApplicable, isBOGOOfferApplicable, isLeastValueItemOffer } =
-    useOfferHook();
+  const { isLeastValueItemOffer } = useOfferHook();
   const { rank } = useOfferSavings();
   const { handleCartDrivenRemoval, removeAppliedOffer } = useOfferApply();
   const [getServerTimeApi] = useLazyGetServerTimeQuery();
@@ -405,19 +404,10 @@ export default function BagSheet({
     [open, rank, filteredOffers],
   );
 
-  // Bill — contract A3: LOCAL to the component (never read the slice's
-  // netAmount for display — trap 8), recomputed per cart change. useMemo
-  // instead of a setState effect (house react-hooks rules forbid
-  // set-state-in-effect); fork parity keys the recompute on the cart slice
-  // alone — getCalculatedBill is a pure engine call re-created per render.
-  const bill = useMemo(
-    () => {
-      if (!open || (cartRdx?.cartItems?.length ?? 0) === 0) return null;
-      return getCalculatedBill(cartRdx);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, cartRdx],
-  );
+  // Bill — contract A3: computed here (never read the slice's netAmount for
+  // display — trap 8), recomputed per cart change, on the engine and with
+  // the billTotal the menu bar and the product-added Total use too.
+  const bill = useCartBill(open ? cartRdx : null);
 
   // Mirror the net amount into the slice on each recompute so the
   // downstream checkout screens read a real value.
@@ -520,43 +510,9 @@ export default function BagSheet({
     // would drop a persisted reward on the first render after a
     // crash-reload, before the Dexie rehydrate lands the rows.
     if (items.length === 0) return;
-    const qtyExclLoyalty = items.reduce(
-      (acc: number, it: any) =>
-        !it?.isLoyaltyItem ? acc + Number(it?.quantity ?? 0) : acc,
-      0,
-    );
-    const qtyExclLoyaltyAndGetItems = items.reduce(
-      (acc: number, it: any) =>
-        !it?.isLoyaltyItem && !it?.isGetItem
-          ? acc + Number(it?.quantity ?? 0)
-          : acc,
-      0,
-    );
-    const shouldRemove =
-      // 1 + 3: minItemCount against both quantity views.
-      (cartOffer?.minItemCount && qtyExclLoyalty < cartOffer.minItemCount) ||
-      (cartOffer?.minItemCount &&
-        qtyExclLoyaltyAndGetItems < cartOffer.minItemCount) ||
-      // 2 + 4: nothing payable left under the offer.
-      qtyExclLoyalty <= 0 ||
-      qtyExclLoyaltyAndGetItems <= 0 ||
-      // 5: itemCriteria — guarded on applicable.on (contract trap 6: the
-      // matcher returns undefined for itemCriteria with neither include
-      // nor exclude, and must not fire for non-itemCriteria offers).
-      (cartOffer?.applicable?.on === "itemCriteria" &&
-        items.length > 0 &&
-        !isItemWiseOfferApplicable(
-          cartOffer?.applicable,
-          items,
-          cartOffer?.minBillAmount,
-        )) ||
-      // 6: bogo mechanics (called unconditionally like the fork — the
-      // engine returns true for every non-bogo mechanic).
-      (items.length > 0 &&
-        !isBOGOOfferApplicable(cartOffer, cartOffer?.applicable, items)) ||
-      // 7: sameOrLess ceiling (fork Cart.tsx:1327-1346) — false for every
-      // offer that is not a sameOrLess plain BOGO.
-      isSameOrLessViolated(cartOffer, items);
+    // The checks live in ONE place (SDK offerRevalidation): the menu's
+    // totals price the cart as this effect is about to leave it (settleCart).
+    const shouldRemove = shouldDropAppliedOffer(cartOffer, items);
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
     }
@@ -1024,8 +980,7 @@ export default function BagSheet({
     setInstructionsOpen(false);
   };
 
-  const payTotal =
-    bill && Object.keys(bill).length > 0 ? Number(bill.getNetAmount()) : 0;
+  const payTotal = billTotal(bill);
   // Live applied discount — always the BILL's figure (resolveShownSaving
   // policy: applied → live getTotalDiscount wins), never a cached quote.
   const appliedDiscount =
@@ -1296,7 +1251,7 @@ export default function BagSheet({
                               }`}
                             >
                               {t("offers.save", {
-                                amount: `${currency}${offerDiscount.toFixed(2)}`,
+                                amount: `${currency}${formatPrice(offerDiscount)}`,
                               })}
                             </p>
                           )}
@@ -1312,9 +1267,12 @@ export default function BagSheet({
                             {t("offers.remove")}
                           </button>
                         </div>
+                        {/* The reward's own figures read as posistKiosk's
+                            SavingsLine prints them (moduloCalcaledValue); the
+                            bill below keeps two decimals (PriceDetails). */}
                         <p className="shrink-0 text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
                           −{currency}
-                          {offerDiscount.toFixed(2)}
+                          {formatPrice(offerDiscount)}
                         </p>
                         <button
                           type="button"

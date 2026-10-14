@@ -36,6 +36,8 @@ import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -162,8 +164,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   // Menu names at render; offer names stay English (no per-language data).
   const { name } = useLocalized();
 
-  const money = (value: number): string =>
-    `${currency}${Number(value).toFixed(2)}`;
+  const money = (value: number): string => `${currency}${formatPrice(value)}`;
 
   // rank() is memoised on the cart signature inside useOfferSavings; the memo
   // here keeps re-renders from re-walking the (cached) probe path per row.
@@ -344,7 +345,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   };
 
   const priceLine = (entity: RecommendedEntity): string => {
-    const base = `${currency}${entity?.price ?? ""}`;
+    const base = `${currency}${formatPrice(entity?.price)}`;
     const cal = calorieValue(entity);
     return cal ? `${base} | ${t("pack.cal", { value: cal })}` : base;
   };
@@ -391,7 +392,9 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
           <span
             className="block min-h-0 w-full"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-          />
+          >
+            <NoImageBell />
+          </span>
         )}
         <span
           aria-hidden="true"

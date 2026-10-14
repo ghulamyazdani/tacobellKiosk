@@ -268,7 +268,8 @@ test.describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork
     expect(await ctaLook(customizeButton(page, SNACKS, LARGE_FRIES))).toEqual(look);
     expect(await ctaLook(lowerButton(page, SNACKS, LARGE_FRIES))).toEqual(look);
     // "Selected" is CUSTOMIZE's description only — never stray text read again after REMOVE.
-    await expect(customizeButton(page, SNACKS, LARGE_FRIES)).toHaveAccessibleDescription(`${en.pdp.selected} +£3.00`);
+    // The card's price line is posistKiosk's (moduloCalcaledValue): "+£3".
+    await expect(customizeButton(page, SNACKS, LARGE_FRIES)).toHaveAccessibleDescription(`${en.pdp.selected} +£3`);
     expect(await fries.ariaSnapshot()).not.toContain(en.pdp.selected);
     expect(await nameTop(fries, "Large Fries")).toBe(242);
     expect(await boxes()).toEqual(before);
