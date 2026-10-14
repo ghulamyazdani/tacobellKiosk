@@ -343,4 +343,14 @@ describe("/customerName — BACK to the step the guest came from", () => {
     expect(screen.queryByTestId("landed")).toBeNull();
     expect(screen.getByTestId("customer-name-screen")).toBeInTheDocument();
   });
+
+  it("CANCEL ORDER's NO reads NO, BACK — it stays on this screen, not the menu", () => {
+    mountInFlow();
+    fireEvent.click(screen.getByTestId("footer-cancel"));
+
+    expect(screen.getByTestId("cancel-order-cancel")).toHaveTextContent(i18n.t("cancelOrder.back"));
+    fireEvent.click(screen.getByTestId("cancel-order-cancel"));
+    expect(screen.getByTestId("customer-name-screen")).toBeInTheDocument();
+    expect(screen.queryByTestId("landed")).toBeNull();
+  });
 });

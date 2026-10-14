@@ -74,9 +74,16 @@ describe("/phone — BACK to the step the guest came from", () => {
     expect(mockNavigate.mock.calls).toEqual([["/second"]]);
   });
 
-  it("BACK reads BACK", () => {
+  it("BACK reads BACK, and CANCEL ORDER's NO reads NO, BACK — never BACK TO MENU: it stays on /phone", () => {
     mount(CHECKOUT);
-
     expect(screen.getByTestId("phone-back")).toHaveTextContent(i18n.t("phone.back"));
+    tap("footer-cancel");
+    const no = screen.getByTestId("cancel-order-cancel");
+
+    expect(no).toHaveTextContent(i18n.t("cancelOrder.back"));
+    expect(no.textContent).not.toMatch(/menu/i);
+    tap("cancel-order-cancel");
+    expect(screen.getByTestId("phone-screen")).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

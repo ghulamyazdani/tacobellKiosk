@@ -5,6 +5,13 @@ interface CancelOrderModalProps {
   open: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * NO's label. Figma's NO, BACK TO MENU (the default) is true over the menu;
+   * a checkout step NO returns to passes cancelOrder.back, NO, BACK (user
+   * 2026-10-14: on the phone screen "the button should say back not back to
+   * menu").
+   */
+  keepLabel?: string;
 }
 
 /**
@@ -18,15 +25,17 @@ interface CancelOrderModalProps {
  * Analytics (audit-fixes B3, fork StartOverConfirmationModal): YES sends
  * StartOverAffirmFromFooter + KioskReset, NO and the backdrop
  * StartOverCancelFromFooter + AccountSignoutCancel — before the callbacks.
- * Focus moves in on NO, BACK TO MENU: the safe choice (WAI-ARIA APG), so a
- * keypad Enter never wipes the order.
+ * Focus moves in on NO (NO, BACK TO MENU, or the host's keepLabel): the safe
+ * choice (WAI-ARIA APG), so a keypad Enter never wipes the order.
  */
 export default function CancelOrderModal({
   open,
   onConfirm,
   onCancel,
+  keepLabel,
 }: CancelOrderModalProps) {
   const { t } = useTranslation();
+  const keepText = keepLabel ?? t("cancelOrder.cancel");
 
   if (!open) return null;
 
@@ -56,7 +65,7 @@ export default function CancelOrderModal({
       {/* Backdrop tap = keep the order (same dismiss affordance as NO). */}
       <button
         type="button"
-        aria-label={t("cancelOrder.cancel")}
+        aria-label={keepText}
         onClick={keep}
         className="absolute inset-0 h-full w-full bg-tb-purple-vibrant/70"
       />
@@ -78,7 +87,7 @@ export default function CancelOrderModal({
             onClick={keep}
             className="min-h-[56px] min-w-[280px] rounded-[6px] border-2 border-tb-purple bg-tb-surface px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-purple"
           >
-            {t("cancelOrder.cancel")}
+            {keepText}
           </button>
           <button
             type="button"

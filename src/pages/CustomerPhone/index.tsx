@@ -585,6 +585,7 @@ export default function CustomerPhone() {
           navigate("/start");
         }}
         onCancel={() => setCancelOrderOpen(false)}
+        keepLabel={t("cancelOrder.back")}
       />
     </div>
   );

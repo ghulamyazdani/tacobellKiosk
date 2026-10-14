@@ -499,6 +499,7 @@ export default function CustomerName() {
         open={cancelOrderOpen}
         onConfirm={handleCancelConfirm}
         onCancel={() => setCancelOrderOpen(false)}
+        keepLabel={t("cancelOrder.back")}
       />
     </div>
   );

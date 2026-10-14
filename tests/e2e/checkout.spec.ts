@@ -280,6 +280,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page.getByTestId("phone-number-display")).toHaveText("9876543210");
     // Still the CHECKOUT leg: CANCEL ORDER asks first (pre-menu it would not).
     await page.getByTestId("footer-cancel").click();
+    await expect(page.getByTestId("cancel-order-cancel")).toHaveText(en.cancelOrder.back);
     await page.getByTestId("cancel-order-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toHaveCount(0);
 
