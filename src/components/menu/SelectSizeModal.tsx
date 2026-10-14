@@ -58,7 +58,7 @@ const isBestValue = (variant: { badges?: unknown } | null | undefined): boolean 
  * 1:5628 incomplete). Arch hero for the first variant, 247 px tiles for the
  * rest, 36 px radios (hero bottom-right, tiles top-right), CONTINUE disabled
  * (Grey 3) until a size is chosen. Price shown as a delta vs the cheapest
- * variant (Figma: "+£2.50" / base shows absolute).
+ * variant in stock (Figma: "+£2.50" / base shows absolute).
  */
 export default function SelectSizeModal({
   entity,
@@ -71,19 +71,23 @@ export default function SelectSizeModal({
   const currency = useCurrencySymbol();
   const [selectedId, setSelectedId] = useState<string>("");
   const firstSize = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const sizeList = useRef<HTMLDivElement>(null);
 
   // The app's modal focus (ErrorModal / EditHowManyModal): focus moves in on
   // open — CONTINUE is `disabled` until a size is picked, so the first size
-  // takes it — and back to the opener when a close leaves no modal dialog
-  // open (Menu mounts this only while open). A CONTINUE that opens the added
-  // modal or the DP-cap error leaves focus to it: this cleanup runs after
-  // GOT IT's autoFocus. The opener is read at first render, before focus
-  // moves in, because StrictMode's dev re-run of the effect finds this dialog
-  // still mounted and skips the restore. No scroll, so nothing under moves.
+  // takes it (sizes in stock come first; with none, the hero is disabled and
+  // the X takes it — review F6) — and back to the opener when a close leaves
+  // no modal dialog open (Menu mounts this only while open). A CONTINUE that
+  // opens the added modal or the DP-cap error leaves focus to it: this
+  // cleanup runs after GOT IT's autoFocus. The opener is read at first
+  // render, before focus moves in, because StrictMode's dev re-run of the
+  // effect finds this dialog still mounted and skips the restore. No scroll,
+  // so nothing under moves.
   const [opener] = useState(() => document.activeElement);
   useEffect(() => {
-    firstSize.current?.focus({ preventScroll: true });
+    const first = firstSize.current;
+    (first && !first.disabled ? first : closeButton.current)?.focus({ preventScroll: true });
     return () => restoreFocus(opener);
   }, [opener]);
 
@@ -97,10 +101,11 @@ export default function SelectSizeModal({
     );
   }, [entity]);
 
-  const minPrice = useMemo(
-    () => Math.min(...variants.map((v: any) => Number(v?.price ?? 0))),
-    [variants]
-  );
+  // walk-oos (review F8): the cheapest size in stock — all of them when none is.
+  const minPrice = useMemo(() => {
+    const inStock = variants.filter((v: any) => v.outOfStock !== true);
+    return Math.min(...(inStock.length > 0 ? inStock : variants).map((v: any) => Number(v?.price ?? 0)));
+  }, [variants]);
 
   if (!entity) return null;
 
@@ -185,6 +190,7 @@ export default function SelectSizeModal({
           </p>
         </div>
         <button
+          ref={closeButton}
           type="button"
           aria-label={t("language.close")}
           onClick={onClose}

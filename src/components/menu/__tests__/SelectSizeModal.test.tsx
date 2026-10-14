@@ -447,6 +447,8 @@ describe("SelectSizeModal — out-of-stock sizes (walk-oos)", () => {
       node.getAttribute("data-testid")
     );
     expect(order).toEqual(["size-v-medium", "size-v-regular", "size-v-large"]);
+    // The first size in stock takes the dialog's focus.
+    expect(screen.getByTestId("size-v-medium")).toHaveFocus();
     const large = screen.getByRole("button", { name: "Large, unavailable" });
     expect(large).toBeDisabled();
     expect(large).toHaveTextContent("Unavailable");
@@ -459,7 +461,9 @@ describe("SelectSizeModal — out-of-stock sizes (walk-oos)", () => {
     expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ id: "v-regular" }));
   });
 
-  it("every size out of stock: the hero too is disabled — nothing can be chosen", () => {
+  // Review F6: a disabled hero takes no focus — the X does, so a keypad or
+  // screen-reader guest is never left on the menu behind the dialog.
+  it("every size out of stock: the hero too is disabled — nothing can be chosen, and focus lands on the X", () => {
     render(
       <Provider store={store}>
         <SelectSizeModal
@@ -474,5 +478,39 @@ describe("SelectSizeModal — out-of-stock sizes (walk-oos)", () => {
     }
     expect(screen.getByRole("button", { name: "Large, unavailable" })).toBeInTheDocument();
     expect(screen.getByTestId("size-continue")).toBeDisabled();
+    // None in stock: the differences are from the cheapest of them all, as before.
+    expect(screen.getByTestId("size-v-large")).toHaveTextContent("+");
+    expect(screen.getByTestId("size-v-regular")).not.toHaveTextContent("+");
+    const x = screen
+      .getAllByRole("button", { name: i18n.t("language.close") })
+      .find((button) => button.querySelector("img"));
+    expect(x).toHaveFocus();
+  });
+
+  // Review F8: the differences are from the cheapest size IN STOCK — a sold-out
+  // cheapest size never turns every live size into "+£…".
+  it("the cheapest size out of stock: the cheapest in stock reads its own price, the rest a difference from it", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    try {
+      render(
+        <Provider store={store}>
+          <SelectSizeModal
+            entity={{
+              ...ENTITY,
+              variants: ENTITY.variants.map((v) => (v.id === "v-regular" ? { ...v, outOfStock: true } : v)),
+            }}
+            onClose={vi.fn()}
+            onContinue={vi.fn()}
+          />
+        </Provider>
+      );
+      expect(screen.getByTestId("size-v-medium")).toHaveTextContent("£7.09");
+      expect(screen.getByTestId("size-v-medium")).not.toHaveTextContent("+");
+      expect(screen.getByTestId("size-v-large")).toHaveTextContent("+£1.00");
+      expect(screen.getByTestId("size-v-regular")).toHaveTextContent("£5.59");
+      expect(screen.getByTestId("size-v-regular")).not.toHaveTextContent("+");
+    } finally {
+      store.dispatch({ type: "RESET_STATE" });
+    }
   });
 });
