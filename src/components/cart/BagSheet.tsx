@@ -2,7 +2,7 @@
  * Cart rows / bill / menu data flow through untyped from the legacy slices
  * and converters; typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
@@ -246,6 +246,21 @@ function AppliedRowPop({
     setCelebratedBarKey(barKey);
   }, [barKey]);
   return children(play);
+}
+
+/**
+ * The freebie picker's boundary fallback (its code failed to load or
+ * render): every offer handed to it settles like the picker's X — nothing
+ * chosen, a buy-stage journey rolled back — so a pending choice never holds
+ * revalidation or auto-apply for the rest of the bag. The boundary stays
+ * tripped until the bag closes, hence each offer, not only the first.
+ */
+function PickerFailed({ offer, onSettle }: { offer: unknown; onSettle: () => void }) {
+  const settle = useEffectEvent(onSettle);
+  useEffect(() => {
+    if (offer) settle();
+  }, [offer]);
+  return null;
 }
 
 /**
@@ -507,6 +522,8 @@ export default function BagSheet({
   // A buy-stage journey (the stage, then its picker) writes the REAL cart, and
   // its "−" reaches pre-journey rows: revalidation waits for it, then judges
   // the bag it leaves — restored on abandon, or under the journey's own offer.
+  // pickerOffer always clears: the picker's X, CONFIRM, or — when the picker
+  // cannot render — its boundary's PickerFailed.
   const journeyOpen = !!stage.buyStage || !!pickerOffer;
 
   /**
@@ -769,6 +786,14 @@ export default function BagSheet({
     } catch {
       if (mountedRef.current) setStageBlocked(t("offers.notApplicable"));
     }
+  };
+
+  // The picker's X (and its failed boundary's): a buy-stage journey that ends
+  // here without the offer landing rolls its paid rows back (no-op when no
+  // stage is armed).
+  const closePicker = () => {
+    stage.rollbackIfAbandoned();
+    setPickerOffer(null);
   };
 
   /**
@@ -1576,19 +1601,15 @@ export default function BagSheet({
           </Suspense>
         </ErrorBoundary>
       )}
-      {/* null fallback: only the rewards sheet or the buy stage (this same
-          chunk) can open the picker, so its code is always in by then. */}
-      <ErrorBoundary fallback={null}>
+      {/* Suspense null: only the rewards sheet or the buy stage (this same
+          chunk) can open the picker, so its code is always in by then. A
+          picker that fails to load or render settles like its X. */}
+      <ErrorBoundary fallback={<PickerFailed offer={pickerOffer} onSettle={closePicker} />}>
         <Suspense fallback={null}>
           <FreebiePickerSheet
             open={!!pickerOffer}
             offer={pickerOffer}
-            onClose={() => {
-              // A buy-stage journey that ends here without the offer landing
-              // rolls its paid rows back (no-op when no stage is armed).
-              stage.rollbackIfAbandoned();
-              setPickerOffer(null);
-            }}
+            onClose={closePicker}
           />
         </Suspense>
       </ErrorBoundary>

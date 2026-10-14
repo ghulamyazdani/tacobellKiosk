@@ -52,6 +52,25 @@ vi.mock("../bagLazyParts", async (importOriginal) => {
   };
 });
 
+/**
+ * The real freebie picker — unless `pickerCrash.on` makes it fail to render
+ * while open. Mocked at its own module: the bag's picker loads with the bag's
+ * first render, and that early load reads the chunk above unmocked.
+ */
+const pickerCrash = vi.hoisted(() => ({ on: false }));
+vi.mock("../../offer/FreebiePickerSheet", async (importOriginal) => {
+  const picker = await importOriginal<typeof import("../../offer/FreebiePickerSheet")>();
+  const { createElement } = await import("react");
+  const Picker = picker.default;
+  return {
+    ...picker,
+    default: (props: ComponentProps<typeof Picker>) => {
+      if (pickerCrash.on && props.open) throw new Error("picker render failed");
+      return createElement(Picker, props);
+    },
+  };
+});
+
 /** The real snapshot planner — unless `plan.fail` makes the stage's rollback throw (Rule 2: it still closes). */
 const plan = vi.hoisted(() => ({ fail: false }));
 vi.mock("@cx-sdk/ordering/cart/cartEngine", async (importOriginal) => {
@@ -844,6 +863,51 @@ describe("BagSheet — buy-stage hand-offs", () => {
     await userEvent.click(screen.getByTestId("buy-stage-close"));
     expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
     expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1"]);
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £1.40+ to your order to be eligible to redeem this reward"
+    );
+  });
+
+  /*
+    Review (lane walk-offers-2): the wait read pickerOffer, which only the
+    picker's own X cleared — a picker that failed to render (its boundary
+    showed nothing) held revalidation off for the rest of the bag. Its
+    fallback settles like X, for every choice handed to it.
+  */
+  it("a picker that fails to render settles like its X, each time — a journey rolls back, and the held reward is judged again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    pickerCrash.on = true;
+    onTestFinished(() => {
+      pickerCrash.on = false;
+    });
+    const held = flat("held-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, drinkRow(1)])); // £11.60
+    store.dispatch(setFilteredOffers([held, SAUCE_CHOICE, SOL_BOGO]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+
+    // A choice SAVEd off the rewards sheet: the picker fails, nothing is chosen.
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-offer-sauce-choice"));
+    await userEvent.click(screen.getByTestId("rewards-save"));
+    await waitFor(() => expect(screen.queryByTestId("rewards-sheet")).toBeNull());
+    expect(screen.queryByTestId("freebie-picker")).toBeNull();
+    expect(slotId()).toBe("held-flat-2");
+
+    // Its boundary still tripped, a buy stage CONTINUEs into it: the stage's sauce goes back.
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-sol-bogo"));
+    await userEvent.click(await screen.findByTestId(`buy-stage-add-${SAUCE.id}`));
+    await userEvent.click(screen.getByTestId("buy-stage-continue"));
+    await waitFor(() => expect(screen.queryByTestId("buy-stage-sheet")).toBeNull());
+    expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1", "pep-1"]);
+    expect(slotId()).toBe("held-flat-2");
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+
+    // Nothing holds revalidation: under the minimum, the reward goes with its notice.
+    setCart([{ ...BURGER_ROW }]); // £8.60
     await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
     expect(slotId()).toBeUndefined();
     expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
