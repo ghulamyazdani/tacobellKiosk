@@ -3,7 +3,7 @@
  * slice / bill engine (BagSheet test precedent). Do not add NEW anys.
  */
 import type { ReactNode } from "react";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -24,14 +24,7 @@ import { store } from "../../../redux/app/store";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
 import useCartHook from "../../../hooks/menuHooks/useCartHook";
 import Menu from "../index";
-import { loadSelectSizeModal } from "../../../components/menu/loadSelectSizeModal";
 import "../../../i18n";
-
-// Select a Size rides the lazy UI chunk (loadSelectSizeModal, lane walk-oos):
-// loaded once here, every menu below renders it at once, as on a warm kiosk.
-beforeAll(async () => {
-  await loadSelectSizeModal();
-}, 60_000);
 
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn(), capture: vi.fn() }));
 

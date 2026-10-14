@@ -35,8 +35,5 @@ export { default as CountryPickerSheet } from "../phone/CountryPickerSheet";
 export { runCheckoutStockSweep, sameCartRows } from "@cx-sdk/catalog/oos/checkoutStockSweep";
 // walk-oos: the sweep's write-back (a dropped pick kept, flagged) — PAY only.
 export { planStockWrite } from "./payStock";
-// walk-oos (the boot-path budget): the menu's Select a Size modal
-// (loadSelectSizeModal).
-export { default as SelectSizeModal } from "../menu/SelectSizeModal";
 // audit-fixes U3: the bag's cooking-instructions sheet.
 export { default as InstructionsSheet } from "./InstructionsSheet";

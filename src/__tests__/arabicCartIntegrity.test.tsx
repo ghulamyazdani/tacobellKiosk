@@ -16,17 +16,10 @@ import {
   setSelectedLanguage,
 } from "../redux/features/multiLanguage/multiLanguage.slice";
 import Menu from "../pages/Menu";
-import { loadSelectSizeModal } from "../components/menu/loadSelectSizeModal";
 import Customization from "../pages/Customization";
 import SecondLayout from "../pages/SecondLayout";
 import CompleteYourMealRail from "../components/cart/CompleteYourMealRail";
 import i18n from "../i18n";
-
-// Select a Size rides the lazy UI chunk (loadSelectSizeModal, lane walk-oos):
-// loaded once here, every menu below renders it at once, as on a warm kiosk.
-beforeAll(async () => {
-  await loadSelectSizeModal();
-}, 60_000);
 
 /*
   Post-P9 28 — Rule 3 (state integrity): in an Arabic session names are
