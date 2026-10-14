@@ -85,9 +85,34 @@ describe("FooterBar — ADA DISPLAY (P9c)", () => {
     renderFooter();
 
     expect(adaButton()).toHaveTextContent(i18n.t("footer.adaDisplay"));
-    expect(adaButton()?.querySelector("img")).toBeInTheDocument();
+    // Figma's glyph, inline so it takes the label's colour (fill-current).
+    const glyph = adaButton()?.querySelector("svg");
+    expect(glyph).toHaveAttribute("aria-hidden", "true");
+    expect(glyph).toHaveClass("h-[32px]", "w-[32px]", "fill-current");
     expect(adaButton()?.className).toContain("h-[56px]");
     expect(adaButton()?.className).toContain("min-w-[44px]");
+  });
+
+  // Walk 2026-10-14: aria-pressed flipped but the button looked the same.
+  // On = the bag order-type pill's white fill, label and glyph in tb-purple;
+  // off = Figma's bare white label on the bar.
+  it("shows its on-state: a white fill with a purple label and glyph, gone again when off", () => {
+    renderFooter();
+    const label = () => adaButton()?.querySelector("span");
+    expect(adaButton()).toHaveClass("text-tb-surface");
+    expect(adaButton()).not.toHaveClass("bg-tb-surface");
+
+    tapAda();
+    expect(adaButton()).toHaveAttribute("aria-pressed", "true");
+    expect(adaButton()).toHaveClass("bg-tb-surface", "text-tb-purple");
+    expect(adaButton()).not.toHaveClass("text-tb-surface");
+    // The label and the glyph inherit the button's colour.
+    expect(label()?.className).not.toMatch(/\btext-tb-/);
+
+    tapAda();
+    expect(adaButton()).toHaveAttribute("aria-pressed", "false");
+    expect(adaButton()).toHaveClass("text-tb-surface");
+    expect(adaButton()).not.toHaveClass("bg-tb-surface");
   });
 });
 

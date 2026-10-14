@@ -116,6 +116,18 @@ const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
 const brandZone = (page: Page) => page.getByTestId("ada-brand-zone");
 const reachZone = (page: Page) => page.getByTestId("reach-zone");
 const footerAda = (page: Page) => page.getByTestId("footer-ada");
+/**
+ * The toggle's look — its fill, label and glyph colours. Walk 2026-10-14: on looked exactly like off. On = the
+ * bag order-type pill's white fill with a tb-purple label and glyph; off = Figma's white label on the bar.
+ */
+const adaLook = (page: Page) =>
+  footerAda(page).evaluate((el) => ({
+    fill: getComputedStyle(el).backgroundColor,
+    label: getComputedStyle(el.querySelector("span") ?? el).color,
+    glyph: getComputedStyle(el.querySelector("svg") ?? el).fill,
+  }));
+const ADA_OFF = { fill: "rgba(0, 0, 0, 0)", label: "rgb(255, 255, 255)", glyph: "rgb(255, 255, 255)" };
+const ADA_ON = { fill: "rgb(255, 255, 255)", label: "rgb(80, 16, 152)", glyph: "rgb(80, 16, 152)" };
 
 const ZONE_BOX: StageBox = {
   x: 0,
@@ -319,6 +331,7 @@ async function expectNextSessionStartsOff(page: Page) {
   await startToSecond(page);
   await expectFullLayout(page);
   await expect(footerAda(page)).toHaveAttribute("aria-pressed", "false");
+  expect(await adaLook(page), "released: looks off again").toEqual(ADA_OFF);
   await pickPipelineToMenu(page);
   await expectFullLayout(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
@@ -335,10 +348,12 @@ test.describe("P9c ADA reach-zone view", () => {
     // Normal mode first: full stage, toggle released.
     await expectFullLayout(page);
     await expect(footerAda(page)).toHaveAttribute("aria-pressed", "false");
+    expect(await adaLook(page), "off: Figma's bare white label").toEqual(ADA_OFF);
 
     await footerAda(page).click();
     await expectAdaLayout(page);
     await expect(footerAda(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => adaLook(page), { message: "on: visibly pressed" }).toEqual(ADA_ON);
     // The page fills the zone (h-full), not the stage.
     await expect.poll(() => stageBox(page.getByTestId("menu-screen"))).toEqual(ZONE_BOX);
     await expectReachable(page);
