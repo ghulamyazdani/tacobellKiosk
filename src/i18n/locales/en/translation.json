@@ -258,14 +258,12 @@
       "hintMoreOne": "Add 1 more qualifying item to unlock",
       "hintMoreOther": "Add {{count}} more qualifying items to unlock",
       "unlocked": "Reward unlocked!",
-      "add": "ADD",
       "continue": "CONTINUE",
       "apply": "APPLY REWARD",
       "back": "BACK",
       "leastNote": "Your lowest-priced qualifying item becomes free",
       "cartEmptyGuard": "Keep at least one item in your order",
       "loyaltyRowGuard": "This item was added as a loyalty reward — manage it from your bag",
-      "increase": "Add one {{name}}",
       "decrease": "Remove one {{name}}"
     },
     "picker": {

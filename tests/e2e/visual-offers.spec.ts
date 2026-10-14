@@ -24,8 +24,9 @@ import { clippedText } from "./fixtures/clippedText";
  * Complete-Your-Meal rail, its totals and the remove confirm; the rewards
  * sheet (locked nudge, eligible rows, the suggested rail) and its ADD ITEMS
  * rows, the offer-applied celebration and the applied row; the group-mode
- * freebie picker, the in-bag freebie PDP and the single-pick picker; the BOGO
- * and least-value buy stages; the reward-removed notice.
+ * freebie picker, the in-bag freebie PDP and the single-pick picker; the BOGO,
+ * least-value and headed (a category beside an item) buy stages; the
+ * reward-removed notice.
  *
  * Content is real-length (a third of the reference TB India menu's names run
  * past 40 characters): TB India item names on the items every screen shows,
@@ -214,18 +215,21 @@ const BOGO_SAUCE = itemOffer({
     categories: [],
   },
 });
-/** Any 2 of 3 (the 70-character bowl among them), the cheapest free: the least-value stage. */
+/**
+ * Any 2 of 3 (the 70-character bowl among them), the cheapest free: the
+ * least-value stage. Each buy entry carries its item's own menu name — the
+ * tenant shape of the 2026-10-14 report — so no header repeats a card and
+ * the three cards share a row.
+ */
 const LEAST_SAUCES = itemOffer({
   _id: "offer-least-sauces",
   name: "Any 2 Tacos Or Bowls From The Party Menu, Cheapest One Free",
   getItemOnly: false,
   getLeastValueItem: true,
   leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
-  applicable: applicableBuy([
-    { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" } },
-    { item: { baseItemId: CAESAR_DRESSING, name: "Caesar Dressing" } },
-    { item: { baseItemId: GREEK_SALAD, name: "Greek Salad" } },
-  ]),
+  applicable: applicableBuy(
+    [TORTILLA_SAUCE, CAESAR_DRESSING, GREEK_SALAD].map((id) => ({ item: { baseItemId: id, name: NAMES[id][0] } }))
+  ),
   getItems: { items: [], categories: [] },
 });
 /** Group-wise "pick 2" of 4, one customizable (the burger): picker controls. */
@@ -321,6 +325,22 @@ const PARITY_ANY_SAUCE = itemOffer({
   getItems: { items: [], categories: [category(SAUCES_SUB, "Sauces", 2)] },
 });
 const PARITY_OFFERS = [PARITY_LONG, PARITY_SCOPED, PARITY_CAT_STAGE, PARITY_MIN, PARITY_SOLD, PARITY_ANY_SAUCE];
+
+/**
+ * Any sauce (a category) AND the bowl under its own name (plain-and): a
+ * category beside a lone item, so the whole stage is headed — the bowl gets
+ * its own header and never reads as a fourth sauce.
+ */
+const HEADED_STAGE = itemOffer({
+  _id: "offer-headed-stage",
+  name: "Any Sauce And A Rice Bowl, Get A Lava Taco Free",
+  getItemOnly: false,
+  applicable: applicableBuy([
+    { category: { _id: SAUCES_SUB, categoryName: "Sauces" }, quantity: 1, relation: "and" },
+    { item: { baseItemId: GREEK_SALAD, name: NAMES[GREEK_SALAD][0] }, quantity: 1, relation: "and" },
+  ]),
+  getItems: { items: [getEntry("gi-headed-caesar", CAESAR_DRESSING, "Caesar Dressing", "and")], categories: [] },
+});
 
 /** The tenant co-purchase file (bag-recommendations.spec): the bag's rail. */
 const RECS_HOST = "https://recommendations.e2e.test";
@@ -815,10 +835,43 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await expect(page.getByTestId("rewards-sheet")).toBeVisible();
       await page.getByTestId(`offer-row-add-items-${LEAST_SAUCES._id}`).click();
       await expect(page.getByTestId("buy-stage-least-note")).toBeVisible();
-      // The 70-character bowl's tile on screen: its name meets the
-      // two-line box (the probe would see a sliced third line).
+      // The 70-character bowl's card on screen: its name meets the
+      // two-line clamp (the probe would see a sliced third line).
       await page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).scrollIntoViewIfNeeded();
+      await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(0);
       await capture(page, `offers-${mode}-27-buy-stage-least`);
+    });
+
+    test(`BUY STAGE HEADED (${mode}): a category beside a lone item — every group headed, each header across the grid over its own cards`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, { offers: [HEADED_STAGE] });
+      await startOrder(page, mode);
+      await addBurger(page);
+      await openBag(page);
+      await openRewards(page);
+      await page.getByTestId(`offer-row-add-items-${HEADED_STAGE._id}`).click();
+      await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
+      await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(2);
+      // Laid out, not just classed: each header spans the four-card grid
+      // (4 × 240 + 3 × 16); the bowl's header starts below the sauces' row
+      // and its card below that header.
+      const box = async (testId: string) => {
+        const found = await page.getByTestId(testId).boundingBox();
+        if (!found) throw new Error(`${testId} is not laid out`);
+        return found;
+      };
+      const saucesHeader = await box(`buy-stage-group-${SAUCES_SUB}`);
+      const bowlHeader = await box(`buy-stage-group-${GREEK_SALAD}`);
+      const sauce = await box(`buy-stage-tile-${CAESAR_DRESSING}`);
+      const bowl = await box(`buy-stage-tile-${GREEK_SALAD}`);
+      expect(saucesHeader.width).toBeCloseTo(1008, 0);
+      expect(bowlHeader.width).toBeCloseTo(1008, 0);
+      expect(bowlHeader.y).toBeGreaterThanOrEqual(sauce.y + sauce.height);
+      expect(bowl.y).toBeGreaterThanOrEqual(bowlHeader.y + bowlHeader.height);
+      await page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).scrollIntoViewIfNeeded();
+      await capture(page, `offers-${mode}-37-buy-stage-headed`);
     });
 
     test(`REMOVED (${mode}): the single-pick freebie picker, the reward-removed notice`, async ({
