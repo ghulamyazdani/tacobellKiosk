@@ -42,7 +42,9 @@ export default function CategoryRail({
     >
       <img alt="Taco Bell" src={tbBellRail} className="mb-[40px] h-[64px] w-[72px]" />
       {children}
-      <div className="flex w-full flex-col overflow-y-auto">
+      {/* The list scrolls by touch with no native scrollbar (user 2026-10-14:
+          "there is a scrollbar in the sidebar"), like the menu pane. */}
+      <div className="flex w-full flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {categories.map((category) => {
           const selected = category.id === selectedId;
           return (

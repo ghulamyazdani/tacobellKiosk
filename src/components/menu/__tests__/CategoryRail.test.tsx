@@ -80,5 +80,12 @@ describe("CategoryRail (Menu-Categories)", () => {
     expect(children[0].tagName).toBe("IMG");
     expect(children[1]).toHaveClass("overflow-y-auto");
   });
+
+  it("the list scrolls without a native scrollbar, like the menu pane (user 2026-10-14)", () => {
+    render(<CategoryRail categories={CATEGORIES} selectedId="tacos" onSelect={vi.fn()} />);
+
+    const list = screen.getByTestId("category-rail").children[1];
+    expect(list).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+  });
 });
 

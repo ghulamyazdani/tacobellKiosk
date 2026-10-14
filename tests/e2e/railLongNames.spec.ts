@@ -219,6 +219,20 @@ test.describe("rail-wrap — long category names grow their rail row", () => {
       const railCuts = (await clippedText(page)).filter((s) => s.includes(" in rail-"));
       expect.soft(railCuts, `${mode}: rail text the layout cuts off`).toEqual([]);
 
+      // User 2026-10-14: "there is a scrollbar in the sidebar and in the bottom
+      // the category item is getting cut". The grown rows leave nothing to
+      // scroll here, and the list never paints a native scrollbar.
+      const list = page.getByTestId("category-rail").locator("> div").last();
+      const scroll = await list.evaluate((el) => ({
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrollbarWidth: getComputedStyle(el).scrollbarWidth,
+        gutter: (el as HTMLElement).offsetWidth - el.clientWidth,
+      }));
+      expect(scroll.scrollHeight, `${mode}: the rail list overflows`).toBeLessThanOrEqual(scroll.clientHeight);
+      expect(scroll.scrollbarWidth).toBe("none");
+      expect(scroll.gutter, `${mode}: a scrollbar takes width`).toBe(0);
+
       const headings = await probeHeadings(page);
       expect(headings.count, "an h2 per category (one sub-category each: no h3)").toBe(4);
       expect.soft(headings.wide, `${mode}: section headings wider than their box`).toEqual([]);
