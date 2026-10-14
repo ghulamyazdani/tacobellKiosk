@@ -34,8 +34,9 @@ import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
  *   Cheese Burger and Large Fries (5dd10938eb1ccee31ca352fa, £9). The cart
  *   upsell gate is opt-OUT (enable_cart_upsell_screen absent → shown) and
  *   MIN_CART_UPSELL_ITEMS = 1.
- * - Greek Salad has no recommendedItems, so a plain add opens NO added
- *   modal (resolveAddItemPresentation) — direct cta assertions instead.
+ * - Greek Salad has no recommendedItems: a plain menu add confirms with the
+ *   added modal's title, Total and GOT IT (user 2026-10-14), which addOneTap
+ *   closes before its cta assertion.
  * - get_data mock carries currencySettings {currency: "GBP", text: "£"} and
  *   empty deployment charges — but every fixture item carries VAT@15% (percentage), which the
  *   bill engine treats as EXCLUSIVE, and getNetAmount() rounds to 0 decimals

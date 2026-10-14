@@ -147,8 +147,9 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
       total_price: 3.5,
     });
     expect(cart.subTotal).toBe(3.5);
-    // A plain add confirms (user 2026-10-14): the prompt's decline adds from
-    // the menu, so the product-added modal opens on the original.
+    // A plain add confirms (user 2026-10-14): the prompt's decline adds over
+    // /menu — a Complete Your Meal tap's prompt too, its bag closed on the
+    // way — so the product-added modal opens on the original.
     expect(selectAddToCartModal(state)).toBe(true);
     expect(selectAddToCartItem(state)).toMatchObject({ id: "burger-1" });
     // declined → never re-prompt for this item

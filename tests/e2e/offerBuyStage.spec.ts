@@ -227,7 +227,7 @@ const mockKioskBackend = (page: Page) => mockBackend(page, { offers: fixtureJson
 const addCheeseBurgerViaPdp = (page: Page) =>
   addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
 
-/** Tortilla Sauce is plain with no recommendedItems: a card tap adds it, no modal. */
+/** Tortilla Sauce is plain with no recommendedItems: a card tap adds it; addOneTap closes the added modal. */
 const addTortillaSauceOneTap = (page: Page) => addOneTap(page, TORTILLA_SAUCE, "(1)");
 
 const freeChip = '[data-testid^="bag-free-chip-"]';
