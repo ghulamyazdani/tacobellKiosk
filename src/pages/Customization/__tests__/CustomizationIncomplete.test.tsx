@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -83,7 +83,12 @@ const COLA = {
   name: "Cola",
   price: 0,
   hasVariant: true,
-  variants: [{ id: "cola-l", name: "Large", price: 3, isActive: true, modifiers: [ICE._id, STRAW._id] }],
+  // Two sizes: a lone pickable size opens already chosen (walk 2026-10-14),
+  // and this test picks Large on the picker.
+  variants: [
+    { id: "cola-l", name: "Large", price: 3, isActive: true, modifiers: [ICE._id, STRAW._id] },
+    { id: "cola-s", name: "Small", price: 2, isActive: true, modifiers: [] },
+  ],
 };
 
 const seed = (entity: Record<string, unknown>, type = "customizableItem") => {
@@ -135,6 +140,7 @@ describe("PDP completion warning (item 23)", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await act(async () => {
       await i18n.changeLanguage("en");
     });
@@ -215,6 +221,34 @@ describe("PDP completion warning (item 23)", () => {
     await addToBag();
     expect(title()).toBe("Let's finish your choices first");
     expect(message()).toBe("Please choose your straw and ice before adding to your bag");
+    expect(cartItems()).toHaveLength(0);
+  });
+
+  /*
+    Fixer review (walk 2026-10-14): ADD TO BAG with the grid open over a
+    chosen size commits that size. The commit measured the ringed group while
+    the grid still hid it (offsetTop undefined → scrollTo({ top: NaN }), which
+    a browser reads as 0), so the pane jumped to the top, off the ring.
+  */
+  it("variant flow, Change then ADD TO BAG: the grid closes, the warning names the groups (not the size), and the pane scrolls to the ringed one", async () => {
+    seed(COLA, "variant");
+    renderPdp();
+    await tap("pdp-variant-cola-l");
+    await tap("pdp-change-size");
+    expect(screen.getByTestId("pdp-variant-picker")).toBeInTheDocument();
+    // jsdom has no layout: Straw (the first failing group) sits 1204 px down.
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      return this.id === STRAW._id ? 1204 : 0;
+    });
+    const pane = document.getElementById("scrollCustomizableItem");
+    if (!pane) throw new Error("no PDP pane");
+    const scrollTo = vi.spyOn(pane, "scrollTo");
+    await addToBag();
+
+    expect(screen.queryByTestId("pdp-variant-picker")).not.toBeInTheDocument();
+    expect(message()).toBe("Please choose your straw and ice before adding to your bag");
+    expect(screen.getByTestId(`pdp-group-${STRAW._id}`)).toHaveClass("ring-4", "ring-red-500");
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1204 - 450 }));
     expect(cartItems()).toHaveLength(0);
   });
 

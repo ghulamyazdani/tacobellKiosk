@@ -90,8 +90,11 @@ const DRINK = {
   aliases: AR(AR_DRINK),
   price: 0,
   hasVariant: true,
+  // Two sizes: a lone pickable size opens already chosen (walk 2026-10-14),
+  // and this test walks the picker.
   variants: [
     { id: "pepsi-l", name: "Large", aliases: AR(AR_LARGE), price: 3, isActive: true, modifiers: [] },
+    { id: "pepsi-s", name: "Small", price: 2, isActive: true, modifiers: [] },
   ],
 };
 

@@ -16,6 +16,9 @@ import { bootRegisteredToMenu } from "./pages/boot";
  * - SIZE FIRST: a sized item's ADD TO BAG before a size is live and answers
  *   with the 1:2855 completion warning naming the size; nothing is
  *   committed. (It used to be a dimmed button that did nothing.)
+ * - CHANGE, then ADD TO BAG: the grid open over a chosen size commits that
+ *   size; an empty required group below the fold is named, ringed and
+ *   scrolled into view (walk 2026-10-14 fixer review).
  * - The PDP diet mark (design language): the veg / non-veg mark leads the
  *   price line; `hide_veg_non_veg` hides it.
  * - MULTI-PUNCH: with the menu's `allow_multiple_punch` on, a group whose
@@ -25,7 +28,8 @@ import { bootRegisteredToMenu } from "./pages/boot";
  *   engine enforces.)
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
- * (tagged veg) is re-shaped into a sized item with no groups; Large Fries is
+ * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
+ * a Large carrying Cheese Burger's three groups); Large Fries is
  * tagged non-veg (one optional addon group → the PDP); Cheese Burger (veg)
  * carries the "Choose From Extra" addon group (0 / 3, three options).
  *
@@ -42,6 +46,8 @@ const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
+// The last of Cheese Burger's three groups (order 3, one option, 0 / 1).
+const EXTRA_CHEESE_GROUP = `${CHEESE_BURGER}_1686482941_addons`;
 
 type MenuJson = {
   settings: Record<string, unknown>;
@@ -49,8 +55,8 @@ type MenuJson = {
   modifiers: { _id: string; constituentItems: { id: string }[]; [key: string]: unknown }[];
 };
 
-/** SIZED_ITEM as a sized item with two active sizes and no modifier groups. */
-function sizedMenu(): MenuJson {
+/** SIZED_ITEM as a sized item with two active sizes; no modifier groups unless Large is given some. */
+function sizedMenu(largeGroups?: string[]): MenuJson {
   const menu = structuredClone(slimMenu) as MenuJson;
   for (const category of menu.categories)
     for (const sub of category.subCategories)
@@ -61,8 +67,24 @@ function sizedMenu(): MenuJson {
           entity.variants = [
             [SIZE_REGULAR, "Regular", 5],
             [SIZE_LARGE, "Large", 7],
-          ].map(([id, name, price]) => ({ id, name, price, isActive: true, subCategoryId: sub.id }));
+          ].map(([id, name, price]) => ({
+            id,
+            name,
+            price,
+            isActive: true,
+            subCategoryId: sub.id,
+            ...(id === SIZE_LARGE && largeGroups ? { modifiers: largeGroups } : {}),
+          }));
         }
+  return menu;
+}
+
+/** Large carries Cheese Burger's three groups, the last (Extra Cheese, below the fold) made required. */
+function sizedRequiredGroupMenu(): MenuJson {
+  const menu = sizedMenu([EXTRA_GROUP, `${CHEESE_BURGER}_1573980470_addons`, EXTRA_CHEESE_GROUP]);
+  const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
+  if (!cheese) throw new Error("fixture: no Extra Cheese group");
+  cheese.min = 1;
   return menu;
 }
 
@@ -156,6 +178,32 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page.getByTestId("cta-total")).toContainText("£5.00");
+  });
+
+  test("CHANGE, then ADD TO BAG on an incomplete size: the grid closes, the warning names the group, and after GOT IT the ringed group is on screen", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { menu: sizedRequiredGroupMenu() });
+    await bootRegisteredToMenu(page);
+    await openPdp(page, SIZED_ITEM);
+
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+    await page.getByTestId("pdp-change-size").click();
+    await expect(page.getByTestId(`pdp-variant-${SIZE_LARGE}`)).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("pdp-add-to-bag").click();
+
+    const warning = page.getByRole("alertdialog", { name: enLazy.pdp.incomplete.titleItem });
+    await expect(warning).toHaveAccessibleDescription(
+      (enLazy.pdp.incomplete.body as string).replace("{{groups}}", "choose from extra cheese for cheese burger"),
+    );
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    await expect(page.getByTestId("pdp-variant-picker")).toHaveCount(0);
+    const ringed = page.getByTestId(`pdp-group-${EXTRA_CHEESE_GROUP}`);
+    await expect(ringed).toHaveClass(/ring-red-500/);
+    // The commit scrolled the pane to it; a jump to the top left it below the fold.
+    await expect(ringed).toBeInViewport({ ratio: 1 });
+    expect(await cartRowCount(page)).toBe(0);
   });
 
   test("PDP DIET MARK (U1): the veg mark leads a veg item's price line, the non-veg mark a non-veg one's; hide_veg_non_veg hides it", async ({

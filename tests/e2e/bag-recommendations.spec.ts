@@ -490,13 +490,14 @@ test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, pe
     await expect(quantityPill(sauce)).toHaveText("2");
     expect(await cartRows(page)).toEqual([[TORTILLA_SAUCE, 2]]);
 
-    // The customised burger still lands beside them: two rows (the CTA's
-    // "(n)" counts rows), 2 × £2 + £9 on the menu's CTA.
+    // The customised burger still lands beside them: two rows (cartRows
+    // below), three units — the CTA's "(n)" counts units, as MY BAG (n)
+    // does (walk 2026-10-14) — 2 × £2 + £9 on the menu's CTA.
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
     await page.getByTestId("added-continue").click();
-    await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(3)");
     await expect(page.getByTestId("cta-total")).toContainText("£13.00");
     expect(await cartRows(page)).toEqual([
       [TORTILLA_SAUCE, 2],

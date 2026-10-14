@@ -66,8 +66,11 @@ const LOYALTY_DRINK = {
   price: 0,
   hasVariant: true,
   modifiers: ["pepsi_var"],
+  // Two sizes: a lone pickable size opens already chosen (walk 2026-10-14),
+  // and this reward walks the picker.
   variants: [
     { id: "pepsi-l", name: "Large", price: 3, isActive: true, modifiers: [] },
+    { id: "pepsi-s", name: "Small", price: 2, isActive: true, modifiers: [] },
   ],
   isLoyaltyItem: true,
   coupon_code: "static6562",

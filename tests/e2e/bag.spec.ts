@@ -522,10 +522,11 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("pdp-add-to-bag")).not.toContainText("Update");
 
     // Back out: nothing committed, the bumped bag is untouched (regression
-    // anchor: same assertions pack.spec leans on).
+    // anchor: same assertions pack.spec leans on) — the one burger row ×2:
+    // the CTA counts units, as MY BAG (n) does (walk 2026-10-14).
     await page.getByTestId("pdp-back").click();
     await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
     await expect(page.getByTestId("cta-total")).toContainText("£16.00");
   });
 

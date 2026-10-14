@@ -4,7 +4,7 @@ import { act, renderHook } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
-import useCurrencySymbol from "../useCurrencySymbol";
+import useCurrencySymbol, { ltrCurrencySymbol } from "../useCurrencySymbol";
 
 /*
   UB1 (2026-10-08): every price printed without a symbol because 17 sites read
@@ -68,5 +68,41 @@ describe("useCurrencySymbol (UB1)", () => {
 
   it("always returns a string (a malformed text stays out of JSX)", () => {
     expect(symbolFor({ text: 7 })).toBe("7");
+  });
+
+  it("the Saudi body's ﷼ comes back between LRMs (ltrCurrencySymbol) — every price site reads this", () => {
+    expect(symbolFor({ currency: "SAR", text: RIAL, uniDec: "65020", uniHex: "FDFC" })).toBe(`${LRM}${RIAL}${LRM}`);
+  });
+});
+
+/*
+  Walk 2026-10-14: U+FDFC RIAL SIGN is bidi class AL — "﷼100 | 254 Cal"
+  painted as "254 | 100﷼ Cal", and a dir="auto" leaf starting with a price
+  resolved RTL. An RTL symbol rides between two LRMs; LTR ones are untouched.
+*/
+const LRM = String.fromCharCode(0x200e);
+/** The Saudi tenant's text, U+FDFC RIAL SIGN (a symbol, not AR copy: the bidi guard's exact-matcher rule is for copy). */
+const RIAL = String.fromCharCode(0xfdfc);
+const SAR_ABBREVIATION = "ر.س";
+
+describe("ltrCurrencySymbol (walk 2026-10-14)", () => {
+  it.each([
+    ["the Saudi rial sign", "﷼"],
+    ["an Arabic abbreviation with a dot", "ر.س"],
+    ["the afghani sign", "؋"],
+    ["a Hebrew word", "ש״ח"],
+    ["an RTL symbol with a trailing space", "﷼ "],
+  ])("%s is anchored between two LRMs", (_label, symbol) => {
+    expect(ltrCurrencySymbol(symbol)).toBe(`${LRM}${symbol}${LRM}`);
+  });
+
+  it.each(["£", "₹", "$", "€", "₪", "AED ", "SAR", ""])("%j (no RTL letter) comes back byte-identical", (symbol) => {
+    expect(ltrCurrencySymbol(symbol)).toBe(symbol);
+  });
+
+  it("is idempotent: an anchored symbol comes back as is", () => {
+    const once = ltrCurrencySymbol(RIAL);
+    expect(ltrCurrencySymbol(once)).toBe(once);
+    expect(ltrCurrencySymbol(ltrCurrencySymbol(SAR_ABBREVIATION))).toBe(`${LRM}${SAR_ABBREVIATION}${LRM}`);
   });
 });
