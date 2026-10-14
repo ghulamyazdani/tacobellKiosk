@@ -73,14 +73,26 @@ export async function startAnalytics(): Promise<void> {
   }
 }
 
+/** The events window.__kioskEvents keeps (DEV only). */
+export const DEV_EVENT_LOG_SIZE = 50;
+
 /**
  * Safely send a kiosk analytics event — the single entry point (also the
  * SDK's analytics port). Never throws, never awaits.
+ * DEV only (dead code in builds — store.ts's __kioskStore precedent): each
+ * event is also kept on window.__kioskEvents, the last DEV_EVENT_LOG_SIZE —
+ * analytics are off on the dev server, so a walk reads there which step
+ * failed (ErrorOccurred's stage; walk w4 #1). No console (Rule 4).
  */
 export function captureKioskEvent(
   event: KioskEventName,
   properties?: KioskEventProperties,
 ): void {
+  if (import.meta.env.DEV) {
+    const log = ((window as unknown as { __kioskEvents?: unknown[] }).__kioskEvents ??= []);
+    log.push({ event, properties });
+    if (log.length > DEV_EVENT_LOG_SIZE) log.splice(0, log.length - DEV_EVENT_LOG_SIZE);
+  }
   run((c) => c.capture(event, properties));
 }
 
