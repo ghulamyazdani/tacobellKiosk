@@ -97,10 +97,10 @@ const en = locale("en");
  * The shared mock (fixtures/backend.ts) with this spec's P8a delta,
  * `skip_crm_page`: with it ON and `enable_loyalty` absent,
  * `resolveCheckoutRoute` returns "payment" (dine-in) or "tent" (table) — the
- * two destinations this phase owns — and /payment's back CTA returns to
- * /cart rather than /customerName. `pay_at_counter` is the COD tile's label
- * only: the dispatched type is PAY_AT_RESTAURANT either way
- * (settingsEngine.getIsPayAtCounter), so no assertion depends on it.
+ * two destinations this phase owns. /payment's BACK TO MENU goes to /menu
+ * either way (walk 2026-10-14). `pay_at_counter` labels the COD tile — and its
+ * cancel window, "You'll pay at the counter" — only: the dispatched type is
+ * PAY_AT_RESTAURANT either way (settingsEngine.getIsPayAtCounter).
  */
 const mockKioskBackend = (page: Page, { skipCRM = true } = {}) =>
   mockBackend(page, {
@@ -154,6 +154,10 @@ async function payAtCounterThroughBuffer(page: Page) {
   await page.getByTestId("payment-counter").click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
   await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
+  // It confirms the choice: nothing is placed until /receipt's answer, whose
+  // push alone says PLACING YOUR ORDER (walk 2026-10-14).
+  await expect(page.getByTestId("payment-buffer")).toContainText(en.payment.payAtCounterChosen);
+  await expect(page.getByTestId("payment-buffer")).not.toContainText(en.payment.placingOrder);
   // The 3000ms window closes by routing to the receipt step.
   await page.clock.runFor(3_000);
   await expect(page.getByTestId("receipt-screen")).toBeVisible();

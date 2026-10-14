@@ -562,7 +562,8 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     it.each([
       ["payment-card", "PaytmEdc", "paytm.redirecting"],
       ["payment-qr", "PaytmDynamicQr", "paytm.redirecting"],
-      ["payment-counter", "PAY_AT_RESTAURANT", "payment.placingOrder"],
+      // The default kiosk settings label the COD tile PAY AT RESTAURANT.
+      ["payment-counter", "PAY_AT_RESTAURANT", "payment.payAtRestaurantChosen"],
     ])("%s arms %s: the window sends nothing; its end is /receipt for COD (nothing pushed) and ONE initiate for Paytm", async (testId, type, titleKey) => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       mount();
@@ -733,7 +734,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(m.edc).not.toHaveBeenCalled();
       expect(m.dqr).not.toHaveBeenCalled();
       tap("payment-counter");
-      expect(buffer()).toHaveTextContent(i18n.t("payment.placingOrder"));
+      expect(buffer()).toHaveTextContent(i18n.t("payment.payAtRestaurantChosen"));
     });
 
     // U4 (b)
@@ -918,6 +919,36 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(sweep[0].closest("button")).toBeNull();
       // CANCEL shows at once: the window never reveals late (motion-v2 MV4 "NOT on").
       expect(screen.getByTestId("payment-buffer-cancel").closest(".tb-reveal-late")).toBeNull();
+    });
+
+    // Walk 2026-10-14: the window said PLACING YOUR ORDER… while nothing is
+    // placed until /receipt's answer (2026-10-13). It confirms the tile the
+    // guest tapped, in its words; PLACING stays /receipt's push.
+    it.each([
+      ["PAY AT COUNTER", { pay_at_counter: "pay_at_counter" }, "payment.payAtCounterChosen"],
+      ["PAY AT RESTAURANT", {}, "payment.payAtRestaurantChosen"],
+    ])("%s: the window confirms that choice, with CANCEL — never 'placing' (EN, AR)", async (_tile, settings, key) => {
+      store.dispatch(setKioskSettings({ skip_crm_page: false, ...settings }));
+      mount();
+      tap("payment-counter");
+
+      const title = () => document.getElementById("payment-buffer-title");
+      expect(buffer()).toHaveAttribute("aria-labelledby", "payment-buffer-title");
+      expect(title()).toHaveTextContent(i18n.t(key));
+      expect(buffer()).not.toHaveTextContent(i18n.t("payment.placingOrder"));
+      expect(screen.getByTestId("payment-buffer-cancel")).toHaveTextContent(i18n.t("payment.cancel"));
+
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+      try {
+        expect(title()).toHaveTextContent(i18n.t(key));
+        expect(buffer()).not.toHaveTextContent(i18n.t("payment.placingOrder"));
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage("en");
+        });
+      }
     });
 
     it("hands over to the receipt step after the buffer elapses", () => {

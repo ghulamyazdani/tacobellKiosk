@@ -1472,7 +1472,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await page.clock.runFor(500);
     await expect(page.getByTestId("payment-tap-guard")).toHaveCount(0);
     await page.getByTestId("payment-counter").click();
-    await expect(page.getByTestId("payment-buffer")).toContainText(en.payment.placingOrder);
+    // The window confirms the choice; nothing is placed until /receipt (walk 2026-10-14).
+    await expect(page.getByTestId("payment-buffer")).toContainText(en.payment.payAtCounterChosen);
+    await expect(page.getByTestId("payment-buffer")).not.toContainText(en.payment.placingOrder);
     expect(paytm.total).toBe(0);
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 0 });
   });

@@ -210,7 +210,8 @@ export default function PaymentSelection() {
   /** Fork parity: the unavailable branch is `zero gateways AND no COD`. */
   const showUnavailable = selections.length === 0 && !codAvailable;
 
-  const payAtCounterLabel = getIsPayAtCounter()
+  const atCounter = getIsPayAtCounter();
+  const payAtCounterLabel = atCounter
     ? t("payment.payAtCounter")
     : t("payment.payAtRestaurant");
 
@@ -465,8 +466,12 @@ export default function PaymentSelection() {
               id="payment-buffer-title"
               className="tb-display mb-[32px] text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
             >
+              {/* Pay at counter: a confirmation of the tile the guest tapped,
+                  never "placing" — nothing is placed until /receipt's answer
+                  (2026-10-13), whose push alone says PLACING YOUR ORDER
+                  (walk 2026-10-14). Design language, sign-off. */}
               {armedType === PAY_AT_COUNTER_PAYMENT_TYPE
-                ? t("payment.placingOrder")
+                ? t(atCounter ? "payment.payAtCounterChosen" : "payment.payAtRestaurantChosen")
                 : t("paytm.redirecting")}
             </h2>
             {/* The house indeterminate sweep (motion-v2 MV3): a sibling of
