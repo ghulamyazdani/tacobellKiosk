@@ -241,11 +241,13 @@ async function bootRegisteredToMenu(page: Page) {
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** Greek Salad's quick-add: it is plain, so no modal opens. */
+/** Greek Salad's quick-add: a plain add confirms with the added modal too (user 2026-10-14) — closed here. */
 async function quickAddGreekSalad(page: Page, expectedCount: string) {
   const add = page.getByTestId(`quick-add-${GREEK_SALAD}`);
   await add.scrollIntoViewIfNeeded();
   await add.click();
+  await expect(page.getByTestId("product-added-modal")).toBeVisible();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
 }
 

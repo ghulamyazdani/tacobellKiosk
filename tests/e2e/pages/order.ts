@@ -4,11 +4,25 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-/** A plain item lands with one tap, no modal. */
+/**
+ * The product-added modal is up over the menu; its one CTA closes it — GOT IT, or NO THANKS over a strip
+ * (nothing picked, nothing bought).
+ */
+export async function dismissAddedModal(page: Page) {
+  await expect(page.getByTestId("product-added-modal")).toBeVisible();
+  await page.getByTestId("added-continue").click();
+  await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+}
+
+/**
+ * A plain item lands with one tap — a new row or +1 on its row — and confirms with the product-added modal
+ * (user 2026-10-14), which this dismisses.
+ */
 export async function addOneTap(page: Page, entityId: string, expectedCount: string) {
   const card = page.getByTestId(`item-${entityId}`);
   await card.scrollIntoViewIfNeeded();
   await card.click();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
 }
 

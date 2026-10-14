@@ -8,6 +8,7 @@ import {
 } from "./fixtures/backend";
 import { stageBox } from "./fixtures/a11y";
 import { bootRegisteredToMenu as bootToMenu } from "./pages/boot";
+import { dismissAddedModal } from "./pages/order";
 
 /**
  * Lane scroll-drag (user request 2026-10-08, reverses D3): "the scroll bar in
@@ -589,6 +590,7 @@ test.describe("scroll-drag: the Figma 1:5263 bar is draggable (user request 2026
     await page.mouse.click(1040, plusMid);
     await expect(bagButton(page)).toContainText("(1)");
     await expect(page).toHaveURL(/\/menu$/);
+    await dismissAddedModal(page);
 
     // AR + ADA
     await page.getByTestId("footer-language").click();

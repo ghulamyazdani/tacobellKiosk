@@ -11,7 +11,7 @@ import {
   LARGE_FRIES,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
-import { addViaPdp, addOneTap, openBag, bagRows, openRewardsSheet } from "./pages/order";
+import { addViaPdp, addOneTap, dismissAddedModal, openBag, bagRows, openRewardsSheet } from "./pages/order";
 
 /**
  * Lane offers, item 31 (+31b) — the BOGO BUY STAGE inside the bag: a locked
@@ -642,6 +642,7 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     const saladCard = page.getByTestId(`item-${GREEK_SALAD}`);
     await saladCard.scrollIntoViewIfNeeded();
     await saladCard.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
     await openBag(page);
 

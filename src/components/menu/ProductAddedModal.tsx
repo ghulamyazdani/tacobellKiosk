@@ -59,12 +59,13 @@ interface LiveCart {
  * GOT IT without one (posistKiosk's "No, Thanks" / "Okay"). The frame has no
  * VIEW MY BAG; the menu's CTA bar keeps that edge.
  *
- * Opens via the fork contract: useCartHook.addItemToCart dispatches
- * mutateAddToCartModal when the added item has recommendations (or was a
- * customized/variant add). The strip comes from the SDK resolver
- * (resolveItemRecommendations, the one the open check mirrors) over the
- * menu-sellable map and the LIVE out-of-stock map. CSS entrance only: the
- * Figma Smart Animate spring (index.css tb-modal-spring).
+ * Opens on EVERY add its caller does not suppress (useCartHook.openAddedModal,
+ * user 2026-10-14): a plain one too, the menu's +1 on a row already in the
+ * bag included — posistKiosk opens it for a plain add only when it has
+ * recommendations. The strip comes from the SDK resolver
+ * (resolveItemRecommendations) over the menu-sellable map and the LIVE
+ * out-of-stock map. CSS entrance only: the Figma Smart Animate spring
+ * (index.css tb-modal-spring).
  */
 export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps) {
   const { t } = useTranslation();

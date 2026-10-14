@@ -7,7 +7,7 @@ import {
   CHEESE_BURGER,
   DREAM_BOX,
 } from "./fixtures/backend";
-import { typeDigits } from "./pages/order";
+import { dismissAddedModal, typeDigits } from "./pages/order";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 
 /**
@@ -190,6 +190,7 @@ test.describe("figma-polish G1 — the global error is visible and translated", 
       const checkout = await mockCheckoutBackend(page);
       await startOrderToMenu(page, lang);
       await tapGreekSalad(page);
+      await dismissAddedModal(page);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
       await openBag(page);
       await page.getByTestId("bag-pay").click();
@@ -232,9 +233,12 @@ test.describe("figma-polish G1 — the global error is visible and translated", 
 
       // The first DP unit lands; the second is over the cap.
       await tapGreekSalad(page);
+      await dismissAddedModal(page);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
       await tapGreekSalad(page);
       await expectGlobalError(page, lang, (copy) => copy.toast.dpMaxQuantity_one, values);
+      // Refused: nothing landed, so nothing confirms it.
+      await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
       expect(await cartRows(page)).toEqual([[GREEK_SALAD, 1]]);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
       await dismissGlobalError(page);

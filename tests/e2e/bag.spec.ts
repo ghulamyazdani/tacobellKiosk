@@ -140,7 +140,8 @@ const addCheeseBurgerViaPdp = (
 
 /**
  * Plain one-tap add: Greek Salad has no modifiers, no variants and no
- * recommendedItems → lands straight in the cart with no added modal.
+ * recommendedItems → lands straight in the cart; the added modal confirms it
+ * (user 2026-10-14) and addOneTap closes it.
  */
 const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
   addOneTap(page, GREEK_SALAD, expectedCount);

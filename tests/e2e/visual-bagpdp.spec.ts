@@ -292,11 +292,14 @@ async function startOrder(page: Page, mode: Mode) {
   }
 }
 
-/** A plain item lands with one tap, no modal. */
+/** A plain item lands with one tap and confirms with the added modal (user 2026-10-14) — GOT IT closes it. */
 async function addOneTap(page: Page, entityId: string, expectedCount: string) {
   const card = page.getByTestId(`item-${entityId}`);
   await card.scrollIntoViewIfNeeded();
   await card.click();
+  await expect(page.getByTestId("product-added-modal")).toBeVisible();
+  await page.getByTestId("added-continue").click();
+  await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
   await expect(page.getByTestId("cta-view-bag")).toContainText(expectedCount);
 }
 

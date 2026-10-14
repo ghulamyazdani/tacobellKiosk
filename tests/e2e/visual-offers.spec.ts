@@ -718,6 +718,10 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       const hero = page.getByTestId(`quick-add-${GREEK_SALAD}`);
       await hero.scrollIntoViewIfNeeded();
       await hero.click();
+      // A plain add confirms too (user 2026-10-14).
+      await expect(page.getByTestId("product-added-modal")).toBeVisible();
+      await page.getByTestId("added-continue").click();
+      await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
       await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
 
       await openBag(page);

@@ -9,7 +9,7 @@ import {
 } from "./fixtures/backend";
 import { bootRegisteredToMenu, chooseLanguage } from "./pages/boot";
 import { mockCheckoutBackend, type CheckoutMockHandle } from "./fixtures/checkout";
-import { openRewardsSheet } from "./pages/order";
+import { dismissAddedModal, openRewardsSheet } from "./pages/order";
 import { glyphX } from "./fixtures/glyphs";
 
 /**
@@ -73,6 +73,7 @@ async function addGreekSalad(page: Page) {
   await salad.scrollIntoViewIfNeeded();
   await expect(salad).toContainText("₹17");
   await salad.click();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
   await expect(page.getByTestId("cta-total")).toContainText("₹17.00");
 }
@@ -209,6 +210,7 @@ test.describe("Walk 2026-10-14 — a ﷼ price reads left to right", () => {
     const salad = page.getByTestId(`item-${GREEK_SALAD}`);
     await salad.scrollIntoViewIfNeeded();
     await salad.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await openBag(page);
     await openRewardsSheet(page);

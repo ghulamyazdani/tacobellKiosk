@@ -45,8 +45,9 @@ import { addViaPdp, openBag } from "./pages/order";
  * raw price £13 — sizeFastLane.spec's reshape); Large Fries suggests [Cheese Burger, Tortilla Sauce], so a strip
  * of its own after its PDP would be a second hop.
  *
- * A re-tap of an in-cart PLAIN item only bumps its row (no modal), so a test that needs the salad's modal again
- * starts the next customer's order (CANCEL ORDER → splash → /menu: `newOrder`). Store state is read through
+ * Every menu add confirms (user 2026-10-14) — a re-tap of an in-cart PLAIN item bumps its row AND opens the modal
+ * again —, but a test that needs the salad's FIRST modal (one row) again starts the next customer's order (CANCEL
+ * ORDER → splash → /menu: `newOrder`). Store state is read through
  * `window.__kioskStore` (DEV-only) with expect.poll; the cart is checked in the store, never through the bag UI.
  * The print agent and every non-app origin are denied by the harness (fixtures/kiosk): an unexpected call fails
  * the test.
@@ -879,6 +880,96 @@ test.describe("the product-added modal stages its suggestions (posistKiosk parit
     await expect(page.getByTestId("menu-screen")).toBeVisible();
     await expect(modal(page)).toHaveCount(0);
     expect((await snapshot(page)).open).toBe(false);
+  });
+});
+
+/**
+ * User 2026-10-14: "item added modal should also come when normal item without customization is added". Every
+ * menu add of a plain item confirms — a card tap or its '+', a new row or +1 on the row the bag already has: with
+ * suggestions the strip (NO THANKS), without them the title, the Total and GOT IT. Adds made in the bag (its
+ * steppers, Complete Your Meal) still confirm by the row itself.
+ */
+test.describe("every menu add confirms — a plain one too (user 2026-10-14)", () => {
+  test("A1 NO SUGGESTIONS: a Tortilla Sauce card tap lands it and opens the modal — the title, Total £2, GOT IT, no strip; GOT IT closes on the bag as it is; a second tap (+1) and its '+' (+1) bump the SAME row to ×2, ×3 and confirm each time (Total £4, £6)", async ({
+    page,
+  }) => {
+    await bootToMenu(page);
+    const sauce = page.getByTestId(`item-${TORTILLA_SAUCE}`);
+    await sauce.scrollIntoViewIfNeeded();
+    await sauce.click();
+
+    await expect(modal(page)).toBeVisible();
+    await expect(page.getByRole("dialog", { name: en.added.title })).toBeVisible();
+    await expect(tiles(page), "nothing to suggest: no strip").toHaveCount(0);
+    await expect(total(page)).toHaveText(totalText(2));
+    await expect(cta(page)).toHaveText(en.offers.gotIt);
+    await expect.poll(() => snapshot(page)).toEqual({
+      open: true,
+      item: "Tortilla Sauce",
+      noStrip: false,
+      detour: false,
+      cart: ["Tortilla Sauce x1"],
+      picked: {},
+      parked: [],
+    });
+    await cta(page).click();
+    await expect(modal(page)).toHaveCount(0);
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: false, cart: ["Tortilla Sauce x1"], picked: {} });
+
+    const adds: [string, () => Promise<void>][] = [
+      ["the card again", () => sauce.click()],
+      ["its '+'", () => page.getByTestId(`quick-add-${TORTILLA_SAUCE}`).click()],
+    ];
+    for (const [index, [how, add]] of adds.entries()) {
+      const units = index + 2;
+      await add();
+      await expect(modal(page), `${how}: +1 confirms too`).toBeVisible();
+      await expect(tiles(page)).toHaveCount(0);
+      await expect(total(page)).toHaveText(totalText(2 * units));
+      await expect(cta(page)).toHaveText(en.offers.gotIt);
+      await expect.poll(() => snapshot(page), `${how}: one row, bumped`).toMatchObject({
+        open: true,
+        item: "Tortilla Sauce",
+        cart: [`Tortilla Sauce x${units}`],
+      });
+      await cta(page).click();
+      await expect(modal(page)).toHaveCount(0);
+    }
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(3)");
+  });
+
+  test("A2 +1 WITH SUGGESTIONS: the Greek Salad already in the bag — a second tap bumps its row to ×2 and opens the modal with its strip (NO THANKS); in the bag, its '+' bumps it to ×3 with no modal, and closing the bag shows a bare /menu", async ({
+    page,
+  }) => {
+    await bootToMenu(page);
+    await openSaladModal(page);
+    await cta(page).click(); // NO THANKS: nothing picked
+    await expect(modal(page)).toHaveCount(0);
+
+    const salad = page.getByTestId(`item-${GREEK_SALAD}`);
+    await salad.click();
+    await expect(modal(page)).toBeVisible();
+    expect(await tileIds(page)).toEqual(SALAD_RECS);
+    await expect(total(page)).toHaveText(totalText(34));
+    await expect(cta(page)).toHaveText(en.added.noThanks);
+    await expect.poll(() => snapshot(page)).toMatchObject({
+      open: true,
+      item: "Greek Salad",
+      noStrip: false,
+      cart: ["Greek Salad x2"],
+      picked: {},
+    });
+    await cta(page).click();
+    await expect(modal(page)).toHaveCount(0);
+
+    // In the bag the row is the confirmation: its stepper never opens the modal.
+    await openBag(page);
+    await page.locator('[data-testid^="bag-inc-"]').first().click();
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: false, cart: ["Greek Salad x3"] });
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(modal(page)).toHaveCount(0);
   });
 });
 

@@ -28,7 +28,7 @@ import {
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
 import { registerToStart, startOrderTo, bootRegisteredToMenu } from "./pages/boot";
-import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { addOneTap, dismissAddedModal, openBag, typeDigits } from "./pages/order";
 
 /**
  * P9a — idle timeout + session integrity, end to end.
@@ -803,6 +803,7 @@ async function claimRewardThenPayAtCounter(page: Page) {
   const sauce = page.getByTestId(`item-${TORTILLA_SAUCE}`);
   await sauce.scrollIntoViewIfNeeded();
   await sauce.click();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
   await openBag(page);
   await expect(page.locator('[data-testid^="bag-loyalty-row-"]')).toHaveCount(1);

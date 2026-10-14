@@ -578,7 +578,7 @@ test.describe("figma-polish R1 — the PDP 'You Might Like' rail (tenant map, pe
     expect(await cartRows(page)).toEqual([[TORTILLA_SAUCE, 1]]);
 
     // Control: the same configuration added from the menu does earn the
-    // modal (a first add — an in-cart plain item only bumps its row).
+    // modal (every menu add confirms, user 2026-10-14).
     const card = page.getByTestId(`item-${CAESAR_DRESSING}`);
     await card.scrollIntoViewIfNeeded();
     await card.click();
