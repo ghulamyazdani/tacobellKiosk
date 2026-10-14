@@ -813,11 +813,11 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
   });
 
   it.each([
-    [false, 1],
-    [true, 0],
+    [false, 1, /£10£1$/],
+    [true, 0, /£10Free$/],
   ])(
-    "CONFIRM lands the customised freebie at redeemGetItem prices (discountOnAddon %s → £%s); the offer applies and nothing stays held",
-    async (discountOnAddon, discounted) => {
+    "CONFIRM lands the customised freebie at redeemGetItem prices (discountOnAddon %s → £%s, the held row %s); the offer applies and nothing stays held",
+    async (discountOnAddon, discounted, heldRow) => {
       store.dispatch(setDiscountOnAddon(discountOnAddon));
       const { onClose } = renderPicker(FREE_BURGER_OR_OFFER, true, true);
 
@@ -827,6 +827,8 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
       await userEvent.click(within(host).getByTestId("pdp-add-to-bag"));
       await waitFor(() => expect(screen.queryByTestId("offer-tier-host")).toBeNull());
       expect(cartState().getItems).toHaveLength(1);
+      // The held row prices what CONFIRM charges: the £1 add-on, or Free.
+      expect(screen.getByTestId("freebie-option-free-burger")).toHaveTextContent(heldRow);
 
       await userEvent.click(screen.getByTestId("freebie-confirm"));
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -1410,6 +1412,8 @@ describe("FreebiePickerSheet — get-category groups (offers-parity F1)", () => 
     stage(stagedCustom("bbq-sauce", "bbq-1"));
     expect(count()).toHaveTextContent("1 of 2 added");
     expect(option("bbq-sauce")).toHaveTextContent("Customized — tap to change");
+    // The held row is priced through redeemGetItem: 100 % off £1 reads Free.
+    expect(option("bbq-sauce")).toHaveTextContent(/£1Free$/);
 
     // A second customization of the same entity: still ONE unit.
     await userEvent.click(option("bbq-sauce"));
@@ -1758,6 +1762,27 @@ describe("FreebiePickerSheet — a row CONFIRM charges nothing for reads Free", 
     renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
     expect(screen.getByTestId("freebie-option-tortilla-sauce")).toHaveTextContent(/£5 off£2Free$/);
   });
+
+  it.each([
+    [true, /£5\.60Free$/],
+    [false, /£5\.60£0\.20$/],
+  ])(
+    "a customized line is Free on the figure it prints, not the raw float (discountOnAddon %s → %s)",
+    (discountOnAddon, text) => {
+      // The PDP stamps total_price = add-ons + base = 0.2 + 5.4 =
+      // 5.6000000000000005, so a whole-line 100 % off leaves 8.9e-16 — "0.00"
+      // printed, nothing charged. Off, the 20p add-on is a real charge.
+      store.dispatch(setDiscountOnAddon(discountOnAddon));
+      renderPicker(FREE_BURGER_OR_OFFER);
+      stage({
+        ...STAGED_FREE_BURGER,
+        price: 5.4,
+        total_price: 0.2 + 5.4,
+        customizations: { pickle_group: [{ id: "pickles", name: "Extra Pickles", price: 0.2, quantity: 1 }] },
+      });
+      expect(screen.getByTestId("freebie-option-free-burger")).toHaveTextContent(text);
+    },
+  );
 
   it("Arabic: the price line reads the Arabic word", async () => {
     await act(async () => {

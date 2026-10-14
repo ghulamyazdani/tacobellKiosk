@@ -490,7 +490,10 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
    * paid add-on or a partial discount keeps its figure — NOT posistKiosk
    * parity: its tile prices the menu entity, so it reads FREE over a paid
    * add-on, and before any customization (TB shows no pair until then).
-   * Deliberate — TB prices what CONFIRM charges; client sign-off.
+   * Deliberate — TB prices what CONFIRM charges; client sign-off. Free is
+   * decided on the figure printed, not the raw float: a customized line's
+   * total_price is a float sum (0.2 + 5.4), so 100 % off it leaves 8.9e-16,
+   * which prints "0.00".
    */
   const renderPrice = (undiscounted: number, discounted: number) => (
     <>
@@ -501,7 +504,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         </span>
       )}
       <span className="text-[24px] font-medium leading-[28px] text-black">
-        {discounted <= 0 ? (
+        {Number(formatPrice(discounted)) <= 0 ? (
           t("offers.free")
         ) : (
           <>
