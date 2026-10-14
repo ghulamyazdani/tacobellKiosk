@@ -545,7 +545,7 @@ export default function BagSheet({
       try {
         const bill = getCalculatedBill({
           ...cartRdx,
-          cartItems: items.filter((it: any) => !it?.isLoyaltyItem && !it?.isGetItem),
+          cartItems: items.filter((it) => !it?.isLoyaltyItem && !it?.isGetItem),
         });
         return minBill > Number(cartOffer?.onGrossTotal ? bill?.getNetAmount() : bill?.getSubtotal());
       } catch {

@@ -542,7 +542,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(cartState().offerRemovalModal.isOpen).toBe(true);
     expect(cartState().offerRemovalModal.data._id).toBe("offer-free-salad");
     expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
-    expect(cartState().cartItems.map((row: any) => row.itemId)).toEqual(["cb-1"]);
+    expect(cartState().cartItems.map(({ itemId }: { itemId: string }) => itemId)).toEqual(["cb-1"]);
     expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
       "Add £1.40+ to your order to be eligible to redeem this reward"
     );
@@ -575,7 +575,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(cartState().offerRemovalModal.data._id).toBe("offer-flat-2");
     expect(Object.keys(cartState().cartOffer ?? {})).toHaveLength(0);
     // The reward row is the loyalty flow's: it stays.
-    expect(cartState().cartItems.map((row: any) => row.itemId)).toEqual(["cb-1", "lr-1"]);
+    expect(cartState().cartItems.map(({ itemId }: { itemId: string }) => itemId)).toEqual(["cb-1", "lr-1"]);
   });
 
   it("REVALIDATION (posistKiosk parity): an onGrossTotal reward is measured on the NET payable — this bill's own discount included — the rest on the item subtotal", () => {
