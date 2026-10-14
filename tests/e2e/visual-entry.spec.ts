@@ -471,6 +471,27 @@ const orderTypeGeometry = (page: Page) =>
   });
 
 /**
+ * /second's card labels, Cm Bd 48/44 (1:2581): an Arabic alias leads 64 — at 44 its wrapped lines touched, as on
+ * /payment's tiles (walk 2026-10-14) — and its line boxes hold the whole font box.
+ */
+async function expectPipelineLabels(page: Page, lang: "en" | "ar") {
+  const labels = await page.locator('[data-testid^="pipeline-"] > span:first-of-type').evaluateAll((spans) =>
+    spans.map((span) => ({
+      text: span.textContent,
+      lineHeight: getComputedStyle(span).lineHeight,
+      lines: Math.round(span.clientHeight / parseFloat(getComputedStyle(span).lineHeight)),
+      scroll: span.scrollHeight,
+      client: span.clientHeight,
+    }))
+  );
+  for (const label of labels) {
+    expect.soft(label.lineHeight, `${lang}: "${label.text}" leads`).toBe(lang === "ar" ? "64px" : "44px");
+    if (lang === "ar") expect.soft(label.scroll, `"${label.text}" overflows its lines`).toBeLessThanOrEqual(label.client);
+  }
+  if (lang === "ar") expect.soft(labels.some((label) => label.lines > 1), "an Arabic alias wraps (the case under test)").toBe(true);
+}
+
+/**
  * The bell placeholders under `testId` (spans masked with the bell SVG): how
  * many, and how many lost their mask — Vite inlines the SVG as a data URI
  * carrying ' ( ), so an unquoted url() is invalid and the bell paints as a
@@ -634,7 +655,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     [3, "two card rows under the bell"],
     [5, "one swipe row"],
   ] as const) {
-    test(`ORDER TYPE, ${count} PIPELINES: ${layout}, the title clear of the bell and the cards of the footer, in English and Arabic (no frame — design language)`, async ({
+    test(`ORDER TYPE, ${count} PIPELINES: ${layout}, the title clear of the bell and the cards of the footer, a wrapped Arabic label leading 64, in English and Arabic (no frame — design language)`, async ({
       page,
     }) => {
       test.slow();
@@ -653,6 +674,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
         await expect(page.getByTestId("second-screen")).toContainText(copy.second.title);
         await expect(page.locator('[data-testid^="pipeline-"]')).toHaveCount(count);
         await capture(page, `entry-29-second-${count}-${lang}`);
+        await expectPipelineLabels(page, lang);
         const at = await orderTypeGeometry(page);
         expect.soft(at.titleTop, `${lang}: title top vs the bell's bottom`).toBeGreaterThanOrEqual(at.bellBottom);
         expect.soft(at.cardsBottom, `${lang}: lowest card vs the footer`).toBeLessThanOrEqual(at.footerTop);
