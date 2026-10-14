@@ -423,3 +423,56 @@ describe("SelectSizeModal — the ADA size list's scroll bar (residual R3)", () 
     expect(screen.queryByTestId("size-scrollbar-hit")).toBeNull();
   });
 });
+
+/*
+  Lane walk-oos: an out-of-stock size stays in Select a Size — last, greyed,
+  a disabled tile named unavailable, the "Unavailable" chip in its radio's
+  place (posistKiosk VariantSelectionSection) — and CONTINUE can never
+  return it.
+*/
+describe("SelectSizeModal — out-of-stock sizes (walk-oos)", () => {
+  const SOLD_OUT = {
+    ...ENTITY,
+    variants: [{ ...ENTITY.variants[0], outOfStock: true }, ENTITY.variants[1], ENTITY.variants[2]],
+  };
+
+  it("the out-of-stock size is last, disabled and named unavailable; a tap leaves CONTINUE disabled", async () => {
+    const onContinue = vi.fn();
+    render(
+      <Provider store={store}>
+        <SelectSizeModal entity={SOLD_OUT} onClose={vi.fn()} onContinue={onContinue} />
+      </Provider>
+    );
+    const order = Array.from(document.querySelectorAll('[data-testid^="size-v-"]')).map((node) =>
+      node.getAttribute("data-testid")
+    );
+    expect(order).toEqual(["size-v-medium", "size-v-regular", "size-v-large"]);
+    const large = screen.getByRole("button", { name: "Large, unavailable" });
+    expect(large).toBeDisabled();
+    expect(large).toHaveTextContent("Unavailable");
+    expect(screen.getByText("Large").parentElement).toHaveClass("opacity-40");
+
+    await userEvent.click(large);
+    expect(screen.getByTestId("size-continue")).toBeDisabled();
+    await userEvent.click(screen.getByTestId("size-v-regular"));
+    await userEvent.click(screen.getByTestId("size-continue"));
+    expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ id: "v-regular" }));
+  });
+
+  it("every size out of stock: the hero too is disabled — nothing can be chosen", () => {
+    render(
+      <Provider store={store}>
+        <SelectSizeModal
+          entity={{ ...ENTITY, variants: ENTITY.variants.map((v) => ({ ...v, outOfStock: true })) }}
+          onClose={vi.fn()}
+          onContinue={vi.fn()}
+        />
+      </Provider>
+    );
+    for (const id of ["v-large", "v-medium", "v-regular"]) {
+      expect(screen.getByTestId(`size-${id}`)).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "Large, unavailable" })).toBeInTheDocument();
+    expect(screen.getByTestId("size-continue")).toBeDisabled();
+  });
+});

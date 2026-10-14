@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { stockLast } from "@cx-sdk/catalog/oos/optionStock";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
@@ -86,9 +87,14 @@ export default function SelectSizeModal({
     return () => restoreFocus(opener);
   }, [opener]);
 
+  // walk-oos: an out-of-stock size stays, last and greyed, a disabled tile
+  // (posistKiosk VariantSelectionSection) — never chosen.
   const variants: any[] = useMemo(() => {
     const list = Array.isArray(entity?.variants) ? [...entity.variants] : [];
-    return list.filter((v: any) => v && v.isActive !== false);
+    return stockLast(
+      list.filter((v: any) => v && v.isActive !== false),
+      (v: any) => v.outOfStock === true
+    );
   }, [entity]);
 
   const minPrice = useMemo(
@@ -102,6 +108,7 @@ export default function SelectSizeModal({
   const heroImage = resolveEntityImage(hero);
   const rest = variants.slice(1);
   const selected = variants.find((v: any) => v.id === selectedId) ?? null;
+  const soldOut = (v: any) => v?.outOfStock === true;
 
   const priceLabel = (v: any) => {
     const p = Number(v?.price ?? 0);
@@ -119,18 +126,26 @@ export default function SelectSizeModal({
   // Render helper, NOT a component (react-hooks/static-components).
   // Figma Status 1:5708 / 1:5722: 36 px; a 1 px purple ring, or a purple
   // fill with the check at inset 16.67 % (24 px).
-  const renderRadio = (v: any, corner: string) => (
-    <span
-      aria-hidden
-      className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
-        selectedId === v.id ? "bg-tb-purple" : "border border-tb-purple"
-      }`}
-    >
-      {selectedId === v.id && (
-        <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
-      )}
-    </span>
-  );
+  const renderRadio = (v: any, corner: string) =>
+    soldOut(v) ? (
+      // The menu card's chip (MenuItemCard) where the radio sits.
+      <span
+        className={`tb-display absolute ${corner} whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface`}
+      >
+        {t("menu.unavailable")}
+      </span>
+    ) : (
+      <span
+        aria-hidden
+        className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
+          selectedId === v.id ? "bg-tb-purple" : "border border-tb-purple"
+        }`}
+      >
+        {selectedId === v.id && (
+          <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
+        )}
+      </span>
+    );
 
   return (
     <div
@@ -188,6 +203,8 @@ export default function SelectSizeModal({
               type="button"
               data-testid={`size-${hero.id}`}
               aria-pressed={selectedId === hero.id}
+              disabled={soldOut(hero)}
+              aria-label={soldOut(hero) ? t("pdp.optionUnavailable", { name: name(hero) }) : undefined}
               onClick={() => setSelectedId(hero.id)}
               className="tb-select relative flex h-[453px] w-[504px] shrink-0 flex-col items-center rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
             >
@@ -197,10 +214,10 @@ export default function SelectSizeModal({
                 <img
                   alt=""
                   src={heroImage}
-                  className="absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain"
+                  className={`absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain ${soldOut(hero) ? "opacity-40 grayscale" : ""}`}
                 />
               )}
-              <span className="relative flex w-[352px] flex-col items-center gap-[16px] text-center">
+              <span className={`relative flex w-[352px] flex-col items-center gap-[16px] text-center ${soldOut(hero) ? "opacity-40" : ""}`}>
                 {isBestValue(hero) && (
                   <span
                     data-testid="size-best-value"
@@ -233,15 +250,21 @@ export default function SelectSizeModal({
                     type="button"
                     data-testid={`size-${v.id}`}
                     aria-pressed={selectedId === v.id}
+                    disabled={soldOut(v)}
+                    aria-label={soldOut(v) ? t("pdp.optionUnavailable", { name: name(v) }) : undefined}
                     onClick={() => setSelectedId(v.id)}
                     className="tb-select relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
                   >
                     <span className="h-[108px] w-[206px]">
                       {imageUrl && (
-                        <img alt="" src={imageUrl} className="h-full w-full object-contain" />
+                        <img
+                          alt=""
+                          src={imageUrl}
+                          className={`h-full w-full object-contain ${soldOut(v) ? "opacity-40 grayscale" : ""}`}
+                        />
                       )}
                     </span>
-                    <span className="flex w-full flex-col items-start gap-[4px]">
+                    <span className={`flex w-full flex-col items-start gap-[4px] ${soldOut(v) ? "opacity-40" : ""}`}>
                       <span className="w-full text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
                         {name(v)}
                       </span>

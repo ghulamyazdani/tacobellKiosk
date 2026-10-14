@@ -30,6 +30,12 @@ import {
   resolveAddonCustomize,
   type AddonCustomizeTarget,
 } from "@cx-sdk/ordering/customization/addonCustomize";
+import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  dropOutOfStockPicks,
+  isOptionOutOfStock,
+  stockLast,
+} from "@cx-sdk/catalog/oos/optionStock";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import PackSlotCard from "../../components/customization/PackSlotCard";
@@ -42,6 +48,7 @@ import OptionCard, {
   optionCta,
   OptionRow,
   RadioMark,
+  UnavailableChip,
 } from "../../components/customization/OptionCard";
 import YouMightLikeRail from "../../components/customization/YouMightLikeRail";
 import VegMark from "../../components/menu/VegMark";
@@ -52,7 +59,10 @@ import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import ErrorModal from "../../components/common/ErrorModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
-import { selectRecommendationDetour } from "../../redux/features/menuSelections/menuSelections.slice";
+import {
+  selectOutOfStockItems,
+  selectRecommendationDetour,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
@@ -90,7 +100,7 @@ interface AddonPrompt {
 const pickedCount = (selection: ReadonlyArray<{ quantity?: unknown } | null>) =>
   selection.reduce((sum, s) => sum + Number(s?.quantity ?? 0), 0);
 
-type Size = { id?: string; isActive?: boolean; isGetVariantDisabled?: boolean };
+type Size = { id?: string; isActive?: boolean; isGetVariantDisabled?: boolean; outOfStock?: boolean };
 /** The sizes a guest may pick: active, and not above an offer's sameOrLess ceiling (isGetVariantDisabled). */
 const pickableSizes = (entity: { variants?: unknown } | null | undefined): Size[] => {
   const sizes = entity?.variants;
@@ -159,6 +169,19 @@ export default function Customization({
   // Opened from a product-added suggestion: one hop, so no rail of its own.
   const suggestionDetour = Boolean(useSelector(selectRecommendationDetour));
   const currency = useCurrencySymbol();
+
+  // ---- Stock (lane walk-oos): an option is out of stock by the menu's
+  // stamp or — fresher — PAY's feed map (posistKiosk GroupCustomizationGrid).
+  // A pick is judged by its group's live option, else by itself (a bag
+  // row's pick PAY flagged). ----
+  const outOfStockMap = useSelector(selectOutOfStockItems);
+  const modifiersMap = useSelector(selectModifierMap) as
+    | Record<string, { constituentItems?: { id?: unknown }[] } | undefined>
+    | null
+    | undefined;
+  const soldOut = (item: unknown) => isOptionOutOfStock(item, outOfStockMap);
+  const pickSoldOut = (pick: { id?: unknown }, groupId: string) =>
+    soldOut(modifiersMap?.[groupId]?.constituentItems?.find((o) => o?.id === pick?.id) ?? pick);
 
   // ---- The lazy parts (the completion warning, the tier-2 page, the
   // split-edit planner): warmed at MOUNT, never at a tap (G2c) — without
@@ -270,19 +293,25 @@ export default function Customization({
         getVariantProperties(editContent?.baseItem);
         setSelectedVariant({ ...editContent?.selectedVariant });
         fetchAddonsForSelectedVariant({ ...editContent?.selectedVariant });
+        // walk-oos: a pick out of stock now (PAY flagged it) is deselected.
         dispatch(
-          setTier1SelectedCustomization(editContent?.customizations ?? {})
+          setTier1SelectedCustomization(
+            dropOutOfStockPicks(editContent?.customizations ?? {}, pickSoldOut).selections
+          )
         );
         setConfirmedVariant(true);
         return;
       }
       // CUSTOMIZABLE edit: groups only — redux already holds the row's
       // selections (setTier1SelectedCustomization(row.customizations) was
-      // dispatched at open); do NOT reseed defaults over them.
+      // dispatched at open); do NOT reseed defaults over them. walk-oos: a
+      // pick out of stock now (PAY flagged it) is deselected.
       const editGroups =
         fetchModifierProperties(
           editContent?.baseItem?.modifiers ?? editContent?.modifiers
         ) ?? [];
+      const inStock = dropOutOfStockPicks(selectedCustomizations, pickSoldOut).selections;
+      if (inStock !== selectedCustomizations) dispatch(setTier1SelectedCustomization(inStock));
       setFetchModifierGroups(editGroups);
       return;
     }
@@ -300,7 +329,8 @@ export default function Customization({
       const preselected =
         (preselectedId ? sizes.find((v) => v?.id === preselectedId) : undefined) ??
         (sizes.length === 1 ? sizes[0] : undefined);
-      if (preselected) {
+      // walk-oos: never a size that is out of stock — the grid shows it greyed.
+      if (preselected && !preselected.outOfStock) {
         setSelectedVariant(preselected);
         fetchAddonsForSelectedVariant(preselected);
         setConfirmedVariant(true);
@@ -332,7 +362,7 @@ export default function Customization({
       const option = (renderAppropriateConstituentItems(group.constituentItems) ?? []).find(
         (i: { isActive?: boolean } | null) => i?.isActive !== false
       );
-      if (!option || option.outOfStock === true) return [];
+      if (!option || soldOut(option)) return [];
       try {
         if (findAppropriateVariantForSelectedItem(option)?.isAllModifersOptional === false) {
           return [];
@@ -354,13 +384,14 @@ export default function Customization({
     // customizableItem / new: seed every active group; defaults pre-selected
     // (fork seeds [] then auto-selects isDefault in the group view — same
     // outcome, done in one dispatch here), then the one-option slots (D5).
+    // walk-oos: an out-of-stock default is never pre-selected.
     const groups = fetchModifierProperties(SelectedEntity.modifiers) ?? [];
     const seed: Record<string, any[]> = {};
     for (const group of groups) {
       if (group?.isActive === false) continue;
       const max = Number(group?.max ?? 0);
       const defaults = (group?.constituentItems ?? [])
-        .filter((i: any) => i?.isDefault && i?.isActive !== false)
+        .filter((i: any) => i?.isDefault && i?.isActive !== false && !soldOut(i))
         .slice(0, max > 0 ? max : undefined)
         .map((i: any) => ({ ...i, quantity: 1 }));
       seed[group._id] = defaults.length > 0 ? defaults : seedOneOptionSlot(group);
@@ -424,7 +455,9 @@ export default function Customization({
   const isFreebie = Boolean(SelectedEntity?.isGetItem);
   // isGetVariantDisabled = the offer's sameOrLess ceiling (only freebie
   // entities ever carry it, so menu items filter exactly as before).
-  const variants = pickableSizes(SelectedEntity);
+  // walk-oos: an out-of-stock size stays in the grid, greyed and last
+  // (posistKiosk VariantSelectionSection).
+  const variants = stockLast(pickableSizes(SelectedEntity), (v) => v?.outOfStock === true);
   // The grid shows until a size is confirmed — and again after "Change",
   // over the CURRENT size (marked; its add-ons, price and CTA kept). No size
   // at all is the hook's own commit rule (an empty selectedVariant).
@@ -469,9 +502,14 @@ export default function Customization({
   const quantityOf = (group: any, item: any) =>
     selectionFor(group).find((s: any) => s?.id === item?.id)?.quantity ?? 0;
 
+  // walk-oos: each option carries its resolved stock (the sheet reads
+  // `outOfStock`), the out-of-stock ones last.
   const slotOptionsFor = (group: any): any[] =>
-    (renderAppropriateConstituentItems(group?.constituentItems ?? []) ?? []).filter(
-      (i: any) => i?.isActive !== false
+    stockLast(
+      (renderAppropriateConstituentItems(group?.constituentItems ?? []) ?? [])
+        .filter((i: any) => i?.isActive !== false)
+        .map((i: any) => (soldOut(i) === Boolean(i?.outOfStock) ? i : { ...i, outOfStock: soldOut(i) })),
+      (i: any) => i.outOfStock === true
     );
 
   const canCustomize = (item: any) => {
@@ -640,10 +678,17 @@ export default function Customization({
   // px (decision 4). Every card's tap runs the fork's flow (onCardTap).
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
-    const items: any[] = (group?.constituentItems ?? []).filter(
-      (i: any) => i?.isActive !== false
+    // walk-oos: out-of-stock options stay, last, in the menu card's
+    // unavailable look — nothing to tap (posistKiosk greys them the same way).
+    const items: any[] = stockLast(
+      (group?.constituentItems ?? []).filter((i: any) => i?.isActive !== false),
+      soldOut
     );
     if (items.length === 0) return null;
+    const unavailableOf = (item: any) =>
+      soldOut(item)
+        ? { label: t("menu.unavailable"), name: t("pdp.optionUnavailable", { name: name(item) }) }
+        : undefined;
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
     // UB2: the EFFECTIVE bounds (multi-punch ones when the menu turns it on)
     // decide the presentation, as the fork's group header does: an
@@ -656,16 +701,19 @@ export default function Customization({
     const oneOfOne = minPicks === 1 && maxPicks === 1;
     const stepper = Number(group?.multiplePunchMaxItem ?? 1) > 1 && !oneOfOne;
     const errored = (erroredSection as any)?.id === group?._id;
-    // From the menu, never the selection: a tap never moves anything.
+    // From the menu, never the selection: a tap never moves anything. An
+    // out-of-stock card has no CUSTOMIZE (nor makes its group tall).
     const targets = stepper
       ? []
       : items.map((item: any) =>
-          resolveAddonCustomize({
-            group,
-            item,
-            allowMultiplePunch: amp,
-            resolveVariant: findAppropriateVariantForSelectedItem,
-          })
+          soldOut(item)
+            ? null
+            : resolveAddonCustomize({
+                group,
+                item,
+                allowMultiplePunch: amp,
+                resolveVariant: findAppropriateVariantForSelectedItem,
+              })
         );
     const tall = targets.some(Boolean);
 
@@ -703,6 +751,7 @@ export default function Customization({
                   }
                   decreaseLabel={`${t("pdp.decrease")} ${name(item)}`}
                   increaseLabel={`${t("pdp.increase")} ${name(item)}`}
+                  unavailable={unavailableOf(item)}
                 />
               );
             })}
@@ -712,6 +761,20 @@ export default function Customization({
           // third 328 px card out of the ring.
           <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
             {items.map((item: any, i: number) => {
+              const unavailable = unavailableOf(item);
+              if (unavailable) {
+                return (
+                  <OptionCard
+                    key={item.id}
+                    testId={`pdp-option-${item.id}`}
+                    image={resolveEntityImage(item)}
+                    name={name(item)}
+                    meta={formatOptionMeta(item, currency, t)}
+                    tall={tall}
+                    unavailable={unavailable}
+                  />
+                );
+              }
               const selected = isSelected(group, item);
               const target = targets[i];
               const select = () => onCardTap("select", group, item, target, nextGroup);
@@ -846,25 +909,37 @@ export default function Customization({
               {variants.map((v: any) => {
                 const imageUrl = resolveEntityImage(v);
                 const current = v?.id != null && v.id === selectedVariant?.id;
+                // walk-oos: an out-of-stock size — disabled, greyed, no radio,
+                // the chip under its price (the option cards' look).
+                const soldOutSize = v?.outOfStock === true;
                 return (
                   <button
                     key={v.id}
                     type="button"
                     data-testid={`pdp-variant-${v.id}`}
                     aria-pressed={current}
+                    disabled={soldOutSize}
+                    aria-label={soldOutSize ? t("pdp.optionUnavailable", { name: name(v) }) : undefined}
                     onClick={() => pickVariant(v)}
                     className="relative flex flex-col items-start rounded-[8px] bg-tb-grey-6 p-[20px] min-h-[44px]"
                   >
-                    <RadioMark on={current} corner="right-[12px] top-[12px]" />
+                    {!soldOutSize && <RadioMark on={current} corner="right-[12px] top-[12px]" />}
                     {imageUrl && (
-                      <img alt="" src={imageUrl} className="mb-2 h-[140px] w-full object-contain" />
+                      <img
+                        alt=""
+                        src={imageUrl}
+                        className={`mb-2 h-[140px] w-full object-contain ${soldOutSize ? "opacity-40 grayscale" : ""}`}
+                      />
                     )}
                     {/* pr: an imageless tile's name stays clear of the radio. */}
-                    <p className="pr-[36px] text-[20px] font-medium capitalize text-black">{name(v)}</p>
-                    <p className="text-[16px] text-tb-ink-purple/70">
+                    <p className={`pr-[36px] text-[20px] font-medium capitalize text-black ${soldOutSize ? "opacity-40" : ""}`}>
+                      {name(v)}
+                    </p>
+                    <p className={`text-[16px] text-tb-ink-purple/70 ${soldOutSize ? "opacity-40" : ""}`}>
                       {currency}
                       {Number(v.price ?? 0).toFixed(2)}
                     </p>
+                    {soldOutSize && <UnavailableChip label={t("menu.unavailable")} />}
                   </button>
                 );
               })}

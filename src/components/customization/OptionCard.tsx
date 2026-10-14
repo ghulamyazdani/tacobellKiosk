@@ -56,6 +56,21 @@ export interface OptionCardProps {
   /** Testid of the overlay select button (PackSlotCard's pack-slot-open-*). */
   selectTestId?: string;
   errored?: boolean;
+  /**
+   * Out of stock (lane walk-oos): the menu card's look — content at 40 %,
+   * the photo grey, the "Unavailable" chip where the CTA sits — no radio,
+   * CTA or CUSTOMIZE, nothing to tap. `name` is the card's accessible name.
+   */
+  unavailable?: { label: string; name: string };
+}
+
+/** The menu card's "Unavailable" chip (MenuItemCard), in a card's flow. */
+export function UnavailableChip({ label }: { label: string }) {
+  return (
+    <span className="tb-display self-center whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface">
+      {label}
+    </span>
+  );
 }
 
 /** The fields formatOptionMeta reads off a constituent item / pick. */
@@ -176,6 +191,7 @@ export default function OptionCard({
   selectLabel,
   selectTestId,
   errored = false,
+  unavailable,
 }: OptionCardProps) {
   const id = useId();
   const className = `${CARD} ${tall ? "min-h-[476px]" : "min-h-[400px]"} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
@@ -186,7 +202,7 @@ export default function OptionCard({
           <img
             alt=""
             src={image}
-            className={`h-full w-full object-contain ${dimmed ? "opacity-40" : ""}`}
+            className={`h-full w-full object-contain ${dimmed || unavailable ? "opacity-40" : ""} ${unavailable ? "grayscale" : ""}`}
           />
         )}
       </span>
@@ -197,7 +213,7 @@ export default function OptionCard({
           bottom-anchored name box would). A tall card's box is 210 px
           (1:5332: name + meta + CUSTOMIZE + CTA), the name still at 242. */}
       <span className={`flex ${tall ? "min-h-[210px]" : "min-h-[134px]"} w-full flex-col gap-[24px]`}>
-        <span className="flex flex-col gap-[4px]">
+        <span className={`flex flex-col gap-[4px] ${unavailable ? "opacity-40" : ""}`}>
           <span className="block text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
             {name}
           </span>
@@ -207,7 +223,11 @@ export default function OptionCard({
             </span>
           )}
         </span>
-        {customize ? (
+        {unavailable ? (
+          <span className="mt-auto flex w-full justify-center">
+            <UnavailableChip label={unavailable.label} />
+          </span>
+        ) : customize ? (
           // The two-button foot: CUSTOMIZE (a pick) above the CTA, each else
           // its hidden box — a pick never moves a wrapping name or the row.
           // tb-press-hit: a held press on a button's edge stays on it.
@@ -261,10 +281,17 @@ export default function OptionCard({
           reserveCta && <span aria-hidden="true" className={`${CTA} invisible`} />
         )}
       </span>
-      {radio && <RadioMark on={radio === "on"} corner="right-[12px] top-[12px]" />}
+      {radio && !unavailable && <RadioMark on={radio === "on"} corner="right-[12px] top-[12px]" />}
     </>
   );
 
+  if (unavailable) {
+    return (
+      <div data-testid={testId} role="group" aria-label={unavailable.name} aria-disabled="true" className={className}>
+        {content}
+      </div>
+    );
+  }
   if (onSelect && !cta?.onClick && !customize) {
     // A CTA here is label-only: its span carries `${id}-cta`.
     const describedBy = [meta && `${id}-meta`, cta && `${id}-cta`].filter(Boolean).join(" ");
@@ -321,6 +348,7 @@ export function OptionRow({
   onIncrease,
   decreaseLabel,
   increaseLabel,
+  unavailable,
 }: {
   testId: string;
   image: string | null;
@@ -331,16 +359,27 @@ export function OptionRow({
   onIncrease: () => void;
   decreaseLabel: string;
   increaseLabel: string;
+  /** Out of stock: OptionCard's look — the chip where the stepper sits, nothing to tap. */
+  unavailable?: { label: string; name: string };
 }) {
   return (
     <div
       data-testid={testId}
+      role={unavailable ? "group" : undefined}
+      aria-label={unavailable?.name}
+      aria-disabled={unavailable ? "true" : undefined}
       className="flex min-h-[176px] items-start gap-[24px] border-t border-tb-grey-4 pt-[23px]"
     >
       <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
-        {image && <img alt="" src={image} className="h-[130px] w-[130px] object-contain" />}
+        {image && (
+          <img
+            alt=""
+            src={image}
+            className={`h-[130px] w-[130px] object-contain ${unavailable ? "opacity-40 grayscale" : ""}`}
+          />
+        )}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-[8px]">
+      <span className={`flex min-w-0 flex-1 flex-col gap-[8px] ${unavailable ? "opacity-40" : ""}`}>
         <span className="block text-[28px] font-medium capitalize leading-[32px] tracking-[-0.5px] text-black">
           {name}
         </span>
@@ -350,27 +389,33 @@ export function OptionRow({
           </span>
         )}
       </span>
-      <div className="flex h-[68px] w-[188px] shrink-0 items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface px-[10px]">
-        <button
-          type="button"
-          aria-label={decreaseLabel}
-          onClick={onDecrease}
-          className="flex h-[44px] w-[44px] items-center justify-center"
-        >
-          <img alt="" src={qty === 1 ? trashIcon : minusIcon} className="h-[24px] w-[24px]" />
-        </button>
-        <span key={qty} className="tb-bump text-[20px] font-black leading-[16px] text-black">
-          {qty}
+      {unavailable ? (
+        <span className="flex h-[68px] w-[188px] shrink-0 items-center justify-center">
+          <UnavailableChip label={unavailable.label} />
         </span>
-        <button
-          type="button"
-          aria-label={increaseLabel}
-          onClick={onIncrease}
-          className="flex h-[44px] w-[44px] items-center justify-center"
-        >
-          <img alt="" src={plusIcon} className="h-[24px] w-[24px]" />
-        </button>
-      </div>
+      ) : (
+        <div className="flex h-[68px] w-[188px] shrink-0 items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface px-[10px]">
+          <button
+            type="button"
+            aria-label={decreaseLabel}
+            onClick={onDecrease}
+            className="flex h-[44px] w-[44px] items-center justify-center"
+          >
+            <img alt="" src={qty === 1 ? trashIcon : minusIcon} className="h-[24px] w-[24px]" />
+          </button>
+          <span key={qty} className="tb-bump text-[20px] font-black leading-[16px] text-black">
+            {qty}
+          </span>
+          <button
+            type="button"
+            aria-label={increaseLabel}
+            onClick={onIncrease}
+            className="flex h-[44px] w-[44px] items-center justify-center"
+          >
+            <img alt="" src={plusIcon} className="h-[24px] w-[24px]" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

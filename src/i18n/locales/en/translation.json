@@ -150,7 +150,8 @@
     "removeThisItem": "Remove this item",
     "replaceTitle": "Replace {{name}} in your meal?",
     "replaceConfirm": "Yes, replace item",
-    "selected": "Selected"
+    "selected": "Selected",
+    "optionUnavailable": "{{name}}, unavailable"
   },
   "pack": {
     "selectGroup": "Select {{name}}",
@@ -192,6 +193,7 @@
     "orderAndPay": "Order & Pay",
     "someNeedChanges": "Some items in your bag need changes",
     "choicesUnavailable": "Some choices are no longer available",
+    "outOfStock": "Out of stock: {{names}}",
     "instructions": {
       "title": "Cooking instructions",
       "hint": "Add a note for the kitchen"

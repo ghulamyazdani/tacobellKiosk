@@ -150,7 +150,8 @@
     "removeThisItem": "إزالة هذا العنصر",
     "replaceTitle": "استبدال {{name}} في وجبتك؟",
     "replaceConfirm": "نعم، استبدل العنصر",
-    "selected": "تم الاختيار"
+    "selected": "تم الاختيار",
+    "optionUnavailable": "{{name}}، غير متوفر"
   },
   "pack": {
     "selectGroup": "اختر {{name}}",
@@ -192,6 +193,7 @@
     "orderAndPay": "اطلب وادفع",
     "someNeedChanges": "بعض العناصر في حقيبتك تحتاج إلى تعديل",
     "choicesUnavailable": "بعض الخيارات لم تعد متوفرة",
+    "outOfStock": "نفدت الكمية: {{names}}",
     "instructions": {
       "title": "تعليمات الطهي",
       "hint": "أضف ملاحظة للمطبخ"

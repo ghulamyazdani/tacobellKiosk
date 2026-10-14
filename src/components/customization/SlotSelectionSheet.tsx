@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
+import { UnavailableChip } from "./OptionCard";
 import closeIcon from "../../assets/icons/close.svg";
 // ?no-inline: emitted as a precached file. Inlined (<4 KB → data URI) this
 // path-heavy icon cost +0.4 KiB gzip on the boot path (measured, D7).
@@ -64,21 +65,32 @@ function SheetBody({
       price > 0
         ? `+${currency}${price.toFixed(2)}${calText ? ` | ${calText}` : ""}`
         : calText;
+    // walk-oos: out of stock (the PDP resolves `outOfStock`) — the option
+    // cards' look: greyed, the chip where the radio sits, nothing to tap.
+    const soldOut = item?.outOfStock === true;
 
     // Figma 1:2814 card: 1px #EBEBEB divider on top, the row 24 px below it
     // (176 = 1 + 23 + 152), 152 px grey thumb, Md 32/36 name, Rg 24/24 meta.
     return (
       <div
         key={item?.id}
+        data-testid={soldOut ? `slot-option-${item?.id}` : undefined}
+        role={soldOut ? "group" : undefined}
+        aria-label={soldOut ? t("pdp.optionUnavailable", { name: name(item) }) : undefined}
+        aria-disabled={soldOut ? "true" : undefined}
         className="tb-press-card relative flex items-center gap-[24px] border-t border-tb-grey-4 pt-[23px]"
       >
         <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
           {imageUrl && (
-            <img alt="" src={imageUrl} className="h-[130px] w-[130px] object-contain" />
+            <img
+              alt=""
+              src={imageUrl}
+              className={`h-[130px] w-[130px] object-contain ${soldOut ? "opacity-40 grayscale" : ""}`}
+            />
           )}
         </span>
 
-        <span className="flex flex-1 flex-col gap-[8px]">
+        <span className={`flex flex-1 flex-col gap-[8px] ${soldOut ? "opacity-40" : ""}`}>
           <span className="block text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
             {name(item)}
           </span>
@@ -87,7 +99,7 @@ function SheetBody({
               {line}
             </span>
           )}
-          {canCustomize(item) && (
+          {!soldOut && canCustomize(item) && (
             <button
               type="button"
               data-testid={`slot-customize-${item?.id}`}
@@ -101,24 +113,30 @@ function SheetBody({
 
         {/* Figma Radio 1:401/1:402: 36 px; 1 px purple ring, or a purple
             fill with the exported check at inset 16.67 % (24 px). */}
-        <span
-          className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full ${
-            isPicked ? "bg-tb-purple" : "border border-tb-purple bg-tb-surface"
-          }`}
-        >
-          {isPicked && (
-            <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
-          )}
-        </span>
+        {soldOut ? (
+          <UnavailableChip label={t("menu.unavailable")} />
+        ) : (
+          <span
+            className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full ${
+              isPicked ? "bg-tb-purple" : "border border-tb-purple bg-tb-surface"
+            }`}
+          >
+            {isPicked && (
+              <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
+            )}
+          </span>
+        )}
 
         {/* full-row pick target (last in DOM = on top; Customize sits above via z-10) */}
-        <button
-          type="button"
-          data-testid={`slot-option-${item?.id}`}
-          aria-label={name(item)}
-          onClick={() => setPicked(item?.id)}
-          className="absolute inset-0 h-full w-full min-h-[44px]"
-        />
+        {!soldOut && (
+          <button
+            type="button"
+            data-testid={`slot-option-${item?.id}`}
+            aria-label={name(item)}
+            onClick={() => setPicked(item?.id)}
+            className="absolute inset-0 h-full w-full min-h-[44px]"
+          />
+        )}
       </div>
     );
   };
