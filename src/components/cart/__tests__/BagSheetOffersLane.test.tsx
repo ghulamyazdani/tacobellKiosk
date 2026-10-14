@@ -16,6 +16,7 @@ import {
   openOfferRemovalModal,
   setCartInstructions,
   setCartItems,
+  updateItemCartRdx,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import {
@@ -556,6 +557,81 @@ describe("BagSheet — auto-apply (scope: operatorFlagged)", () => {
     expect(state().cart.offerRemovalModal.isOpen).toBe(false);
     expect(swapCount(spy)).toBe(1);
     expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+    spy.mockRestore();
+  });
+});
+
+/*
+  Review (lane walk-offers-2): check 8 prices the live bill, but the
+  ranking, the notice's "Add X+" gap and auto-apply read useOfferSavings'
+  caches, keyed on a cart signature that left add-ons out. An Edit that
+  only dropped one kept them on the old money: the notice lost its reason,
+  the sheet offered the reward again, and a flagged one came back after
+  every GOT IT — the guest never reached PAY.
+*/
+describe("BagSheet — an Edit that only drops an add-on, under a min-bill reward", () => {
+  /** The burger with a £3 Extra Cheese: £11.60 (its own itemId: no earlier test warmed the caches). */
+  const RICH: Row = {
+    ...BURGER_ROW,
+    itemId: "cb-rich",
+    uniqueItemId: "cb-rich-u",
+    total_price: 11.6,
+    customizations: {
+      sauce_group: [
+        { id: "onions", name: "Add Onions", price: 0.6, quantity: 1 },
+        { id: "cheese", name: "Extra Cheese", price: 3, quantity: 1 },
+      ],
+    },
+  };
+  /** The PDP's commit: the same itemId, price and quantity, the cheese gone — £8.60. */
+  const LEAN: Row = { ...BURGER_ROW, itemId: "cb-rich", uniqueItemId: "cb-rich-u" };
+  /** Edit from the bag: it closes for the PDP, the commit lands, it reopens. */
+  const editFromBag = (view: ReturnType<typeof render>) => {
+    view.rerender(<BagUi open={false} />);
+    act(() => void store.dispatch(updateItemCartRdx({ item: { ...LEAN } })));
+    view.rerender(<BagUi open />);
+  };
+  const NUDGE = "Add £1.40+ to your order to be eligible to redeem this reward";
+
+  it("a chosen reward goes with its 'Add £1.40+' line, and the reopened sheet nudges instead of offering it", async () => {
+    const min10 = flat("min10-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...RICH }]));
+    store.dispatch(setFilteredOffers([min10]));
+    store.dispatch(applyOffer({ offer: min10 }));
+    const view = render(<BagUi />);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+
+    editFromBag(view);
+
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(NUDGE);
+
+    await userEvent.click(screen.getByTestId("offer-removal-gotit"));
+    await userEvent.click(screen.getByTestId("bag-rewards-entry"));
+    expect(
+      await screen.findByTestId("offer-row-nudge-min10-flat-2", {}, { timeout: 5000 })
+    ).toHaveTextContent(NUDGE);
+    expect(screen.queryByTestId("offer-radio-min10-flat-2")).toBeNull();
+  });
+
+  it("a flagged reward goes ONCE: GOT IT never brings it back", async () => {
+    const autoMin10 = flat("auto-min10-flat-2", 2, { autoApplied: true, minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...RICH }]));
+    store.dispatch(setFilteredOffers([autoMin10]));
+    const spy = vi.spyOn(store, "dispatch");
+    const view = render(<BagUi />);
+    await waitFor(() => expect(slotId()).toBe("auto-min10-flat-2"));
+
+    editFromBag(view);
+
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(NUDGE);
+    await userEvent.click(screen.getByTestId("offer-removal-gotit"));
+
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(slotId()).toBeUndefined();
+    expect(swapCount(spy)).toBe(1);
     spy.mockRestore();
   });
 });

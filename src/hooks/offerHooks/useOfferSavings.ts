@@ -102,6 +102,10 @@ const num = (v: unknown): number => {
 /**
  * Cheap identity for "has the cart changed in a way that moves money". Used as
  * the memo key so a re-render that does not touch the cart costs no bill runs.
+ * total_price is the row's unit price WITH its add-ons (every commit sets it
+ * from the customizations): an Edit that only drops an add-on keeps the id,
+ * price and quantity, and without it the ranking, the gaps and auto-apply
+ * kept the old money while revalidation read the new (lane walk-offers-2).
  */
 const cartSignature = (cart: KioskCart | undefined): string => {
   const items = cart?.cartItems ?? [];
@@ -112,6 +116,7 @@ const cartSignature = (cart: KioskCart | undefined): string => {
         i?.selectedVariant?.id ?? "",
         i?.quantity ?? 0,
         i?.selectedVariant?.price ?? i?.price ?? 0,
+        (i as { total_price?: number })?.total_price ?? "",
         i?.isGetItem ? "g" : "",
         i?.isLoyaltyItem ? "l" : "",
       ].join(":"),
