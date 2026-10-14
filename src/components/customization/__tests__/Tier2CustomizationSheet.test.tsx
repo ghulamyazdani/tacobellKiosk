@@ -227,7 +227,7 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     expect(screen.queryByTestId("tier2-sheet")).not.toBeInTheDocument();
   });
 
-  it("the confirm (shared by discard and the item-24 removal) is an alertdialog named by its copy, focus on its primary", async () => {
+  it("the confirm (shared by discard and the item-24 removal) is an alertdialog named by its copy, focus on Keep editing (the safe choice)", async () => {
     seedOpenTier2();
     renderSheet();
     await userEvent.click(screen.getByTestId("tier2-option-ice"));
@@ -236,7 +236,8 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Are you sure?" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAccessibleDescription("Your customizations will be lost");
-    expect(screen.getByTestId("tier2-discard-confirm")).toHaveFocus();
+    expect(screen.getByTestId("tier2-discard-cancel")).toHaveFocus();
+    expect(screen.getByTestId("tier2-discard-confirm")).not.toHaveFocus();
   });
 
   it("'Keep editing' dismisses the discard prompt and keeps the session", async () => {

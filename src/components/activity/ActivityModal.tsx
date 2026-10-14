@@ -339,8 +339,10 @@ export default function ActivityModal({
                     >
                       {t("activity.logoutYes")}
                     </button>
+                    {/* Focus on the safe choice (as every guest confirm). */}
                     <button
                       type="button"
+                      autoFocus
                       onClick={() => setShowLogoutConfirm(false)}
                       className="min-h-[44px] rounded-full border-2 border-tb-purple px-8 py-3 text-[18px] font-bold uppercase text-tb-purple"
                     >

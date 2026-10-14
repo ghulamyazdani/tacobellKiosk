@@ -263,6 +263,10 @@ describe("BagSheet — the in-bag order-type switch (item 19)", () => {
       expect(confirm.querySelector("img")).toBeNull();
       expect(screen.getByTestId("bag-ordertype-confirm-yes")).toHaveTextContent("Yes, switch");
       expect(screen.getByTestId("bag-ordertype-confirm-no")).toHaveTextContent("No, keep Dine In");
+      // Walk 2026-10-14: a switch can drop rows and the reward — focus starts
+      // on NO, so a keypad Enter on open changes nothing.
+      expect(screen.getByTestId("bag-ordertype-confirm-no")).toHaveFocus();
+      expect(screen.getByTestId("bag-ordertype-confirm-yes")).not.toHaveFocus();
 
       fireEvent.click(screen.getByTestId("bag-ordertype-confirm-no"));
       expect(screen.queryByTestId("bag-ordertype-confirm")).not.toBeInTheDocument();

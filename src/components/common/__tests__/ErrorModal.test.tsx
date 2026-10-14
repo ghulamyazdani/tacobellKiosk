@@ -78,6 +78,22 @@ describe("ErrorModal (Figma 1:988 Icon Modal + 1:4514 CTAs)", () => {
     expect(screen.getByTestId("x-retry")).toHaveFocus();
   });
 
+  // Walk 2026-10-14: a confirm's primary IS the consequential choice (YES,
+  // DELETE / YES, SWITCH) — a keypad Enter on open must not confirm it.
+  it("initialFocus='secondary' (a confirm): focus starts on the safe choice, never the primary", () => {
+    renderModal({
+      initialFocus: "secondary",
+      primary: { label: "Yes, delete", testId: "x-delete", onClick: vi.fn(), danger: true },
+    });
+    expect(screen.getByTestId("x-back")).toHaveFocus();
+    expect(screen.getByTestId("x-delete")).not.toHaveFocus();
+  });
+
+  it("initialFocus='secondary' without a secondary: the one CTA still takes focus", () => {
+    renderModal({ initialFocus: "secondary", secondary: undefined });
+    expect(screen.getByTestId("x-retry")).toHaveFocus();
+  });
+
   it("CTAs are the 280×60 Figma pair — well over the 44×44 minimum target", () => {
     renderModal();
     for (const id of ["x-retry", "x-back"]) {

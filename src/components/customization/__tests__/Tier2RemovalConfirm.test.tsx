@@ -136,7 +136,7 @@ describe("Tier2CustomizationSheet — the tier-1 removal confirm (item 24)", () 
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   });
 
-  it("EDIT, qty 1, hide-plus on: '−' opens the removal confirm — an alertdialog, focus on its primary; not the discard prompt", () => {
+  it("EDIT, qty 1, hide-plus on: '−' opens the removal confirm — an alertdialog, focus on Keep editing (the safe choice); not the discard prompt", () => {
     seedEdit();
     renderSheet();
     expect(screen.queryByTestId("tier2-qty-increase")).not.toBeInTheDocument(); // hide-plus
@@ -149,7 +149,8 @@ describe("Tier2CustomizationSheet — the tier-1 removal confirm (item 24)", () 
     expect(dialog).toHaveAccessibleDescription(i18n.t("pdp.discardBody"));
     expect(screen.getByTestId("tier2-remove-confirm")).toHaveTextContent(i18n.t("pdp.discardConfirm"));
     expect(screen.getByTestId("tier2-remove-cancel")).toHaveTextContent(i18n.t("pdp.discardKeep"));
-    expect(screen.getByTestId("tier2-remove-confirm")).toHaveFocus();
+    expect(screen.getByTestId("tier2-remove-cancel")).toHaveFocus();
+    expect(screen.getByTestId("tier2-remove-confirm")).not.toHaveFocus();
     expect(screen.queryByTestId("tier2-discard-overlay")).not.toBeInTheDocument();
     expect(drinks()).toHaveLength(2); // nothing removed yet
   });

@@ -520,6 +520,8 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await expect(confirm).toHaveAccessibleDescription(COPY.confirmBody);
     await expect(page.getByTestId("bag-ordertype-confirm-yes")).toHaveText(COPY.confirmYes);
     await expect(page.getByTestId("bag-ordertype-confirm-no")).toHaveText(COPY.confirmNo);
+    // Focus on NO: a keypad Enter never switches (walk 2026-10-14).
+    await expect(page.getByTestId("bag-ordertype-confirm-no")).toBeFocused();
     await capture(page, "order-type-confirm");
 
     await page.getByTestId("bag-ordertype-confirm-no").click();

@@ -410,7 +410,8 @@ test.describe("P6c pack PDP (slot cards + SELECT sheet + tier-2 customize)", () 
     const confirm = page.getByRole("alertdialog", { name: en.pdp.discardTitle });
     await expect(page.getByTestId("tier2-remove-overlay")).toBeVisible();
     await expect(confirm).toHaveAccessibleDescription(en.pdp.discardBody);
-    await expect(page.getByTestId("tier2-remove-confirm")).toBeFocused();
+    // Focus on Keep editing — the safe choice (walk 2026-10-14).
+    await expect(page.getByTestId("tier2-remove-cancel")).toBeFocused();
     await page.getByTestId("tier2-remove-confirm").click();
 
     await expect(page.getByTestId("tier2-remove-overlay")).toHaveCount(0);

@@ -21,6 +21,13 @@ interface ErrorModalProps {
   icon?: boolean;
   /** true = one full-width 632 × 60 primary (Modal 1:945 CTA); use without secondary. */
   wide?: boolean;
+  /**
+   * The CTA that takes focus on open. "secondary" for a confirm whose primary
+   * IS the consequential choice (delete, switch, replace): focus starts on
+   * the safe one (WAI-ARIA APG alertdialog), so a keypad Enter never
+   * confirms. Default: the primary (retry, got it, keep paying).
+   */
+  initialFocus?: "primary" | "secondary";
 }
 
 /**
@@ -46,6 +53,7 @@ export default function ErrorModal({
   secondary,
   icon = true,
   wide = false,
+  initialFocus = "primary",
 }: ErrorModalProps) {
   return (
     <div
@@ -88,21 +96,23 @@ export default function ErrorModal({
           )}
         </div>
         <div className={wide ? "flex w-full" : "flex gap-[26px]"}>
+          {/* autoFocus: an alertdialog takes focus (same as the idle modal) —
+              on the CTA `initialFocus` names. */}
           {secondary && (
             <button
               type="button"
               data-testid={secondary.testId}
+              autoFocus={initialFocus === "secondary"}
               onClick={secondary.onClick}
               className="tb-display h-[60px] w-[280px] whitespace-nowrap rounded-[4px] border border-tb-purple text-[18px] leading-[16px] text-tb-purple"
             >
               {secondary.label}
             </button>
           )}
-          {/* autoFocus: an alertdialog takes focus (same as the idle modal). */}
           <button
             type="button"
             data-testid={primary.testId}
-            autoFocus
+            autoFocus={initialFocus === "primary" || !secondary}
             onClick={primary.onClick}
             className={`tb-display h-[60px] ${wide ? "w-full" : "w-[280px]"} whitespace-nowrap rounded-[4px] ${primary.danger ? "bg-tb-red active:bg-tb-red-press" : "bg-tb-purple"} text-[18px] leading-[16px] text-tb-surface`}
           >

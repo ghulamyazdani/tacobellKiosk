@@ -254,9 +254,11 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await openBag(page);
     const itemId = await firstBagRowItemId(page);
 
-    // qty 1 decrease → REMOVE ITEM confirm, not a silent delete.
+    // qty 1 decrease → REMOVE ITEM confirm, not a silent delete. Focus on
+    // NO, BACK TO CART: a keypad Enter keeps the row (walk 2026-10-14).
     await page.getByTestId(`bag-dec-${itemId}`).click();
     await expect(page.getByTestId("remove-item-modal")).toBeVisible();
+    await expect(page.getByTestId("remove-item-cancel")).toBeFocused();
 
     // Cancel: modal gone, row untouched.
     await page.getByTestId("remove-item-cancel").click();
@@ -539,8 +541,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("cta-total")).toContainText("£17.00");
 
     // Cancel path 1: dismiss keeps the order (no teardown without confirm).
+    // Focus moves in on NO, BACK TO MENU (walk 2026-10-14).
     await page.getByTestId("footer-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
+    await expect(page.getByTestId("cancel-order-cancel")).toBeFocused();
     await page.getByTestId("cancel-order-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toHaveCount(0);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");

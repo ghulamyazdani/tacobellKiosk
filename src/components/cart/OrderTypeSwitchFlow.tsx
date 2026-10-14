@@ -68,6 +68,8 @@ export default function OrderTypeSwitchFlow({
       <ErrorModal
         testId="bag-ordertype-confirm"
         icon={false}
+        // A switch can drop rows and the reward: focus starts on NO.
+        initialFocus="secondary"
         title={t("bag.orderType.confirmTitle", { type })}
         message={t("bag.orderType.confirmBody")}
         primary={{

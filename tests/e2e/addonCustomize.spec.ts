@@ -409,7 +409,7 @@ test.describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork
     expect(body).not.toContain(PLAIN);
   });
 
-  test("E5 REMOVE CONFIRM (decision 5): REMOVE on a customized pick asks (focus on the primary); NO keeps it, YES drops it; a plain pick's REMOVE is immediate", async ({
+  test("E5 REMOVE CONFIRM (decision 5): REMOVE on a customized pick asks (focus on NO, KEEP IT — the safe choice); NO keeps it, YES drops it; a plain pick's REMOVE is immediate", async ({
     page,
   }) => {
     test.slow();
@@ -426,7 +426,8 @@ test.describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork
     await expect(dialog).toContainText(en.pdp.discardBody);
     await expect(page.getByTestId("pdp-addon-remove-cancel")).toHaveText(en.pdp.keepItem);
     await expect(page.getByTestId("pdp-addon-remove-confirm")).toHaveText(en.pdp.removeThisItem);
-    await expect(page.getByTestId("pdp-addon-remove-confirm")).toBeFocused();
+    // Focus on NO, KEEP IT — the safe choice (walk 2026-10-14).
+    await expect(page.getByTestId("pdp-addon-remove-cancel")).toBeFocused();
     expect(await clippedText(page)).toEqual([]);
     await settle(page);
     await shot(page, "addon-en-remove-confirm");

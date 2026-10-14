@@ -977,12 +977,13 @@ export default function Customization({
       {/* Lane addon-customize: REMOVE on a customized add-on (decision 5)
           and a swap away from a customized pick (the fork's replace-item) ask
           first — RemoveItemModal's ErrorModal shell (inert scrim, focus on
-          the primary). The fork's words: Are you sure? / Remove this item;
-          Replace {name} in your meal? / Yes, replace item. */}
+          NO, KEEP IT: the safe choice). The fork's words: Are you sure? /
+          Remove this item; Replace {name} in your meal? / Yes, replace item. */}
       {addonPrompt && (
         <ErrorModal
           testId={addonPrompt.kind === "remove" ? "pdp-addon-remove" : "pdp-addon-replace"}
           icon={false}
+          initialFocus="secondary"
           title={
             addonPrompt.kind === "remove"
               ? t("pdp.discardTitle")
