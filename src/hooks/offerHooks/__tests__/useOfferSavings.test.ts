@@ -77,6 +77,63 @@ describe("D3 — item minimums count paid units", () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * Walk 2026-10-14: with "And Offer With Varaint" applied (its reward rows
+ * in the bag), the sheet previewed "Maha 50% — Save £34.80" and "Amount
+ * Ic — Save £50.00"; the swap sweeps the reward rows first, so Maha
+ * applied £12.50. Every preview prices the bag the swap leaves.
+ * ------------------------------------------------------------------ */
+describe("swap previews price the bag a swap leaves (no reward rows)", () => {
+  const paid = (id: string, price: number) => row(`${id}-1`, { id, name: id, price, total_price: price });
+  /** A committed reward row, as redeemGetItem stamps it. */
+  const reward = (id: string, price: number, percent: number, quantity = 1) =>
+    row(`${id}-g`, {
+      id,
+      name: id,
+      price,
+      total_price: price,
+      quantity,
+      isGetItem: true,
+      discountType: "percent",
+      discountValue: percent,
+      undiscounted_total_price: price,
+      discounted_total_price: price - (price * percent) / 100,
+    });
+  /** £20 + £5 paid; the applied offer's rewards: £10 at 50 %, 2 × £20 at 1 %. */
+  const WALK_BAG = [paid("chilli", 20), paid("noodles-q", 5), reward("noodles-h", 10, 50), reward("chilli", 20, 1, 2)];
+  const MAHA: SavingsOffer = {
+    _id: "maha",
+    name: "Maha Offer 50% on all item",
+    type: { name: "percent", value: 50 },
+    applicable: { on: "complete", rawItems: [] },
+  };
+
+  it("Maha 50 % previews £12.50 — half of the £25 the swap leaves, not £34.80", () => {
+    store.dispatch(setCartItems(WALK_BAG));
+    expect(savings().savingFor(MAHA).amount).toBe(12.5);
+    expect(savings().rank([MAHA])[0].saving.amount).toBe(12.5);
+  });
+
+  it("a flat £50 off previews the £25 the swap leaves, never £50", () => {
+    store.dispatch(setCartItems(WALK_BAG));
+    const flat: SavingsOffer = { ...MAHA, _id: "amount-ic", type: { name: "amount", value: 50 } };
+    expect(savings().savingFor(flat).amount).toBe(25);
+  });
+
+  it("a bill minimum is judged on that bag too: £25 against a £50 minimum is £25 short", () => {
+    store.dispatch(setCartItems(WALK_BAG));
+    expect(savings().gapFor({ ...MAHA, _id: "min-50", minBillAmount: 50 })).toEqual({
+      reason: "minBill",
+      amountShort: 25,
+    });
+  });
+
+  it("without reward rows nothing changes: Maha previews half the bag", () => {
+    store.dispatch(setCartItems([paid("chilli", 20), paid("noodles-q", 5)]));
+    expect(savings().savingFor(MAHA).amount).toBe(12.5);
+  });
+});
+
 describe("D1 — rank() hides what can never unlock on this menu", () => {
   const buyOn = (_id: string, baseItemId: string): SavingsOffer => ({
     _id,

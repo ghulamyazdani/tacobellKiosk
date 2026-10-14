@@ -169,6 +169,12 @@ function useOfferSavings() {
    * least-value annotation reuse another offer's freebie distribution and
    * misprice the candidate. Cleared, the distribution is recomputed for the
    * candidate, which is what we want to quote.
+   *
+   * The applied offer's reward rows (isGetItem) are dropped too: every apply
+   * sweeps them before the swap (useOfferApply.clearFreebieRows), so a
+   * preview over them priced a bag no swap leaves — walk 2026-10-14: "Save
+   * £34.80" shown, £12.50 applied. The baseline subtotal (min-bill gaps)
+   * comes through here as well, so it is that bag's too.
    */
   /**
    * getCalculatedBill and cartRdx get fresh identities from useOrderHook /
@@ -189,6 +195,7 @@ function useOfferSavings() {
       try {
         return calc({
           ...cart,
+          cartItems: (cart.cartItems ?? []).filter((item) => !item?.isGetItem),
           cartOffer: offer,
           lockedFreebieAllocation: undefined,
         }) as CalculatedBill;
