@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "./fixtures/kiosk";
+import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
   DINE_IN,
@@ -673,6 +673,30 @@ const SCOPED_SAUCES = {
     { on: "itemCriteria", isInclude: true, items: [TORTILLA_SAUCE, CAESAR_DRESSING] }
   ),
 };
+/** Kids' meals and boxes (long Arabic names): a scope list that wraps. */
+const KIDS_AND_BOXES = [
+  "5dd1093a188e72ce1b3eb359",
+  "5dd1093a188e72ce1b3eb35b",
+  "5dd1093a188e72ce1b3eb358",
+  "68dd79409030ed3064aee28c",
+  "68dd79b84c041931d29d6126",
+];
+/**
+ * 10 % off five kids' meals and boxes over £100 (item criteria, include):
+ * locked by its minimum, so its scoped description IS the row's second line.
+ */
+const SCOPED_KIDS_MIN = {
+  ...clone(offersFixture[0]),
+  _id: "offer-scoped-kids-min",
+  name: "10% off kids' meals and boxes over £100",
+  type: { name: "percent", value: 10 },
+  minBillAmount: 100,
+  maxDiscount: 150,
+  applicable: applicable(
+    KIDS_AND_BOXES.map((baseItemId) => ({ item: { baseItemId, name: "Kids" }, quantity: null, relation: "or" })),
+    { on: "itemCriteria", isInclude: true, items: KIDS_AND_BOXES }
+  ),
+};
 /** An "and" buy side with an item the slim menu does not sell: can never unlock. */
 const NEVER = itemOffer({
   _id: "offer-never",
@@ -697,11 +721,11 @@ const CAESAR_OUT = [{ item_id: CAESAR_DRESSING, type: "item", partners: { partne
 const stripIsolates = (s: string | null) => (s ?? "").replace(/[\u2066-\u2069]/g, "").trim();
 
 /**
- * Walk w3: where each laid-out line of a description starts (its left edge),
- * beside the left edge of the row's text column \u2014 the title's.
+ * Walk w3: where each laid-out line of a row's text leaf starts (its left
+ * edge), beside the left edge of the row's text column \u2014 the title's.
  */
-const lineStarts = (page: Page, testId: string) =>
-  page.getByTestId(testId).evaluate((el) => {
+const lineStarts = (leaf: Locator) =>
+  leaf.evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
     const lines: { mid: number; left: number }[] = [];
@@ -712,7 +736,7 @@ const lineStarts = (page: Page, testId: string) =>
       if (line) line.left = Math.min(line.left, rect.left);
       else lines.push({ mid, left: rect.left });
     }
-    const column = el.parentElement?.parentElement?.getBoundingClientRect().left ?? Number.NaN;
+    const column = el.closest(".flex-1")?.getBoundingClientRect().left ?? Number.NaN;
     return { column, starts: lines.map((line) => line.left) };
   });
 
@@ -828,7 +852,7 @@ test.describe("Lane offers-parity — category freebies, descriptions, availabil
     page,
   }) => {
     test.slow();
-    await mockBackend(page, { offers: [DESC_BOGO, SCOPED_SAUCES, LONG_PICK], arabic: true });
+    await mockBackend(page, { offers: [DESC_BOGO, SCOPED_SAUCES, LONG_PICK, SCOPED_KIDS_MIN], arabic: true });
     await bootArabicToMenu(page);
     await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
     await openBag(page);
@@ -853,11 +877,21 @@ test.describe("Lane offers-parity — category freebies, descriptions, availabil
     // Walk w3: a wrapped Arabic description still reads right to left, but
     // every line starts at the title's left edge — right-aligned under it,
     // it read as a ragged block.
-    const longId = `offer-row-desc-${LONG_PICK._id}`;
-    await page.getByTestId(longId).scrollIntoViewIfNeeded();
-    const long = await lineStarts(page, longId);
+    const longDesc = page.getByTestId(`offer-row-desc-${LONG_PICK._id}`);
+    await longDesc.scrollIntoViewIfNeeded();
+    const long = await lineStarts(longDesc);
     expect(long.starts.length).toBeGreaterThan(1);
     for (const start of long.starts) expect(Math.abs(start - long.column)).toBeLessThanOrEqual(1);
+    // …and where the description IS the second line (a scoped offer locked
+    // by its minimum), it starts at the title's left edge there too.
+    const lockedRow = page.getByTestId(`offer-row-${SCOPED_KIDS_MIN._id}`);
+    await expect(page.getByTestId(`offer-row-desc-${SCOPED_KIDS_MIN._id}`)).toHaveCount(0);
+    const secondLine = lockedRow.locator(".flex-1 > span[dir=auto]");
+    await secondLine.scrollIntoViewIfNeeded();
+    await expect.poll(async () => stripIsolates(await secondLine.textContent())).toContain("خصم 10٪ على");
+    const scoped = await lineStarts(secondLine);
+    expect(scoped.starts.length).toBeGreaterThan(1);
+    for (const start of scoped.starts) expect(Math.abs(start - scoped.column)).toBeLessThanOrEqual(1);
   });
 
   test("E-F1 an 'and' buy side the menu cannot sell is not listed; a sold-out buy side is a struck 'Not available right now' row with no description", async ({

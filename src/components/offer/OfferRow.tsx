@@ -305,13 +305,15 @@ export default function OfferRow({
           )}
         </span>
         {secondLine && (
-          // dir="auto" on this LEAF only (never a container): a wrapped
-          // Arabic line right-aligns; text-start because the parent sets
-          // physical text-left.
+          // dir="auto" on this LEAF only (never a container): an Arabic line
+          // reads right to left, and — no text-start — takes the column's
+          // physical text-left, so a wrapped one starts at the title's left
+          // edge (walk w3: a scoped offer's description lands here, and
+          // right-aligned it read as a ragged block).
           <span
             id={lineId}
             dir="auto"
-            className="text-start text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
+            className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple"
           >
             {secondLine}
           </span>

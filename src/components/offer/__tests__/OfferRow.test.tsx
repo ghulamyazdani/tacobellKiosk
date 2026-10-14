@@ -81,8 +81,10 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     expect(body).toHaveTextContent("£2 off your order");
     expect(body).toHaveTextContent("Save £2.00");
     expect(screen.getByText("Save £2.00")).toHaveAttribute("dir", "auto"); // the leaf, never the row
-    // text-start: without it the parent's physical text-left keeps a wrapped AR line left-aligned.
-    expect(screen.getByText("Save £2.00")).toHaveClass("text-start");
+    // Walk w3: no text-start — the leaf takes its column's physical
+    // text-left, so a wrapped Arabic line starts at the title's left edge.
+    expect(screen.getByText("Save £2.00")).not.toHaveClass("text-start");
+    expect(screen.getByText("Save £2.00").parentElement).toHaveClass("text-left");
     expect(row).not.toHaveAttribute("dir");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
     expect(screen.queryByTestId("offer-row-nudge-offer-flat-2")).not.toBeInTheDocument();
@@ -682,6 +684,24 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
     expect(desc).toHaveAttribute("dir", "auto"); // its lines still READ right to left
     expect(desc).toHaveClass("text-left");
     expect(desc).not.toHaveClass("text-start");
+  });
+
+  it("walk w3: …and where that description IS the second line (a scoped offer locked by its minimum), it starts at the title's left edge there too", () => {
+    const AR = "خصم 50٪ على Afghani Chaap، Burger و5 أخرى · بحد أقصى ﷼150.00";
+    renderRow({
+      entry: {
+        offer: { ...PERCENT_OFFER, _id: "offer-scoped-min", applicable: { ...offerBase.applicable, on: "itemCriteria", isInclude: true } },
+        saving: { amount: 0, certainty: "exact", kind: "percentItems", requiresChoice: false, lockReason: "minBill" },
+        eligible: false,
+        gap: { reason: "minBill", amountShort: 16.4 },
+      },
+      description: AR,
+    });
+    expect(screen.queryByTestId("offer-row-desc-offer-scoped-min")).toBeNull(); // not repeated below
+    const line = screen.getByText(AR);
+    expect(line).toHaveAttribute("dir", "auto");
+    expect(line).not.toHaveClass("text-start");
+    expect(line.parentElement).toHaveClass("text-left");
   });
 
   it("no description block when it repeats the second line, and none on a gone row", () => {
