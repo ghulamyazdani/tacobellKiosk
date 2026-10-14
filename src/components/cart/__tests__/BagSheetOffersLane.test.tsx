@@ -51,6 +51,19 @@ vi.mock("../bagLazyParts", async (importOriginal) => {
   };
 });
 
+/** The real snapshot planner — unless `plan.fail` makes the stage's rollback throw (Rule 2: it still closes). */
+const plan = vi.hoisted(() => ({ fail: false }));
+vi.mock("@cx-sdk/ordering/cart/cartEngine", async (importOriginal) => {
+  const engine = await importOriginal<typeof import("@cx-sdk/ordering/cart/cartEngine")>();
+  return {
+    ...engine,
+    planCartSnapshotRestore: (...args: Parameters<typeof engine.planCartSnapshotRestore>) => {
+      if (plan.fail) throw new Error("rollback failed");
+      return engine.planCartSnapshotRestore(...args);
+    },
+  };
+});
+
 type Row = { id?: string; itemId?: string; isGetItem?: boolean; [key: string]: unknown };
 
 /** Paid CUSTOMIZABLE row, £8.60 line (P7a fixture parity). */
@@ -653,6 +666,113 @@ describe("BagSheet — buy-stage hand-offs", () => {
 
     expect(await screen.findByTestId("buy-stage-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("buy-stage-guard")).toBeEmptyDOMElement();
+  });
+
+  /*
+    Review (lane walk-offers-2): the stage's "−" reaches a PRE-journey row of
+    its tile's item. Judged mid-journey, the applied reward that row held up
+    went — and BACK restored the rows but not the reward. Revalidation waits
+    for the journey, then judges the bag it leaves.
+  */
+  it.each([
+    ["a bill minimum (£10.60 → £8.60 under £10)", { minBillAmount: 10 }],
+    ["an item minimum (2 → 1 under 2)", { minItemCount: 2 }],
+  ])(
+    "a reward the stage's '−' takes under %s is not judged mid-journey: BACK restores the rows AND the reward, no notice",
+    async (_label, minimum) => {
+      const held = flat("held-flat-2", 2, minimum);
+      store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW }]));
+      store.dispatch(setFilteredOffers([held, BUY_TWO_SAUCES]));
+      store.dispatch(applyOffer({ offer: held }));
+      render(<BagUi />);
+      await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+      await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+      await screen.findByTestId("buy-stage-sheet");
+
+      await userEvent.click(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`)); // the pre-journey sauce
+      expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1"]);
+      expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+      expect(slotId()).toBe("held-flat-2");
+
+      await userEvent.click(screen.getByTestId("buy-stage-back"));
+      expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1", "ts-1"]);
+      expect(slotId()).toBe("held-flat-2");
+      expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+      await userEvent.click(screen.getByTestId("rewards-close"));
+      expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+    }
+  );
+
+  it("the wait spans the stage → picker hand-off: CONTINUE into the picker with the bag still under the reward's minimum, then X — the rows AND the reward come back", async () => {
+    /** A burger AND 2 sauces, then a side of your choice (the picker). */
+    const BURGER_SAUCES_PICK = {
+      ...offerBase,
+      _id: "offer-burger-sauces-pick",
+      name: "A burger and 2 sauces, pick a side",
+      type: { name: "item", value: 0 },
+      isAndOffer: false,
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [
+          { item: { baseItemId: BURGER_ROW.id, name: "Cheese Burger" }, quantity: 1, relation: "and" },
+          { item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 2, relation: "and" },
+        ],
+      },
+      getItems: {
+        items: [getEntry("greek-salad", "Greek Salad", "or", 17), getEntry("caesar-dressing", "Caesar Dressing", "or", 2)],
+        categories: [],
+      },
+    };
+    const held = flat("held-flat-2", 2, { minBillAmount: 15 });
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE.id]: SAUCE, [BURGER_ROW.id as string]: BURGER_ROW.baseItem } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW, quantity: 2 }])); // £17.20
+    store.dispatch(setFilteredOffers([held, BURGER_SAUCES_PICK]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-burger-sauces-pick"));
+    await screen.findByTestId("buy-stage-sheet");
+
+    await userEvent.click(screen.getByTestId(`buy-stage-dec-${BURGER_ROW.id}`)); // a pre-journey burger: £8.60
+    await userEvent.click(screen.getByTestId(`buy-stage-add-${SAUCE.id}`));
+    await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`)); // £12.60, still under £15
+    await userEvent.click(screen.getByTestId("buy-stage-continue"));
+    await screen.findByTestId("freebie-picker");
+    expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(slotId()).toBe("held-flat-2");
+
+    await userEvent.click(screen.getByTestId("freebie-close"));
+    expect(state().cart.cartItems).toEqual([{ ...BURGER_ROW, quantity: 2 }]);
+    expect(slotId()).toBe("held-flat-2");
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+    expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£2.00");
+  });
+
+  it("…and the moment the journey ends, the bag it leaves IS judged: a rollback that fails keeps the trashed bag, and the reward goes with its notice", async () => {
+    plan.fail = true;
+    onTestFinished(() => {
+      plan.fail = false;
+    });
+    const held = flat("held-flat-2", 2, { minBillAmount: 10 });
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...SAUCE_ROW }]));
+    store.dispatch(setFilteredOffers([held, BUY_TWO_SAUCES]));
+    store.dispatch(applyOffer({ offer: held }));
+    render(<BagUi />);
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    await userEvent.click(await screen.findByTestId("offer-row-add-items-offer-buy-two"));
+    await screen.findByTestId("buy-stage-sheet");
+    await userEvent.click(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`));
+    expect(state().cart.offerRemovalModal.isOpen).toBe(false);
+
+    await userEvent.click(screen.getByTestId("buy-stage-close"));
+    expect(screen.queryByTestId("buy-stage-sheet")).toBeNull();
+    expect(state().cart.cartItems.map((row) => row.itemId)).toEqual(["cb-1"]);
+    await waitFor(() => expect(state().cart.offerRemovalModal.isOpen).toBe(true));
+    expect(slotId()).toBeUndefined();
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(
+      "Add £1.40+ to your order to be eligible to redeem this reward"
+    );
   });
 });
 

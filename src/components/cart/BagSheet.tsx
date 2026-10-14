@@ -504,17 +504,23 @@ export default function BagSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartRdx?.cartItems]);
 
+  // A buy-stage journey (the stage, then its picker) writes the REAL cart, and
+  // its "−" reaches pre-journey rows: revalidation waits for it, then judges
+  // the bag it leaves — restored on abandon, or under the journey's own offer.
+  const journeyOpen = !!stage.buyStage || !!pickerOffer;
+
   /**
    * REVALIDATION (contract) — drop the applied offer the moment the cart no
    * longer qualifies, via handleCartDrivenRemoval(false) → removal notice.
-   * Keyed on cart changes while the bag is open (+ on open). Checks 1–6 are
-   * fork Cart.tsx parity, 7 the sameOrLess ceiling, 8 the bill minimum (user
-   * decision 2026-10-14: billCalculation refused the discount on its own and
-   * the reward sat on the bill at −0.00 with no notice; now it goes like the
-   * min-items and BOGO checks, its notice naming the amount to add).
+   * Keyed on cart changes while the bag is open (+ on open), held while a
+   * buy-stage journey is open. Checks 1–6 are fork Cart.tsx parity, 7 the
+   * sameOrLess ceiling, 8 the bill minimum (user decision 2026-10-14:
+   * billCalculation refused the discount on its own and the reward sat on
+   * the bill at −0.00 with no notice; now it goes like the min-items and
+   * BOGO checks, its notice naming the amount to add).
    */
   useEffect(() => {
-    if (!open) return;
+    if (!open || journeyOpen) return;
     if (!hasAppliedOffer) return;
     const items: any[] = cartRdx?.cartItems ?? [];
     // An EMPTY cart is the empty-cart exit's to settle (it removes the offer
@@ -587,7 +593,7 @@ export default function BagSheet({
       handleCartDrivenRemoval(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cartOffer, cartRdx?.cartItems]);
+  }, [open, journeyOpen, cartOffer, cartRdx?.cartItems]);
 
   // Auto-apply (lane offers, item 34) — declared AFTER the revalidation
   // effect on purpose: effects run in declaration order, so it only ever
