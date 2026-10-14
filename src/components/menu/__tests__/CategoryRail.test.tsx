@@ -6,6 +6,10 @@ import CategoryRail from "../CategoryRail";
   Lane figma-polish S4 #11 (D14): the rail rows pad 24 left / 12 right, so the
   179 px label box fits "CRAVINGS MENU" (174.3 px in Cm Bd 30) on one line;
   labels stay left-aligned and the rows keep their 64 px pill.
+  rail-wrap (user report 2026-10-14): 64 px is the row's MINIMUM — a fixed
+  h-[64px] cut the tenant's 3-line "NEW HERFY SUPER CATGEORY". The geometry
+  (64 / 64 / 88 px, nothing outside the row) is measured in
+  tests/e2e/railLongNames.spec.ts; jsdom has no layout.
 */
 
 const CATEGORIES = [
@@ -14,14 +18,26 @@ const CATEGORIES = [
 ];
 
 describe("CategoryRail (Menu-Categories)", () => {
-  it("rows pad pl-24 pr-12 (never the old px-24), left-aligned, 64 px tall", () => {
+  it("rows pad pl-24 pr-12 (never the old px-24), left-aligned, at least 64 px tall", () => {
     render(<CategoryRail categories={CATEGORIES} selectedId="tacos" onSelect={vi.fn()} />);
 
     for (const { id } of CATEGORIES) {
       const row = screen.getByTestId(`rail-${id}`);
-      expect(row).toHaveClass("pl-[24px]", "pr-[12px]", "text-left", "h-[64px]", "min-h-[44px]", "tb-compressed", "text-[30px]");
+      expect(row).toHaveClass("pl-[24px]", "pr-[12px]", "text-left", "min-h-[64px]", "tb-compressed", "text-[30px]", "leading-[24px]");
       expect(row).not.toHaveClass("px-[24px]");
     }
+  });
+
+  it("a long name grows its row: no fixed h-[64px], min 64 with 8 px insets, a long word breaks in the box", () => {
+    const long = { id: "herfy", name: "NEW HERFY SUPER CATGEORY" };
+    render(<CategoryRail categories={[long, ...CATEGORIES]} selectedId="herfy" onSelect={vi.fn()} />);
+
+    const row = screen.getByTestId("rail-herfy");
+    expect(row).toHaveTextContent("NEW HERFY SUPER CATGEORY");
+    expect(row.className.split(/\s+/).filter((c) => /^(max-)?h-/.test(c))).toEqual([]);
+    expect(row).toHaveClass("min-h-[64px]", "py-[8px]", "[overflow-wrap:anywhere]");
+    // The selected pill is the row's own fill, so it grows with the row.
+    expect(row).toHaveClass("bg-tb-purple-vibrant");
   });
 
   it("the selected row is the vibrant pill; a tap selects by id", () => {
