@@ -19,7 +19,10 @@ import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
-import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
+import {
+  setOutOfStockItems,
+  setSelectedEntity,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import MakeItAMealPrompt from "../MakeItAMealPrompt";
 import i18n from "../../../i18n";
@@ -531,5 +534,49 @@ describe("MakeItAMealPrompt \u2014 CustomizationOpenedViaMIAM (audit-fixes B3)",
     expect(opened()).toEqual([
       [KioskEventName.CustomizationOpenedViaMIAM, { item_id: "combo-sized", item_name: "Dream Box" }],
     ]);
+  });
+});
+
+/*
+  walk-oos 2 (user 2026-10-14, "Show it Unavailable"): a combo whose required
+  group has every option out of stock can never be completed — the prompt
+  never offers it, and offers it again once the stock data brings one back.
+*/
+describe("MakeItAMealPrompt — walk-oos 2: a combo no guest can complete", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  it("is never offered — the live one is; PAY's map brings its drink back and it is offered again", () => {
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          meal_drink: {
+            _id: "meal_drink",
+            isActive: true,
+            min: 1,
+            max: 1,
+            constituentItems: [{ id: "cola", isActive: true, outOfStock: true }],
+          },
+        },
+      })
+    );
+    const DEAD = { ...COMBO, id: "combo-dead", name: "Cravings Box", modifiers: ["meal_drink"] };
+    store.dispatch(
+      openMakeItAMealModal({
+        isOpen: true,
+        selectedItem: { ...BURGER, upsellItems: [DEAD, COMBO] },
+        availableCombos: [DEAD, COMBO],
+      })
+    );
+    renderPrompt();
+
+    expect(screen.queryByTestId("miam-combo-combo-dead")).not.toBeInTheDocument();
+    expect(screen.getByTestId("miam-combo-combo-1")).toBeInTheDocument();
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({ cola: { type: "combo", inStock: true } }));
+    });
+    expect(screen.getByTestId("miam-combo-combo-dead")).toBeInTheDocument();
   });
 });

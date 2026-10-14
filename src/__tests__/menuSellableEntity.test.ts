@@ -4,10 +4,16 @@ import {
   toMenuSellableEntity,
   type ModifierGroupMap,
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
-import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  selectMenu,
+  setEntityMap,
+  setMenuData,
+  setModifiersMap,
+} from "@cx-sdk/catalog/state/Menu.slice";
+import { setAllowMultiplePunch, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../redux/app/store";
-import { selectMenuSellableEntityMap } from "../hooks/menuHooks/useCartUpsell";
+import { setOutOfStockItems } from "../redux/features/menuSelections/menuSelections.slice";
+import { selectMenuSellableEntityMap, selectSellableMenu } from "../hooks/menuHooks/useCartUpsell";
 
 /*
   UB6 Fix B — the entity as the MENU sells it. entityMap is published BEFORE
@@ -137,5 +143,90 @@ describe("selectMenuSellableEntityMap (real store)", () => {
   it("a null entityMap (no menu yet) → null", () => {
     expect(rawMap()).toBeNull();
     expect(selectMenuSellableEntityMap(store.getState())).toBeNull();
+  });
+});
+
+/*
+  walk-oos 2 (user 2026-10-14, "Show it Unavailable"): an item — or one size
+  of it — whose REQUIRED group has nothing in stock can never be completed,
+  so both shared selectors hand it out of stock: the entity map (every rail,
+  strip, tile, Select a Size from a suggestion) and the menu tree (the
+  cards, their "+", Select a Size, the loyalty rewards). One SDK rule
+  (markUncompletable), re-run whenever the stock data moves.
+*/
+describe("walk-oos 2 — an item no guest can complete reads out of stock (real store)", () => {
+  const opt = (id: string, outOfStock = false) => ({ id, name: id, isActive: true, outOfStock });
+  const MODS = {
+    sauce: { _id: "sauce", isActive: true, min: 1, max: 1, multiplePunchMin: 1, constituentItems: [opt("hot", true), opt("mild")] },
+    drink: { _id: "drink", isActive: true, min: 1, max: 1, multiplePunchMin: 0, constituentItems: [opt("cola", true), opt("lime", true)] },
+    extras: { _id: "extras", isActive: true, min: 0, max: 3, multiplePunchMin: 0, constituentItems: [opt("egg", true)] },
+  };
+  const BURRITO = { id: "burrito", name: "Burrito", price: 5, modifiers: ["sauce"] };
+  const MEAL = { id: "meal", name: "Taco Meal", price: 9, modifiers: ["extras", "drink"] };
+  const NACHOS = { id: "nachos", name: "Nachos", price: 4, modifiers: ["extras"] };
+  const REGULAR = { id: "soda-r", name: "Regular", price: 2, isActive: true, modifiers: [] };
+  const LARGE = { id: "soda-l", name: "Large", price: 3, isActive: true, modifiers: ["drink"] };
+  const SODA = { id: "soda", name: "Soda", price: 2, hasVariant: true, isVariant: false, variants: [REGULAR, LARGE] };
+  const TREE = { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [BURRITO, MEAL, NACHOS, SODA] }] }] };
+
+  type Entity = { id?: string; outOfStock?: boolean; variants?: Entity[] };
+  type Tree = { categories: { subCategories: { entities: Entity[] }[] }[] };
+  const sellable = () => selectMenuSellableEntityMap(store.getState()) as Record<string, Entity>;
+  const cards = () => (selectSellableMenu(store.getState()) as Tree).categories[0].subCategories[0].entities;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setModifiersMap({ modifiersMap: MODS }));
+    store.dispatch(setEntityMap({ entityMap: { burrito: BURRITO, meal: MEAL, nachos: NACHOS, soda: SODA } }));
+    store.dispatch(setMenuData({ menu: TREE }));
+  });
+
+  it("the meal (its drink: every option out) reads out of stock in both; a live required group or a min-0 group all out never kills; the raw state is untouched", () => {
+    expect(sellable().meal).toEqual({ ...MEAL, outOfStock: true });
+    expect(sellable().burrito).toBe(BURRITO);
+    expect(sellable().nachos).toBe(NACHOS);
+    expect(cards().map((entity) => entity.outOfStock === true)).toEqual([false, true, false, false]);
+    expect((store.getState() as unknown as { menu: { entityMap: Record<string, Entity> } }).menu.entityMap.meal).toBe(MEAL);
+    expect(MEAL).not.toHaveProperty("outOfStock");
+  });
+
+  it("a size whose own required group is out reads out of stock; the other size and the item stay available", () => {
+    for (const soda of [sellable().soda, cards()[3]]) {
+      expect(soda.outOfStock).toBeUndefined();
+      expect(soda.variants).toEqual([REGULAR, { ...LARGE, outOfStock: true }]);
+      expect(soda.variants?.[0]).toBe(REGULAR);
+    }
+  });
+
+  it("re-evaluated when the stock data moves: PAY's map takes the burrito's last sauce — out; it brings a drink back — the meal and the Large are back", () => {
+    store.dispatch(setOutOfStockItems({ mild: { type: "addon", inStock: false } }));
+    expect(sellable().burrito).toEqual({ ...BURRITO, outOfStock: true });
+    expect(cards()[0].outOfStock).toBe(true);
+
+    store.dispatch(setOutOfStockItems({ lime: { type: "addon", inStock: true } }));
+    expect(sellable().burrito).toBe(BURRITO);
+    expect(sellable().meal).toBe(MEAL);
+    expect(sellable().soda).toBe(SODA);
+    // Nothing dead: the store's own menu, by identity.
+    expect(selectSellableMenu(store.getState())).toBe(selectMenu(store.getState()));
+  });
+
+  it("the multi-punch setting is an input: its min (0 for the drink) decides", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    expect(sellable().meal).toBe(MEAL);
+    expect(cards()[1]).toBe(MEAL);
+  });
+
+  it("memoized: an unrelated dispatch hands back the same references", () => {
+    const map = selectMenuSellableEntityMap(store.getState());
+    const menu = selectSellableMenu(store.getState());
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    expect(selectMenuSellableEntityMap(store.getState())).toBe(map);
+    expect(selectSellableMenu(store.getState())).toBe(menu);
+  });
+
+  it("no menu yet: the tree selector hands back what the store holds", () => {
+    store.dispatch({ type: "RESET_STATE" });
+    expect(selectSellableMenu(store.getState())).toBe(selectMenu(store.getState()));
   });
 });

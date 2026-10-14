@@ -6,7 +6,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
 import { convertCategoryData } from "@cx-sdk/catalog/menu/menuFilteringUtils";
 import { buildVariantCommitPayload } from "@cx-sdk/ordering/customization/commitPayload";
@@ -27,6 +26,7 @@ import { cartQuantity } from "@cx-sdk/ordering/state/cart.slice";
 
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import { selectSellableMenu } from "../../hooks/menuHooks/useCartUpsell";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useSessionReset from "../../hooks/utils/useSessionReset";
@@ -140,7 +140,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const menu = useSelector(selectMenu) as any;
+  // walk-oos 2: as stock sells it — an item (or size) no guest can complete
+  // reads out of stock, so its card, "+" and Select a Size refuse it.
+  const menu = useSelector(selectSellableMenu) as any;
   const currency = useCurrencySymbol();
   // P7c loyalty reads: the partner coupon list drives the CTA-bar label and
   // the entry-tap branch table; the customer phone is the XENO identity

@@ -10,7 +10,7 @@ import { MemoryRouter } from "react-router-dom";
 import { setCartItems, applyOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
-import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import RewardsSheet from "../RewardsSheet";
 import "../../../i18n";
@@ -540,6 +540,25 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
       "Add the qualifying items to unlock this reward"
     );
     expect(screen.queryByTestId(`offer-row-add-items-${offer._id}`)).not.toBeInTheDocument();
+  });
+
+  it("walk-oos 2 ('Show it Unavailable'): a buy item no guest can complete — its required dip all out of stock — reaches the stage out of stock (the tile's Unavailable look, no add)", async () => {
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          dip: { _id: "dip", isActive: true, min: 1, max: 1, constituentItems: [{ id: "salsa", isActive: true, outOfStock: true }] },
+        },
+      })
+    );
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: { ...SAUCE_ENTITY, modifiers: ["dip"] } } }));
+    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    const onAddItems = vi.fn();
+    renderWithAddItems(onAddItems);
+
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-bogo"));
+
+    const [, view] = onAddItems.mock.calls[0] as unknown as [any, any];
+    expect(view.groups[0].entities).toEqual([expect.objectContaining({ id: SAUCE_ENTITY.id, outOfStock: true })]);
   });
 
   it("no onAddItems prop → no ADD ITEMS at all", () => {

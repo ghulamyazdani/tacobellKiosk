@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   dropOutOfStockPicks,
   flaggedPicks,
+  hasDeadRequiredGroup,
   isOptionOutOfStock,
+  markUncompletable,
   stockLast,
 } from "@cx-sdk/catalog/oos/optionStock";
 import { keepSweptPicksFlagged } from "@cx-sdk/catalog/oos/sweptPicks";
@@ -198,5 +200,100 @@ describe("keepSweptPicksFlagged", () => {
     expect(keepSweptPicksFlagged(before, null, total)).toBeNull();
     const plain = { itemId: "p-1", type: "ITEM", price: 2 };
     expect(keepSweptPicksFlagged(plain, { ...plain }, total)).toEqual(plain);
+  });
+});
+
+/*
+  walk-oos 2 (user 2026-10-14, "Show it Unavailable"): an item with a
+  REQUIRED group whose every option is out of stock can never be completed —
+  it reads out of stock like a sold-out one. Judged as the PDP judges the
+  options (the stamp, PAY's feed map winning); a min-0 group never kills.
+*/
+describe("hasDeadRequiredGroup / markUncompletable", () => {
+  const opt = (id: string, extra: Record<string, unknown> = {}) => ({ id, isActive: true, outOfStock: false, ...extra });
+  const group = (min: number, constituentItems: object[], extra: Record<string, unknown> = {}) => ({
+    isActive: true, min, max: 1, multiplePunchMin: 0, constituentItems, ...extra,
+  });
+  const MODS = {
+    // Every option on offer out: c is switched off, so it is not on offer.
+    sauce: group(1, [opt("a", { outOfStock: true }), opt("b", { outOfStock: true }), opt("c", { isActive: false })]),
+    sauce_live: group(1, [opt("a", { outOfStock: true }), opt("d")]),
+    extras: group(0, [opt("e", { outOfStock: true })]),
+    off: group(1, [opt("f", { outOfStock: true })], { isActive: false }),
+    no_options: group(1, [opt("g", { isActive: false })]),
+    punch: group(0, [opt("h", { outOfStock: true })], { multiplePunchMin: 2 }),
+  };
+  const dead = (ids: unknown, map: Record<string, unknown> | null = {}, multiPunch = false) =>
+    hasDeadRequiredGroup(ids, MODS, map, multiPunch);
+
+  it("a required group with every option on offer out of stock is dead; one option in stock keeps it alive", () => {
+    expect(dead(["sauce"])).toBe(true);
+    expect(dead(["extras", "sauce"])).toBe(true);
+    expect(dead(["sauce_live"])).toBe(false);
+  });
+
+  it("a min-0 group never kills, every option out or not; nor does a group the PDP never shows", () => {
+    expect(dead(["extras"])).toBe(false);
+    expect(dead(["off"])).toBe(false);
+    expect(dead(["no_options"])).toBe(false);
+    expect(dead([])).toBe(false);
+  });
+
+  it("multi-punch on: its min decides, both ways", () => {
+    expect(dead(["punch"], {}, true)).toBe(true);
+    expect(dead(["punch"], {}, false)).toBe(false);
+    expect(dead(["sauce"], {}, true)).toBe(false);
+  });
+
+  it("PAY's fresher feed map wins over the stamp, both ways (it re-decides when the map moves)", () => {
+    expect(dead(["sauce_live"], { d: { type: "addon", inStock: false } })).toBe(true);
+    expect(dead(["sauce"], { b: { type: "combo", inStock: true } })).toBe(false);
+    // An item-typed entry is not an option's verdict (isOptionOutOfStock).
+    expect(dead(["sauce_live"], { d: { type: "item", inStock: false } })).toBe(false);
+  });
+
+  it("never throws: no ids, no map, an unknown or inherited id", () => {
+    expect(dead(undefined)).toBe(false);
+    expect(dead("sauce")).toBe(false);
+    expect(hasDeadRequiredGroup(["sauce"], null, {}, false)).toBe(false);
+    expect(dead(["gone", "constructor", "__proto__", null])).toBe(false);
+    expect(dead(["sauce"], null)).toBe(true);
+  });
+
+  it("markUncompletable: a dead item reads out of stock — a copy, the input untouched; anything else is the same object", () => {
+    const burrito = { id: "burrito", name: "Burrito", price: 5, modifiers: ["extras", "sauce"] };
+    const before = structuredClone(burrito);
+
+    const out = markUncompletable(burrito, MODS, {}, false);
+
+    expect(out).toEqual({ ...before, outOfStock: true });
+    expect(burrito).toEqual(before);
+    for (const same of [
+      { ...burrito, modifiers: ["sauce_live", "extras"] },
+      { ...burrito, outOfStock: true },
+      { ...burrito, modifiers: undefined },
+      null,
+      "burrito",
+    ]) {
+      expect(markUncompletable(same, MODS, {}, false)).toBe(same);
+    }
+  });
+
+  it("markUncompletable: a sized item is judged size by size — the size whose own required group is out reads out of stock, the others stay, the item stays", () => {
+    const regular = { id: "s-r", name: "Regular", price: 4, isActive: true, modifiers: ["sauce_live"] };
+    const large = { id: "s-l", name: "Large", price: 6, isActive: true, modifiers: ["sauce"] };
+    const soda = { id: "soda", name: "Soda", hasVariant: true, isVariant: false, modifiers: ["sauce"], variants: [regular, large] };
+
+    const out = markUncompletable(soda, MODS, {}, false);
+
+    expect(out).toEqual({ ...soda, variants: [regular, { ...large, outOfStock: true }] });
+    expect(out.variants[0]).toBe(regular);
+    expect((out as { outOfStock?: unknown }).outOfStock).toBeUndefined();
+    // Every size live → the same object; a size (isVariant) alone is judged by its own groups.
+    const live = { ...soda, variants: [regular] };
+    expect(markUncompletable(live, MODS, {}, false)).toBe(live);
+    const flagged = { ...soda, variants: [regular, { ...large, outOfStock: true }] };
+    expect(markUncompletable(flagged, MODS, {}, false)).toBe(flagged);
+    expect(markUncompletable({ ...large, isVariant: true }, MODS, {}, false)).toMatchObject({ outOfStock: true });
   });
 });

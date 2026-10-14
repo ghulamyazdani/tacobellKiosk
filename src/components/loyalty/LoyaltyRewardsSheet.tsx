@@ -17,7 +17,6 @@ import {
   selectParkedRedeemedItem,
   selectTotalLoyaltyPoints,
 } from "@cx-sdk/ordering/state/loyalty.slice";
-import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
 import { kiosSettingsRdx } from "@cx-sdk/catalog/state/appSettings.slice";
 import { getAllLoyaltyItemsFromMenu } from "@cx-sdk/ordering/loyalty/loyaltyEngine";
 import { getLoyaltyRedemptionError } from "@cx-sdk/ordering/loyalty/loyaltyRedemption";
@@ -25,6 +24,7 @@ import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
+import { selectSellableMenu } from "../../hooks/menuHooks/useCartUpsell";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import { resolveEntityImage } from "../../utils/entityImage";
 import KioskNumpad from "../keyboard/KioskNumpad";
@@ -100,7 +100,8 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
   const dispatch = useDispatch();
 
   const coupons = useSelector(selectCoupons) as any[] | undefined;
-  const menuData = useSelector(selectMenu) as any;
+  // walk-oos 2: a reward no guest can complete reads out of stock (inert).
+  const menuData = useSelector(selectSellableMenu) as any;
   const totalPoints = Number(useSelector(selectTotalLoyaltyPoints) ?? 0);
   const parkedItem = useSelector(selectParkedRedeemedItem) as any;
 

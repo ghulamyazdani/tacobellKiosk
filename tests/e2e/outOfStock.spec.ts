@@ -7,6 +7,7 @@ import {
   GREEK_SALAD,
   LARGE_FRIES,
   EXTRA_PICKLES,
+  DREAM_BOX,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
 import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
@@ -120,6 +121,27 @@ test.describe("walk-oos — out of stock on the menu, the PDP and the bag", () =
     await expect(bagRows(page).first()).toContainText("Extra Mustard");
     await expect(bagRows(page).first()).not.toContainText("Extra Ketchup");
     await expect(bagRows(page).first()).not.toContainText("Extra Pickles");
+  });
+
+  test("walk-oos 2 — MENU: a pack whose required slot has nothing in stock can never be completed — its card is the sold-out card; the sister pack stays live", async ({
+    page,
+  }) => {
+    // Dream box 1's Sandwich slot (min 1) holds one option; the spicy box's
+    // Sandwich is another. The feed sells the first out (a combo row).
+    const DREAM_SANDWICH = "65d4a2d2003967427ed83616";
+    const DREAM_BOX_SPICY = "68dd79b84c041931d29d6126";
+    await mockKioskBackend(page, { outOfStock: [soldOut(DREAM_SANDWICH, "combo")] });
+    await bootRegisteredToMenu(page);
+
+    const box = page.getByTestId(`item-${DREAM_BOX}`);
+    await box.scrollIntoViewIfNeeded();
+    await expect(box).toHaveAttribute("aria-disabled", "true");
+    await expect(box).toContainText(en.menu.unavailable);
+    await expect(box.getByRole("button")).toHaveCount(0);
+
+    const spicy = page.getByTestId(`item-${DREAM_BOX_SPICY}`);
+    await expect(spicy).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByTestId(`quick-add-${DREAM_BOX_SPICY}`)).toBeVisible();
   });
 
   test("BAG: an add-on sells out after the menu loaded — PAY's notice and the row NAME it (the pick kept, its line red), PAY stays blocked while it is in the row; Edit shows it Unavailable and deselected; UPDATE; PAY proceeds", async ({

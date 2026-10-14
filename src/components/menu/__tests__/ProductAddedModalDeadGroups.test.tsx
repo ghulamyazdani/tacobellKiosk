@@ -50,4 +50,52 @@ describe("ProductAddedModal — dead modifier groups (UB6)", () => {
     expect(onQuickAdd).toHaveBeenCalledTimes(1);
     expect(onQuickAdd.mock.calls[0]?.[0]).toMatchObject({ id: "nachos", modifiers: [] });
   });
+
+  /*
+    walk-oos 2 (user 2026-10-14, "Show it Unavailable"): a required group
+    with every option out of stock — the item can never be completed, so the
+    strip never offers it; a sized item keeps its live size, and its dead
+    size reaches Select a Size greyed.
+  */
+  it("walk-oos 2: an item no guest can complete is never offered; a sized one is, its dead size handed over out of stock", () => {
+    const REGULAR = { id: "soda-r", name: "Regular", price: 2, isActive: true };
+    const LARGE = { id: "soda-l", name: "Large", price: 3, isActive: true, modifiers: ["drink"] };
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          taco_addons: { _id: "taco_addons", isActive: true },
+          drink: { _id: "drink", isActive: true, min: 1, max: 1, constituentItems: [{ id: "cola", isActive: true, outOfStock: true }] },
+        },
+      })
+    );
+    store.dispatch(
+      setEntityMap({
+        entityMap: {
+          meal: { id: "meal", name: "Taco Meal", price: 9, modifiers: ["drink"] },
+          soda: { id: "soda", name: "Soda", price: 2, hasVariant: true, isVariant: false, variants: [REGULAR, LARGE] },
+          taco: LIVE_PLAIN,
+        },
+      })
+    );
+    store.dispatch(
+      mutateAddToCartModal({ isOpen: true, item: { id: "burrito", recommendedItems: ["meal", "soda", "taco"] } })
+    );
+    const onQuickAdd = vi.fn();
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <ProductAddedModal onQuickAdd={onQuickAdd} />
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(screen.queryByTestId("added-rec-meal")).not.toBeInTheDocument();
+    expect(screen.getByTestId("added-rec-taco")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("added-rec-add-soda"));
+
+    expect(onQuickAdd.mock.calls[0]?.[0]).toMatchObject({
+      id: "soda",
+      variants: [REGULAR, { ...LARGE, outOfStock: true }],
+    });
+  });
 });

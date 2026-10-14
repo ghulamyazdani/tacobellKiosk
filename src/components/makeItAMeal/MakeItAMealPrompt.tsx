@@ -23,10 +23,12 @@ import {
   setTier1BottomSheetAndSelectedEntity,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectAllowMultiplePunch } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   toMenuSellableEntity,
   type ModifierGroupMap,
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
+import { markUncompletable } from "@cx-sdk/catalog/oos/optionStock";
 import {
   buildVariantSelectionEntity,
   buildVariantTierPayload,
@@ -34,6 +36,7 @@ import {
 import { checkCustomizationType } from "@cx-sdk/catalog/menu/menuUtils";
 import {
   closeBottomSheet,
+  selectOutOfStockItems,
   setSelectedEntity,
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
@@ -170,6 +173,8 @@ export default function MakeItAMealPrompt() {
   const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
   const item = useSelector(makeItMealSelectedItem, shallowEqual);
   const modifierMap = useSelector(selectModifierMap) as ModifierGroupMap;
+  const stock = useSelector(selectOutOfStockItems);
+  const multiPunch = Boolean(useSelector(selectAllowMultiplePunch));
   const { isSecondary, name, text } = useLocalized();
   // 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
   // headline. The guest's slot only — no cross-language fallback, so an
@@ -184,10 +189,13 @@ export default function MakeItAMealPrompt() {
     const resolved = (filterByTags(item?.upsellItems) ?? []) as any[];
     // UB6 F1: as the menu sells them (upsellItems embed RAW entities) — a dead
     // pack would sell empty at full price; a dead plain item is one-tap.
+    // walk-oos 2: and as stock sells them — one no guest can complete is out.
     return resolved
-      .map((c) => toMenuSellableEntity(c, modifierMap))
+      .map((c) =>
+        markUncompletable(toMenuSellableEntity(c, modifierMap), modifierMap, stock, multiPunch)
+      )
       .filter((c: any) => c?.isActive && !c?.outOfStock);
-  }, [item, filterByTags, modifierMap]);
+  }, [item, filterByTags, modifierMap, stock, multiPunch]);
 
   // Multi-combo selection. Derived-with-fallback rather than an effect, so
   // "first preselected" holds even when the combo list changes underneath.

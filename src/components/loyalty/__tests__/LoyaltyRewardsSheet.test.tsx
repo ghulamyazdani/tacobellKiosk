@@ -1133,6 +1133,28 @@ describe("LoyaltyRewardsSheet — Figma reward states + operator texts (lane loy
       expect(executeEvent).not.toHaveBeenCalled();
     });
 
+    it("walk-oos 2 ('Show it Unavailable'): a reward no guest can complete — the burger's only required sauce out of stock — is the out-of-stock row; the salad stays a radio", () => {
+      seedIdentifiedCustomer();
+      store.dispatch(
+        setModifiersMap({
+          modifiersMap: {
+            cb_sauce: {
+              ...SAUCE_GROUP,
+              constituentItems: SAUCE_GROUP.constituentItems.map((item) => ({ ...item, outOfStock: true })),
+            },
+          },
+        })
+      );
+      openSheet();
+      renderSheet();
+
+      const burger = reward("static8056");
+      expect(burger).toHaveAttribute("aria-disabled", "true");
+      expect(burger.querySelector("button")).toBeNull();
+      expect(secondLine(burger).textContent).toBe("Unavailable");
+      expect(screen.getByRole("radiogroup")).toContainElement(reward("static6562"));
+    });
+
     it("an all-out-of-stock list is a plain list — no radiogroup role, no radio", () => {
       seedIdentifiedCustomer([FREE_SALAD]);
       withMenuEntity({ outOfStock: true });

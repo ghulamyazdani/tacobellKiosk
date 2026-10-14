@@ -1,6 +1,12 @@
 import { createSelector } from "@reduxjs/toolkit";
 import { useSelector } from "react-redux";
-import { selectEntityMap, selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  selectEntityMap,
+  selectMenu,
+  selectModifierMap,
+} from "@cx-sdk/catalog/state/Menu.slice";
+import { selectAllowMultiplePunch } from "@cx-sdk/catalog/state/appSettings.slice";
+import { markUncompletable } from "@cx-sdk/catalog/oos/optionStock";
 import { selectOutOfStockItems } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectFilters } from "@cx-sdk/catalog/state/filter.slice";
 import {
@@ -47,18 +53,56 @@ const selectComboUpsellEnabled = (state: CartUpsellRootState) =>
  * The entityMap as the menu sells it (toMenuSellableEntity). EVERY suggestion
  * surface reads this, never selectEntityMap: from the raw map a dead-group
  * item opened the PDP from the bag (UB6 crash) and a dead pack sold empty.
- * Recomputed only when a menu loads.
+ * walk-oos 2 (user 2026-10-14, "Show it Unavailable"): an item — or a size —
+ * no guest can complete (a required group with nothing in stock, SDK
+ * markUncompletable) reads out of stock, so every rail, strip, tile and
+ * Select a Size skips or greys it. Recomputed when a menu loads, when PAY's
+ * stock map moves, or the multi-punch setting does.
  */
 export const selectMenuSellableEntityMap = createSelector(
-  [selectEntityMap, selectModifierMap],
-  (entityMap: EntityMap, modifierMap: ModifierGroupMap): EntityMap => {
+  [selectEntityMap, selectModifierMap, selectOutOfStockItems, selectAllowMultiplePunch],
+  (
+    entityMap: EntityMap,
+    modifierMap: ModifierGroupMap,
+    stock: OutOfStockMap,
+    multiPunch: unknown,
+  ): EntityMap => {
     if (!entityMap) return entityMap;
     const sellable: Record<string, RecommendedEntity> = {};
     for (const [id, entity] of Object.entries(entityMap)) {
       const shaped = toMenuSellableEntity(entity, modifierMap);
-      if (shaped) sellable[id] = shaped;
+      if (shaped) sellable[id] = markUncompletable(shaped, modifierMap, stock, Boolean(multiPunch));
     }
     return sellable;
+  },
+);
+
+type MenuTree = { categories?: unknown } | null | undefined;
+type Node = Record<string, unknown> | null | undefined;
+const nodes = (value: unknown): Node[] => (Array.isArray(value) ? value : []);
+
+/**
+ * The menu tree under the same rule — the cards, their quick add and Select a
+ * Size, the loyalty rewards. Nothing dead → the store's own menu, so a stock
+ * change that kills nothing re-renders nothing.
+ */
+export const selectSellableMenu = createSelector(
+  [selectMenu, selectModifierMap, selectOutOfStockItems, selectAllowMultiplePunch],
+  (menu: MenuTree, modifierMap: ModifierGroupMap, stock: OutOfStockMap, multiPunch: unknown): MenuTree => {
+    let dead = false;
+    const mark = (entity: unknown) => {
+      const next = markUncompletable(entity, modifierMap, stock, Boolean(multiPunch));
+      dead = dead || next !== entity;
+      return next;
+    };
+    const categories = nodes(menu?.categories).map((category) => ({
+      ...category,
+      subCategories: nodes(category?.subCategories).map((sub) => ({
+        ...sub,
+        entities: nodes(sub?.entities).map(mark),
+      })),
+    }));
+    return dead ? { ...menu, categories } : menu;
   },
 );
 
