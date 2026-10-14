@@ -397,11 +397,12 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
       page.getByTestId(`freebie-option-${CAESAR_DRESSING}`)
     ).toBeVisible();
     await expect(page.locator('[data-testid^="freebie-option-"]')).toHaveCount(2);
-    // Each plain option prices what CONFIRM will charge: £0, the menu price
-    // struck (the offer → menu conversion, audit-fixes C1a) — posistKiosk's
-    // OfferItem format (moduloCalcaledValue): the struck £2, then £0.
+    // Each plain option prices what CONFIRM will charge — nothing, so it
+    // reads "Free" — under the menu price struck (the offer → menu
+    // conversion, audit-fixes C1a): posistKiosk's OfferItem, the struck £2
+    // (moduloCalcaledValue), then Free (effectivePrice <= 0 → badgeFree).
     const tortilla = page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`);
-    await expect(tortilla).toContainText(/£2£0$/);
+    await expect(tortilla).toContainText(/£2Free$/);
 
     // An "or" choice needs a selection — CONFIRM without one is inert
     // (aria-disabled; Playwright rightly refuses to click it, which is

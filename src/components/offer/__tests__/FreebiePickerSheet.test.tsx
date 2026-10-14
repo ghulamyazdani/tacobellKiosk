@@ -353,9 +353,10 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     const caesar = screen.getByTestId("freebie-option-caesar-dressing");
     expect(tortilla).toHaveTextContent("Tortilla Sauce");
     expect(tortilla).toHaveTextContent("Free");
-    // The struck full price, then the discounted line — posistKiosk's
-    // OfferItem format (moduloCalcaledValue): whole amounts print whole.
-    expect(tortilla).toHaveTextContent(/£2£0$/);
+    // The struck full price (moduloCalcaledValue: whole amounts print
+    // whole), then what CONFIRM charges — nothing reads "Free", never "£0"
+    // (posistKiosk OfferItem: effectivePrice <= 0 → offer.badgeFree).
+    expect(tortilla).toHaveTextContent(/£2Free$/);
     expect(caesar).toHaveTextContent("Caesar Dressing");
 
     const confirm = screen.getByTestId("freebie-confirm");
@@ -515,9 +516,9 @@ describe("FreebiePickerSheet — lane offers review fixes", () => {
     const { onClose } = renderPicker(SIZES_OFFER);
     const [medium, large] = screen.getAllByTestId("freebie-option-fries");
     expect(medium).toHaveTextContent("Medium");
-    expect(medium).toHaveTextContent(/£3£0$/);
+    expect(medium).toHaveTextContent(/£3Free$/);
     expect(large).toHaveTextContent("Large");
-    expect(large).toHaveTextContent(/£5£0$/);
+    expect(large).toHaveTextContent(/£5Free$/);
 
     await userEvent.click(large);
     expect(tierSessionOpen()).toBe(false);
@@ -1712,5 +1713,47 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
     expect(chilli()).toHaveTextContent(/£40£20$/);
     expect(chilli()).not.toHaveTextContent(/£10(?![\d.])/);
     expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent(/£5£2\.50$/);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane free-label: a row CONFIRM charges nothing for reads "Free" under
+ * its struck price, never "£0" — posistKiosk's OfferItem price line
+ * (effectivePrice <= 0 → offer.badgeFree), item and category tiles alike.
+ * A row that still charges something (a paid add-on, a partial discount)
+ * keeps its figure — the cases above.
+ * ------------------------------------------------------------------ */
+describe("FreebiePickerSheet — a row CONFIRM charges nothing for reads Free", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it("an item row and a category row at 100 % off: the struck price, then Free", () => {
+    renderPicker(CAT_AND_OFFER);
+    expect(screen.getByTestId("freebie-option-greek-salad")).toHaveTextContent(/£17Free$/);
+    expect(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce")).toHaveTextContent(/£2Free$/);
+  });
+
+  it("an amount off that covers the whole price is free too", () => {
+    const fiveOff = { ...orEntry("tortilla-sauce", "Tortilla Sauce"), discountType: "amount", value: 5 };
+    renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
+    expect(screen.getByTestId("freebie-option-tortilla-sauce")).toHaveTextContent(/£5 off£2Free$/);
+  });
+
+  it("Arabic: the price line reads the Arabic word", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderPicker(CHOICE_OFFER);
+    const free = i18n.t("offers.free");
+    expect(free).toMatch(/\p{Script=Arabic}/u);
+    expect(screen.getByTestId("freebie-option-tortilla-sauce")).toHaveTextContent(new RegExp(`£2${free}$`));
   });
 });
