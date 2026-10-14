@@ -65,7 +65,7 @@ import {
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import useOrderHook from "../../hooks/menuHooks/useOrderHook";
+import useCartBill, { billTotal } from "../../hooks/cartHooks/useCartBill";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
 import useAppSettings from "../../hooks/utils/useAppSettings";
@@ -323,7 +323,6 @@ export default function BagSheet({
     replaceCartItems,
   } = useCartHook();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
-  const { getCalculatedBill } = useOrderHook();
   const { fetchMenu, isAllowMultiplePunch, fetchModifierProperties } =
     useMenuConverters();
   const { updateCartItemsByMenu } = useSchedulerConverter();
@@ -405,19 +404,10 @@ export default function BagSheet({
     [open, rank, filteredOffers],
   );
 
-  // Bill — contract A3: LOCAL to the component (never read the slice's
-  // netAmount for display — trap 8), recomputed per cart change. useMemo
-  // instead of a setState effect (house react-hooks rules forbid
-  // set-state-in-effect); fork parity keys the recompute on the cart slice
-  // alone — getCalculatedBill is a pure engine call re-created per render.
-  const bill = useMemo(
-    () => {
-      if (!open || (cartRdx?.cartItems?.length ?? 0) === 0) return null;
-      return getCalculatedBill(cartRdx);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, cartRdx],
-  );
+  // Bill — contract A3: computed here (never read the slice's netAmount for
+  // display — trap 8), recomputed per cart change, on the engine and with
+  // the billTotal the menu bar and the product-added Total use too.
+  const bill = useCartBill(open ? cartRdx : null);
 
   // Mirror the net amount into the slice on each recompute so the
   // downstream checkout screens read a real value.
@@ -1024,8 +1014,7 @@ export default function BagSheet({
     setInstructionsOpen(false);
   };
 
-  const payTotal =
-    bill && Object.keys(bill).length > 0 ? Number(bill.getNetAmount()) : 0;
+  const payTotal = billTotal(bill);
   // Live applied discount — always the BILL's figure (resolveShownSaving
   // policy: applied → live getTotalDiscount wins), never a cached quote.
   const appliedDiscount =

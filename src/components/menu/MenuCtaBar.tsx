@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { cartQuantity, selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCoupons } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
+import { useCartTotal } from "../../hooks/cartHooks/useCartBill";
+import { formatPrice } from "../../utils/price";
 import bagIcon from "../../assets/icons/bag.svg";
 
 interface MenuCtaBarProps {
@@ -20,9 +22,12 @@ interface MenuCtaBarProps {
 /**
  * Bottom purple CTA — Figma "CTA": TOTAL left, VIEW MY BAG (n) + bag right.
  * Count = units, the bag header's own `cartQuantity` (it counted rows, so
- * "VIEW MY BAG (4)" opened "MY BAG (5)" — walk 2026-10-14); total = the
- * slice's live subTotal (recomputed by the add/increment reducers). The full
- * bill (charges/offers) renders on the cart page via the bill engine in P7.
+ * "VIEW MY BAG (4)" opened "MY BAG (5)" — walk 2026-10-14). TOTAL = the
+ * bag's own Total, after rewards, taxes and round off (user decision
+ * 2026-10-14; it was the pre-tax subtotal: ﷼65.00 over a ﷼34.13 bag): the
+ * bag's bill over the live cart (useCartTotal), so it is never 0 or stale
+ * before the bag opens. posistKiosk's MenuFooter prints it with
+ * moduloCalcaledValue (formatPrice).
  *
  * P7c adds the logged-in variant (Figma menu-rewards 1:3956): the underlined
  * REWARDS / MY REWARDS (n) link takes the left slot and TOTAL stacks over an
@@ -46,11 +51,11 @@ export default function MenuCtaBar({
   const { getIsLoyaltyOn } = useAppSettings();
 
   const itemCount = Number(useSelector(cartQuantity) ?? 0);
-  const netAmount = cart?.subTotal ?? 0;
+  const total = useCartTotal(cart);
   // Re-keys the bag mark so tb-bump replays on every add / remove / re-price
-  // (a re-price changes only the subtotal). It also bumps once on mount —
+  // (a re-price changes only the total). It also bumps once on mount —
   // accepted (motion contract §3.3).
-  const bagKey = `${itemCount}:${Number(netAmount).toFixed(2)}`;
+  const bagKey = `${itemCount}:${total.toFixed(2)}`;
 
   // Label per the brief: REWARDS until the lookup has returned a coupon list,
   // MY REWARDS (n) once it has.
@@ -63,7 +68,7 @@ export default function MenuCtaBar({
       data-testid="cta-total"
     >
       {t("menu.total")}: {currency}
-      {Number(netAmount).toFixed(2)}
+      {formatPrice(total)}
     </p>
   );
 

@@ -158,7 +158,8 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
 
   it("CTA bar shows the (empty) cart total and count", () => {
     renderMenu();
-    expect(screen.getByTestId("cta-total")).toHaveTextContent("0.00");
+    // posistKiosk's MenuFooter format (moduloCalcaledValue): a whole 0.
+    expect(screen.getByTestId("cta-total")).toHaveTextContent(/Total: ₹0$/);
     expect(screen.getByTestId("cta-view-bag")).toHaveTextContent("(0)");
   });
 
@@ -1228,12 +1229,13 @@ describe("Menu — product-added suggestions are staged (posistKiosk parity)", (
     expect(cartRows()).toEqual([]);
     expect(eventCalls("item_added_to_cart")).toHaveLength(0);
     expect(pill(PLAIN.id)).toBe("1");
-    // The Total previews the order with the pick (the bag is still empty).
-    expect(screen.getByTestId("added-total")).toHaveTextContent("£2.50");
+    // The Total previews the order with the pick (the bag is still empty):
+    // the bag's own Total, whose round off takes the £2.50 to £3.
+    expect(screen.getByTestId("added-total")).toHaveTextContent(/^Total £3$/);
 
     fireEvent.click(screen.getByRole("button", { name: `${i18n.t("menu.quickAdd")} ${PLAIN.name}` }));
     expect(pill(PLAIN.id)).toBe("2");
-    expect(screen.getByTestId("added-total")).toHaveTextContent("£5.00");
+    expect(screen.getByTestId("added-total")).toHaveTextContent(/^Total £5$/);
     expect(cartRows()).toEqual([]);
 
     // ADD TO ORDER is the purchase: both units in ONE row, ONE event.
@@ -1437,7 +1439,7 @@ describe("Menu — product-added suggestions are staged (posistKiosk parity)", (
     expect(screen.getByTestId("product-added-modal")).toBeInTheDocument();
     expect(pill(SIZED.id)).toBe("1");
     expect(screen.queryByTestId(`added-rec-${PLAIN.id}`)).toBeNull();
-    expect(screen.getByTestId("added-total")).toHaveTextContent("£4.00");
+    expect(screen.getByTestId("added-total")).toHaveTextContent(/^Total £4$/);
     // The chooser's own confirm reports the item (the PDP's ADD TO BAG does too).
     expect(eventCalls("item_added_to_cart")).toEqual([
       ["item_added_to_cart", expect.objectContaining({ item_id: SIZED.id, item_price: 4, item_type: "VARIANT" })],

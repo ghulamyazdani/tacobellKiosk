@@ -66,13 +66,11 @@ import { stopTimer } from "@cx-sdk/core/session/timer.slice";
 import { useNavigate } from "react-router-dom";
 import {
   buildPushOrderPayload,
-  convertCart as convertCartEngine,
   extractPaymentPayload,
   generateQROrderId,
-  getCalculatedBill as getCalculatedBillEngine,
   hasSetting,
-  type CartConversionContext,
 } from "@cx-sdk/ordering/order/orderBuilder";
+import { useBillEngine } from "../cartHooks/useCartBill";
 
 function useOrderHook() {
   const selectKioskPaymentTypeRdx = useSelector(selectKioskPaymentType);
@@ -126,24 +124,10 @@ function useOrderHook() {
   const tabType = getTabType();
   const [orderStatus, setOrderStatus] = useState<any>({});
 
-  // The closure state the engine's cart→order conversion needs, gathered per
-  // call so it always reflects the current render's redux values.
-  const getConversionContext = (): CartConversionContext => ({
-    tabId,
-    deploymentInfo: deploymentInfoRdx,
-    discountOnAddon: discountOnAddonRdx,
-    cartRdx,
-    getAmountBasedItemValue,
-    getImageUrl: getImageUrlFromAggregator,
-  });
-
-  const convertCart = (cart: any) => {
-    return convertCartEngine(cart, getConversionContext());
-  };
-
-  const getCalculatedBill = (cart: any) => {
-    return getCalculatedBillEngine(cart, getConversionContext());
-  };
+  // The engine's cart→order conversion and bill, over this render's pricing
+  // context — the one useCartBill totals with (the menu bar, the
+  // product-added Total), so no two surfaces price the bag apart.
+  const { convertCart, getCalculatedBill } = useBillEngine();
 
   const pushOrder = async (
     orderId: any,

@@ -6,11 +6,17 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
+import { MemoryRouter } from "react-router-dom";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { selectShowErrorModalGlobal, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  selectShowErrorModalGlobal,
+  setCurrency,
+  setDeploymentInfo,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
-import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { applyOffer, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
+import BagSheet from "../../cart/BagSheet";
 import {
   mutateAddToCartModal,
   setOutOfStockItems,
@@ -45,11 +51,38 @@ const TWISTS = { id: "r-twists", name: "Cinnamon Twists", price: 2 };
 const ENTITY_MAP = Object.fromEntries(
   [TACO, BURRITO, SOLD_OUT, QUESADILLA, TWISTS].map((e) => [e.id, e])
 );
-/** Two rows, £7.00 + 2 × £2.50 = £12.00 — the CTA bar's subTotal. */
+/** Two rows, £7.00 + 2 × £2.50 = £12.00, untaxed. */
 const CART = [
   { id: "c-1", itemId: "i-1", name: "Taco", quantity: 1, type: "ITEM", price: 7, total_price: 7 },
   { id: "c-2", itemId: "i-2", name: "Fries", quantity: 2, type: "ITEM", price: 2.5, total_price: 2.5 },
 ];
+const VAT15 = { _id: "vat15", name: "VAT@ 15%", type: "percentage", value: 15, isGSTOSC: false, cascadingTaxes: [] };
+/** The same rows under VAT 15 % exclusive: £12.00 + £1.80. */
+const TAXED_CART = CART.map((row) => ({ ...row, taxes: [VAT15] }));
+/** A size the chooser parked (useCartHook's VARIANT row): £7, VAT 15 %. */
+const LARGE_PARKED = {
+  id: "r-elsewhere",
+  itemId: "p-large",
+  uniqueItemId: "p-large",
+  name: "Elsewhere",
+  type: "VARIANT",
+  quantity: 1,
+  price: 7,
+  variantPrice: 7,
+  total_price: 7,
+  selectedVariant: { id: "v-large", name: "Large", price: 7 },
+  taxes: [VAT15],
+};
+/** £2 off the whole order (BagSheetTotals' FLAT_TWO). */
+const FLAT_TWO = {
+  _id: "offer-flat-2",
+  name: "£2 off your order",
+  type: { name: "amount", value: 2 },
+  isAvailable: true,
+  applicable: { on: "complete", categories: [], items: [], isExclude: false, isInclude: false, rawItems: [] },
+  buyItems: {},
+  getItems: {},
+};
 
 // No router: the modal never navigates (VIEW MY BAG and its useNavigate are gone).
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -468,13 +501,13 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     });
   });
 
-  it("nothing picked over a strip: Total = the menu bar's subTotal; the ONE CTA reads NO THANKS and just closes; no VIEW MY BAG", () => {
+  it("nothing picked over a strip: Total = the bag's (the menu bar's), printed as posistKiosk does; the ONE CTA reads NO THANKS and just closes; no VIEW MY BAG", () => {
     store.dispatch(setCartItems(CART));
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id] });
 
     const total = screen.getByTestId("added-total");
-    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £12.00`);
+    expect(total.textContent).toBe(`${i18n.t("menu.total")} £12`);
     expect(total).toHaveClass("text-[24px]", "leading-[24px]", "text-tb-ink-purple");
     expect(screen.queryByTestId("added-view-bag")).toBeNull();
     expect(screen.queryByText(i18n.t("menu.viewMyBag"))).toBeNull();
@@ -489,21 +522,59 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(cartItems()).toEqual(CART);
   });
 
-  it("Total = the bag's subTotal + the picks: one-tap price × units, parked total_price × quantity (a parked row counts even without its tile)", () => {
-    store.dispatch(setCartItems(CART));
+  /*
+    User decision 2026-10-14: the Total is the bag's own Total — after
+    rewards, taxes and round off — with the picks in it (it was the pre-tax
+    subtotal + the picks: ﷼65.00 over a ﷼34.13 bag). The bag's bill runs
+    over the cart ADD TO ORDER would leave, so after ADD TO ORDER the bag
+    shows the very figure the modal did. Nothing reaches the bag before.
+  */
+  it("Total = the bag's own Total with the picks in it — taxes and the reward included — and the bag ADD TO ORDER leaves totals the same", () => {
+    store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
+    store.dispatch(setEntityMap({ entityMap: { ...ENTITY_MAP, [TACO.id]: { ...TACO, taxes: [VAT15] } } }));
+    store.dispatch(setCartItems(TAXED_CART));
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
     open({ id: "added", recommendedItems: [TACO.id, BURRITO.id] });
-    const total = screen.getByTestId("added-total");
+    const total = () => screen.getByTestId("added-total").textContent;
 
+    // £12 + VAT £1.80 — never the £12 subtotal.
+    expect(total()).toBe(`${i18n.t("menu.total")} £13.80`);
     stage(TACO.id);
-    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £16.00`);
+    // + £4 + VAT £0.60
+    expect(total()).toBe(`${i18n.t("menu.total")} £18.40`);
     stage(BURRITO.id, 2);
-    // 12 + 4 + 2 × 5.59
-    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £27.18`);
-    park({ id: "r-elsewhere", itemId: "p-1", type: "VARIANT", quantity: 2, total_price: 7 });
-    // + 2 × 7
-    expect(total).toHaveTextContent(`${i18n.t("menu.total")} £41.18`);
-    expect(cartItems()).toEqual(CART);
+    // + 2 × £5.59, untaxed
+    expect(total()).toBe(`${i18n.t("menu.total")} £29.58`);
+    // A parked size counts even without its tile: + £7 + VAT £1.05.
+    park(LARGE_PARKED);
+    expect(total()).toBe(`${i18n.t("menu.total")} £37.63`);
+    expect(cartItems()).toEqual(TAXED_CART);
+
+    // A reward on the bag reprices the preview too.
+    act(() => {
+      store.dispatch(applyOffer({ offer: FLAT_TWO }));
+    });
+    const previewed = total();
+    expect(previewed).not.toBe(`${i18n.t("menu.total")} £37.63`);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+    expect(isOpen()).toBe(false);
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <BagSheet open onClose={vi.fn()} />
+        </MemoryRouter>
+      </Provider>,
+    );
+    expect(`${i18n.t("menu.total")} ${screen.getByTestId("bag-total").textContent}`).toBe(previewed);
+  });
+
+  it("a whole Total prints whole and the bag's round off applies: £13.80 → £14", () => {
+    store.dispatch(setCartItems(TAXED_CART));
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id] });
+
+    expect(screen.getByTestId("added-total").textContent).toBe(`${i18n.t("menu.total")} £14`);
   });
 
   /*
