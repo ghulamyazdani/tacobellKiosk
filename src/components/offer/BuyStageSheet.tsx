@@ -15,6 +15,7 @@ import {
   type BuyStageGroup,
   type BuyStageOffer,
 } from "@cx-sdk/ordering/offer/buyStageUtils";
+import { mechanicSpecFor } from "@cx-sdk/ordering/offer/savingsLinePolicy";
 import { isDirectlyAddable } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import type { BuyStage } from "../../hooks/offerHooks/useBuyStage";
@@ -122,10 +123,15 @@ export default function BuyStageSheet({
   const fill = met ? 1 : need > 0 ? have / need : 0;
   const counterText = t("offers.buyStage.addedCount", { have, need });
 
+  // How many of the cheapest go free — the rewards row's own source
+  // (mechanicSpecFor), so the stage never contradicts the row it came from.
+  const least = mechanicSpecFor(offer, "leastValue", null);
+  const freeCount = least?.code === "leastValueOther" ? least.get : 1;
   const subtitle =
     view.mode === "least"
       ? t("offers.buyStage.subtitleLeast", {
-          count: view.sharedRequiredQuantity,
+          count: freeCount,
+          buy: view.sharedRequiredQuantity,
         })
       : view.mode === "plain-and"
         ? t("offers.buyStage.subtitleAnd")
@@ -504,7 +510,7 @@ export default function BuyStageSheet({
               data-testid="buy-stage-least-note"
               className="mb-[16px] rounded-[8px] bg-tb-grey-6 px-[24px] py-[16px] text-center text-[20px] leading-[24px] text-tb-ink-purple"
             >
-              {t("offers.buyStage.leastNote")}
+              {t("offers.buyStage.leastNote", { count: freeCount })}
             </p>
           )}
           {/* Both always mounted: a live region must exist before its text does. */}

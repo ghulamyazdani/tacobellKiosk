@@ -383,6 +383,36 @@ describe("BuyStageSheet — tiles and modes", () => {
     ).toBeInTheDocument();
   });
 
+  it("walk 2026-10-14: a least stage names how many go free from the row's own source (leastItemValueCount.getQuantity) — EN and AR", async () => {
+    // "Buy 3, your 2 cheapest items are free" on the row; the stage said "your cheapest".
+    const LEAST_TWO = {
+      ...LEAST,
+      _id: "offer-least-two",
+      leastItemValueCount: { buyQuantity: 3, getQuantity: 2, getDiscount: 100 },
+    };
+    renderStage(LEAST_TWO);
+    const sheet = screen.getByTestId("buy-stage-sheet");
+    expect(within(sheet).getByText("Add any 3 from below — your 2 cheapest become free")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent(
+      "Your 2 lowest-priced qualifying items become free"
+    );
+    expect(sheet).not.toHaveTextContent("your cheapest becomes free");
+    cleanup();
+
+    // Arabic carries its own plural forms (never the English fallback, never the singular).
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderStage(LEAST_TWO);
+    const note = screen.getByTestId("buy-stage-least-note");
+    expect(note).toHaveTextContent(i18n.t("offers.buyStage.leastNote", { count: 2 }));
+    expect(note.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(note.textContent).not.toBe(i18n.t("offers.buyStage.leastNote", { count: 1 }));
+    expect(screen.getByTestId("buy-stage-sheet")).toHaveTextContent(
+      i18n.t("offers.buyStage.subtitleLeast", { count: 2, buy: 3 })
+    );
+  });
+
   it("a variant-id buy entry names its variant: 'Fries (Large)'", () => {
     const view = viewFor(LARGE_FRIES_BOGO, {
       "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },
