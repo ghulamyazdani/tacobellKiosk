@@ -2,7 +2,7 @@ import { test, expect, type Page } from "./fixtures/kiosk";
 import AxeBuilder from "@axe-core/playwright";
 import { mockKioskBackend as mockBackend, locale, DINE_IN, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart, startOrderTo } from "./pages/boot";
-import { typeDigits } from "./pages/order";
+import { dismissAddedModal, typeDigits } from "./pages/order";
 import { stageBox } from "./fixtures/a11y";
 import {
   mockXenoLoyalty,
@@ -225,6 +225,7 @@ test.describe("UB5: the country-code picker", () => {
     const salad = page.getByTestId(`item-${GREEK_SALAD}`);
     await salad.scrollIntoViewIfNeeded();
     await salad.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await page.getByTestId("cta-view-bag").click();
     await page.waitForURL(/\/cart$/);
@@ -289,6 +290,7 @@ test.describe("UB5: the country-code picker", () => {
     const salad = page.getByTestId(`item-${GREEK_SALAD}`);
     await salad.scrollIntoViewIfNeeded();
     await salad.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await page.getByTestId("cta-view-bag").click();
     await page.waitForURL(/\/cart$/);

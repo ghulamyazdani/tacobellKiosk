@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "./fixtures/kiosk";
+import { dismissAddedModal } from "./pages/order";
 import { mockKioskBackend as mockBackend, fixtureJson, locale, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart } from "./pages/boot";
 import { mockCheckoutBackend, type DeviceSettingEntity } from "./fixtures/checkout";
@@ -86,6 +87,7 @@ async function bagOneSalad(page: Page) {
   const salad = page.getByTestId(`item-${GREEK_SALAD}`);
   await salad.scrollIntoViewIfNeeded();
   await salad.click();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
   await page.getByTestId("cta-view-bag").click();
   await page.waitForURL(/\/cart$/);

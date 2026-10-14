@@ -133,7 +133,7 @@ async function startOrderToMenu(page: Page) {
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 20_000 });
 }
 
-/** The anchor: Greek Salad in one tap from the menu (no groups, no modal). */
+/** The anchor: Greek Salad in one tap from the menu (no groups); addOneTap closes the added modal. */
 const addGreekSaladFromMenu = (page: Page) => addOneTap(page, GREEK_SALAD, "(1)");
 
 /** The rail's item ids, left to right. */

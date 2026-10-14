@@ -116,6 +116,28 @@ const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
 const brandZone = (page: Page) => page.getByTestId("ada-brand-zone");
 const reachZone = (page: Page) => page.getByTestId("reach-zone");
 const footerAda = (page: Page) => page.getByTestId("footer-ada");
+/** The toggle's pill: the on-state fill, inside the 56 px button (the hit area, never filled). */
+const adaPill = (page: Page) => footerAda(page).locator(":scope > span");
+/**
+ * The toggle's look — the button's and the pill's fills, the label and glyph colours. Walk 2026-10-14: on looked
+ * exactly like off. On = the bag order-type pill's white fill with a tb-purple label and glyph; off = Figma's white
+ * label on the bar.
+ */
+const adaLook = (page: Page) =>
+  footerAda(page).evaluate((el) => {
+    const pill = el.querySelector(":scope > span") ?? el;
+    return {
+      button: getComputedStyle(el).backgroundColor,
+      fill: getComputedStyle(pill).backgroundColor,
+      label: getComputedStyle(pill.querySelector("span") ?? pill).color,
+      glyph: getComputedStyle(el.querySelector("svg") ?? el).fill,
+    };
+  });
+const NO_FILL = "rgba(0, 0, 0, 0)";
+const ADA_OFF = { button: NO_FILL, fill: NO_FILL, label: "rgb(255, 255, 255)", glyph: "rgb(255, 255, 255)" };
+const ADA_ON = { button: NO_FILL, fill: "rgb(255, 255, 255)", label: "rgb(80, 16, 152)", glyph: "rgb(80, 16, 152)" };
+/** The bag pill's inset (4 px inside its track): the on-state fill sits 4 px inside the 56 px bar, top and bottom. */
+const ADA_PILL_INSET = 4;
 
 const ZONE_BOX: StageBox = {
   x: 0,
@@ -319,6 +341,7 @@ async function expectNextSessionStartsOff(page: Page) {
   await startToSecond(page);
   await expectFullLayout(page);
   await expect(footerAda(page)).toHaveAttribute("aria-pressed", "false");
+  expect(await adaLook(page), "released: looks off again").toEqual(ADA_OFF);
   await pickPipelineToMenu(page);
   await expectFullLayout(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
@@ -335,10 +358,17 @@ test.describe("P9c ADA reach-zone view", () => {
     // Normal mode first: full stage, toggle released.
     await expectFullLayout(page);
     await expect(footerAda(page)).toHaveAttribute("aria-pressed", "false");
+    expect(await adaLook(page), "off: Figma's bare white label").toEqual(ADA_OFF);
 
     await footerAda(page).click();
     await expectAdaLayout(page);
     await expect(footerAda(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => adaLook(page), { message: "on: visibly pressed" }).toEqual(ADA_ON);
+    // …as an inset pill, never a block flush with the bar's edges under the CTA bar.
+    const [button, pill] = await Promise.all([stageBox(footerAda(page)), stageBox(adaPill(page))]);
+    expect(button.height, "the hit area stays the bar's 56 px").toBe(FOOTER_HEIGHT);
+    expect(pill.y - button.y, "pill top inset").toBe(ADA_PILL_INSET);
+    expect(button.y + button.height - (pill.y + pill.height), "pill bottom inset").toBe(ADA_PILL_INSET);
     // The page fills the zone (h-full), not the stage.
     await expect.poll(() => stageBox(page.getByTestId("menu-screen"))).toEqual(ZONE_BOX);
     await expectReachable(page);

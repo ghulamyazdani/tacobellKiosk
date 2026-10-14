@@ -75,7 +75,7 @@ const useAddEntityToCart = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { addItemToCart, doesItemExistInCart, IncreaseItemQuantityById } =
+  const { addItemToCart, openAddedModal, doesItemExistInCart, IncreaseItemQuantityById } =
     useCartHook();
   // Leaf hooks, NOT useCustomization({}) / useMenuConverters(). Those return
   // exactly one binding each here, and cost ~181 and ~51 useSelector calls plus
@@ -143,9 +143,12 @@ const useAddEntityToCart = () => {
         // merge-by-id branch keys off `payload.itemType` (cart.slice.ts:65),
         // which addItemToCart never sets — it writes `type` — so the key always
         // falls through to the freshly-generated unique itemId and never
-        // matches. Increment explicitly, the same way the menu cards do.
+        // matches. Increment explicitly, the same way the menu cards do — and
+        // confirm it like a new row (user 2026-10-14).
         if (doesItemExistInCart(entity?.id)?.itemExist) {
-          return IncreaseItemQuantityById(entity.id, "ITEM", "id", entity);
+          const landed = IncreaseItemQuantityById(entity.id, "ITEM", "id", entity);
+          if (landed && !suppressAddedModal) openAddedModal(entity);
+          return landed;
         }
 
         return !!addItemToCart(buildDirectAddPayload(entity), "ITEM", {
@@ -202,6 +205,7 @@ const useAddEntityToCart = () => {
     [
       getAddIntent,
       addItemToCart,
+      openAddedModal,
       doesItemExistInCart,
       IncreaseItemQuantityById,
       dispatch,

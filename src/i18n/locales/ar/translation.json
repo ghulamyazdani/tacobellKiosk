@@ -413,6 +413,8 @@
     "comingSoon": "قريبًا",
     "backToMenu": "العودة إلى القائمة",
     "placingOrder": "جارٍ إرسال طلبك…",
+    "payAtCounterChosen": "ستدفع عند الكاشير",
+    "payAtRestaurantChosen": "ستدفع في المطعم",
     "cancel": "إلغاء",
     "unavailable": "الدفع غير متاح هنا",
     "unavailableBody": "لا يمكننا استقبال الدفع من هذا الكشك حاليًا. يرجى الطلب من الكاشير."

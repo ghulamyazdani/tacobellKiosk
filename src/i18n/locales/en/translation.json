@@ -389,6 +389,8 @@
     "comingSoon": "Coming soon",
     "backToMenu": "Back to menu",
     "placingOrder": "Placing your order…",
+    "payAtCounterChosen": "You'll pay at the counter",
+    "payAtRestaurantChosen": "You'll pay at the restaurant",
     "cancel": "Cancel",
     "unavailable": "Payment isn't available here",
     "unavailableBody": "We can't take payment at this kiosk right now. Please order at the front counter."

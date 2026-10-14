@@ -297,12 +297,13 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.getByTestId("payment-counter")).toBeInTheDocument();
     });
 
-    it("gives the unavailable screen a working Back", () => {
+    it("gives the unavailable screen a working Back — to the menu its label names", () => {
       store.dispatch(setDeploymentInfo(disableCodFor("table")));
       mount();
+      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/customerName");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
   });
 
@@ -546,7 +547,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       ["one tile: the Figma 416", [], [416], "px-[32px]"],
       ["two tiles: 2 × 416", ["EDC"], [416, 416], "px-[32px]"],
       ["three tiles: 3 × 269.33, the narrow padding", ["EDC", "DQR"], [269.33, 269.33, 269.33], "px-[16px]"],
-    ] as const)("%s, labels in the frame's Cm Bd 48/44", (_label, configured, widths, padding) => {
+    ] as const)("%s, labels in the frame's Cm Bd 48/44 — an Arabic label leads 64 (its wrapped lines touched at 44)", (_label, configured, widths, padding) => {
       store.dispatch(setPaymentSettings(configured.map((kind) => (kind === "EDC" ? EDC : DQR))));
       mount();
 
@@ -555,14 +556,20 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       );
       for (const tile of tiles()) {
         expect(tile).toHaveClass(padding, "h-[416px]");
-        expect(tile.querySelector("span")).toHaveClass("tb-compressed", "text-[48px]", "leading-[44px]");
+        expect(tile.querySelector("span")).toHaveClass(
+          "tb-compressed",
+          "text-[48px]",
+          "leading-[44px]",
+          "[&:lang(ar)]:leading-[64px]",
+        );
       }
     });
 
     it.each([
       ["payment-card", "PaytmEdc", "paytm.redirecting"],
       ["payment-qr", "PaytmDynamicQr", "paytm.redirecting"],
-      ["payment-counter", "PAY_AT_RESTAURANT", "payment.placingOrder"],
+      // The default kiosk settings label the COD tile PAY AT RESTAURANT.
+      ["payment-counter", "PAY_AT_RESTAURANT", "payment.payAtRestaurantChosen"],
     ])("%s arms %s: the window sends nothing; its end is /receipt for COD (nothing pushed) and ONE initiate for Paytm", async (testId, type, titleKey) => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       mount();
@@ -749,7 +756,8 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       advance(500); // CLOSE's tap guard
       tap("payment-counter");
       expect(state().payment.paymentType).toBe("PAY_AT_RESTAURANT");
-      expect(buffer()).toHaveTextContent(i18n.t("payment.placingOrder"));
+      // walk-flow-ui (2026-10-14): the window confirms the choice, never "placing".
+      expect(buffer()).toHaveTextContent(i18n.t("payment.payAtRestaurantChosen"));
       advance(3000);
       await flush();
       expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
@@ -783,7 +791,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(m.edc).not.toHaveBeenCalled();
       expect(m.dqr).not.toHaveBeenCalled();
       tap("payment-counter");
-      expect(buffer()).toHaveTextContent(i18n.t("payment.placingOrder"));
+      expect(buffer()).toHaveTextContent(i18n.t("payment.payAtRestaurantChosen"));
     });
 
     // U4 (b)
@@ -977,6 +985,36 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.getByTestId("payment-buffer-cancel").closest(".tb-reveal-late")).toBeNull();
     });
 
+    // Walk 2026-10-14: the window said PLACING YOUR ORDER… while nothing is
+    // placed until /receipt's answer (2026-10-13). It confirms the tile the
+    // guest tapped, in its words; PLACING stays /receipt's push.
+    it.each([
+      ["PAY AT COUNTER", { pay_at_counter: "pay_at_counter" }, "payment.payAtCounterChosen"],
+      ["PAY AT RESTAURANT", {}, "payment.payAtRestaurantChosen"],
+    ])("%s: the window confirms that choice, with CANCEL — never 'placing' (EN, AR)", async (_tile, settings, key) => {
+      store.dispatch(setKioskSettings({ skip_crm_page: false, ...settings }));
+      mount();
+      tap("payment-counter");
+
+      const title = () => document.getElementById("payment-buffer-title");
+      expect(buffer()).toHaveAttribute("aria-labelledby", "payment-buffer-title");
+      expect(title()).toHaveTextContent(i18n.t(key));
+      expect(buffer()).not.toHaveTextContent(i18n.t("payment.placingOrder"));
+      expect(screen.getByTestId("payment-buffer-cancel")).toHaveTextContent(i18n.t("payment.cancel"));
+
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+      try {
+        expect(title()).toHaveTextContent(i18n.t(key));
+        expect(buffer()).not.toHaveTextContent(i18n.t("payment.placingOrder"));
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage("en");
+        });
+      }
+    });
+
     it("hands over to the receipt step after the buffer elapses", () => {
       mount();
       tap("payment-counter");
@@ -1035,19 +1073,22 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
   });
 
   describe("back and mount guards", () => {
-    it("goes back to the identity step when CRM is not skipped", () => {
+    // Walk 2026-10-14: BACK TO MENU (Figma 1:3367) opened the bag — or the
+    // identity step with CRM on. It goes where its label says.
+    it("BACK TO MENU goes to the menu when CRM is not skipped — never the identity step", () => {
       mount();
+      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/customerName");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
 
-    it("goes back to the bag when CRM is skipped", () => {
+    it("BACK TO MENU goes to the menu when CRM is skipped — never the bag", () => {
       store.dispatch(setKioskSettings({ skip_crm_page: true }));
       mount();
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/cart");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
 
     it("bounces to the menu when there is nothing to pay for", () => {

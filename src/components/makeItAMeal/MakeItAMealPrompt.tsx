@@ -150,6 +150,10 @@ const savingsFor = (combo: unknown): number | null => {
  *   add + full close.
  * - decline: original item added by shape; plain adds also blacklist the id
  *   so the next tap classifies as "add", not "upsell".
+ * - both plain adds confirm with the product-added modal, like every menu add
+ *   (user 2026-10-14) — a Complete Your Meal tap's too: its onDetour closed
+ *   the bag, so the prompt and the add are over /menu and no bag row
+ *   confirms them (sign-off: the lane contract listed those as suppressed).
  * - X: fork close dance + removeMakeItAMealItem. The frame has no X, but it is
  *   a DISTINCT behaviour from "not today" (it never blacklists, so the item
  *   re-prompts) and tests/e2e/pack.spec.ts asserts it — kept deliberately,

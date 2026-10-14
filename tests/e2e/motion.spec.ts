@@ -29,7 +29,7 @@ import {
 import { EDC_BUSY, PAYTM_EDC_ENTITY, PAYTM_ENDPOINTS, mockPaytmBackend } from "./fixtures/paytm";
 import { bootRegisteredToMenu, pickPipelineToMenu, registerToStart, startToSecond, submitLicence } from "./pages/boot";
 import { payAtCounter } from "./pages/checkout";
-import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { addOneTap, dismissAddedModal, openBag, typeDigits } from "./pages/order";
 
 /**
  * Lane motion — the motion contract's §5.3 cases (M0–M13) and lane motion-v2's (M14–M17), the ONE place real motion is proven: the
@@ -922,6 +922,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect.poll(scales, { message: "the card at .97, its overlay at 1 / .97" }).toEqual({ card: "0.97", hitArea: 1 });
     await page.mouse.up(); // released on the card: the tap lands
     await expect(viewBag).toContainText("(1)");
+    await dismissAddedModal(page);
 
     // The product-added modal's quick-add: its circle takes the Figma Quick Add pressed fill.
     await addBurgerFromPdp(page);
@@ -1322,6 +1323,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
       await page.clock.resume();
       await finger("touchEnd");
       await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+      await dismissAddedModal(page);
 
       // 3. A pan: the browser takes the touch (pointercancel) before 90 ms — the fill never shows, nothing is added.
       const dy = await add.evaluate((el) => ((el.closest(".overflow-y-auto")?.scrollTop ?? 0) > 0 ? 80 : -80));

@@ -97,10 +97,10 @@ const en = locale("en");
  * The shared mock (fixtures/backend.ts) with this spec's P8a delta,
  * `skip_crm_page`: with it ON and `enable_loyalty` absent,
  * `resolveCheckoutRoute` returns "payment" (dine-in) or "tent" (table) — the
- * two destinations this phase owns — and /payment's back CTA returns to
- * /cart rather than /customerName. `pay_at_counter` is the COD tile's label
- * only: the dispatched type is PAY_AT_RESTAURANT either way
- * (settingsEngine.getIsPayAtCounter), so no assertion depends on it.
+ * two destinations this phase owns. /payment's BACK TO MENU goes to /menu
+ * either way (walk 2026-10-14). `pay_at_counter` labels the COD tile — and its
+ * cancel window, "You'll pay at the counter" — only: the dispatched type is
+ * PAY_AT_RESTAURANT either way (settingsEngine.getIsPayAtCounter).
  */
 const mockKioskBackend = (page: Page, { skipCRM = true } = {}) =>
   mockBackend(page, {
@@ -154,6 +154,10 @@ async function payAtCounterThroughBuffer(page: Page) {
   await page.getByTestId("payment-counter").click();
   await expect(page.getByTestId("payment-buffer")).toBeVisible();
   await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
+  // It confirms the choice: nothing is placed until /receipt's answer, whose
+  // push alone says PLACING YOUR ORDER (walk 2026-10-14).
+  await expect(page.getByTestId("payment-buffer")).toContainText(en.payment.payAtCounterChosen);
+  await expect(page.getByTestId("payment-buffer")).not.toContainText(en.payment.placingOrder);
   // The 3000ms window closes by routing to the receipt step.
   await page.clock.runFor(3_000);
   await expect(page.getByTestId("receipt-screen")).toBeVisible();
@@ -214,7 +218,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("BACK FROM /payment: returns to an intact bag and places nothing", async ({
+  test("BACK FROM /payment: BACK TO MENU lands on the menu (the bag closed), the bag intact one tap away, nothing placed", async ({
     page,
   }) => {
     test.slow();
@@ -225,11 +229,15 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
       timeout: 15_000,
     });
 
-    // skipCRM is ON, so the back CTA returns to the bag (with it off it would
-    // step back to /customerName — that leg belongs to loyalty.spec.ts).
+    // Walk 2026-10-14: the CTA reads BACK TO MENU (Figma 1:3367) but opened the
+    // bag. It goes where it says — with CRM on or off (unit tests).
+    await expect(page.getByTestId("payment-back")).toHaveText(en.payment.backToMenu);
     await page.getByTestId("payment-back").click();
-    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(/\/menu$/, { timeout: 10_000 });
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await openBag(page);
     await expect(bagRows(page)).toHaveCount(1);
     await expect(bagRows(page).first()).toContainText("Cheese Burger");
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
@@ -256,9 +264,11 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page.getByTestId("payment-screen")).toHaveCount(0);
     await expect(page.getByTestId("payment-counter")).toHaveCount(0);
 
-    // Rule 2: the dead end still has a live exit.
+    // Rule 2: the dead end still has a live exit — to the menu, as labelled.
     await page.getByTestId("payment-back").click();
-    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/menu$/, { timeout: 10_000 });
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    await openBag(page);
     await expect(bagRows(page)).toHaveCount(1);
 
     expect(checkout.placeOrderCount).toBe(0);

@@ -96,8 +96,9 @@ function InSessionOverlays() {
         </div>
       </div>
       {/* z-58, 500 ms after a product-added suggestion leaves the modal
-          (lane added-modal R1): a double tap's second half never lands on
-          the surface that replaced it. */}
+          (lane added-modal R1), and after the modal opens or closes: a
+          double tap's second half never lands on the surface that replaced
+          it. */}
       <DetourTapGuard />
     </>
   );

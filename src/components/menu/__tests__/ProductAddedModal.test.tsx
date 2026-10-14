@@ -2,9 +2,10 @@
  * Menu entities flow through untyped from the legacy converters, matching
  * the component under test. Do not add NEW anys.
  */
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectShowErrorModalGlobal, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -718,5 +719,87 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     // A parked row is bought even without its tile.
     park({ id: "r-elsewhere", itemId: "p-1", type: "VARIANT", quantity: 1, total_price: 7 });
     expect(cta()).toHaveTextContent("Add to order");
+  });
+});
+
+/*
+  Every menu add opens this dialog now (user 2026-10-14), so it moves focus
+  as the app's other modal dialogs do: in on every show — its ONE CTA
+  (autoFocus, ErrorModal's) — and back to the opener on close
+  (SelectSizeModal's). Review: a keyboard Enter on a menu '+' left focus on
+  that '+' behind the open dialog, so the next Enter added again, and a
+  screen reader stayed outside the dialog.
+*/
+describe("ProductAddedModal — focus, as a modal dialog", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setEntityMap({ entityMap: ENTITY_MAP }));
+  });
+
+  /** A menu '+': its tap adds and opens the modal (useCartHook). StrictMode, as main.tsx renders the app. */
+  const renderWithOpener = (item: Record<string, unknown> = { id: "added" }) => {
+    const add = vi.fn(() => store.dispatch(mutateAddToCartModal({ isOpen: true, item })));
+    render(
+      <StrictMode>
+        <Provider store={store}>
+          <button type="button" onClick={add}>
+            quick add
+          </button>
+          <ProductAddedModal onQuickAdd={vi.fn()} />
+        </Provider>
+      </StrictMode>
+    );
+    const opener = screen.getByRole("button", { name: "quick add" });
+    opener.focus();
+    return { opener, add };
+  };
+  const cta = () => screen.getByTestId("added-continue");
+
+  it("a keyboard Enter on the '+': focus moves into the dialog, on its CTA — the next Enter is GOT IT, never a second add — and goes back to the '+' on close", async () => {
+    const { opener, add } = renderWithOpener();
+
+    await userEvent.keyboard("{Enter}");
+    expect(isOpen()).toBe(true);
+    expect(screen.getByRole("dialog", { name: i18n.t("added.title") })).toContainElement(cta());
+    expect(cta()).toHaveFocus();
+
+    await userEvent.keyboard("{Enter}");
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(isOpen()).toBe(false);
+    expect(opener).toHaveFocus();
+  });
+
+  it.each([
+    ["the X", 1],
+    ["the scrim", 0],
+  ])("%s closes it: focus goes back to the opener", async (_how, index) => {
+    const { opener } = renderWithOpener();
+    await userEvent.keyboard("{Enter}");
+    expect(cta()).toHaveFocus();
+
+    await userEvent.click(screen.getAllByRole("button", { name: i18n.t("language.close") })[index]);
+    expect(isOpen()).toBe(false);
+    expect(opener).toHaveFocus();
+  });
+
+  it("a suggestion's detour hides it; its return takes focus again (NO THANKS), and the close still goes back to the first opener", async () => {
+    const { opener } = renderWithOpener({ id: "added", recommendedItems: [TACO.id] });
+    await userEvent.keyboard("{Enter}");
+    expect(cta()).toHaveFocus();
+
+    act(() => {
+      store.dispatch(setRecommendationDetour(true));
+    });
+    expect(screen.queryByTestId("product-added-modal")).toBeNull();
+    act(() => {
+      store.dispatch(setRecommendationDetour(false));
+    });
+    expect(cta()).toHaveTextContent("No thanks");
+    expect(cta()).toHaveFocus();
+
+    await userEvent.keyboard("{Enter}");
+    expect(isOpen()).toBe(false);
+    expect(opener).toHaveFocus();
   });
 });

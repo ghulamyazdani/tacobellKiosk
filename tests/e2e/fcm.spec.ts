@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "./fixtures/kiosk";
+import { dismissAddedModal } from "./pages/order";
 import { APP_ORIGIN } from "./fixtures/origin";
 import { mockKioskBackend as mockBackend, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart } from "./pages/boot";
@@ -166,6 +167,7 @@ async function guestMidOrder(page: Page) {
   const salad = page.getByTestId(`item-${GREEK_SALAD}`);
   await salad.scrollIntoViewIfNeeded();
   await salad.click();
+  await dismissAddedModal(page);
   await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
 }
 

@@ -4,6 +4,8 @@ import { act, renderHook } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
+import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
 import {
   mutateAddToCartModal,
@@ -15,12 +17,12 @@ import {
 import useCartHook from "../useCartHook";
 
 /*
-  Lane added-modal — the added modal's open decision.
-  F5: a plain add opens the modal only when the strip will have a card, so the
-  open check reads the SAME map the strip resolves over: the menu-sellable
-  entityMap (selectMenuSellableEntityMap), never the raw one — a pack whose
-  groups are all dead is not sold, so it must not open the modal onto an empty
-  strip.
+  The added modal's open decision. User 2026-10-14 ("item added modal should
+  also come when normal item without customization is added"): EVERY add its
+  caller does not suppress opens it — a plain one too, recommendations or not
+  (lane added-modal's F5 opened it for a plain add only onto a strip it could
+  fill, posistKiosk's rule). With nothing to suggest the modal shows the
+  title, the Total and GOT IT (ProductAddedModal's tests).
   RC4: the next modal open CONSUMES recommendationDetour (that confirmation
   shows no strip — one hop); an add that opens no modal leaves it alone.
   Seam: the Dexie cart mirror (no IndexedDB in jsdom).
@@ -61,12 +63,29 @@ const cartItems = () => (store.getState() as unknown as { cart: { cartItems: unk
 const modalOpen = () => selectAddToCartModal(store.getState());
 const detour = () => selectRecommendationDetour(store.getState());
 
-describe("useCartHook — the added modal opens only onto a strip it can fill (added-modal F5 / RC4)", () => {
+describe("useCartHook — every add the caller does not suppress opens the added modal (user 2026-10-14 / RC4)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
   });
 
-  it("T8: a plain add whose only suggestion is a dead pack opens NO modal (the row still lands)", () => {
+  it("a plain add with NO recommendations opens the modal on its row (the row lands too)", () => {
+    const SAUCE = { id: "sauce", name: "Tortilla Sauce", price: 2 };
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE.id]: SAUCE } }));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    let outcome: unknown;
+    act(() => {
+      outcome = result.current.addItemToCart({ ...SAUCE }, "ITEM");
+    });
+
+    expect(outcome).toBe(true);
+    expect(cartItems()).toEqual([expect.objectContaining({ id: SAUCE.id, quantity: 1 })]);
+    expect(modalOpen()).toBe(true);
+    expect(selectAddToCartItem(store.getState())).toMatchObject({ id: SAUCE.id, type: "ITEM" });
+    expect(selectAddToCartItem(store.getState())).not.toHaveProperty("suppressRecommendations");
+  });
+
+  it("T8: a plain add whose only suggestion is a dead pack opens the modal too — the strip just has nothing to show", () => {
     seedMenu(false);
     const { result } = renderHook(() => useCartHook(), { wrapper });
 
@@ -76,6 +95,23 @@ describe("useCartHook — the added modal opens only onto a strip it can fill (a
     });
 
     expect(outcome).toBe(true);
+    expect(cartItems()).toHaveLength(1);
+    expect(modalOpen()).toBe(true);
+    expect(selectAddToCartItem(store.getState())).toMatchObject({ id: FRIES.id });
+  });
+
+  it("a plain add the DP cap refuses opens nothing (nothing landed)", () => {
+    seedMenu(true);
+    store.dispatch(setCurrentSession({ _id: "dp-lunch", sessionName: "Lunch", _extras: { maxQtyItem: "1" } }));
+    store.dispatch(setCartItems([{ ...FRIES, itemId: "1_fries", quantity: 1, type: "ITEM", isDpItem: true }]));
+    const { result } = renderHook(() => useCartHook(), { wrapper });
+
+    let outcome: unknown;
+    act(() => {
+      outcome = result.current.addItemToCart({ ...FRIES, isDpItem: true }, "ITEM");
+    });
+
+    expect(outcome).toBe(false);
     expect(cartItems()).toHaveLength(1);
     expect(modalOpen()).toBe(false);
   });

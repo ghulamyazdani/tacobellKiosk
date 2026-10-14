@@ -34,8 +34,9 @@ import { addOneTap, addViaPdp, openBag, bagRows } from "./pages/order";
  *   Cheese Burger and Large Fries (5dd10938eb1ccee31ca352fa, £9). The cart
  *   upsell gate is opt-OUT (enable_cart_upsell_screen absent → shown) and
  *   MIN_CART_UPSELL_ITEMS = 1.
- * - Greek Salad has no recommendedItems, so a plain add opens NO added
- *   modal (resolveAddItemPresentation) — direct cta assertions instead.
+ * - Greek Salad has no recommendedItems: a plain menu add confirms with the
+ *   added modal's title, Total and GOT IT (user 2026-10-14), which addOneTap
+ *   closes before its cta assertion.
  * - get_data mock carries currencySettings {currency: "GBP", text: "£"} and
  *   empty deployment charges — but every fixture item carries VAT@15% (percentage), which the
  *   bill engine treats as EXCLUSIVE, and getNetAmount() rounds to 0 decimals
@@ -140,7 +141,8 @@ const addCheeseBurgerViaPdp = (
 
 /**
  * Plain one-tap add: Greek Salad has no modifiers, no variants and no
- * recommendedItems → lands straight in the cart with no added modal.
+ * recommendedItems → lands straight in the cart; the added modal confirms it
+ * (user 2026-10-14) and addOneTap closes it.
  */
 const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
   addOneTap(page, GREEK_SALAD, expectedCount);
@@ -705,7 +707,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page).toHaveURL(/\/cart$/);
   });
 
-  test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total", async ({
+  test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total — no product-added modal, under the bag or on the menu after it", async ({
     page,
   }) => {
     test.slow();
@@ -735,6 +737,13 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (2)");
     // …and the freshly-carted salad drops out of the rail.
     await expect(page.getByTestId(`bag-rail-item-${GREEK_SALAD}`)).toHaveCount(0);
+    // Every MENU add opens the product-added modal (user 2026-10-14); this one
+    // is the bag's: none opened under the bag, so none greets the menu after.
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
   });
 
   test("PAY: preflight lands on the resolved checkout screen; its back CTA returns to an intact bag", async ({

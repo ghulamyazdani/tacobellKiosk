@@ -115,7 +115,8 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only).
  * The failure modal adds no edge (its BACK TO BAG → /cart was removed
- * 2026-10-14; BACK TO MENU stays the way back). COD keeps /payment → /receipt.
+ * 2026-10-14). COD keeps /payment → /receipt. BACK TO MENU /payment → /menu
+ * (2026-10-14; was /cart, or /customerName with CRM).
  *
  * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
  * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
@@ -162,7 +163,7 @@ export default function PaymentSelection() {
   const currency = useCurrencySymbol();
   const cart = useSelector(selectCart) as CartLike | undefined;
 
-  const { getTabType, getIsPayAtCounter, shouldSkipCRM } = useAppSettings();
+  const { getTabType, getIsPayAtCounter } = useAppSettings();
   // The push itself lives in the hook (guarded, retry ladder, idempotency
   // latch). This screen only ARMS it: beginCheckout pins
   // payment.paymentType = "PAY_AT_RESTAURANT" before anything is pushed.
@@ -210,7 +211,8 @@ export default function PaymentSelection() {
   /** Fork parity: the unavailable branch is `zero gateways AND no COD`. */
   const showUnavailable = selections.length === 0 && !codAvailable;
 
-  const payAtCounterLabel = getIsPayAtCounter()
+  const atCounter = getIsPayAtCounter();
+  const payAtCounterLabel = atCounter
     ? t("payment.payAtCounter")
     : t("payment.payAtRestaurant");
 
@@ -264,11 +266,15 @@ export default function PaymentSelection() {
   // frame between the window's timer and its commit, whose closure still reads
   // paytmStatus "idle" but armedType set (review R1). Not refused on "failed":
   // the unavailable branch has no modal and must keep its way back (Rule 2).
+  // It goes where its label (Figma 1:3367 "Back to menu") says: the menu, the
+  // bag kept (walk 2026-10-14 — it opened the bag, or /customerName with CRM;
+  // posistKiosk's generic "Back" steps back a screen). The bag stays one tap
+  // away (VIEW MY BAG); the failure modal's BACK TO BAG is the /cart edge.
   const handleBack = useCallback(() => {
     if (armedType !== null || paytmStatus === "initiating") return;
     captureKioskEvent(KioskEventName.PaymentDismissed, {});
-    navigate(shouldSkipCRM() ? "/cart" : "/customerName");
-  }, [armedType, navigate, paytmStatus, shouldSkipCRM]);
+    navigate("/menu");
+  }, [armedType, navigate, paytmStatus]);
 
   /**
    * A method tile. ARMS the payment type (COD via beginCheckout, unchanged;
@@ -427,7 +433,11 @@ export default function PaymentSelection() {
             style={{ width: tileWidth }}
             className={`flex h-[416px] items-center justify-center rounded-[10px] bg-tb-surface ${narrow ? "px-[16px]" : "px-[32px]"}`}
           >
-            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+            {/* Figma's Cm Bd 48/44 is a caps line height: Arabic (system
+                fallback, ink ~44 above and ~14 below the baseline) wraps to
+                2–3 lines that touched at 44 (walk 2026-10-14), so an Arabic
+                label leads 64 (4/3). A single line sits centred either way. */}
+            <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple [&:lang(ar)]:leading-[64px]">
               {tile.label}
             </span>
           </button>
@@ -463,8 +473,12 @@ export default function PaymentSelection() {
               id="payment-buffer-title"
               className="tb-display mb-[32px] text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
             >
+              {/* Pay at counter: a confirmation of the tile the guest tapped,
+                  never "placing" — nothing is placed until /receipt's answer
+                  (2026-10-13), whose push alone says PLACING YOUR ORDER
+                  (walk 2026-10-14). Design language, sign-off. */}
               {armedType === PAY_AT_COUNTER_PAYMENT_TYPE
-                ? t("payment.placingOrder")
+                ? t(atCounter ? "payment.payAtCounterChosen" : "payment.payAtRestaurantChosen")
                 : t("paytm.redirecting")}
             </h2>
             {/* The house indeterminate sweep (motion-v2 MV3): a sibling of

@@ -364,7 +364,7 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await expect(page.getByTestId("offer-applied-celebration")).toHaveCount(0);
   });
 
-  test("E8 never under an open rewards list: a suggested add that reaches the flagged offer's £10 minimum leaves it unapplied while the list is open; closing the list (no SAVE) lets it apply — 'Applied for you', Total £26.00", async ({
+  test("E8 never under an open rewards list: a suggested add that reaches the flagged offer's £10 minimum leaves it unapplied while the list is open; closing the list (no SAVE) lets it apply — 'Applied for you', Total £26.00; the add opens no product-added modal, under the bag or on the menu after it", async ({
     page,
   }) => {
     test.slow();
@@ -383,6 +383,9 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await page.getByTestId(`offer-suggested-item-${GREEK_SALAD}`).click();
     await expect(page.getByTestId(`offer-radio-${AUTO_FLAT_MIN10._id}`)).toBeVisible();
     await expect(page.getByTestId("bag-subtotal")).toContainText("£25.00");
+    // Every MENU add opens the product-added modal (user 2026-10-14); this one
+    // is the bag's — none opens under it (nor on the menu after: the end).
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
     // A radio pick is not a customer offer action (only SAVE is); it also
     // gives every effect of the cart change time to have run.
     await page.getByTestId(`offer-row-${AUTO_FLAT_MIN10._id}`).click();
@@ -403,6 +406,10 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await expect(page.getByTestId("bag-rewards-applied-for-you")).toHaveText("Applied for you");
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£26.00");
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
   });
 
   test("E9 a crash-reload on /cart keeps the bag, its rows and the customer's SAVED reward: no 'Reward Removed', no /menu bounce, the same bill (the SAVE's latch keeps the machine out)", async ({

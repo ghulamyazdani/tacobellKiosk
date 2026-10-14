@@ -15,6 +15,7 @@ import {
 import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendation.slice";
 import { store } from "../../../redux/app/store";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import { selectAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
 import CompleteYourMealRail from "../CompleteYourMealRail";
 import i18n from "../../../i18n";
 
@@ -345,5 +346,32 @@ describe("CompleteYourMealRail — a card is named by what its tap does (R6)", (
     renderRail();
 
     expect(screen.getByTestId("bag-rail-item-fries")).toHaveAccessibleName(`${i18n.t("pack.customize")} Large Fries`);
+  });
+});
+
+/*
+  Every menu add opens the product-added modal now (user 2026-10-14), so the
+  rail's suppressAddedModal is all that keeps a plain rail add from opening
+  it: under the open bag (both z-40, the modal mounted first), arming the
+  500 ms tap guard over the bag, then greeting the guest on /menu when the bag
+  closes (round 1's stale modal, walk bag_offers 8). In the bag the row is the
+  confirmation. The +1 branch is out of this rail's reach: a card in the bag
+  never shows (the in-cart filter tests above).
+*/
+describe("CompleteYourMealRail — a plain add confirms by its row, never the added modal", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setEntityMap({ entityMap: { pepsi: ENTITY_MAP.pepsi } }));
+  });
+
+  it("a plain card's tap lands its row and leaves the modal shut", () => {
+    renderRail();
+    fireEvent.click(screen.getByTestId("bag-rail-item-pepsi"));
+
+    expect(
+      (store.getState() as unknown as { cart: { cartItems: unknown[] } }).cart.cartItems
+    ).toEqual([expect.objectContaining({ id: "pepsi", quantity: 1 })]);
+    expect(selectAddToCartModal(store.getState())).toBe(false);
   });
 });

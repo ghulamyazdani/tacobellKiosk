@@ -17,7 +17,7 @@ import {
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
 import { registerToStart } from "./pages/boot";
-import { typeDigits } from "./pages/order";
+import { dismissAddedModal, typeDigits } from "./pages/order";
 
 /**
  * Lane loyalty-visual — the Xeno REWARDS sheet after its reskin (Figma
@@ -215,6 +215,7 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     const sauce = page.getByTestId(`item-${TORTILLA_SAUCE}`);
     await sauce.scrollIntoViewIfNeeded();
     await sauce.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page).toHaveURL(/\/menu$/);
 
@@ -341,6 +342,7 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     const sauce = page.getByTestId(`item-${TORTILLA_SAUCE}`);
     await sauce.scrollIntoViewIfNeeded();
     await sauce.click();
+    await dismissAddedModal(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
     // D6b: resolved at RENDER only — never written into cart / order /
     // loyalty state (the DEV-only window.__kioskStore seam), where any later

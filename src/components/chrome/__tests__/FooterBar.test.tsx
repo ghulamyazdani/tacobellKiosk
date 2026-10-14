@@ -6,6 +6,8 @@ import {
   setEnableAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import gbFlag from "../../../assets/flags/gb.svg";
 import FooterBar from "../FooterBar";
 import i18n from "../../../i18n";
 import { KioskEventName } from "@cx-sdk/core";
@@ -85,9 +87,41 @@ describe("FooterBar — ADA DISPLAY (P9c)", () => {
     renderFooter();
 
     expect(adaButton()).toHaveTextContent(i18n.t("footer.adaDisplay"));
-    expect(adaButton()?.querySelector("img")).toBeInTheDocument();
+    // Figma's glyph, inline so it takes the label's colour (fill-current).
+    const glyph = adaButton()?.querySelector("svg");
+    expect(glyph).toHaveAttribute("aria-hidden", "true");
+    expect(glyph).toHaveClass("h-[32px]", "w-[32px]", "fill-current");
     expect(adaButton()?.className).toContain("h-[56px]");
     expect(adaButton()?.className).toContain("min-w-[44px]");
+  });
+
+  // Walk 2026-10-14: aria-pressed flipped but the button looked the same.
+  // On = the bag order-type pill: a white, fully rounded fill inset 4 px in
+  // the 56 px bar (48 tall — never flush with the bar's edges), the label and
+  // glyph in tb-purple; off = Figma's bare white label on the bar. The 56 px
+  // button stays the hit area and never fills.
+  it("shows its on-state: an inset white pill with a purple label and glyph, gone again when off", () => {
+    renderFooter();
+    const pill = () => adaButton()?.querySelector(":scope > span");
+    const label = () => pill()?.querySelector("span");
+    expect(pill()).toHaveClass("h-[48px]", "rounded-full", "text-tb-surface");
+    expect(pill()).not.toHaveClass("bg-tb-surface");
+    expect(pill()).toContainElement(adaButton()?.querySelector("svg") ?? null);
+
+    tapAda();
+    expect(adaButton()).toHaveAttribute("aria-pressed", "true");
+    expect(pill()).toHaveClass("h-[48px]", "rounded-full", "bg-tb-surface", "text-tb-purple");
+    expect(pill()).not.toHaveClass("text-tb-surface");
+    expect(adaButton()?.className).not.toMatch(/\bbg-/);
+    // The label and the glyph take the pill's colour.
+    expect(label()).toHaveTextContent(i18n.t("footer.adaDisplay"));
+    expect(label()?.className).not.toMatch(/\btext-tb-/);
+
+    tapAda();
+    expect(adaButton()).toHaveAttribute("aria-pressed", "false");
+    expect(pill()).toHaveClass("text-tb-surface");
+    expect(pill()).not.toHaveClass("bg-tb-surface");
+    expect(adaButton()?.className).not.toMatch(/\bbg-/);
   });
 });
 
@@ -134,5 +168,46 @@ describe("FooterBar — CANCEL ORDER analytics (audit-fixes B3)", () => {
     expect(
       mockCapture.mock.calls.filter(([event]) => event === KioskEventName.StartOverClickedFromFooter)
     ).toEqual([]);
+  });
+});
+
+/*
+  Walk 2026-10-14: the language button always showed the GB flag — beside
+  العربية too (it was hardcoded). It shows the flag of the language in use
+  where one is known (English: Figma's Great Britain), and none otherwise.
+*/
+describe("FooterBar — the language button's flag", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  const languageButton = () => screen.getByTestId("footer-language");
+  /** The round flag chip (the chevron is the button's other image). */
+  const flag = () => languageButton().querySelector("span.rounded-full img");
+
+  it("English — chosen, or the default before any choice: the Great Britain flag", () => {
+    renderFooter();
+    expect(flag()).toHaveAttribute("src", gbFlag);
+
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr" }));
+    });
+    expect(flag()).toHaveAttribute("src", gbFlag);
+  });
+
+  it("Arabic: no flag — none is known for it — beside its own name; back to English, the flag returns", () => {
+    renderFooter();
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "العربية", code: "ar", dir: "rtl" }));
+    });
+
+    expect(flag()).toBeNull();
+    expect(languageButton().querySelectorAll("img")).toHaveLength(1); // the chevron only
+    expect(languageButton()).toHaveTextContent("العربية");
+
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr" }));
+    });
+    expect(flag()).toHaveAttribute("src", gbFlag);
   });
 });

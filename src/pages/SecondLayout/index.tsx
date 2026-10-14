@@ -310,7 +310,10 @@ export default function SecondLayout() {
                     src={iconForPipeline(pipeline)}
                     className="h-[128px] w-[128px]"
                   />
-                  <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple">
+                  {/* /payment's tile label: the tenant's Arabic alias wraps,
+                      and its lines touched at the frame's 44 — Arabic leads
+                      64 (walk 2026-10-14). */}
+                  <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple [&:lang(ar)]:leading-[64px]">
                     {pipelineName(pipeline)}
                   </span>
                   {closed && (

@@ -37,9 +37,7 @@ import { selectMaxCartQuantity } from "@cx-sdk/ordering/state/cart.slice";
 import { useSelector } from "react-redux";
 import {
   selectDiscountOnAddon,
-  selectIntensionalQuickCartClose,
   setShowErrorModalGlobal,
-  toggleQuickCart,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 // Side-effect import kept for parity: the module registers dayjs plugins
 // (isBetween, customParseFormat) at import time; the hook itself is unused
@@ -55,13 +53,6 @@ import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import i18n from "../../i18n";
 import { useStore } from "react-redux";
 import {
-  hasItemRecommendations,
-  type EntityMap,
-  type ModifierGroupMap,
-  type OutOfStockMap,
-} from "@cx-sdk/catalog/recommendation/recommendationUtils";
-import { selectMenuSellableEntityMap } from "./useCartUpsell";
-import {
   buildCartItemContent,
   buildGetItemRdxContent,
   cartIDGenerator,
@@ -71,11 +62,9 @@ import {
   generateUniqueId,
   getAllCustomizationList,
   isAnyLoyaltyItemPresentInCart as isAnyLoyaltyItemPresentInCartEngine,
-  isCustomizedAddType,
   isDpMaxQuantityValid as isDpMaxQuantityValidEngine,
   planCartSnapshotRestore,
   redeemGetItem as redeemGetItemEngine,
-  resolveAddItemPresentation,
   resolveCartIdKey,
   withIncreasedQuantity,
   type AddItemToCartOptions,
@@ -94,14 +83,11 @@ export type { AddItemToCartOptions };
 export type TbAddItemToCartOptions = AddItemToCartOptions & { stamped?: boolean };
 
 /**
- * What this hook reads out of the untyped store on demand: the recommendation
- * lookup (the menu's maps through selectMenuSellableEntityMap), the live cart
+ * What this hook reads out of the untyped store on demand: the live cart
  * (the DP check) and the product-added modal's detour (the parking guard).
  */
 interface RecommendationLookupState {
-  menu?: { entityMap?: EntityMap; modifiersMap?: ModifierGroupMap };
   menuSelections?: {
-    outOfStockItems?: OutOfStockMap;
     addToCartModal?: { isOpen?: boolean };
     recommendationDetour?: boolean;
   };
@@ -111,18 +97,15 @@ interface RecommendationLookupState {
 function useCartHook() {
   const dispatch = useDispatch();
   const cart = useSelector(selectCart);
-  const internsionalQuickCartOpen = useSelector(
-    selectIntensionalQuickCartClose,
-  );
   useSelector(cartQuantity);
   useSelector(selectMaxCartQuantity);
   const discountOnAddonRdx = useSelector(selectDiscountOnAddon);
   // const { checkCartItemsAsPerSchedulers } = useSchedulerConverter();
   const currentSessionRdx = useSelector(selectCurrentSession);
   // Store handle, not a subscription. This hook is instantiated by dozens of
-  // components; subscribing it to the entityMap / out-of-stock map would
-  // re-render every item card on each out-of-stock poll. The recommendation
-  // check only needs a value at add time, so it reads state on demand.
+  // components; subscribing it to the cart or the modal's detour would
+  // re-render every item card on each change. The add-time checks only need
+  // a value at add time, so they read state on demand.
   const store = useStore();
 
   const {
@@ -192,66 +175,43 @@ function useCartHook() {
       cart_quantity: itemContent?.quantity,
     });
 
-    const isCustomizedAdd = isCustomizedAddType(itemType);
-
-    // A plain add normally just reveals the quick cart. It now also earns the
-    // confirmation modal — but only when the item actually has recommendations
-    // to show, so the fastest add path on the kiosk stays unblocked otherwise.
-    // Short-circuits on the first resolvable id and allocates nothing when the
-    // item has no `recommendedItems` at all, which is the common case.
-    // The menu-sellable map is the one the strip resolves over, so a dead pack
-    // never opens the modal onto an empty strip (memoized per menu load).
-    let showRecommendationModal = false;
-    if (!isCustomizedAdd && !options?.suppressAddedModal) {
-      const state = store.getState() as RecommendationLookupState;
-      showRecommendationModal = hasItemRecommendations(
-        selectMenuSellableEntityMap(state),
-        state?.menuSelections?.outOfStockItems,
-        itemContent,
-      );
-    }
-
-    const { shouldOpenQuickCart, shouldOpenAddedModal } =
-      resolveAddItemPresentation({
-        isCustomizedAdd,
-        suppressAddedModal: options?.suppressAddedModal,
-        showRecommendationModal,
-        intentionalQuickCartClose: internsionalQuickCartOpen,
-      });
-
-    if (shouldOpenQuickCart) {
-      dispatch(toggleQuickCart(true));
-    }
-
-    if (shouldOpenAddedModal) {
-      /*
-        Did this add come from a "You Might Like" tap that detoured through
-        /customization? If so the modal still opens (customized adds have always
-        confirmed), but WITHOUT its own strip — otherwise the customer can hop
-        suggestion to suggestion forever.
-
-        Read through the store handle, not a selector: this hook is instantiated
-        by dozens of components and a subscription here re-renders every one of
-        them. Consumed immediately, so it can never affect a later, unrelated
-        add.
-      */
-      const cameFromRecommendation = !!(store.getState() as any)?.menuSelections
-        ?.recommendationDetour;
-      if (cameFromRecommendation) {
-        dispatch(setRecommendationDetour(false));
-      }
-
-      dispatch(
-        mutateAddToCartModal({
-          isOpen: true,
-          item: cameFromRecommendation
-            ? { ...itemContent, suppressRecommendations: true }
-            : itemContent,
-        }),
-      );
-    }
+    // User 2026-10-14 ("item added modal should also come when normal item
+    // without customization is added"): EVERY add confirms — a plain one too —
+    // unless its caller is a surface that confirms by itself and says so
+    // (suppressAddedModal: the bag, the buy stage, the PDP and rewards rails,
+    // the modal's own picks). posistKiosk and the SDK's
+    // resolveAddItemPresentation confirm a plain add only when it has
+    // recommendations, else slide open a quick cart TB does not have. The strip
+    // stays the modal's business: no recommendations → title, Total, GOT IT.
+    if (!options?.suppressAddedModal) openAddedModal(itemContent);
 
     return true;
+  };
+
+  /**
+   * The product-added modal on `item` — addItemToCart's and the menu's +1 on
+   * a row already in the bag (useAddEntityToCart).
+   *
+   * Did the add come from a "You Might Like" tap that detoured through a
+   * chooser? Then the modal opens WITHOUT its own strip — otherwise the
+   * customer can hop suggestion to suggestion forever. Read through the store
+   * handle, not a selector: this hook is instantiated by dozens of components
+   * and a subscription here re-renders every one of them. Consumed
+   * immediately, so it can never affect a later, unrelated add.
+   */
+  const openAddedModal = (item: object) => {
+    const cameFromRecommendation = !!(store.getState() as RecommendationLookupState)
+      ?.menuSelections?.recommendationDetour;
+    if (cameFromRecommendation) {
+      dispatch(setRecommendationDetour(false));
+    }
+
+    dispatch(
+      mutateAddToCartModal({
+        isOpen: true,
+        item: cameFromRecommendation ? { ...item, suppressRecommendations: true } : item,
+      }),
+    );
   };
 
   //update cart
@@ -515,6 +475,7 @@ function useCartHook() {
 
   return {
     addItemToCart,
+    openAddedModal,
     IncreaseItemQuantityById,
     decreaseItemQuantityById,
     doesItemExistInCart,

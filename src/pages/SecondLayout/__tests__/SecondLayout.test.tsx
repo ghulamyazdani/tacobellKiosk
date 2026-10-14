@@ -295,6 +295,22 @@ describe("SecondLayout — server-driven ticker copy and pipeline names (post-P9
     expect(screen.getByTestId("pipeline-p-take")).toHaveTextContent(iso("Take Out"), { normalizeWhitespace: false });
   });
 
+  // The tenant's alias wraps in the 336 px label box; at the frame's 44 its
+  // Arabic lines touched (/payment's tiles, walk 2026-10-14). Leading 64 in
+  // Arabic only; a single line sits centred either way.
+  it("the card label is the frame's Cm Bd 48/44, and an Arabic one leads 64", () => {
+    renderSecond();
+
+    for (const id of ["pipeline-p-dine", "pipeline-p-take"]) {
+      expect(screen.getByTestId(id).querySelector("span")).toHaveClass(
+        "tb-compressed",
+        "text-[48px]",
+        "leading-[44px]",
+        "[&:lang(ar)]:leading-[64px]"
+      );
+    }
+  });
+
   it("28: switching back to English restores the primary names, unisolated", async () => {
     await arabicSession();
     renderSecond();
