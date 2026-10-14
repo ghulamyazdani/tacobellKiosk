@@ -114,15 +114,23 @@ const maskExceptLast = (input: string) =>
  * No Figma frame exists for this screen — TB design language (KioskStage
  * absolute px, tb-* tokens, FooterBar); flagged for client sign-off.
  *
- * ADA (P9c, design-language, flagged): the same controls at the same sizes,
- * re-stacked into the 1122px reach zone (1066 above the footer). The bell is
- * dropped (the brand zone carries the brand) and the gaps shrink to 16–20px:
- * BACK 40–104 · title 120–260 (2 lines) · subtitle 260–296 · input 316–416 ·
- * numpad 436–856 · continue 876–980 · skip 996–1048 · footer 1066. Nothing
+ * LAYOUT (user 2026-10-14: "the continue and back button should be at the
+ * bottom just like table screen and also content should be at the middle").
+ * CONTINUE and BACK are /tent's CONFIRM / NO THANKS pair — white filled and
+ * outline, 1032×84, 24px apart — on the footer (/tent has none): 24px above
+ * its top, so CONTINUE 1648–1732 · BACK 1756–1840 · footer 1864. Bottom-
+ * anchored, so the ADA zone (bottom-aligned with the stage) keeps the same
+ * stage px. The bell stays at /tent's 135 (normal only). Title, subtitle,
+ * entry row, keypad and SKIP are one flex column centred between the top
+ * and CONTINUE's top minus 24px (0–1624): any title length stays centred.
+ *
+ * ADA (P9c, design-language, flagged): the same controls at the same sizes in
+ * the 1122px reach zone. The bell is dropped (the brand zone carries the
+ * brand) and the block's gaps shrink to 16–20px (804px tall) to centre in
+ * 0–826 above CONTINUE (850–934) · BACK 958–1042 · footer 1066. Nothing
  * scrolls — the keypad and both CTAs stay fully visible.
- * ponytail: tops are tuned to the Figma zone — skip clears the footer only
- * while ADA_BRAND_ZONE_HEIGHT ≤ 816; recalibrating past that needs these
- * re-derived (or a flex column).
+ * ponytail: the ADA block fits only while ADA_BRAND_ZONE_HEIGHT ≤ 820
+ * (826 − 804 spare); past that, drop SKIP's gap or move SKIP into the pair.
  */
 export default function CustomerPhone() {
   const enter = usePageEnter();
@@ -410,8 +418,8 @@ export default function CustomerPhone() {
   const dialCode = selectedCountryCode?.dialCode ?? "";
 
   return (
-    // Motion §2.7: the copy, the entry row, the keypad and the two actions
-    // arrive (.tb-enter); BACK, the bell, the footer and overlays stay.
+    // Motion §2.7: the copy, the entry row, the keypad and SKIP arrive
+    // (.tb-enter); the bell, CONTINUE / BACK, the footer and overlays stay.
     <div
       data-testid="phone-screen"
       data-enter={enter}
@@ -440,124 +448,126 @@ export default function CustomerPhone() {
         src={plasticOverlay}
         className="pointer-events-none absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
       />
-      <button
-        type="button"
-        data-testid="phone-back"
-        onClick={handleBack}
-        className="tb-display absolute left-[40px] top-[40px] min-h-[64px] min-w-[120px] rounded-[8px] border-2 border-tb-surface px-[32px] py-[18px] text-[20px] leading-[20px] text-tb-surface"
-      >
-        {t("phone.back")}
-      </button>
-
       {!ada && (
         <img
           alt="Taco Bell"
           src={tbBell}
-          className="absolute left-1/2 top-[190px] h-[89px] w-[100px] -translate-x-1/2"
+          className="absolute left-1/2 top-[135px] h-[89px] w-[100px] -translate-x-1/2"
         />
       )}
 
-      <h1
-        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[330px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
-      >
-        {t("phone.title")}
-      </h1>
-      <p
-        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[260px]" : "top-[470px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
-      >
-        {isLoyaltyOnSetting ? t("phone.loyaltySubtitle") : t("phone.subtitle")}
-      </p>
-
-      {/* Country pill (opens the picker, UB5) + masked entry field. */}
+      {/* The content block, centred above CONTINUE (see LAYOUT). */}
       <div
-        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[316px]" : "top-[580px]"} flex w-[844px] -translate-x-1/2 items-center gap-[16px]`}
+        data-testid="phone-content"
+        className="absolute inset-x-0 top-0 bottom-[296px] flex flex-col items-center justify-center"
       >
-        <button
-          type="button"
-          data-testid="phone-country-code"
-          aria-haspopup="dialog"
-          aria-label={t("phone.changeCountry", { dialCode })}
-          onClick={openCountryPicker}
-          className="flex h-[100px] min-w-[140px] items-center justify-center gap-[8px] rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[20px] text-[32px] font-medium text-black"
+        {/* Two lines tall at least: under a one-line title (Arabic) the
+            subtitle keeps its place, clear of the title's descenders. */}
+        <h1 className="tb-enter [--i:0] tb-display min-h-[140px] w-[880px] text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface">
+          {t("phone.title")}
+        </h1>
+        <p className="tb-enter [--i:1] w-[760px] text-center text-[28px] leading-[36px] text-tb-cream">
+          {isLoyaltyOnSetting ? t("phone.loyaltySubtitle") : t("phone.subtitle")}
+        </p>
+
+        {/* Country pill (opens the picker, UB5) + masked entry field. */}
+        <div
+          className={`tb-enter [--i:2] ${ada ? "mt-[20px]" : "mt-[74px]"} flex w-[844px] items-center gap-[16px]`}
         >
-          {selectedCountryCode?.code && (
-            <CountryFlag code={selectedCountryCode.code} className="h-[60px] w-[60px]" />
-          )}
-          <span dir="ltr">{dialCode}</span>
-          {/* chevron-up.svg is white (the footer's) — painted purple through
-              a mask and turned 180° to point down. */}
-          <span
-            aria-hidden="true"
-            className="h-[24px] w-[24px] shrink-0 rotate-180 bg-tb-purple"
-            style={{
-              WebkitMaskImage: `url("${chevronUp}")`,
-              maskImage: `url("${chevronUp}")`,
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-              // The span IS the icon box (and "contain" is the bell
-              // masks' signature in the visual checks).
-              WebkitMaskSize: "100% 100%",
-              maskSize: "100% 100%",
-            }}
-          />
-        </button>
-        <div className="relative flex h-[100px] flex-1 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]">
-          <span
-            data-testid="phone-number-display"
-            dir="ltr"
-            className="text-[32px] font-medium tracking-[6px] text-black"
+          <button
+            type="button"
+            data-testid="phone-country-code"
+            aria-haspopup="dialog"
+            aria-label={t("phone.changeCountry", { dialCode })}
+            onClick={openCountryPicker}
+            className="flex h-[100px] min-w-[140px] items-center justify-center gap-[8px] rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[20px] text-[32px] font-medium text-black"
           >
-            {displayValue || (
-              <span className="tracking-normal text-black/55">
-                {t("phone.placeholder")}
-              </span>
+            {selectedCountryCode?.code && (
+              <CountryFlag code={selectedCountryCode.code} className="h-[60px] w-[60px]" />
             )}
-          </span>
-          {inputValue.length > 0 && (
-            <button
-              type="button"
-              data-testid="phone-visibility"
-              aria-pressed={isPhoneVisible}
-              onClick={() => setIsPhoneVisible((v) => !v)}
-              className="absolute right-[16px] min-h-[44px] min-w-[88px] rounded-[8px] px-[12px] py-[10px] text-[20px] font-bold uppercase text-tb-purple-vibrant"
+            <span dir="ltr">{dialCode}</span>
+            {/* chevron-up.svg is white (the footer's) — painted purple through
+                a mask and turned 180° to point down. */}
+            <span
+              aria-hidden="true"
+              className="h-[24px] w-[24px] shrink-0 rotate-180 bg-tb-purple"
+              style={{
+                WebkitMaskImage: `url("${chevronUp}")`,
+                maskImage: `url("${chevronUp}")`,
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                // The span IS the icon box (and "contain" is the bell
+                // masks' signature in the visual checks).
+                WebkitMaskSize: "100% 100%",
+                maskSize: "100% 100%",
+              }}
+            />
+          </button>
+          <div className="relative flex h-[100px] flex-1 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]">
+            <span
+              data-testid="phone-number-display"
+              dir="ltr"
+              className="text-[32px] font-medium tracking-[6px] text-black"
             >
-              {isPhoneVisible ? t("phone.hide") : t("phone.show")}
-            </button>
-          )}
+              {displayValue || (
+                <span className="tracking-normal text-black/55">
+                  {t("phone.placeholder")}
+                </span>
+              )}
+            </span>
+            {inputValue.length > 0 && (
+              <button
+                type="button"
+                data-testid="phone-visibility"
+                aria-pressed={isPhoneVisible}
+                onClick={() => setIsPhoneVisible((v) => !v)}
+                className="absolute right-[16px] min-h-[44px] min-w-[88px] rounded-[8px] px-[12px] py-[10px] text-[20px] font-bold uppercase text-tb-purple-vibrant"
+              >
+                {isPhoneVisible ? t("phone.hide") : t("phone.show")}
+              </button>
+            )}
+          </div>
         </div>
+
+        <div className={`tb-enter [--i:3] ${ada ? "mt-[20px]" : "mt-[60px]"}`}>
+          <KioskNumpad
+            value={inputValue}
+            onChange={handleDigitsChange}
+            maxLength={maxDigits}
+            noLeadingZero
+          />
+        </div>
+
+        {canSkip && (
+          <button
+            type="button"
+            data-testid="phone-skip"
+            onClick={skipPhoneAndName}
+            className={`tb-enter [--i:4] ${ada ? "mt-[16px]" : "mt-[36px]"} min-h-[44px] px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline`}
+          >
+            {t("phone.skip")}
+          </button>
+        )}
       </div>
 
-      <div
-        className={`tb-enter [--i:3] absolute left-1/2 ${ada ? "top-[436px]" : "top-[740px]"} -translate-x-1/2`}
-      >
-        <KioskNumpad
-          value={inputValue}
-          onChange={handleDigitsChange}
-          maxLength={maxDigits}
-          noLeadingZero
-        />
-      </div>
-
+      {/* /tent's CONFIRM / NO THANKS pair, on the footer (see LAYOUT). */}
       <button
         type="button"
         data-testid="phone-continue"
         onClick={handleContinue}
         disabled={isLoyaltyEventLoading}
-        className={`tb-enter [--i:4] tb-display absolute left-1/2 ${ada ? "top-[876px]" : "top-[1260px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
+        className="tb-display absolute bottom-[188px] left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)] disabled:opacity-60"
       >
         {isLoyaltyEventLoading ? t("phone.checking") : t("phone.continue")}
       </button>
-
-      {canSkip && (
-        <button
-          type="button"
-          data-testid="phone-skip"
-          onClick={skipPhoneAndName}
-          className={`tb-enter [--i:5] absolute left-1/2 ${ada ? "top-[996px]" : "top-[1400px]"} min-h-[44px] -translate-x-1/2 px-[24px] py-[12px] text-[24px] leading-[28px] text-tb-cream underline`}
-        >
-          {t("phone.skip")}
-        </button>
-      )}
+      <button
+        type="button"
+        data-testid="phone-back"
+        onClick={handleBack}
+        className="tb-display absolute bottom-[80px] left-[24px] h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface"
+      >
+        {t("phone.back")}
+      </button>
 
       <FooterBar
         onCancelOrder={() =>

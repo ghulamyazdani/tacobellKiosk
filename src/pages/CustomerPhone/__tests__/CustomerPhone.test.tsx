@@ -1,9 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
-import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setKioskSettings,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
@@ -23,7 +26,11 @@ import i18n from "../../../i18n";
 
 const mockNavigate = vi.fn();
 const mockExecuteLoyalty = vi.fn();
-const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+const { mockCapture, loyaltyHook } = vi.hoisted(() => ({
+  mockCapture: vi.fn(),
+  /** useLoyalty's isLoyaltyEventLoading (a lookup in flight). */
+  loyaltyHook: { loading: false },
+}));
 
 vi.mock("../../../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/analytics")>()),
@@ -38,7 +45,7 @@ vi.mock("react-router-dom", async (importOriginal) => ({
 vi.mock("../../../hooks/loyalty/useLoyalty", () => ({
   default: () => ({
     executeLoyalty: (...args: unknown[]) => mockExecuteLoyalty(...args),
-    isLoyaltyEventLoading: false,
+    isLoyaltyEventLoading: loyaltyHook.loading,
   }),
 }));
 
@@ -431,16 +438,110 @@ describe("CustomerPhone — the route entrance (lane motion)", () => {
     expect(root()).toHaveAttribute("data-enter", "back");
   });
 
-  it("tb-enter [--i] on the title, copy, entry row, keypad, CONTINUE and SKIP (0–5) — never BACK or the footer", () => {
+  it("tb-enter [--i] on the title, copy, entry row, keypad and SKIP (0–4) — never CONTINUE / BACK (chrome, as /tent's pair) or the footer", () => {
     mountPushed();
     const blocks = [...root().querySelectorAll(".tb-enter")];
-    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3", "4", "5"]);
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3", "4"]);
+    expect(blocks[0]).toBe(screen.getByRole("heading", { level: 1 }));
     expect(blocks[2]).toContainElement(screen.getByTestId("phone-number-display"));
     expect(blocks[3]).toContainElement(screen.getByTestId("kiosk-numpad"));
-    expect(blocks[4]).toBe(screen.getByTestId("phone-continue"));
-    expect(blocks[5]).toBe(screen.getByTestId("phone-skip"));
-    for (const id of ["phone-back", "footer-cancel"]) {
+    expect(blocks[4]).toBe(screen.getByTestId("phone-skip"));
+    for (const id of ["phone-continue", "phone-back", "footer-cancel"]) {
       expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
     }
+  });
+});
+
+/*
+  Layout (user 2026-10-14: "the continue and back button should be at the
+  bottom just like table screen and also content should be at the middle").
+  CONTINUE / BACK are /tent's CONFIRM / NO THANKS classes, bottom-anchored on
+  /phone's footer (/tent has none): CONTINUE 1648, BACK 1756, footer 1864 —
+  the same stage px in the ADA zone, which is bottom-aligned with the stage.
+  The rest is one flex column centred above CONTINUE (geometry measured in
+  tests/e2e/phoneLayout.spec.ts).
+*/
+describe("CustomerPhone — the bottom pair and the centred block (user 2026-10-14)", () => {
+  /** tent-confirm / tent-skip's classes, minus their slot. */
+  const CONFIRM_LOOK = "tb-display absolute left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)]";
+  const SKIP_LOOK = "tb-display absolute left-[24px] h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface";
+  const classes = (id: string) => screen.getByTestId(id).className.split(/\s+/);
+  const bell = () => screen.queryByRole("img", { name: "Taco Bell" });
+  const block = () => screen.getByTestId("phone-content");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setKioskSettings({ crm_phone_mandatory: false, crm_name_mandatory: false }));
+  });
+
+  afterEach(() => {
+    loyaltyHook.loading = false;
+  });
+
+  for (const ada of [false, true]) {
+    const mode = ada ? "ADA" : "normal";
+
+    it(`${mode}: CONTINUE is the table screen's white CONFIRM and BACK its outline NO THANKS, bottom-anchored on the footer — one BACK, none at the top`, () => {
+      if (ada) store.dispatch(toggleAccessibilityMode());
+      mount();
+
+      expect(classes("phone-continue")).toEqual(expect.arrayContaining([...CONFIRM_LOOK.split(" "), "bottom-[188px]"]));
+      expect(classes("phone-back")).toEqual(expect.arrayContaining([...SKIP_LOOK.split(" "), "bottom-[80px]"]));
+      for (const id of ["phone-continue", "phone-back"]) {
+        expect(classes(id).filter((c) => /^(top|bottom)-/.test(c)), id).toHaveLength(1);
+        expect(screen.getByTestId(id).className, id).not.toMatch(/bg-tb-pink|w-\[600px\]|top-\[40px\]|left-\[40px\]/);
+      }
+      expect(screen.getAllByRole("button", { name: i18n.t("phone.back") })).toHaveLength(1);
+      // Paint order: the pair after the block, the footer after the pair.
+      const root = screen.getByTestId("phone-screen");
+      const order = [...root.children];
+      expect(order.indexOf(screen.getByTestId("phone-back"))).toBe(
+        order.indexOf(screen.getByTestId("phone-continue")) + 1
+      );
+      expect(order.indexOf(screen.getByTestId("phone-continue"))).toBe(order.indexOf(block()) + 1);
+    });
+
+    it(`${mode}: title, subtitle, entry row, keypad and SKIP are one flex column centred above CONTINUE; the bell ${ada ? "is dropped" : "stays at /tent's 135, outside it"}`, () => {
+      if (ada) store.dispatch(toggleAccessibilityMode());
+      mount();
+
+      expect(block().className.split(/\s+/)).toEqual(
+        expect.arrayContaining(["absolute", "inset-x-0", "top-0", "bottom-[296px]", "flex", "flex-col", "items-center", "justify-center"])
+      );
+      const parts = [...block().children];
+      expect(parts).toHaveLength(5);
+      expect(parts[0]).toBe(screen.getByRole("heading", { level: 1 }));
+      expect(parts[0]).toHaveClass("min-h-[140px]");
+      expect(parts[1]).toHaveTextContent(i18n.t("phone.subtitle"));
+      expect(parts[2]).toContainElement(screen.getByTestId("phone-country-code"));
+      expect(parts[3]).toContainElement(screen.getByTestId("kiosk-numpad"));
+      expect(parts[4]).toBe(screen.getByTestId("phone-skip"));
+      // In the flow: no part is positioned on its own any more.
+      for (const part of parts) {
+        expect(part.className).not.toMatch(/\babsolute\b|\btop-\[|-translate-x-1\/2/);
+      }
+      // The gaps: /phone's old rhythm (ADA: 16–20 px).
+      const gaps = parts.slice(2).map((part) => part.className.match(/\bmt-\[(\d+)px\]/)?.[1]);
+      expect(gaps).toEqual(ada ? ["20", "20", "16"] : ["74", "60", "36"]);
+      for (const id of ["phone-continue", "phone-back"]) {
+        expect(block()).not.toContainElement(screen.getByTestId(id));
+      }
+      if (ada) {
+        expect(bell()).toBeNull();
+      } else {
+        expect(bell()).toHaveClass("top-[135px]");
+        expect(block()).not.toContainElement(bell());
+      }
+    });
+  }
+
+  it("a lookup in flight: CONTINUE is disabled, says so, and wears the house dim on white", () => {
+    loyaltyHook.loading = true;
+    mount();
+
+    const button = screen.getByTestId("phone-continue");
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent(i18n.t("phone.checking"));
+    expect(button).toHaveClass("bg-tb-surface", "disabled:opacity-60");
   });
 });
