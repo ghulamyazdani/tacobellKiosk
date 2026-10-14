@@ -210,7 +210,7 @@ The kiosk computes the saving as `comparePrice − price`, so this example shows
 
 **Kiosk behaviour.**
 - The badge shows only when `comparePrice − price ≥ 0.01`. The kiosk uses the live price after dynamic pricing, so the figure stays honest when dynamic pricing changes `price`.
-- The saving is rounded to 2 decimal places and shown with the deployment's currency symbol.
+- The saving is rounded to 2 decimal places and printed the way posistKiosk prints prices (`moduloCalcaledValue`, since 2026-10-14): a whole amount whole ("SAVE £3"), a fraction to 2 decimals ("SAVE £2.99"), with the deployment's currency symbol.
 - If `comparePrice` is absent, non-numeric or not above `price`, there is no badge.
 - There is no new request: the field arrives with getMenu, so it appears after the next `MENU_ID` bump (C3).
 
