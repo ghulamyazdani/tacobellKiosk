@@ -130,6 +130,22 @@ describe("/customerName order-error panel (P9b R4)", () => {
     expect(placeholder).toHaveClass("text-black/55");
     expect(placeholder).not.toHaveClass("text-black/35");
   });
+
+  it("the start screen's backdrop: the texture tiles and the 50 % plastic sheen, stage-registered (user 2026-10-14)", () => {
+    pay.failed = false;
+    mount();
+
+    const backdrop = screen.getByTestId("customer-name-backdrop");
+    expect(backdrop.style.backgroundImage).toContain("bg-texture");
+    expect(backdrop.style.backgroundSize).toBe("240px 240px");
+    expect(backdrop).toHaveClass("bottom-0", "h-[1920px]", "w-[1080px]");
+    const sheen = screen.getByTestId("customer-name-sheen");
+    expect(sheen.getAttribute("src")).toContain("plastic-overlay");
+    expect(sheen).toHaveClass("opacity-50", "pointer-events-none", "bottom-0", "h-[1920px]");
+    const root = screen.getByTestId("customer-name-screen");
+    expect(root.children[0]).toBe(backdrop);
+    expect(root.children[1]).toBe(sheen);
+  });
 });
 
 /*
