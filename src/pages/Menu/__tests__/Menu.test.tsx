@@ -1563,6 +1563,16 @@ describe("Menu — walk-oos 2: an item no guest can complete reads Unavailable",
       { id: "soda-r", name: "Regular", price: 2, isActive: true, modifiers: [] },
     ],
   };
+  // One size, and its own required drink is out: no size left to complete.
+  const NACHOS = {
+    id: "e-nachos",
+    name: "Nachos",
+    price: 4,
+    hasVariant: true,
+    isVariant: false,
+    outOfStock: false,
+    variants: [{ id: "nachos-r", name: "Regular", price: 4, isActive: true, modifiers: ["drink"] }],
+  };
 
   beforeEach(() => {
     mockFetchMenu.mockReset();
@@ -1572,9 +1582,24 @@ describe("Menu — walk-oos 2: an item no guest can complete reads Unavailable",
     store.dispatch(setModifiersMap({ modifiersMap: MODS }));
     store.dispatch(
       setMenuData({
-        menu: { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [MEAL, BURRITO, SODA] }] }] },
+        menu: { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [MEAL, BURRITO, SODA, NACHOS] }] }] },
       })
     );
+  });
+
+  it("a sized item with no size left to complete is the sold-out card — no '+', nothing to tap; PAY's map brings a drink back and it is live", () => {
+    renderMenu();
+
+    const nachos = screen.getByTestId("item-e-nachos");
+    expect(nachos).toHaveAttribute("aria-disabled", "true");
+    expect(nachos).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(within(nachos).queryAllByRole("button")).toHaveLength(0);
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({ cola: { type: "combo", inStock: true } }));
+    });
+    expect(screen.getByTestId("item-e-nachos")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("quick-add-e-nachos")).toBeInTheDocument();
   });
 
   it("the meal (its required drink: every option out) is the sold-out card — aria-disabled, Unavailable, nothing to tap; the burrito (one sauce left) is live", () => {

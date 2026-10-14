@@ -296,4 +296,28 @@ describe("hasDeadRequiredGroup / markUncompletable", () => {
     expect(markUncompletable(flagged, MODS, {}, false)).toBe(flagged);
     expect(markUncompletable({ ...large, isVariant: true }, MODS, {}, false)).toMatchObject({ outOfStock: true });
   });
+
+  it("markUncompletable: no size on offer left to complete — one dead, the rest dead or sold out — and the item reads out of stock too", () => {
+    const regular = { id: "s-r", name: "Regular", price: 4, isActive: true, modifiers: ["sauce"] };
+    const large = { id: "s-l", name: "Large", price: 6, isActive: true, modifiers: ["sauce"] };
+    const nachos = { id: "nachos", name: "Nachos", hasVariant: true, isVariant: false, modifiers: [], variants: [regular] };
+    const deadSize = { ...regular, outOfStock: true };
+
+    // A single size, dead: nothing left to open.
+    expect(markUncompletable(nachos, MODS, {}, false)).toEqual({ ...nachos, variants: [deadSize], outOfStock: true });
+    // Every size dead; one dead beside one sold out; one dead beside a size that is not on offer.
+    const soldOut = { ...large, modifiers: ["sauce_live"], outOfStock: true };
+    const off = { ...large, modifiers: ["sauce_live"], isActive: false };
+    for (const sizes of [[regular, large], [regular, soldOut], [regular, off]]) {
+      expect(markUncompletable({ ...nachos, variants: sizes }, MODS, {}, false)).toMatchObject({ outOfStock: true });
+    }
+    // PAY's map brings the dip back: the size and the item live again — the same object.
+    expect(markUncompletable(nachos, MODS, { b: { type: "addon", inStock: true } }, false)).toBe(nachos);
+    // Sold out only, no size dead: left as it is (Select a Size shows them greyed — f7c7dfb).
+    const allSoldOut = { ...nachos, variants: [soldOut, { ...soldOut, id: "s-x" }] };
+    expect(markUncompletable(allSoldOut, MODS, {}, false)).toBe(allSoldOut);
+    // A dead size whose siblings are none on offer: no size to judge, the item stays.
+    const phantom = { ...nachos, variants: [{ ...regular, isActive: false }] };
+    expect((markUncompletable(phantom, MODS, {}, false) as { outOfStock?: unknown }).outOfStock).toBeUndefined();
+  });
 });
