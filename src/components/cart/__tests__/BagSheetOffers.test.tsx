@@ -301,8 +301,10 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
 
     const applied = screen.getByTestId("bag-rewards-applied");
     expect(applied).toHaveTextContent("£2 off your order");
-    expect(applied).toHaveTextContent("Save £2.00");
-    expect(applied).toHaveTextContent("−£2.00"); // U+2212 minus (brief literal)
+    // The reward's own figures read as posistKiosk's SavingsLine prints them
+    // (moduloCalcaledValue); the bill below keeps two decimals.
+    expect(applied).toHaveTextContent(/Save £2(?![\d.])/);
+    expect(applied).toHaveTextContent(/−£2(?![\d.])/); // U+2212 minus (brief literal)
     expect(screen.getByTestId("bag-rewards-remove")).toBeInTheDocument();
     expect(screen.queryByTestId("bag-rewards-entry")).not.toBeInTheDocument();
 
@@ -386,7 +388,7 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.getByTestId("bag-discounts")).toHaveTextContent("−£17.00");
     expect(screen.getByTestId("bag-total")).toHaveTextContent("£8.60");
     expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent(
-      "Save £17.00"
+      /Save £17(?![\d.])/
     );
   });
 
@@ -424,13 +426,13 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     store.dispatch(setFilteredOffers([SALAD_OR_SAUCE]));
     store.dispatch(applyOffer({ offer: SALAD_OR_SAUCE }));
     renderSheet();
-    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("Save £2.00");
+    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent(/Save £2(?![\d.])/);
 
     await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
     const applied = await screen.findByTestId("offer-row-body-offer-salad-or-sauce");
     expect(applied).toHaveTextContent("Applied");
-    expect(applied).toHaveTextContent("Save £2.00");
-    expect(applied).not.toHaveTextContent("Save up to £17.00");
+    expect(applied).toHaveTextContent(/Save £2(?![\d.])/);
+    expect(applied).not.toHaveTextContent("Save up to");
   });
 
   it("REVALIDATION: removing the BOGO's buy-side row auto-removes the offer and opens the removal notice; GOT IT closes it", async () => {
@@ -461,7 +463,8 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(notice).toHaveTextContent(
       "Add the qualifying items to unlock this reward"
     );
-    expect(notice).toHaveTextContent("Your total is now £6.00"); // 2 × £3 left
+    // 2 × £3 left — posistKiosk's OfferRemovalModal prints it whole.
+    expect(notice).toHaveTextContent(/Your total is now £6(?![\d.])/);
 
     await userEvent.click(screen.getByTestId("offer-removal-gotit"));
     expect(cartState().offerRemovalModal.isOpen).toBe(false);

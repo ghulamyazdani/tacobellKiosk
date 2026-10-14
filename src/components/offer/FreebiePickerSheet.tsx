@@ -353,7 +353,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       return t("offers.percentOff", { value: entry?.value });
     }
     return t("offers.amountOff", {
-      amount: `${currency}${Number(entry?.value ?? 0).toFixed(2)}`,
+      amount: `${currency}${formatPrice(entry?.value)}`,
     });
   };
 

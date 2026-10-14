@@ -68,6 +68,7 @@ import useCartBill, {
   billTotal,
   shouldDropAppliedOffer,
 } from "../../hooks/cartHooks/useCartBill";
+import { formatPrice } from "../../utils/price";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
 import useAppSettings from "../../hooks/utils/useAppSettings";
@@ -1252,7 +1253,7 @@ export default function BagSheet({
                               }`}
                             >
                               {t("offers.save", {
-                                amount: `${currency}${offerDiscount.toFixed(2)}`,
+                                amount: `${currency}${formatPrice(offerDiscount)}`,
                               })}
                             </p>
                           )}
@@ -1268,9 +1269,12 @@ export default function BagSheet({
                             {t("offers.remove")}
                           </button>
                         </div>
+                        {/* The reward's own figures read as posistKiosk's
+                            SavingsLine prints them (moduloCalcaledValue); the
+                            bill below keeps two decimals (PriceDetails). */}
                         <p className="shrink-0 text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
                           −{currency}
-                          {offerDiscount.toFixed(2)}
+                          {formatPrice(offerDiscount)}
                         </p>
                         <button
                           type="button"

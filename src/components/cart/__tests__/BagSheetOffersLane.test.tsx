@@ -317,7 +317,7 @@ describe("BagSheet — applied-row pop (AppliedRowPop + the spent key)", () => {
     view.rerender(<BagUi open={false} />);
     view.rerender(<BagUi open />);
 
-    expect(saveLine()).toHaveTextContent("Save £1.00");
+    expect(saveLine()).toHaveTextContent(/^Save £1$/);
     expect(savePop()).toBeNull();
     expect(pulse()).toBeNull();
   });
@@ -705,9 +705,9 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
     render(<BagUi />);
 
     const applied = screen.getByTestId("bag-rewards-applied");
-    expect(saveLine()).toHaveTextContent("Save £2.00");
-    expect(applied).toHaveTextContent("−£2.00");
-    expect(applied).not.toHaveTextContent("19.00");
+    expect(saveLine()).toHaveTextContent(/^Save £2$/);
+    expect(applied).toHaveTextContent(/−£2(?![\d.])/);
+    expect(applied).not.toHaveTextContent(/£19(?!\d)/);
     // Bill: 8.60 + 17.00 = 25.60; discounts 17.00 (reward) + 2.00 (offer).
     expect(screen.getByTestId("bag-subtotal")).toHaveTextContent("£25.60");
     expect(discountsLine()).toHaveTextContent("−£19.00");
@@ -721,8 +721,8 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
     store.dispatch(applyOffer({ offer: FLAT_TWO }));
     render(<BagUi />);
 
-    expect(saveLine()).toHaveTextContent("Save £2.00");
-    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("−£2.00");
+    expect(saveLine()).toHaveTextContent(/^Save £2$/);
+    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent(/−£2(?![\d.])/);
     expect(discountsLine()).toHaveTextContent("−£2.00");
     expect(screen.getByTestId("bag-pay")).toHaveTextContent("Order & Pay");
   });
@@ -745,7 +745,7 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
 
     const applied = screen.getByTestId("bag-rewards-applied");
     expect(within(applied).queryByText(/^Save /)).toBeNull();
-    expect(applied).not.toHaveTextContent("17.00");
+    expect(applied).not.toHaveTextContent(/£17(?!\d)/);
     expect(discountsLine()).toHaveTextContent("−£17.00");
   });
 
@@ -762,7 +762,7 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
 
     expect(discountsLine()).toHaveTextContent("−£19.00"); // the total moved…
     expect(saveLine()).toBe(line); // …but the row was not remounted
-    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(saveLine()).toHaveTextContent(/^Save £2$/);
     expect(savePop()).toBeNull();
     expect(pulse()).toBeNull();
   });
@@ -772,7 +772,7 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
     store.dispatch(applyOffer({ offer: PLAIN_FLAT }));
     store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
     render(<BagUi />);
-    expect(saveLine()).toHaveTextContent("Save £1.00");
+    expect(saveLine()).toHaveTextContent(/^Save £1$/);
 
     await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
     await userEvent.click(await screen.findByTestId("offer-row-flat-two"));
@@ -780,9 +780,9 @@ describe("BagSheet — a XENO reward in the bag (lane loyalty-visual D3 + F1)", 
 
     await waitFor(() => expect(slotId()).toBe("flat-two"));
     const card = await screen.findByTestId("offer-applied-celebration");
-    expect(card).toHaveTextContent("You save £2.00");
-    expect(card).not.toHaveTextContent("19.00");
-    expect(saveLine()).toHaveTextContent("Save £2.00");
+    expect(card).toHaveTextContent(/You save £2(?![\d.])/);
+    expect(card).not.toHaveTextContent(/£19(?!\d)/);
+    expect(saveLine()).toHaveTextContent(/^Save £2$/);
     expect(discountsLine()).toHaveTextContent("−£19.00");
   });
 });

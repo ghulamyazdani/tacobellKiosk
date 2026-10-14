@@ -25,6 +25,7 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import { formatMenuPriceLine } from "../menu/MenuItemCard";
 import VegMark from "../menu/VegMark";
 import NoImageBell from "../common/NoImageBell";
@@ -165,7 +166,7 @@ export default function BuyStageSheet({
       ? t("offers.addNudgeItems", { count: blocker.countShort })
       : blocker.reason === "minBill"
         ? t("offers.addNudge", {
-            amount: `${currency}${Number(blocker.amountShort ?? 0).toFixed(2)}`,
+            amount: `${currency}${formatPrice(blocker.amountShort)}`,
           })
         : t("offers.notApplicable");
   const hint =

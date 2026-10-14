@@ -65,6 +65,25 @@ describe("OfferRemovalNotice — the min-items reason", () => {
   });
 });
 
+// posistKiosk's OfferRemovalModal prints the gap and the new total with
+// moduloCalcaledValue: whole amounts whole, never "£4.00" / "£6.00".
+describe("OfferRemovalNotice — a min-bill removal's amounts", () => {
+  it("names the £4 gap and the £6 new total as posistKiosk does", () => {
+    store.dispatch(setCartItems([row("p0"), row("p1"), row("p2")]));
+    store.dispatch(openOfferRemovalModal({ ...MIN_THREE, minItemCount: null, minBillAmount: 10 }));
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <OfferRemovalNotice />
+        </MemoryRouter>
+      </Provider>
+    );
+    const notice = screen.getByTestId("offer-removal-notice");
+    expect(notice).toHaveTextContent("Add £4+ to your order to be eligible to redeem this reward");
+    expect(notice).toHaveTextContent(/Your total is now £6(?![\d.])/);
+  });
+});
+
 describe("OfferRemovalNotice — the offer name (walk 2026-10-14)", () => {
   // The rows case a name with CSS capitalize ("amount ic" shows "Amount
   // Ic"); in this sentence the name is its own element with the same class.

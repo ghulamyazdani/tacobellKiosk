@@ -10,6 +10,7 @@ import { lockedGapPresentation } from "@cx-sdk/ordering/offer/offersSheetLogic";
 import { mechanicSpecFor } from "@cx-sdk/ordering/offer/savingsLinePolicy";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import useLineClamp from "../../hooks/utils/useLineClamp";
+import { formatPrice } from "../../utils/price";
 
 export interface OfferRowProps {
   /** One ranked entry from useOfferSavings().rank() — offer + saving + gap. */
@@ -47,8 +48,8 @@ export interface OfferRowProps {
   blocked?: boolean;
 }
 
-const money = (currency: string, value: number): string =>
-  `${currency}${Number(value).toFixed(2)}`;
+/** posistKiosk's OffersSheet amt(): moduloCalcaledValue ("£150", "£2.50"). */
+const money = (currency: string, value: number): string => `${currency}${formatPrice(value)}`;
 
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired), so the

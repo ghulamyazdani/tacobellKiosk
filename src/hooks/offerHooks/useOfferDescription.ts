@@ -37,6 +37,7 @@ import { getOfferMechanic, type SavingsOffer } from "@cx-sdk/ordering/offer/offe
 import { isRtl } from "../../i18n";
 import useLocalized from "../utils/useLocalized";
 import useCurrencySymbol from "../utils/useCurrencySymbol";
+import { formatPrice } from "../../utils/price";
 import { getOfferScope, type OfferScope, type OfferScopeNameResolver } from "./offerScopeCopy";
 // The keys this hook reads ride the lazy chunk (D7 boot budget): lazy only.
 import "../../i18n/lazyCopy";
@@ -81,7 +82,7 @@ export default function useOfferDescription(): (
     (offer: SavingsOffer | null | undefined): OfferDescription => {
       try {
         if (!offer) return EMPTY;
-        const money = (n: number) => `${currency}${Number(n).toFixed(2)}`;
+        const money = (n: number) => `${currency}${formatPrice(n)}`;
         const raw = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
         /** "Base (Variant)" when the two halves differ, else whichever exists. */

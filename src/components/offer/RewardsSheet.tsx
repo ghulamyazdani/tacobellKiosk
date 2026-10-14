@@ -164,8 +164,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   // Menu names at render; offer names stay English (no per-language data).
   const { name } = useLocalized();
 
-  const money = (value: number): string =>
-    `${currency}${Number(value).toFixed(2)}`;
+  const money = (value: number): string => `${currency}${formatPrice(value)}`;
 
   // rank() is memoised on the cart signature inside useOfferSavings; the memo
   // here keeps re-renders from re-walking the (cached) probe path per row.

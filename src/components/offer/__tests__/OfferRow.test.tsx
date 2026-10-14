@@ -79,10 +79,11 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
     // offers-parity D8: the radio is the full-row overlay; the text is the body's.
     const body = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(body).toHaveTextContent("£2 off your order");
-    expect(body).toHaveTextContent("Save £2.00");
-    expect(screen.getByText("Save £2.00")).toHaveAttribute("dir", "auto"); // the leaf, never the row
+    // posistKiosk's OffersSheet amt(): moduloCalcaledValue — a whole saving whole.
+    expect(body).toHaveTextContent(/Save £2(?![\d.])/);
+    expect(screen.getByText("Save £2")).toHaveAttribute("dir", "auto"); // the leaf, never the row
     // text-start: without it the parent's physical text-left keeps a wrapped AR line left-aligned.
-    expect(screen.getByText("Save £2.00")).toHaveClass("text-start");
+    expect(screen.getByText("Save £2")).toHaveClass("text-start");
     expect(row).not.toHaveAttribute("dir");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
     expect(screen.queryByTestId("offer-row-nudge-offer-flat-2")).not.toBeInTheDocument();
@@ -115,7 +116,7 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
       }),
     });
     expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent(
-      "Save up to £2.00"
+      /Save up to £2(?![\d.])/
     );
   });
 
@@ -562,7 +563,7 @@ describe("OfferRow — D3 blocked + D2 geometry (lane loyalty-visual)", () => {
     expect(screen.queryByRole("radio")).toBeNull();
     expect(screen.queryByTestId("offer-radio-offer-flat-2")).toBeNull();
     expect(row).toHaveTextContent("£2 off your order");
-    expect(row).toHaveTextContent("Save £2.00");
+    expect(row).toHaveTextContent(/Save £2(?![\d.])/);
 
     await userEvent.click(row);
     expect(onPick).not.toHaveBeenCalled();
@@ -611,8 +612,10 @@ describe("OfferRow — D3 blocked + D2 geometry (lane loyalty-visual)", () => {
     expect(button).toHaveClass("border-t", "border-tb-grey-4", "pt-[23px]", "pb-[24px]", "gap-[24px]");
     expect(button).not.toHaveClass("border-b");
     expect(button.querySelector(".h-\\[152px\\].w-\\[152px\\]")).not.toBeNull();
-    expect(screen.getByText("£2 off your order")).toHaveClass("text-[32px]", "leading-[36px]", "font-medium", "capitalize");
-    expect(screen.getByText("Save £2.00")).toHaveClass("text-[24px]", "leading-[24px]", "text-tb-ink-purple");
+    // The title (the mechanic line under it now reads the same "£2 off your order").
+    expect(button.querySelector('[id$="-title"]')).toHaveTextContent(/^£2 off your order$/);
+    expect(button.querySelector('[id$="-title"]')).toHaveClass("text-[32px]", "leading-[36px]", "font-medium", "capitalize");
+    expect(screen.getByText("Save £2")).toHaveClass("text-[24px]", "leading-[24px]", "text-tb-ink-purple");
     cleanup();
 
     renderRow({ entry: MIN_BILL_LOCKED });
@@ -668,7 +671,7 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
 
   it("the description sits under the second line, a dir=auto leaf in Text/Small grey (1:4069)", () => {
     renderRow({ description: LONG });
-    const line = screen.getByText("Save £2.00");
+    const line = screen.getByText("Save £2");
     const desc = screen.getByTestId("offer-row-desc-offer-flat-2");
     expect(desc).toHaveTextContent(LONG);
     expect(line.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -677,7 +680,7 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
   });
 
   it("no description block when it repeats the second line, and none on a gone row", () => {
-    renderRow({ description: "Save £2.00" });
+    renderRow({ description: "Save £2" });
     expect(screen.queryByTestId("offer-row-desc-offer-flat-2")).toBeNull();
     cleanup();
 
@@ -696,8 +699,8 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
 
   it("without a description the mechanic line steps in (and is hidden when it IS the second line)", () => {
     renderRow();
-    // Eligible flat-2: "Save £2.00" + the mechanic line under it.
-    expect(screen.getByTestId("offer-row-desc-offer-flat-2")).toHaveTextContent("£2.00 off your order");
+    // Eligible flat-2: "Save £2" + the mechanic line under it.
+    expect(screen.getByTestId("offer-row-desc-offer-flat-2")).toHaveTextContent("£2 off your order");
     cleanup();
     renderRow({
       entry: {
@@ -809,7 +812,7 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
     expect(container.querySelector("button button")).toBeNull();
     const radio = screen.getByRole("radio", { name: "£2 off your order" });
     expect(radio).toBe(screen.getByTestId("offer-row-offer-flat-2"));
-    expect(radio).toHaveAccessibleDescription(`Save £2.00 ${LONG}`);
+    expect(radio).toHaveAccessibleDescription(`Save £2 ${LONG}`);
     // The overlay is the body's LAST child; the toggle is a sibling above it.
     const body = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(body.lastElementChild).toBe(radio);
@@ -839,7 +842,7 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
   it("review 2: the applied row's radio announces 'Applied' (its description) — checked or not", () => {
     renderRow({ applied: true, selected: false, description: LONG });
     const radio = screen.getByRole("radio", { name: "£2 off your order" });
-    expect(radio).toHaveAccessibleDescription(`Applied Save £2.00 ${LONG}`);
+    expect(radio).toHaveAccessibleDescription(`Applied Save £2 ${LONG}`);
   });
 
   it("review 2: a D3-blocked row keeps its description clamped with NO toggle — no live control inside the dimmed, aria-disabled row", () => {

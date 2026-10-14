@@ -7,9 +7,14 @@ import { moduloCalcaledValue } from "@cx-sdk/catalog/settings/settingsEngine";
  * fraction to two decimals ("5.50", "0.50"). The surfaces posistKiosk
  * formats with it use this: menu / suggestion / buy-stage / picker cards,
  * the PDP price, option and size prices, the menu bar's and the added
- * modal's Total. The bag rows, its bill, the PDP's ADD TO BAG and the payment
- * screens keep two decimals (posistKiosk: calculationWrapper / toFixed(2)).
- * Display only. A missing or non-numeric price reads 0, never "null".
+ * modal's Total, and every reward figure — the rewards rows and their
+ * descriptions, nudges, the removal notice, the picker's "off", the
+ * celebration, the bag's applied-reward row, the meal's Save pill
+ * (OffersSheet / SavingsLine amt(), OfferRemovalModal, OfferItem). The bag
+ * rows (a row's "off" badge too), its bill (Discounts too), the PDP's ADD TO
+ * BAG and the payment screens keep two decimals (posistKiosk: CartItem /
+ * PriceDetails calculationWrapper, toFixed(2)). Display only. A missing or
+ * non-numeric price reads 0, never "null".
  */
 export const formatPrice = (value: unknown): string =>
   String(moduloCalcaledValue(Number(value) || 0));

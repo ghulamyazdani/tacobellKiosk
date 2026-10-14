@@ -334,7 +334,7 @@ export default function MakeItAMealPrompt() {
                 {saving !== null && (
                   <span className="tb-compressed self-start bg-tb-yellow px-[8px] py-[9px] text-[24px] leading-[18px] text-black">
                     {t("miam.save", {
-                      amount: `${currency}${saving.toFixed(2)}`,
+                      amount: `${currency}${formatPrice(saving)}`,
                     })}
                   </span>
                 )}

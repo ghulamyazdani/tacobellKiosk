@@ -544,8 +544,9 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
   it("a minBill gap names the amount (the addNudge copy)", () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
     renderStage({ ...MIN_FOUR, _id: "offer-min-bill", minItemCount: null, minBillAmount: 20 });
+    // £20 − (£8 + £2), printed as posistKiosk's lockedMinBill: "£10", never "£10.00".
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      /^Add £\d+\.\d{2}\+ to your order to be eligible to redeem this reward$/
+      /^Add £10\+ to your order to be eligible to redeem this reward$/
     );
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
   });

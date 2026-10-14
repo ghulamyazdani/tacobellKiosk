@@ -8,6 +8,7 @@ import {
   selectCartOffer,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { ErrorBoundary } from "../../ErrorBoundary";
+import { formatPrice } from "../../utils/price";
 import ConfettiBurst from "../common/ConfettiBurst";
 import tbBell from "../../assets/brand/tb-bell.svg";
 
@@ -149,7 +150,7 @@ export default function OfferAppliedCelebration({
         {show && (
           <CelebrationCard
             name={data?.name ?? ""}
-            amount={discount > 0 ? `${currency}${discount.toFixed(2)}` : null}
+            amount={discount > 0 ? `${currency}${formatPrice(discount)}` : null}
           />
         )}
       </ErrorBoundary>

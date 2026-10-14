@@ -143,6 +143,21 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(card).not.toHaveTextContent("£100.00");
   });
 
+  // …and its saving as posistKiosk prints every "save" figure (savePill:
+  // moduloCalcaledValue), so the card never mixes "£7" with "Save £3.00".
+  it.each([
+    [10, "Save £3"],
+    [10.5, "Save £3.50"],
+  ])("the Save pill over a was-price of £%s reads '%s'", (originalPrice, pill) => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    const MEAL = { ...COMBO, price: 7, originalPrice };
+    store.dispatch(
+      openMakeItAMealModal({ isOpen: true, selectedItem: { ...BURGER, upsellItems: [MEAL] }, availableCombos: [MEAL] })
+    );
+    renderPrompt();
+    expect(screen.getByTestId("miam-combo-combo-1")).toHaveTextContent(new RegExp(`^${pill}(?![\\d.])`));
+  });
+
   it("decline adds the ORIGINAL item to the cart, blacklists it and closes the prompt", async () => {
     openPrompt();
     renderPrompt();

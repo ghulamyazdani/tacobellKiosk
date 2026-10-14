@@ -1591,7 +1591,8 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
   it("an amount off is named in the deployment's currency", () => {
     const fiveOff = { ...orEntry("tortilla-sauce", "Tortilla Sauce"), discountType: "amount", value: 5 };
     renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
-    expect(screen.getByRole("dialog", { name: "Choose Your £5.00 off Item" })).toBeInTheDocument();
+    // posistKiosk's OfferItem pickerAmountOff: moduloCalcaledValue — "£5", never "£5.00".
+    expect(screen.getByRole("dialog", { name: "Choose Your £5 off Item" })).toBeInTheDocument();
   });
 
   it("mixed stamps (a 50 % item + a 1 % group): the neutral 'Choose Your Reward' — each row names its own", () => {

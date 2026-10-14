@@ -214,7 +214,7 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     // Eligible: radio, save copy (offers-parity D8: the text is the row body's).
     const flat = screen.getByTestId("offer-row-body-offer-flat-2");
     expect(screen.getByTestId("offer-radio-offer-flat-2")).toBeInTheDocument();
-    expect(flat).toHaveTextContent("Save £2.00");
+    expect(flat).toHaveTextContent(/Save £2(?![\d.])/);
 
     // Locked minBill: engine-computed £16.40 shortfall on the £8.60 cart.
     expect(
@@ -300,15 +300,15 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
       );
 
     const { unmount } = sheet();
-    expect(screen.getByTestId("offer-row-body-offer-salad-or-sauce")).toHaveTextContent("Save up to £17.00");
+    expect(screen.getByTestId("offer-row-body-offer-salad-or-sauce")).toHaveTextContent(/Save up to £17(?![\d.])/);
     unmount();
 
     sheet(2);
     const applied = screen.getByTestId("offer-row-body-offer-salad-or-sauce");
     expect(applied).toHaveTextContent("Applied");
-    expect(applied).toHaveTextContent("Save £2.00");
+    expect(applied).toHaveTextContent(/Save £2(?![\d.])/);
     expect(applied).not.toHaveTextContent("up to");
-    expect(screen.getByTestId("offer-row-body-offer-flat-3")).toHaveTextContent("Save £3.00");
+    expect(screen.getByTestId("offer-row-body-offer-flat-3")).toHaveTextContent(/Save £3(?![\d.])/);
   });
 
   it("pick + SAVE commits through the apply core (atomic swap) and closes", async () => {
@@ -746,6 +746,6 @@ describe("RewardsSheet — offers-parity", () => {
     renderWithAddItems(vi.fn());
     expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Add the qualifying items to unlock this reward");
-    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Save £2.00");
+    expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent(/Save £2(?![\d.])/);
   });
 });

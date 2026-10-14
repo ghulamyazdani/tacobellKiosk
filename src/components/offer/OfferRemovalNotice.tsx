@@ -15,6 +15,7 @@ import type { OfferGap, OfferLockReason } from "@cx-sdk/core/types/offer";
 import useOfferSavings from "../../hooks/offerHooks/useOfferSavings";
 import useOrderHook from "../../hooks/menuHooks/useOrderHook";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
+import { formatPrice } from "../../utils/price";
 
 interface OfferRemovalNoticeProps {
   /**
@@ -99,7 +100,7 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         // Same wording as the sheet's pink eligibility nudge (Figma
         // rewards-ineligible) — the gap the customer must close.
         return t("offers.addNudge", {
-          amount: `${currency}${Number(gap?.amountShort ?? 0).toFixed(2)}`,
+          amount: `${currency}${formatPrice(gap?.amountShort)}`,
         });
       case "minItems":
         // The sheet's min-items nudge, word for word (a plural family).
@@ -149,7 +150,7 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         ) : null}
         <p className="mx-auto mb-[48px] max-w-[560px] text-[22px] leading-[28px] text-tb-ink-purple/80">
           {t("offers.removedNewTotal", {
-            amount: `${currency}${newTotal.toFixed(2)}`,
+            amount: `${currency}${formatPrice(newTotal)}`,
           })}
         </p>
         <button

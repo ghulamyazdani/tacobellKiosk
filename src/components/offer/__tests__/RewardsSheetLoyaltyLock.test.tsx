@@ -244,7 +244,7 @@ describe("RewardsSheet — D3: a XENO reward in the bag locks offers (lane loyal
     expect(screen.queryByTestId("offer-suggested-rail")).toBeNull();
     expect(screen.getByTestId("rewards-save")).toBeDisabled();
     // The rows stay informational: the offer and its saving still read.
-    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveTextContent("Save £2.00");
+    expect(screen.getByTestId("offer-row-offer-flat-2")).toHaveTextContent(/Save £2(?![\d.])/);
   });
 
   it("locked: tapping a row and SAVE commits nothing and keeps the sheet open", async () => {
@@ -334,7 +334,10 @@ describe("RewardsSheet — D2 geometry (Figma 1:3842, lane loyalty-visual)", () 
       expect(row, id).not.toHaveClass("border-b");
       expect(row.querySelector(".h-\\[152px\\].w-\\[152px\\]"), id).not.toBeNull();
     }
-    expect(screen.getByText("£2 off your order")).toHaveClass("text-[32px]", "leading-[36px]", "font-medium");
-    expect(screen.getByText("Save £2.00")).toHaveClass("text-[24px]", "leading-[24px]");
+    // The title (the mechanic line under it now reads the same "£2 off your order").
+    const title = screen.getByTestId("offer-row-body-offer-flat-2").querySelector('[id$="-title"]');
+    expect(title).toHaveTextContent(/^£2 off your order$/);
+    expect(title).toHaveClass("text-[32px]", "leading-[36px]", "font-medium");
+    expect(screen.getByText("Save £2")).toHaveClass("text-[24px]", "leading-[24px]");
   });
 });

@@ -104,7 +104,7 @@ afterEach(() => {
 });
 
 describe("OfferAppliedCelebration", () => {
-  it("shows the title, the offer name and 'You save £2.00', with the CSS confetti burst", () => {
+  it("shows the title, the offer name and 'You save £2' (posistKiosk's amt()), with the CSS confetti burst", () => {
     renderCard(2);
     customerApply();
     const shown = card();
@@ -112,7 +112,7 @@ describe("OfferAppliedCelebration", () => {
     const scoped = within(shown as HTMLElement);
     expect(scoped.getByText("Reward applied!")).toBeInTheDocument();
     expect(scoped.getByText("£2 off your order")).toBeInTheDocument();
-    expect(scoped.getByText("You save £2.00")).toBeInTheDocument();
+    expect(scoped.getByText("You save £2")).toBeInTheDocument();
     expect((shown as HTMLElement).querySelectorAll(".tb-confetti-piece")).toHaveLength(28);
   });
 
