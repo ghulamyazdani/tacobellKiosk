@@ -472,6 +472,24 @@ describe("BuyStageSheet — tiles and modes", () => {
     expect(tile).not.toHaveTextContent("£0");
   });
 
+  it("walk-oos 2: a size tile is that size — out of stock (sold out, or no guest can complete it), it reads Unavailable with no add target", async () => {
+    const view = viewFor(LARGE_FRIES_BOGO, {
+      "fries-l": {
+        baseItem: { ...FRIES_BASE, variants: [FRIES_BASE.variants[0], { ...FRIES_BASE.variants[1], outOfStock: true }] },
+        variant: { id: "fries-l", name: "Large" },
+      },
+    });
+    renderStage(LARGE_FRIES_BOGO, view);
+
+    const tile = screen.getByTestId("buy-stage-tile-fries");
+    expect(tile).toHaveTextContent("Fries (Large)");
+    expect(within(tile).getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("buy-stage-add-fries")).toBeNull();
+    expect(screen.queryByTestId("buy-stage-inc-fries")).toBeNull();
+    await userEvent.click(tile);
+    expect(state().cart.cartItems).toEqual([BURGER_ROW]);
+  });
+
   it("a tile's price line carries the deployment's symbol (UB1 — never a bare amount)", () => {
     renderStage(BOGO);
     expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent("£2 | 50 Cal");

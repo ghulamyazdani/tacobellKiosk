@@ -4,6 +4,7 @@ import {
   selectEntityMap,
   selectMenu,
   selectModifierMap,
+  selectVariantObject,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectAllowMultiplePunch } from "@cx-sdk/catalog/state/appSettings.slice";
 import { markUncompletable } from "@cx-sdk/catalog/oos/optionStock";
@@ -103,6 +104,27 @@ export const selectSellableMenu = createSelector(
       })),
     }));
     return dead ? { ...menu, categories } : menu;
+  },
+);
+
+type SizeIndex = Record<string, { baseItem?: unknown } | null | undefined> | null | undefined;
+
+/**
+ * The size index (a size's id → its base item) under the same rule — the buy
+ * stage's tile for an offer keyed by one size. Nothing dead → the store's own.
+ */
+export const selectSellableVariantObject = createSelector(
+  [selectVariantObject, selectModifierMap, selectOutOfStockItems, selectAllowMultiplePunch],
+  (sizes: SizeIndex, modifierMap: ModifierGroupMap, stock: OutOfStockMap, multiPunch: unknown): SizeIndex => {
+    if (!sizes) return sizes;
+    let dead = false;
+    const next: NonNullable<SizeIndex> = {};
+    for (const [id, hit] of Object.entries(sizes)) {
+      const baseItem = markUncompletable(hit?.baseItem, modifierMap, stock, Boolean(multiPunch));
+      dead = dead || baseItem !== hit?.baseItem;
+      next[id] = baseItem === hit?.baseItem ? hit : { ...hit, baseItem };
+    }
+    return dead ? next : sizes;
   },
 );
 

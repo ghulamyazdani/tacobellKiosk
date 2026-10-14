@@ -6,14 +6,20 @@ import {
 } from "@cx-sdk/catalog/recommendation/recommendationUtils";
 import {
   selectMenu,
+  selectVariantObject,
   setEntityMap,
   setMenuData,
   setModifiersMap,
+  setVariantObject,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { setAllowMultiplePunch, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../redux/app/store";
 import { setOutOfStockItems } from "../redux/features/menuSelections/menuSelections.slice";
-import { selectMenuSellableEntityMap, selectSellableMenu } from "../hooks/menuHooks/useCartUpsell";
+import {
+  selectMenuSellableEntityMap,
+  selectSellableMenu,
+  selectSellableVariantObject,
+} from "../hooks/menuHooks/useCartUpsell";
 
 /*
   UB6 Fix B — the entity as the MENU sells it. entityMap is published BEFORE
@@ -209,6 +215,27 @@ describe("walk-oos 2 — an item no guest can complete reads out of stock (real 
     expect(sellable().soda).toBe(SODA);
     // Nothing dead: the store's own menu, by identity.
     expect(selectSellableMenu(store.getState())).toBe(selectMenu(store.getState()));
+  });
+
+  it("the size index (the buy stage's size-keyed tiles) under the same rule: both of the soda's entries hand the Large out of stock; nothing dead → the store's own index", () => {
+    store.dispatch(
+      setVariantObject({
+        variantObject: { "soda-r": { baseItem: SODA, variant: REGULAR }, "soda-l": { baseItem: SODA, variant: LARGE } },
+      }),
+    );
+    type Sizes = Record<string, { baseItem: Entity; variant: unknown }>;
+    const sizes = () => selectSellableVariantObject(store.getState()) as Sizes;
+
+    for (const id of ["soda-r", "soda-l"]) {
+      expect(sizes()[id].baseItem.variants).toEqual([REGULAR, { ...LARGE, outOfStock: true }]);
+      expect(sizes()[id].baseItem.variants?.[0]).toBe(REGULAR);
+    }
+    expect(sizes()["soda-l"].variant).toBe(LARGE);
+    expect((selectVariantObject(store.getState()) as Sizes)["soda-l"].baseItem).toBe(SODA);
+
+    // PAY's map brings a drink back: nothing dead — the store's own index.
+    store.dispatch(setOutOfStockItems({ lime: { type: "addon", inStock: true } }));
+    expect(selectSellableVariantObject(store.getState())).toBe(selectVariantObject(store.getState()));
   });
 
   it("the multi-punch setting is an input: its min (0 for the drink) decides", () => {

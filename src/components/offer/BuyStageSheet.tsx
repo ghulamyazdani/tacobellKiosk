@@ -288,7 +288,9 @@ export default function BuyStageSheet({
     // them) — the entity is the BASE item, priced alike for every size.
     const size = tileSize(group, entity);
     const imageUrl = resolveEntityImage(entity);
-    const unavailable = !!entity?.outOfStock;
+    // walk-oos 2: a size tile is that size — out when it is (sold out or dead).
+    const unavailable =
+      !!entity?.outOfStock || (size as { outOfStock?: unknown } | undefined)?.outOfStock === true;
     // handleAdd's own split, side-effect free: a variant or customizable
     // entity opens the tier session (planStagedTierModal), anything else adds.
     const oneTap = isDirectlyAddable(entity as unknown as RecommendedEntity);
