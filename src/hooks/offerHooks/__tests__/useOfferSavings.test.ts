@@ -14,7 +14,7 @@ import { renderHook } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
-import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setCurrency, setDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setEntityMap, setVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import { store } from "../../../redux/app/store";
@@ -200,5 +200,45 @@ describe("D1 — rank() hides what can never unlock on this menu", () => {
     ]);
     expect(ranked.map((entry) => entry.offer._id).sort()).toEqual(["cat-entity", "cat-variant"]);
     ranked.forEach((entry) => expect(entry).toMatchObject({ eligible: false, gap: { reason: "unavailable" } }));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Review of the walk fixes: with the deployment's enable_dis_addon on, a
+ * get discount covers the add-ons too (redeemGetItem), so a free £9 burger
+ * with +£2 bacon saves £11 — the "exact £9" quote was below it. rank()
+ * hands the setting to the SDK ranker: no figure for such a reward.
+ * ------------------------------------------------------------------ */
+describe("enable_dis_addon reaches the ranking", () => {
+  const FREE_BURGER = {
+    _id: "free-burger",
+    name: "Free burger",
+    type: { name: "item", value: 0 },
+    getItemOnly: true,
+    applicable: { on: "complete", rawItems: [] },
+    getItems: {
+      items: [
+        {
+          relation: "and",
+          quantity: 1,
+          discountType: "percent",
+          value: 100,
+          entities: { id: "burger", price: 9, type: "CUSTOMIZABLE", modifiers: ["extras"] },
+        },
+      ],
+      categories: [],
+    },
+  } as unknown as SavingsOffer;
+
+  it("off: the burger's £9, exact; on: no figure (an 'up to' £0)", () => {
+    store.dispatch(setCartItems(PAID_FIVE));
+    try {
+      store.dispatch(setDiscountOnAddon(false));
+      expect(savings().rank([FREE_BURGER])[0].saving).toMatchObject({ amount: 9, certainty: "exact" });
+      store.dispatch(setDiscountOnAddon(true));
+      expect(savings().rank([FREE_BURGER])[0].saving).toMatchObject({ amount: 0, certainty: "upTo" });
+    } finally {
+      store.dispatch(setDiscountOnAddon(false));
+    }
   });
 });

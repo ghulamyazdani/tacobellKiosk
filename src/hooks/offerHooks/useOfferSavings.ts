@@ -32,6 +32,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap, selectVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
 import useOrderHook from "../menuHooks/useOrderHook";
 import useOfferHook from "./useOfferHook";
 import {
@@ -156,6 +157,9 @@ function useOfferSavings() {
     () => buildMenuPresence(entityMap, variantObject),
     [entityMap, variantObject],
   );
+  // enable_dis_addon: a get discount covers the add-ons too (redeemGetItem),
+  // so a reward the guest builds with add-ons has no "up to" to quote.
+  const addonsDiscounted = Boolean(useSelector(selectDiscountOnAddon));
   const { getCalculatedBill } = useOrderHook();
   const { isItemWiseOfferApplicable, isBOGOOfferApplicable } = useOfferHook();
 
@@ -318,8 +322,8 @@ function useOfferSavings() {
   // side is a gone row (lane offers-parity F4 — posistKiosk's rank filter).
   const rank = useCallback(
     (offers: SavingsOffer[] | null | undefined): RankedOffer<SavingsOffer>[] =>
-      rankOffersForKiosk(offers, context, isOnMenu),
-    [context, isOnMenu],
+      rankOffersForKiosk(offers, context, isOnMenu, addonsDiscounted),
+    [context, isOnMenu, addonsDiscounted],
   );
 
   const gapFor = useCallback(
@@ -348,7 +352,7 @@ function useOfferSavings() {
       if (!offersToWarm?.length) return;
       const run = () => {
         try {
-          rankOffersForKiosk(offersToWarm, context, isOnMenu);
+          rankOffersForKiosk(offersToWarm, context, isOnMenu, addonsDiscounted);
           offersToWarm.forEach((o) => netAfter(o));
         } catch {
           /* prewarming must never break anything */
@@ -360,7 +364,7 @@ function useOfferSavings() {
         setTimeout(run, 300);
       }
     },
-    [context, netAfter, isOnMenu],
+    [context, netAfter, isOnMenu, addonsDiscounted],
   );
 
   return {
