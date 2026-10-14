@@ -12,6 +12,7 @@ import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
+import { selectAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
 import RewardsSheet from "../RewardsSheet";
 import "../../../i18n";
 
@@ -747,5 +748,47 @@ describe("RewardsSheet — offers-parity", () => {
     expect(screen.getByTestId("rewards-sheet")).toBeInTheDocument();
     expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Add the qualifying items to unlock this reward");
     expect(screen.getByTestId("offer-row-body-offer-flat-2")).toHaveTextContent("Save £2.00");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A Suggested rail add lands IN the bag, under the open sheet: the bag's row
+ * and the moving nudge confirm it. Every menu add opens the product-added
+ * modal now (user 2026-10-14), so suppressAddedModal is all that keeps a rail
+ * tap from opening it under the bag (the tap guard armed over it, a stale
+ * modal on /menu after). The pool is not filtered by the cart, so a tap can
+ * bump a row as well as punch one.
+ * ------------------------------------------------------------------ */
+describe("RewardsSheet — a Suggested rail add never opens the product-added modal", () => {
+  /** Plain (the one-tap add intent) and flagged: the rail's pool. */
+  const SALAD = { id: "greek-salad", name: "Greek Salad", price: 17, isActive: true, isCartRecommended: true };
+  /** Locked by its minimum with or without a salad in the bag, so the rail stays up. */
+  const MIN_100 = { ...PERCENT_OFFER, _id: "offer-min-100", name: "25% off over £100", minBillAmount: 100 };
+  const salads = () => cartState().cartItems.filter((row: { id?: string }) => row?.id === SALAD.id);
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setEntityMap({ entityMap: { [SALAD.id]: SALAD } }));
+    store.dispatch(setFilteredOffers([MIN_100]));
+  });
+
+  it("a new row: the salad lands and the modal stays shut", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    renderSheet();
+    fireEvent.click(screen.getByTestId(`offer-suggested-item-${SALAD.id}`));
+
+    expect(salads()).toEqual([expect.objectContaining({ quantity: 1 })]);
+    expect(selectAddToCartModal(store.getState())).toBe(false);
+  });
+
+  it("+1 on the salad already in the bag: its row bumps to 2 and the modal stays shut", () => {
+    const saladRow = { ...SALAD, itemId: "gs-1", uniqueItemId: "gs-1", quantity: 1, type: "ITEM", total_price: 17 };
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, saladRow]));
+    renderSheet();
+    fireEvent.click(screen.getByTestId(`offer-suggested-item-${SALAD.id}`));
+
+    expect(salads()).toEqual([expect.objectContaining({ itemId: "gs-1", quantity: 2 })]);
+    expect(selectAddToCartModal(store.getState())).toBe(false);
   });
 });

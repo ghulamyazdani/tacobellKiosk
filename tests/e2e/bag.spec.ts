@@ -707,7 +707,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page).toHaveURL(/\/cart$/);
   });
 
-  test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total", async ({
+  test("RAIL: Complete-Your-Meal shows the flagged items minus in-cart ones; a plain rail tap adds the row and updates every total — no product-added modal, under the bag or on the menu after it", async ({
     page,
   }) => {
     test.slow();
@@ -737,6 +737,13 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (2)");
     // …and the freshly-carted salad drops out of the rail.
     await expect(page.getByTestId(`bag-rail-item-${GREEK_SALAD}`)).toHaveCount(0);
+    // Every MENU add opens the product-added modal (user 2026-10-14); this one
+    // is the bag's: none opened under the bag, so none greets the menu after.
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("product-added-modal")).toHaveCount(0);
   });
 
   test("PAY: preflight lands on the resolved checkout screen; its back CTA returns to an intact bag", async ({
