@@ -39,7 +39,10 @@ import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import CategoryRail from "../../components/menu/CategoryRail";
 import MenuFilterChips from "../../components/menu/MenuFilterChips";
 import ProductAddedModal from "../../components/menu/ProductAddedModal";
-import SelectSizeModal from "../../components/menu/SelectSizeModal";
+import {
+  loadedSelectSizeModal,
+  loadSelectSizeModal,
+} from "../../components/menu/loadSelectSizeModal";
 import MenuItemCard from "../../components/menu/MenuItemCard";
 import MenuCtaBar from "../../components/menu/MenuCtaBar";
 import FooterBar from "../../components/chrome/FooterBar";
@@ -151,6 +154,21 @@ export default function Menu({ bagOpen = false }: MenuProps) {
 
   const [languageOpen, setLanguageOpen] = useState(false);
   const [sizeEntity, setSizeEntity] = useState<any | null>(null);
+  // Select a Size's code (the lazy UI chunk — loadSelectSizeModal), loaded
+  // at mount; until it is here, an open shows the modal's scrim, closing it.
+  const [SelectSizeModal, setSelectSizeModal] = useState(() => loadedSelectSizeModal());
+  useEffect(() => {
+    if (SelectSizeModal) return;
+    let live = true;
+    const load = async () => {
+      const modal = await loadSelectSizeModal();
+      if (live && modal) setSelectSizeModal(() => modal);
+    };
+    void load();
+    return () => {
+      live = false;
+    };
+  }, [SelectSizeModal]);
   /** Select a Size → the PDP under way (handleSizeContinue): CONTINUE is spent. */
   const sizeHandoff = useRef(false);
   const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
@@ -385,6 +403,22 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     addEntity(entity, { ...NEW_CUSTOMIZATION, onBeforeLeave: detour });
   };
 
+  const closeSize = () => {
+    sizeHandoff.current = false;
+    setSizeEntity(null);
+    dispatch(setRecommendationDetour(false));
+  };
+  /** Select a Size while its code is not here (or failed to render): its scrim, closing like it. */
+  const sizeLoading = (
+    <button
+      type="button"
+      data-testid="select-size-loading"
+      aria-label={t("language.close")}
+      onClick={closeSize}
+      className="absolute inset-0 z-40 h-full w-full bg-tb-purple/80"
+    />
+  );
+
   const handleSizeContinue = (variant: any) => {
     const parent = sizeEntity;
     if (!parent || sizeHandoff.current) return;
@@ -599,17 +633,14 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       {/* Mounted only while open, so every open starts with no size ticked
           and CONTINUE disabled (1:5628) — an abandoned pick never survives
           (review R3). */}
-      {sizeEntity && (
-        <SelectSizeModal
-          entity={sizeEntity}
-          onClose={() => {
-            sizeHandoff.current = false;
-            setSizeEntity(null);
-            dispatch(setRecommendationDetour(false));
-          }}
-          onContinue={handleSizeContinue}
-        />
-      )}
+      {sizeEntity &&
+        (SelectSizeModal ? (
+          <ErrorBoundary fallback={sizeLoading}>
+            <SelectSizeModal entity={sizeEntity} onClose={closeSize} onContinue={handleSizeContinue} />
+          </ErrorBoundary>
+        ) : (
+          sizeLoading
+        ))}
       {/* P7a overlays — z-stack: BagSheet z-40 (a stacking context, so its
           RewardsSheet/FreebiePicker/OfferRemovalNotice children all paint in
           its z-40 slot), confirm modals z-50. The MIAM prompt and the repeat

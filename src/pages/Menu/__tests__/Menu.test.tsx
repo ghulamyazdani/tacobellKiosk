@@ -39,7 +39,14 @@ import {
 } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import Menu from "../index";
+import { loadSelectSizeModal } from "../../../components/menu/loadSelectSizeModal";
 import i18n from "../../../i18n";
+
+// Select a Size rides the lazy UI chunk (loadSelectSizeModal, lane walk-oos):
+// loaded once here, every menu below renders it at once, as on a warm kiosk.
+beforeAll(async () => {
+  await loadSelectSizeModal();
+}, 60_000);
 
 const { mockFetchMenu, mockNavigate, mockCapture } = vi.hoisted(() => ({
   mockFetchMenu: vi.fn(),

@@ -36,5 +36,8 @@ export { runCheckoutStockSweep, sameCartRows } from "@cx-sdk/catalog/oos/checkou
 // walk-oos: the sweep's write-back (a dropped pick kept, flagged) and the
 // names its notice gives — PAY only.
 export { planStockWrite, soldOutNames } from "./payStock";
+// walk-oos (the boot-path budget): the menu's Select a Size modal
+// (loadSelectSizeModal).
+export { default as SelectSizeModal } from "../menu/SelectSizeModal";
 // audit-fixes U3: the bag's cooking-instructions sheet.
 export { default as InstructionsSheet } from "./InstructionsSheet";
