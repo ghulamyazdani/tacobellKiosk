@@ -191,6 +191,21 @@ describe("PDP copy and controls (P9f)", () => {
     expect(screen.getByText(DESCRIPTION)).toHaveClass("line-clamp-2");
     expect(screen.queryByTestId("pdp-show-more")).not.toBeInTheDocument();
   });
+
+  // Walk 2026-10-14: "﷼100 | 254 Cal" painted as "254 | 100﷼ Cal" — U+FDFC
+  // (bidi AL) turned the digits after it Arabic and the run RTL. The symbol
+  // now rides between LRMs (useCurrencySymbol → ltrCurrencySymbol).
+  it("a ﷼ deployment: the price line is the symbol between LRMs, then the price, then the calories", () => {
+    const LRM = String.fromCharCode(0x200e);
+    const RIAL = String.fromCharCode(0xfdfc); // ﷼ — a symbol, not AR copy
+    store.dispatch(setCurrency({ currency: "SAR", text: RIAL, uniDec: "65020", uniHex: "FDFC" }));
+    renderPdp();
+
+    expect(screen.getByTestId("pdp-price").textContent).toBe(`${LRM}${RIAL}${LRM}8.00 | 740 Cal`);
+    expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent(`· ${LRM}${RIAL}${LRM}8.00`, {
+      normalizeWhitespace: false,
+    });
+  });
 });
 
 /*

@@ -43,6 +43,7 @@ import {
   setIsDynamicPricingEnabled,
 } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import RiyalLogo from "../../components/RiyalLogo";
+import { ltrCurrencySymbol } from "./useCurrencySymbol";
 import * as settingsEngine from "@cx-sdk/catalog/settings/settingsEngine";
 
 /** The one auth field the default-country guard reads at response time (UB5). */
@@ -87,7 +88,7 @@ function useAppSettings() {
     if (settingsEngine.isSarCurrency(currencyRdx)) {
       return React.createElement(RiyalLogo);
     }
-    return settingsEngine.getCurrencyText(currencyRdx);
+    return ltrCurrencySymbol(String(settingsEngine.getCurrencyText(currencyRdx)));
   };
 
   const getCurrencyCode = () => {
