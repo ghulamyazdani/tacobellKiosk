@@ -114,7 +114,8 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only)
  * and the initiate failure modal's BACK TO BAG /payment → /cart (moved from
- * /receipt). COD keeps /payment → /receipt.
+ * /receipt). COD keeps /payment → /receipt. BACK TO MENU /payment → /menu
+ * (2026-10-14; was /cart, or /customerName with CRM).
  *
  * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
  * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
@@ -161,7 +162,7 @@ export default function PaymentSelection() {
   const currency = useCurrencySymbol();
   const cart = useSelector(selectCart) as CartLike | undefined;
 
-  const { getTabType, getIsPayAtCounter, shouldSkipCRM } = useAppSettings();
+  const { getTabType, getIsPayAtCounter } = useAppSettings();
   // The push itself lives in the hook (guarded, retry ladder, idempotency
   // latch). This screen only ARMS it: beginCheckout pins
   // payment.paymentType = "PAY_AT_RESTAURANT" before anything is pushed.
@@ -263,11 +264,15 @@ export default function PaymentSelection() {
   // frame between the window's timer and its commit, whose closure still reads
   // paytmStatus "idle" but armedType set (review R1). Not refused on "failed":
   // the unavailable branch has no modal and must keep its way back (Rule 2).
+  // It goes where its label (Figma 1:3367 "Back to menu") says: the menu, the
+  // bag kept (walk 2026-10-14 — it opened the bag, or /customerName with CRM;
+  // posistKiosk's generic "Back" steps back a screen). The bag stays one tap
+  // away (VIEW MY BAG); the failure modal's BACK TO BAG is the /cart edge.
   const handleBack = useCallback(() => {
     if (armedType !== null || paytmStatus === "initiating") return;
     captureKioskEvent(KioskEventName.PaymentDismissed, {});
-    navigate(shouldSkipCRM() ? "/cart" : "/customerName");
-  }, [armedType, navigate, paytmStatus, shouldSkipCRM]);
+    navigate("/menu");
+  }, [armedType, navigate, paytmStatus]);
 
   /**
    * A method tile. ARMS the payment type (COD via beginCheckout, unchanged;

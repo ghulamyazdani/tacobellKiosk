@@ -214,7 +214,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("BACK FROM /payment: returns to an intact bag and places nothing", async ({
+  test("BACK FROM /payment: BACK TO MENU lands on the menu (the bag closed), the bag intact one tap away, nothing placed", async ({
     page,
   }) => {
     test.slow();
@@ -225,11 +225,15 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
       timeout: 15_000,
     });
 
-    // skipCRM is ON, so the back CTA returns to the bag (with it off it would
-    // step back to /customerName — that leg belongs to loyalty.spec.ts).
+    // Walk 2026-10-14: the CTA reads BACK TO MENU (Figma 1:3367) but opened the
+    // bag. It goes where it says — with CRM on or off (unit tests).
+    await expect(page.getByTestId("payment-back")).toHaveText(en.payment.backToMenu);
     await page.getByTestId("payment-back").click();
-    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
-    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page).toHaveURL(/\/menu$/, { timeout: 10_000 });
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await openBag(page);
     await expect(bagRows(page)).toHaveCount(1);
     await expect(bagRows(page).first()).toContainText("Cheese Burger");
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
@@ -256,9 +260,11 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await expect(page.getByTestId("payment-screen")).toHaveCount(0);
     await expect(page.getByTestId("payment-counter")).toHaveCount(0);
 
-    // Rule 2: the dead end still has a live exit.
+    // Rule 2: the dead end still has a live exit — to the menu, as labelled.
     await page.getByTestId("payment-back").click();
-    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/menu$/, { timeout: 10_000 });
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    await openBag(page);
     await expect(bagRows(page)).toHaveCount(1);
 
     expect(checkout.placeOrderCount).toBe(0);

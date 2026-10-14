@@ -296,12 +296,13 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.getByTestId("payment-counter")).toBeInTheDocument();
     });
 
-    it("gives the unavailable screen a working Back", () => {
+    it("gives the unavailable screen a working Back — to the menu its label names", () => {
       store.dispatch(setDeploymentInfo(disableCodFor("table")));
       mount();
+      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/customerName");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
   });
 
@@ -977,19 +978,22 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
   });
 
   describe("back and mount guards", () => {
-    it("goes back to the identity step when CRM is not skipped", () => {
+    // Walk 2026-10-14: BACK TO MENU (Figma 1:3367) opened the bag — or the
+    // identity step with CRM on. It goes where its label says.
+    it("BACK TO MENU goes to the menu when CRM is not skipped — never the identity step", () => {
       mount();
+      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/customerName");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
 
-    it("goes back to the bag when CRM is skipped", () => {
+    it("BACK TO MENU goes to the menu when CRM is skipped — never the bag", () => {
       store.dispatch(setKioskSettings({ skip_crm_page: true }));
       mount();
       tap("payment-back");
 
-      expect(mockNavigate).toHaveBeenCalledWith("/cart");
+      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
     });
 
     it("bounces to the menu when there is nothing to pay for", () => {
