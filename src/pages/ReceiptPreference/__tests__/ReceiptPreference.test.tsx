@@ -230,6 +230,16 @@ describe("/receipt — one question, YES / NO (print only)", () => {
     expect(screen.getAllByRole("button")).toEqual([screen.getByTestId("receipt-back"), yes, no]);
   });
 
+  // User 2026-10-14 (every BACK to the screen the guest came from): no setting
+  // adds a step between the method choice and this question.
+  it("BACK returns to /payment, the method choice, and sends nothing", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("receipt-back"));
+
+    expect(mockNavigate.mock.calls).toEqual([["/payment"]]);
+    expect(mockPushOrder).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["YES", "receipt-print", "print"],
     ["NO", "receipt-none", "none"],

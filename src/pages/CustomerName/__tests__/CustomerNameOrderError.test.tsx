@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
-import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
+import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
+import { selectCustomerName, setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import CustomerName from "../index";
@@ -18,6 +21,7 @@ import i18n from "../../../i18n";
 const pay = vi.hoisted(() => ({
   failed: true,
   onTimeout: false,
+  pushing: false,
   retry: vi.fn(),
   dismissError: vi.fn(),
 }));
@@ -55,7 +59,7 @@ vi.mock("../../../hooks/paymentsHooks/usePayAtCounter", () => ({
   default: () => ({
     start: () => {},
     isBuffering: false,
-    isPushing: false,
+    isPushing: pay.pushing,
     hasFailed: pay.failed,
     failedOnTimeout: pay.failed && pay.onTimeout,
     retry: pay.retry,
@@ -265,5 +269,78 @@ describe("/customerName — the CRM lookup wait", () => {
     });
     expect(screen.queryByTestId("customer-name-loading")).not.toBeInTheDocument();
     expect(screen.getByTestId("customer-name-input")).toHaveTextContent("Ana");
+  });
+});
+
+/*
+  User 2026-10-14: BACK returns to the step the guest came from (useCheckoutFlow)
+  — /phone in checkout mode (CRM shown, loyalty off), else the table number,
+  else the bag. It was always the bag. The typed name is kept for the way back.
+*/
+describe("/customerName — BACK to the step the guest came from", () => {
+  const Landed = () => {
+    const { pathname, state } = useLocation();
+    return <p data-testid="landed">{`${pathname} ${JSON.stringify(state)}`}</p>;
+  };
+  const mountInFlow = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/customerName"]}>
+          <Routes>
+            <Route path="/customerName" element={<CustomerName />} />
+            <Route path="*" element={<Landed />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  const back = () => fireEvent.click(screen.getByTestId("customer-name-back"));
+  const loyaltyOn = () => {
+    store.dispatch(setKioskSettings({ skip_crm_page: false, enable_loyalty: true }));
+    store.dispatch(turnOnLoyalty({}));
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    pay.failed = false;
+    pay.pushing = false;
+    // A table order with CRM shown and loyalty off: bag → /tent → /phone → here.
+    store.dispatch(setTabType("table"));
+    store.dispatch(setKioskSettings({ skip_crm_page: false }));
+    store.dispatch(turnOfLoyalty());
+  });
+
+  it("loyalty off: BACK opens /phone in CHECKOUT mode — the phone skipped or not — keeping the typed name", () => {
+    mountInFlow();
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+    back();
+
+    expect(screen.getByTestId("landed")).toHaveTextContent('/phone {"checkoutRoute":"phone"}');
+    expect(selectCustomerName(store.getState())).toBe("a");
+  });
+
+  it("loyalty on, a table order: the phone was asked before the menu, so BACK → the table number", () => {
+    loyaltyOn();
+    mountInFlow();
+    back();
+
+    expect(screen.getByTestId("landed")).toHaveTextContent("/tent null");
+  });
+
+  it("loyalty on, no table step: BACK → the bag", () => {
+    loyaltyOn();
+    store.dispatch(setTabType("take_away"));
+    mountInFlow();
+    back();
+
+    expect(screen.getByTestId("landed")).toHaveTextContent("/cart null");
+  });
+
+  it("refused while the order is being pushed", () => {
+    pay.pushing = true;
+    mountInFlow();
+    back();
+
+    expect(screen.queryByTestId("landed")).toBeNull();
+    expect(screen.getByTestId("customer-name-screen")).toBeInTheDocument();
   });
 });

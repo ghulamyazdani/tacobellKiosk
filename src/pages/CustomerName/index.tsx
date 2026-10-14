@@ -16,6 +16,7 @@ import { selectCart, selectCartAmount } from "@cx-sdk/ordering/state/cart.slice"
 import { selectRedeemedLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import usePayAtCounter from "../../hooks/paymentsHooks/usePayAtCounter";
@@ -63,6 +64,8 @@ const CRM_LOOKUP_TIMEOUT_MS = 10000;
  *   directOrder === false → /payment
  *   directOrder === true  → NO /payment at all: push the order here and land
  *                           on /orderSuccess (usePayAtCounter.placeOrder).
+ *   BACK                  → the previous applicable step (useCheckoutFlow):
+ *                           /phone, else /tent (a table order), else /cart.
  *
  * `directOrder` is `shouldPlaceLoyaltyOrderDirectly(...)`, i.e. the zero-bill
  * loyalty case where a redeemed reward covers the whole order. P7c shipped it
@@ -110,6 +113,7 @@ export default function CustomerName() {
   const redeemedLoyalty = useSelector(selectRedeemedLoyalty);
 
   const { getIsLoyaltyOn } = useAppSettings();
+  const { goNext, goBack } = useCheckoutFlow();
   const { shouldPlaceLoyaltyOrderDirectly, checkAndRevokeLoyaltyReward } =
     useLoyalty();
   const { resetSession } = useSessionReset();
@@ -234,7 +238,7 @@ export default function CustomerName() {
       : false;
 
     if (!directOrder) {
-      navigate("/payment");
+      goNext("/customerName");
       return;
     }
 
@@ -244,7 +248,7 @@ export default function CustomerName() {
   }, [
     cart,
     getIsLoyaltyOn,
-    navigate,
+    goNext,
     netAmountRdx,
     redeemedLoyalty,
     shouldPlaceLoyaltyOrderDirectly,
@@ -299,8 +303,10 @@ export default function CustomerName() {
     // then would strand a placed order behind the customer.
     if (placingOrder) return;
     dispatch(setCustomerName(inputValue.trim()));
-    navigate("/cart");
-  }, [dispatch, inputValue, navigate, placingOrder]);
+    // The step the guest came from (user 2026-10-14): /phone, else the table
+    // number, else the bag. It was always the bag.
+    goBack("/customerName");
+  }, [dispatch, goBack, inputValue, placingOrder]);
 
   const handleCancelConfirm = useCallback(() => {
     setCancelOrderOpen(false);
