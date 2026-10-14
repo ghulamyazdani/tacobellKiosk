@@ -8,7 +8,11 @@ import {
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
-import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import {
+  selectCustomerPhone,
+  setCustomerName,
+  setPhoneNumberRdx,
+} from "@cx-sdk/core/customer/customerInfo.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
@@ -547,5 +551,55 @@ describe("CustomerPhone — the bottom pair and the centred block (user 2026-10-
     expect(button).toBeDisabled();
     expect(button).toHaveTextContent(i18n.t("phone.checking"));
     expect(button).toHaveClass("bg-tb-surface", "disabled:opacity-60");
+  });
+});
+
+/*
+  back-nav review F1 (2026-10-15): BACK from /customerName keeps the number in
+  the store, so a guest who clears it and then SKIPs (or CONTINUEs on an empty,
+  optional field) must not send the old number — nor half-typed digits.
+*/
+describe("CustomerPhone — SKIP and an empty CONTINUE send no number", () => {
+  const name = () =>
+    (store.getState() as unknown as { customerInfo: { customerName: string } }).customerInfo
+      .customerName;
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    mockNavigate.mockReset();
+  });
+
+  it("a committed number, cleared, then SKIP → no phone and no CRM name", () => {
+    store.dispatch(setPhoneNumberRdx("9876543210"));
+    store.dispatch(setCustomerName("tb"));
+    mount({ checkoutRoute: "phone" });
+
+    fireEvent.click(screen.getByTestId("numpad-clear"));
+    fireEvent.click(screen.getByTestId("phone-skip"));
+
+    expect(selectCustomerPhone(store.getState() as never)).toBe("");
+    expect(name()).toBe("");
+  });
+
+  it("a committed number, cleared, then an empty CONTINUE (nothing mandatory) → no phone and no CRM name", () => {
+    store.dispatch(setPhoneNumberRdx("9876543210"));
+    store.dispatch(setCustomerName("tb"));
+    mount({ checkoutRoute: "phone" });
+
+    fireEvent.click(screen.getByTestId("numpad-clear"));
+    fireEvent.click(screen.getByTestId("phone-continue"));
+
+    expect(selectCustomerPhone(store.getState() as never)).toBe("");
+    expect(name()).toBe("");
+  });
+
+  it("half-typed digits then SKIP → no phone (SKIP never sends a partial number)", () => {
+    mount({ checkoutRoute: "phone" });
+
+    fireEvent.click(screen.getByTestId("numpad-key-9"));
+    fireEvent.click(screen.getByTestId("numpad-key-8"));
+    fireEvent.click(screen.getByTestId("phone-skip"));
+
+    expect(selectCustomerPhone(store.getState() as never)).toBe("");
   });
 });

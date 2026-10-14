@@ -345,8 +345,13 @@ export default function CustomerPhone() {
       skip_reason: "phone_not_mandatory",
     });
     captureKioskEvent(KioskEventName.CRMPhoneNumeberSkipped, {});
+    // A skip sends NO number — not one committed on an earlier pass (BACK
+    // from /customerName keeps it in the store), and never half-typed
+    // digits. A number going away invalidates its CRM name (fork parity).
+    if (phoneRdx !== "") dispatch(setCustomerName(""));
+    dispatch(setPhoneNumberRdx(""));
     navigationControl();
-  }, [navigationControl]);
+  }, [dispatch, navigationControl, phoneRdx]);
 
   const handleContinue = useCallback(() => {
     if (isSubmitting.current || isLoyaltyEventLoading) return;
