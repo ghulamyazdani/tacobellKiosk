@@ -569,6 +569,49 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
     expect(`${i18n.t("menu.total")} ${screen.getByTestId("bag-total").textContent}`).toBe(previewed);
   });
 
+  // Review 2026-10-14: the preview is priced as the bag will settle it — a
+  // least-value reward's free unit moves to a cheaper pick (only the open
+  // bag reconciles the lock in the store).
+  it("least-value: a cheaper pick takes the free unit in the preview, the figure the bag shows after ADD TO ORDER", () => {
+    store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
+    store.dispatch(setCartItems(CART));
+    store.dispatch(
+      applyOffer({
+        offer: {
+          ...FLAT_TWO,
+          _id: "lv-cheapest",
+          name: "Any 2, the cheapest free",
+          type: { name: "item", value: 0 },
+          getLeastValueItem: true,
+          applicable: {
+            ...FLAT_TWO.applicable,
+            rawItems: ["c-1", "c-2", TWISTS.id].map((baseItemId) => ({ item: { baseItemId } })),
+          },
+          leastItemValueCount: { buyQuantity: 2, getQuantity: 1, getDiscount: 100 },
+        },
+      })
+    );
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TWISTS.id] });
+    const total = () => screen.getByTestId("added-total").textContent;
+    // £7 + 2 × £2.50, a £2.50 Fries free.
+    expect(total()).toBe(`${i18n.t("menu.total")} £9.50`);
+
+    stage(TWISTS.id);
+    // + the £2 Twists, now the cheapest — free: £14 − £2.
+    expect(total()).toBe(`${i18n.t("menu.total")} £12`);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <BagSheet open onClose={vi.fn()} />
+        </MemoryRouter>
+      </Provider>,
+    );
+    expect(screen.getByTestId("bag-total").textContent).toBe("£12.00");
+  });
+
   it("a whole Total prints whole and the bag's round off applies: £13.80 → £14", () => {
     store.dispatch(setCartItems(TAXED_CART));
     render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });

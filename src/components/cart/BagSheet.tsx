@@ -19,7 +19,6 @@ import {
   reconcileFreebieAllocation,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
-import { isSameOrLessViolated } from "@cx-sdk/ordering/offer/offerCommitRules";
 import { getBillOfferDiscount } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules";
 import {
   addLoyaltyPoints,
@@ -65,7 +64,10 @@ import {
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import { selectAutoAppliedOfferId } from "../../redux/features/offerSession/offerSession.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import useCartBill, { billTotal } from "../../hooks/cartHooks/useCartBill";
+import useCartBill, {
+  billTotal,
+  shouldDropAppliedOffer,
+} from "../../hooks/cartHooks/useCartBill";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import useSchedulerConverter from "../../hooks/schedulerHooks/useSchedulerConverter";
 import useAppSettings from "../../hooks/utils/useAppSettings";
@@ -329,8 +331,7 @@ export default function BagSheet({
   const { getIsLoyaltyOn, shouldSkipCRM, getDeactivatedPipelines } =
     useAppSettings();
   const { checkPipelineClosedFromRedux } = useKioskOpenServices();
-  const { isItemWiseOfferApplicable, isBOGOOfferApplicable, isLeastValueItemOffer } =
-    useOfferHook();
+  const { isLeastValueItemOffer } = useOfferHook();
   const { rank } = useOfferSavings();
   const { handleCartDrivenRemoval, removeAppliedOffer } = useOfferApply();
   const [getServerTimeApi] = useLazyGetServerTimeQuery();
@@ -510,43 +511,9 @@ export default function BagSheet({
     // would drop a persisted reward on the first render after a
     // crash-reload, before the Dexie rehydrate lands the rows.
     if (items.length === 0) return;
-    const qtyExclLoyalty = items.reduce(
-      (acc: number, it: any) =>
-        !it?.isLoyaltyItem ? acc + Number(it?.quantity ?? 0) : acc,
-      0,
-    );
-    const qtyExclLoyaltyAndGetItems = items.reduce(
-      (acc: number, it: any) =>
-        !it?.isLoyaltyItem && !it?.isGetItem
-          ? acc + Number(it?.quantity ?? 0)
-          : acc,
-      0,
-    );
-    const shouldRemove =
-      // 1 + 3: minItemCount against both quantity views.
-      (cartOffer?.minItemCount && qtyExclLoyalty < cartOffer.minItemCount) ||
-      (cartOffer?.minItemCount &&
-        qtyExclLoyaltyAndGetItems < cartOffer.minItemCount) ||
-      // 2 + 4: nothing payable left under the offer.
-      qtyExclLoyalty <= 0 ||
-      qtyExclLoyaltyAndGetItems <= 0 ||
-      // 5: itemCriteria — guarded on applicable.on (contract trap 6: the
-      // matcher returns undefined for itemCriteria with neither include
-      // nor exclude, and must not fire for non-itemCriteria offers).
-      (cartOffer?.applicable?.on === "itemCriteria" &&
-        items.length > 0 &&
-        !isItemWiseOfferApplicable(
-          cartOffer?.applicable,
-          items,
-          cartOffer?.minBillAmount,
-        )) ||
-      // 6: bogo mechanics (called unconditionally like the fork — the
-      // engine returns true for every non-bogo mechanic).
-      (items.length > 0 &&
-        !isBOGOOfferApplicable(cartOffer, cartOffer?.applicable, items)) ||
-      // 7: sameOrLess ceiling (fork Cart.tsx:1327-1346) — false for every
-      // offer that is not a sameOrLess plain BOGO.
-      isSameOrLessViolated(cartOffer, items);
+    // The checks live in ONE place (useCartBill): the menu's totals price
+    // the cart as this effect is about to leave it (settleCart).
+    const shouldRemove = shouldDropAppliedOffer(cartOffer, items);
     if (shouldRemove) {
       handleCartDrivenRemoval(false);
     }
