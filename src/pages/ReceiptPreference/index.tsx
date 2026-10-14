@@ -11,6 +11,7 @@ import usePayAtCounter, {
   type ReceiptPreference as ReceiptChoice,
 } from "../../hooks/paymentsHooks/usePayAtCounter";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import { resolveIdleSeconds, useIdleHold } from "../../hooks/utils/useIdleTimeout";
 import { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../OrderSuccess";
@@ -62,6 +63,7 @@ export default function ReceiptPreferenceScreen() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const ada = useAdaActive();
+  const { goBack } = useCheckoutFlow();
 
   // The guarded push (payment type → order id → pending → pushOrder →
   // /orderSuccess, with the retry ladder and the idempotency latch) lives
@@ -143,11 +145,14 @@ export default function ReceiptPreferenceScreen() {
     [answerPaid, confirmAndPush, hasFailed, isPushing, paid]
   );
 
-  /** Nothing has been pushed yet, so returning to the method choice is safe. */
+  /**
+   * Nothing has been pushed yet, so returning to the method choice is safe —
+   * the step before this one (useCheckoutFlow; no setting adds one between).
+   */
   const handleBack = useCallback(() => {
     if (isPushing || hasFailed) return;
-    navigate("/payment");
-  }, [hasFailed, isPushing, navigate]);
+    goBack("/receipt");
+  }, [goBack, hasFailed, isPushing]);
 
   /**
    * Terminal-failure exit. `dismissError()` returns the hook to "idle" so the

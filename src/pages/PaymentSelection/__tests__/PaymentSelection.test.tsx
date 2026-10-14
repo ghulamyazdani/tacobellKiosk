@@ -297,13 +297,14 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(screen.getByTestId("payment-counter")).toBeInTheDocument();
     });
 
-    it("gives the unavailable screen a working Back — to the menu its label names", () => {
+    it("gives the unavailable screen a working BACK — to the step before /payment, never the menu", () => {
       store.dispatch(setDeploymentInfo(disableCodFor("table")));
       mount();
-      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
+      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.back"));
       tap("payment-back");
 
-      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
+      // CRM shown (the suite's default): the name step.
+      expect(mockNavigate.mock.calls).toEqual([["/customerName"]]);
     });
   });
 
@@ -673,7 +674,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     const preparing = () => screen.queryByTestId("paytm-preparing");
 
     // U3
-    it("busy: PleaseWait while initiating (a covered tile and BACK TO MENU do nothing), then the busy modal — CLOSE · TRY AGAIN, focus on CLOSE; TRY AGAIN → a second initiate with NEW ids; CLOSE → the tiles, in place", async () => {
+    it("busy: PleaseWait while initiating (a covered tile and BACK do nothing), then the busy modal — CLOSE · TRY AGAIN, focus on CLOSE; TRY AGAIN → a second initiate with NEW ids; CLOSE → the tiles, in place", async () => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       const first = deferred<unknown>();
       const second = deferred<unknown>();
@@ -819,7 +820,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
 
     /*
       U11 (contract review R1): the window's controls outlive its timer by one
-      commit. Until the timer's batch renders, CANCEL and BACK TO MENU are still
+      commit. Until the timer's batch renders, CANCEL and BACK are still
       painted and still run the WINDOW render's handlers — and with a warm chunk
       the initiate has already left. One act = that frame: the timer fires and
       the captured control is clicked before anything commits.
@@ -841,7 +842,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(mockNavigate.mock.calls).toEqual([["/paymentPolling"]]);
     });
 
-    it("a BACK TO MENU from the timer's frame (keyboard / AT — the window covers it for a finger) never leaves under the initiate", async () => {
+    it("a BACK from the timer's frame (keyboard / AT — the window covers it for a finger) never leaves under the initiate", async () => {
       store.dispatch(setPaymentSettings([EDC]));
       mount();
       tap("payment-card");
@@ -1073,22 +1074,50 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
   });
 
   describe("back and mount guards", () => {
-    // Walk 2026-10-14: BACK TO MENU (Figma 1:3367) opened the bag — or the
-    // identity step with CRM on. It goes where its label says.
-    it("BACK TO MENU goes to the menu when CRM is not skipped — never the identity step", () => {
+    // User 2026-10-14: BACK returns to the screen the guest came from — the
+    // name step, or with CRM hidden "the previous level". It read BACK TO MENU
+    // and went to the menu (walk-flow-ui), which this supersedes.
+    it("reads BACK (EN and AR), never BACK TO MENU", async () => {
       mount();
-      expect(screen.getByTestId("payment-back")).toHaveTextContent(i18n.t("payment.backToMenu"));
-      tap("payment-back");
+      const back = screen.getByTestId("payment-back");
+      expect(back).toHaveTextContent(i18n.t("payment.back"));
+      expect(back.textContent).not.toMatch(/menu/i);
 
-      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+      // Exact, Arabic, and no "menu" (القائمة) in the copy itself (review 2026-10-15).
+      expect(back.textContent).toBe(i18n.t("payment.back"));
+      expect(back.textContent).toMatch(/\p{Script=Arabic}/u);
+      expect(back.textContent).not.toContain("القائمة");
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
     });
 
-    it("BACK TO MENU goes to the menu when CRM is skipped — never the bag", () => {
+    it("CRM shown: BACK returns to the name step — never the menu", () => {
+      mount();
+      tap("payment-back");
+
+      expect(mockNavigate.mock.calls).toEqual([["/customerName"]]);
+      expect(mockCapture.mock.calls.filter(([event]) => event === "payment_dismissed")).toHaveLength(1);
+    });
+
+    it("CRM hidden, a table order: BACK skips the name step to the table number", () => {
       store.dispatch(setKioskSettings({ skip_crm_page: true }));
       mount();
       tap("payment-back");
 
-      expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
+      expect(mockNavigate.mock.calls).toEqual([["/tent"]]);
+    });
+
+    it("CRM hidden, no table step: BACK returns to the bag", () => {
+      store.dispatch(setKioskSettings({ skip_crm_page: true }));
+      store.dispatch(setTabType("dine_in"));
+      mount();
+      tap("payment-back");
+
+      expect(mockNavigate.mock.calls).toEqual([["/cart"]]);
     });
 
     it("bounces to the menu when there is nothing to pay for", () => {

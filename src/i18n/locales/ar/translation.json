@@ -327,6 +327,7 @@
     "title": "تأكيد الإلغاء",
     "body": "أنت على وشك إلغاء طلبك. هل ترغب في المتابعة؟",
     "cancel": "لا، العودة إلى القائمة",
+    "back": "لا، رجوع",
     "confirm": "نعم، إلغاء الطلب"
   },
   "repeat": {
@@ -411,7 +412,7 @@
     "payAtRestaurant": "الدفع في المطعم",
     "payWithCard": "الدفع بالبطاقة أدناه",
     "comingSoon": "قريبًا",
-    "backToMenu": "العودة إلى القائمة",
+    "back": "رجوع",
     "placingOrder": "جارٍ إرسال طلبك…",
     "payAtCounterChosen": "ستدفع عند الكاشير",
     "payAtRestaurantChosen": "ستدفع في المطعم",

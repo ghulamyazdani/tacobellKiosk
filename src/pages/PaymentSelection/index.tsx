@@ -13,6 +13,7 @@ import { pickPaytmSelections } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { setKioskPaymentType } from "@cx-sdk/payments/state/payment.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import usePayAtCounter, {
@@ -115,8 +116,10 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only).
  * The failure modal adds no edge (its BACK TO BAG → /cart was removed
- * 2026-10-14). COD keeps /payment → /receipt. BACK TO MENU /payment → /menu
- * (2026-10-14; was /cart, or /customerName with CRM).
+ * 2026-10-14). COD keeps /payment → /receipt. BACK /payment → the previous
+ * applicable step (useCheckoutFlow, user 2026-10-14): /customerName, or with
+ * CRM hidden /tent (a table order) else /cart. It read BACK TO MENU and went
+ * to /menu (walk-flow-ui), before that /cart or /customerName.
  *
  * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
  * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
@@ -141,8 +144,8 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  *
  * ADA (P9c, design-language, flagged — 1:3364 has no ADA variant): both
  * roots render into the 1122px reach zone with the bell dropped. Selection:
- * title 120–229 (3 lines: 283) · total 302–426 · tiles 482–898 · BACK TO MENU
- * keeps its 18px bottom distance (1012–1104). Unavailable: title 120–229 · body
+ * title 120–229 (3 lines: 283) · total 302–426 · tiles 482–898 · BACK keeps
+ * its 18px bottom distance (1012–1104). Unavailable: title 120–229 · body
  * 344–424 · the same BACK. The buffer dialog is centred on the page, so it
  * follows the page height.
  */
@@ -164,6 +167,7 @@ export default function PaymentSelection() {
   const cart = useSelector(selectCart) as CartLike | undefined;
 
   const { getTabType, getIsPayAtCounter } = useAppSettings();
+  const { goBack } = useCheckoutFlow();
   // The push itself lives in the hook (guarded, retry ladder, idempotency
   // latch). This screen only ARMS it: beginCheckout pins
   // payment.paymentType = "PAY_AT_RESTAURANT" before anything is pushed.
@@ -266,15 +270,14 @@ export default function PaymentSelection() {
   // frame between the window's timer and its commit, whose closure still reads
   // paytmStatus "idle" but armedType set (review R1). Not refused on "failed":
   // the unavailable branch has no modal and must keep its way back (Rule 2).
-  // It goes where its label (Figma 1:3367 "Back to menu") says: the menu, the
-  // bag kept (walk 2026-10-14 — it opened the bag, or /customerName with CRM;
-  // posistKiosk's generic "Back" steps back a screen). The bag stays one tap
-  // away (VIEW MY BAG); the failure modal's BACK TO BAG is the /cart edge.
+  // BACK returns to the screen the guest came from (user 2026-10-14): the name
+  // step, or with CRM hidden the table number, else the bag — posistKiosk's
+  // generic "Back", plus the table step. It went to the menu (walk-flow-ui).
   const handleBack = useCallback(() => {
     if (armedType !== null || paytmStatus === "initiating") return;
     captureKioskEvent(KioskEventName.PaymentDismissed, {});
-    navigate("/menu");
-  }, [armedType, navigate, paytmStatus]);
+    goBack("/payment");
+  }, [armedType, goBack, paytmStatus]);
 
   /**
    * A method tile. ARMS the payment type (COD via beginCheckout, unchanged;
@@ -384,7 +387,7 @@ export default function PaymentSelection() {
           onClick={handleBack}
           className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
         >
-          {t("payment.backToMenu")}
+          {t("payment.back")}
         </button>
       </div>
     );
@@ -392,7 +395,7 @@ export default function PaymentSelection() {
 
   return (
     // Motion §2.7: the title, TOTAL and the tile row arrive (.tb-enter);
-    // the chrome, BACK TO MENU and the buffer dialog stay.
+    // the chrome, BACK and the buffer dialog stay.
     <div
       data-testid="payment-screen"
       data-enter={enter}
@@ -450,7 +453,7 @@ export default function PaymentSelection() {
         onClick={handleBack}
         className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
       >
-        {t("payment.backToMenu")}
+        {t("payment.back")}
       </button>
 
       {/* Transparent but hit-testable, over the tiles and BACK; under the

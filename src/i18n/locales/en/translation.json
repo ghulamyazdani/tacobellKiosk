@@ -303,6 +303,7 @@
     "title": "Confirm Cancellation",
     "body": "You are about to cancel your order. Would you like to continue?",
     "cancel": "No, back to menu",
+    "back": "No, back",
     "confirm": "Yes, cancel order"
   },
   "repeat": {
@@ -387,7 +388,7 @@
     "payAtRestaurant": "Pay at restaurant",
     "payWithCard": "Pay with card below",
     "comingSoon": "Coming soon",
-    "backToMenu": "Back to menu",
+    "back": "Back",
     "placingOrder": "Placing your order…",
     "payAtCounterChosen": "You'll pay at the counter",
     "payAtRestaurantChosen": "You'll pay at the restaurant",

@@ -145,6 +145,9 @@ function InSessionOverlays() {
  *   /tent         Continue → skipCRM ? /payment : loyaltyOn ? /customerName : /phone
  *   /phone        Continue → /customerName   (ONLY in checkout mode)
  *   /customerName Continue → directOrder ? push → /orderSuccess : /payment
+ *   BACK on /tent, /phone (checkout), /customerName, /payment, /receipt →
+ *                 the step before it that this session's settings apply
+ *                 (useCheckoutFlow, 2026-10-14)
  *   /payment      PAY AT COUNTER → /receipt → push → /orderSuccess
  *                 Paytm tile     → 3 s window → initiate (here) → /paymentPolling
  *   /paymentPolling paid            → /receipt (post-payment) → /orderSuccess

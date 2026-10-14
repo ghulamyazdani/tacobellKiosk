@@ -8,8 +8,8 @@ import {
   tentRdx,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
-import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
@@ -88,7 +88,7 @@ export default function Tent() {
   const tentValueRdx = (useSelector(tentRdx) as string | null | undefined) ?? "";
   const cart = useSelector(selectCart) as CartLike | undefined;
 
-  const { shouldSkipCRM, getIsLoyaltyOn } = useAppSettings();
+  const { goNext, goBack } = useCheckoutFlow();
 
   // The store's tent is the starting value (fork seeds it from tentRdx in an
   // effect; a lazy initializer does the same without a set-state-in-effect).
@@ -200,20 +200,12 @@ export default function Tent() {
     [dispatch, inputValue.length, showRangeError, tentRange.configured, tentRange.to]
   );
 
-  /** Fork BrandWrapper's tent branch, minus the dead end. */
-  const continueForward = useCallback(() => {
-    if (shouldSkipCRM()) {
-      navigate("/payment");
-      return;
-    }
-    if (getIsLoyaltyOn()) {
-      navigate("/customerName");
-      return;
-    }
-    // CHECKOUT MODE: /phone is the pre-menu loyalty lookup by default, so the
-    // checkout entry has to announce itself.
-    navigate("/phone", { state: { checkoutRoute: "phone" } });
-  }, [getIsLoyaltyOn, navigate, shouldSkipCRM]);
+  /**
+   * Fork BrandWrapper's tent branch, minus the dead end: skipCRM ? /payment :
+   * loyalty ? /customerName : /phone (checkout mode) — the next applicable
+   * step, from the one place BACK reads too (useCheckoutFlow).
+   */
+  const continueForward = useCallback(() => goNext("/tent"), [goNext]);
 
   const handleConfirm = useCallback(() => {
     const trimmed = inputValue.trim();
@@ -256,8 +248,8 @@ export default function Tent() {
 
   const handleBack = useCallback(() => {
     dispatch(setTent(inputValue.trim()));
-    navigate("/cart");
-  }, [dispatch, inputValue, navigate]);
+    goBack("/tent");
+  }, [dispatch, goBack, inputValue]);
 
   return (
     // Motion §2.7: the title, the display and the keypad arrive (.tb-enter);

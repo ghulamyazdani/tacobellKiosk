@@ -97,6 +97,28 @@ describe("CancelOrderModal — the guest's answer is reported (audit-fixes B3)",
     expect(screen.getByTestId("cancel-order-confirm")).not.toHaveFocus();
   });
 
+  // User 2026-10-14 ("the button should say back not back to menu"): a host
+  // NO returns to that is not the menu names NO for what it does.
+  it("NO says NO, BACK TO MENU by default; a host's keepLabel names NO and the backdrop, which still answer NO", () => {
+    const menuHost = mount();
+    expect(screen.getByTestId("cancel-order-cancel")).toHaveTextContent(i18n.t("cancelOrder.cancel"));
+    menuHost.unmount();
+
+    render(
+      <CancelOrderModal open onConfirm={onConfirm} onCancel={onCancel} keepLabel={i18n.t("cancelOrder.back")} />
+    );
+    const no = screen.getByTestId("cancel-order-cancel");
+    // Exact: "No, back to menu" contains "No, back" (review 2026-10-15).
+    expect(no.textContent).toBe(i18n.t("cancelOrder.back"));
+    const [backdrop] = screen.getAllByRole("button", { name: i18n.t("cancelOrder.back") });
+    expect(backdrop).not.toBe(no);
+    fireEvent.click(backdrop);
+    fireEvent.click(no);
+
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("closed: nothing rendered, nothing reported", () => {
     const { container } = mount(false);
 

@@ -19,6 +19,7 @@ import {
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useAdaActive from "../../hooks/utils/useAdaActive";
+import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
 import KioskNumpad from "../../components/keyboard/KioskNumpad";
@@ -95,7 +96,8 @@ const maskExceptLast = (input: string) =>
  * The mode changes exactly three things and nothing else, so the pre-menu
  * behaviour stays byte-identical:
  *   Continue / Skip → /customerName   (pre-menu: /menu)
- *   Back            → /cart           (pre-menu: /second)
+ *   Back            → /tent or /cart  (pre-menu: /second) — the step
+ *                     before (useCheckoutFlow; user 2026-10-14)
  *   CANCEL ORDER    → asks first (CancelOrderModal; audit-fixes A3) — the
  *                     guest has a bag; pre-menu it goes to /start at once
  *                     (the bag is empty there, like /second)
@@ -153,6 +155,7 @@ export default function CustomerPhone() {
   const isReeloLoyalty = Boolean(useSelector(selectIsReeloLoyalty));
 
   const { getTabType, getIsLoyaltyOn } = useAppSettings();
+  const { goBack } = useCheckoutFlow();
   const { executeLoyalty, isLoyaltyEventLoading } = useLoyalty();
   const tabType = getTabType();
   const isLoyaltyOnSetting = getIsLoyaltyOn();
@@ -400,11 +403,13 @@ export default function CustomerPhone() {
   ]);
 
   // Back never dead-ends (Rule 1): pre-menu it returns to the order-type
-  // screen, in checkout mode to the bag the customer came from.
+  // screen, in checkout mode to the step the customer came from — the table
+  // number, else the bag.
   const handleBack = useCallback(() => {
     commitPhone();
-    navigate(isCheckoutMode ? "/cart" : "/second");
-  }, [commitPhone, isCheckoutMode, navigate]);
+    if (isCheckoutMode) goBack("/phone");
+    else navigate("/second");
+  }, [commitPhone, goBack, isCheckoutMode, navigate]);
 
   const openCountryPicker = useCallback(() => {
     captureKioskEvent(KioskEventName.CountryCodeSelectionClicked, {
@@ -591,6 +596,7 @@ export default function CustomerPhone() {
           navigate("/start");
         }}
         onCancel={() => setCancelOrderOpen(false)}
+        keepLabel={t("cancelOrder.back")}
       />
     </div>
   );

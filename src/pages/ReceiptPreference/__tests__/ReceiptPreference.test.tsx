@@ -230,6 +230,32 @@ describe("/receipt — one question, YES / NO (print only)", () => {
     expect(screen.getAllByRole("button")).toEqual([screen.getByTestId("receipt-back"), yes, no]);
   });
 
+  // User 2026-10-14 (every BACK to the screen the guest came from): no setting
+  // adds a step between the method choice and this question.
+  it("BACK returns to /payment, the method choice, and sends nothing", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("receipt-back"));
+
+    expect(mockNavigate.mock.calls).toEqual([["/payment"]]);
+    expect(mockPushOrder).not.toHaveBeenCalled();
+  });
+
+  // Review 2026-10-15: PLACING and the order-error panel cover BACK for a
+  // finger only. A keyboard / AT BACK under the push would reach /payment,
+  // where a second order can start.
+  it.each([
+    ["while the order is being pushed", () => new Promise(() => {})],
+    ["once the push has failed (the panel's exits only)", rejectWith(TIMED_OUT)],
+  ])("BACK is refused %s — it stays on /receipt", async (_when, push) => {
+    mockPushOrder.mockImplementation(push);
+    mount();
+    await placeOrder();
+    fireEvent.click(screen.getByTestId("receipt-back"));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockPushOrder).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["YES", "receipt-print", "print"],
     ["NO", "receipt-none", "none"],
