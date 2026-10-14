@@ -149,12 +149,20 @@ export default function OfferRow({
           })
         );
       case "leastValueOne":
-        return t("offers.mechLeastValueOne", { buy: spec.buy });
-      case "leastValueOther":
-        return t("offers.mechLeastValueOther", {
-          buy: spec.buy,
-          get: spec.get,
-        });
+      case "leastValueOther": {
+        // "Free" only at 100 % — computeLeastValueDiscount's rule: no
+        // getDiscount is 100, any other value is the cheapest's discount.
+        const off = Number(offer?.leastItemValueCount?.getDiscount ?? 100);
+        const discounted = Number.isFinite(off) && off !== 100;
+        if (spec.code === "leastValueOne") {
+          return discounted
+            ? t("offers.mechLeastValueDiscountOne", { buy: spec.buy, value: off })
+            : t("offers.mechLeastValueOne", { buy: spec.buy });
+        }
+        return discounted
+          ? t("offers.mechLeastValueDiscountOther", { buy: spec.buy, get: spec.get, value: off })
+          : t("offers.mechLeastValueOther", { buy: spec.buy, get: spec.get });
+      }
       case "groupWise":
       case "freeItem":
       case "bogo":

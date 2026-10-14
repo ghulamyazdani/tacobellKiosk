@@ -413,6 +413,46 @@ describe("BuyStageSheet — tiles and modes", () => {
     );
   });
 
+  it("review of the walk fixes: a least stage below 100 % names its discount, never 'free' — EN and AR", async () => {
+    // computeLeastValueDiscount applies getDiscount %: 50 here, not free.
+    const leastAt = (getQuantity: number) => ({
+      ...LEAST,
+      _id: `offer-least-half-${getQuantity}`,
+      leastItemValueCount: { buyQuantity: 3, getQuantity, getDiscount: 50 },
+    });
+    renderStage(leastAt(2));
+    const sheet = screen.getByTestId("buy-stage-sheet");
+    expect(within(sheet).getByText("Add any 3 from below — your 2 cheapest are 50% off")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent(
+      "Your 2 lowest-priced qualifying items are 50% off"
+    );
+    // (The offer's own name may say free; the stage's copy never does.)
+    expect(sheet).not.toHaveTextContent(/becomes? free/);
+    cleanup();
+
+    renderStage(leastAt(1));
+    expect(screen.getByText("Add any 3 from below — your cheapest is 50% off")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent("Your lowest-priced qualifying item is 50% off");
+    cleanup();
+
+    // No getDiscount configured reads as 100 % — free, as the engine prices it.
+    renderStage({ ...leastAt(2), leastItemValueCount: { buyQuantity: 3, getQuantity: 2, getDiscount: null } });
+    expect(screen.getByText("Add any 3 from below — your 2 cheapest become free")).toBeInTheDocument();
+    cleanup();
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderStage(leastAt(2));
+    const note = screen.getByTestId("buy-stage-least-note");
+    expect(note).toHaveTextContent(i18n.t("offers.buyStage.leastNoteDiscount", { count: 2, value: 50 }));
+    expect(note.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(note.textContent).not.toBe(i18n.t("offers.buyStage.leastNote", { count: 2 }));
+    expect(screen.getByTestId("buy-stage-sheet")).toHaveTextContent(
+      i18n.t("offers.buyStage.subtitleLeastDiscount", { count: 2, buy: 3, value: 50 })
+    );
+  });
+
   it("a variant-id buy entry names its variant: 'Fries (Large)'", () => {
     const view = viewFor(LARGE_FRIES_BOGO, {
       "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },

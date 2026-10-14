@@ -297,6 +297,59 @@ describe("OfferRow — a discounted get reward is never labelled free", () => {
     renderRow({ entry: locked(getOffer("groupWise", [getEntry("percent", 100)]), "groupWise") });
     expect(screen.getByTestId("offer-row-offer-groupWise")).toHaveTextContent("Pick 2 free");
   });
+
+  // Review of the walk fixes: computeLeastValueDiscount applies
+  // leastItemValueCount.getDiscount %, so the least-value line follows the
+  // same rule — "free" only at 100 % (no getDiscount reads as 100).
+  describe("least-value", () => {
+    const least = (getQuantity: number, getDiscount: number | null) => ({
+      offer: {
+        ...offerBase,
+        _id: `offer-least-${getQuantity}-${getDiscount}`,
+        name: "LeastValue Offer",
+        type: { name: "item", value: 0 },
+        getLeastValueItem: true,
+        leastItemValueCount: { buyQuantity: 3, getQuantity, getDiscount },
+      },
+      saving: { amount: 4, certainty: "exact", kind: "leastValue", requiresChoice: false },
+      eligible: true,
+      gap: undefined,
+    });
+    const desc = (entry: any) => screen.getByTestId(`offer-row-desc-${entry.offer._id}`);
+
+    it("below 100 % the line names the discount — one or several cheapest — never 'free'", () => {
+      const two = least(2, 50);
+      renderRow({ entry: two });
+      expect(desc(two)).toHaveTextContent(/^Buy 3, your 2 cheapest items are 50% off$/);
+      cleanup();
+      const one = least(1, 50);
+      renderRow({ entry: one });
+      expect(desc(one)).toHaveTextContent(/^Buy 3, your cheapest item is 50% off$/);
+    });
+
+    it("100 %, or no getDiscount at all, stays free", () => {
+      const full = least(2, 100);
+      renderRow({ entry: full });
+      expect(desc(full)).toHaveTextContent(/^Buy 3, your 2 cheapest items are free$/);
+      cleanup();
+      const unset = least(1, null);
+      renderRow({ entry: unset });
+      expect(desc(unset)).toHaveTextContent(/^Buy 3, your cheapest item is free$/);
+    });
+
+    it("Arabic names the discount too", async () => {
+      await i18n.changeLanguage("ar");
+      try {
+        const two = least(2, 50);
+        renderRow({ entry: two });
+        expect(desc(two)).toHaveTextContent(i18n.t("offers.mechLeastValueDiscountOther", { buy: 3, get: 2, value: 50 }));
+        expect(desc(two).textContent).toMatch(/\p{Script=Arabic}/u);
+        expect(desc(two).textContent).not.toBe(i18n.t("offers.mechLeastValueOther", { buy: 3, get: 2 }));
+      } finally {
+        await i18n.changeLanguage("en");
+      }
+    });
+  });
 });
 
 /* ------------------------------------------------------------------ *

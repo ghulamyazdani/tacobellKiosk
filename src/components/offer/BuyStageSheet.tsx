@@ -124,13 +124,18 @@ export default function BuyStageSheet({
   const counterText = t("offers.buyStage.addedCount", { have, need });
 
   // How many of the cheapest go free — the rewards row's own source
-  // (mechanicSpecFor), so the stage never contradicts the row it came from.
+  // (mechanicSpecFor), so the stage never contradicts the row it came from —
+  // and at what discount: "free" only at 100 % (computeLeastValueDiscount's
+  // rule: no getDiscount is 100).
   const least = mechanicSpecFor(offer, "leastValue", null);
   const freeCount = least?.code === "leastValueOther" ? least.get : 1;
+  const leastOff = Number(offer?.leastItemValueCount?.getDiscount ?? 100);
+  const leastDiscounted = Number.isFinite(leastOff) && leastOff !== 100;
+  const leastCopy = { count: freeCount, value: leastOff };
   const subtitle =
     view.mode === "least"
-      ? t("offers.buyStage.subtitleLeast", {
-          count: freeCount,
+      ? t(leastDiscounted ? "offers.buyStage.subtitleLeastDiscount" : "offers.buyStage.subtitleLeast", {
+          ...leastCopy,
           buy: view.sharedRequiredQuantity,
         })
       : view.mode === "plain-and"
@@ -516,7 +521,10 @@ export default function BuyStageSheet({
               data-testid="buy-stage-least-note"
               className="mb-[16px] rounded-[8px] bg-tb-grey-6 px-[24px] py-[16px] text-center text-[20px] leading-[24px] text-tb-ink-purple"
             >
-              {t("offers.buyStage.leastNote", { count: freeCount })}
+              {t(
+                leastDiscounted ? "offers.buyStage.leastNoteDiscount" : "offers.buyStage.leastNote",
+                leastCopy,
+              )}
             </p>
           )}
           {/* Both always mounted: a live region must exist before its text does. */}
