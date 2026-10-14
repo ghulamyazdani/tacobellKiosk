@@ -51,11 +51,11 @@ export interface BuyStageSheetProps {
 type GuardKey = "loyaltyRowGuard" | "cartEmptyGuard";
 
 /**
- * 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four across,
- * centred; auto-fit collapses a short row's empty tracks, so 1–3 cards
- * centre too.
+ * 1:2595's card grid (1:2601): 240 px cards, 16 px gaps — four across the
+ * 1032 px content box. A wrapping flex row, not a grid: EVERY row centres,
+ * so neither a short row nor a 5th card under a full four hugs column 1.
  */
-const CARD_GRID = "grid grid-cols-[repeat(auto-fit,240px)] justify-center gap-[16px]";
+const CARD_ROW = "flex flex-wrap justify-center gap-[16px]";
 
 /**
  * BOGO BUY STAGE — "unlock this reward" (offers lane, item 31). Opened from a
@@ -294,7 +294,7 @@ export default function BuyStageSheet({
       <div
         key={`${group.key}-${id}`}
         data-testid={`buy-stage-tile-${id}`}
-        className={`tb-press-card relative flex h-[277px] w-full flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
+        className={`tb-press-card relative flex h-[277px] w-[240px] flex-col justify-between overflow-hidden rounded-[8px] bg-tb-grey-6 ${
           qty > 0 ? "ring-[3px] ring-tb-purple" : ""
         }`}
       >
@@ -480,11 +480,11 @@ export default function BuyStageSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Header-less groups share one card grid. Headed, each group is
-              its header over its OWN centred card row (a header spanning a
-              shared grid kept all four tracks, so a lone card sat in column
-              1 — walk w3); the 16 px rhythm stays. */}
-          <div className={`${headed ? "flex flex-col gap-[16px]" : CARD_GRID} px-[24px] py-[32px]`}>
+          {/* Header-less groups share one card row. Headed, each group is
+              its header over its OWN card row (a header spanning a shared
+              grid kept all four tracks, so a lone card sat in column 1 —
+              walk w3); the 16 px rhythm stays. */}
+          <div className={`${headed ? "flex flex-col gap-[16px]" : CARD_ROW} px-[24px] py-[32px]`}>
             {view.groups.map((group: BuyStageGroup) => {
               const tiles = group.entities.map((entity: BuyMenuEntity, index: number) =>
                 renderTile(group, entity, index),
@@ -507,7 +507,7 @@ export default function BuyStageSheet({
                             t("offers.buyStage.groupFallbackLabel"),
                         })}
                   </p>
-                  <div className={CARD_GRID}>{tiles}</div>
+                  <div className={CARD_ROW}>{tiles}</div>
                 </Fragment>
               );
             })}

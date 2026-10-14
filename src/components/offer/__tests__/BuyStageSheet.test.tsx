@@ -484,8 +484,7 @@ describe("BuyStageSheet — tiles and modes", () => {
     for (const id of [CAESAR.id, SAUCE.id]) {
       const add = screen.getByTestId(`buy-stage-add-${id}`);
       expect(add).toHaveClass("absolute", "inset-0");
-      expect(add.parentElement).toHaveClass("h-[277px]", "w-full");
-      expect(add.parentElement?.parentElement).toHaveClass("grid-cols-[repeat(auto-fit,240px)]");
+      expect(add.parentElement).toHaveClass("h-[277px]", "w-[240px]");
     }
     expect(screen.getByTestId(`buy-stage-dec-${SAUCE.id}`)).toHaveClass("h-[44px]", "w-[44px]");
     expect(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`)).toHaveClass("h-[44px]", "w-[44px]");
@@ -597,14 +596,16 @@ describe("BuyStageSheet — Figma's Menu-Item card", () => {
       "relative",
       "flex",
       "h-[277px]",
-      "w-full",
+      "w-[240px]",
       "flex-col",
       "justify-between",
       "overflow-hidden",
       "rounded-[8px]",
       "bg-tb-grey-6"
     );
-    expect(card.parentElement).toHaveClass("grid", "grid-cols-[repeat(auto-fit,240px)]", "justify-center", "gap-[16px]");
+    // Four 240 px cards and three 16 px gaps fit the 1032 px content box;
+    // every row — a short last one too — centres.
+    expect(card.parentElement).toHaveClass("flex", "flex-wrap", "justify-center", "gap-[16px]");
 
     const name = within(card).getByText(SAUCE.name);
     expect(name).toHaveClass(
@@ -880,7 +881,8 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
   const rowUnder = (key: string) =>
     screen.getByTestId(`buy-stage-group-${key}`).nextElementSibling as HTMLElement;
   const cardsIn = (row: HTMLElement) => Array.from(row.children).map((card) => card.getAttribute("data-testid"));
-  const CARD_ROW = ["grid", "grid-cols-[repeat(auto-fit,240px)]", "justify-center", "gap-[16px]"];
+  /** A wrapping row: four 240 px cards across, and EVERY row centred — a wrapped last one too. */
+  const CARD_ROW = ["flex", "flex-wrap", "justify-center", "gap-[16px]"];
 
   it("walk w3: one-size groups under labels the cards don't show ('Veg fries medium' over 'Fries (Medium)') — no headers; the cards share one centred row", () => {
     renderStage(LEAST_SIZES, viewFor(LEAST_SIZES, SIZES));
@@ -938,10 +940,11 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
     expect(rowUnder("sauces").nextElementSibling).toBe(screen.getByTestId(`buy-stage-group-${BURGER.id}`));
   });
 
-  it("headed, a group's cards are their own centred row (auto-fit + justify-center), so a lone card never sits in column 1 of a grid its header kept four tracks wide; the header centres over it", () => {
+  it("headed, a group's cards are their own centred, wrapping row, so neither a lone card nor a 5th under a full row of four sits in column 1; the header centres over it", () => {
     renderStage(CAT_AND_BURGER);
     for (const key of ["sauces", BURGER.id]) {
       expect(rowUnder(key)).toHaveClass(...CARD_ROW);
+      expect(rowUnder(key)).not.toHaveClass("grid");
       const header = screen.getByTestId(`buy-stage-group-${key}`);
       expect(header).toHaveClass("text-center");
       expect(header).not.toHaveClass("col-span-full");
