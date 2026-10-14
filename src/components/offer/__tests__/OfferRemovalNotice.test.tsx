@@ -64,3 +64,24 @@ describe("OfferRemovalNotice — the min-items reason", () => {
     expect(notice).not.toHaveTextContent("+");
   });
 });
+
+describe("OfferRemovalNotice — the offer name (walk 2026-10-14)", () => {
+  // The rows title-case a name with CSS capitalize; inside this sentence the
+  // name gets the same casing ("amount ic" read raw here, "Amount Ic" there).
+  it.each([
+    ["amount ic", "Amount Ic"],
+    ["Maha Offer 50% on all item", "Maha Offer 50% On All Item"],
+    ["(free) cookie MOV", "(Free) Cookie MOV"],
+  ])("'%s' reads '%s'", (name, shown) => {
+    store.dispatch(setCartItems([row("p0"), row("p1"), row("p2")]));
+    store.dispatch(openOfferRemovalModal({ ...MIN_THREE, name }));
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <OfferRemovalNotice />
+        </MemoryRouter>
+      </Provider>
+    );
+    expect(screen.getByTestId("offer-removal-notice")).toHaveTextContent(`${shown} no longer applies to your order.`);
+  });
+});

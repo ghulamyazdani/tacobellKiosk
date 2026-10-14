@@ -26,6 +26,17 @@ interface OfferRemovalNoticeProps {
 }
 
 /**
+ * The offer name's one casing — every row prints it under CSS capitalize;
+ * inside this sentence CSS cannot reach the name alone, so the same rule is
+ * applied here: each word's first letter, past any leading punctuation.
+ */
+const capitalizeWords = (name: string): string =>
+  name.replace(
+    /(^|\s)([^\s\p{L}\p{N}]*)(\p{Ll})/gu,
+    (_, gap, lead, letter) => `${gap}${lead}${letter.toUpperCase()}`,
+  );
+
+/**
  * REWARD REMOVED notice — locked decision 6: design-language centered modal
  * (no dedicated Figma frame — flagged for client sign-off) driven by
  * `cart.offerRemovalModal`, opened by useOfferApply.handleCartDrivenRemoval.
@@ -126,7 +137,7 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         </h2>
         {removedOffer?.name ? (
           <p className="mx-auto mb-[16px] max-w-[560px] text-[26px] leading-[34px] text-black">
-            {t("offers.removedBody", { name: removedOffer.name })}
+            {t("offers.removedBody", { name: capitalizeWords(String(removedOffer.name)) })}
           </p>
         ) : null}
         {reason ? (

@@ -3,7 +3,7 @@
  * converter output; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -230,6 +230,14 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     await userEvent.click(entry);
     // Lazy (bagLazyParts): the sheet mounts once its chunk resolves.
     expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
+  });
+
+  it("walk 2026-10-14: the entry row's offer name takes the rows' casing (CSS capitalize), never the raw 'amount ic'", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setFilteredOffers([{ ...FLAT_OFFER, name: "amount ic" }]));
+    renderSheet();
+    const teaser = within(screen.getByTestId("bag-rewards-entry")).getByText("amount ic");
+    expect(teaser).toHaveClass("capitalize");
   });
 
   it("offers-parity (review 1 F-5): the entry row never names a 'Not available right now' offer — a sold-out buy side", () => {
