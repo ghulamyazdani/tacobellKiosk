@@ -13,15 +13,19 @@ import i18n from "../../../i18n";
 
 const t = i18n.t.bind(i18n) as TFunction;
 
+// The price is posistKiosk's moduloCalcaledValue (user decision 2026-10-14):
+// a whole amount as it is ("+£2"), a fraction to two decimals ("+£0.50").
 describe("formatOptionMeta — '+£0.50 | 360 Cal'", () => {
   it.each([
     ["price and calories", { price: 0.5, calorieCount: 360 }, "+£0.50 | 360 Cal"],
     ["price only", { price: 1.2 }, "+£1.20"],
+    ["a whole price", { price: 1, calorieCount: 90 }, "+£1 | 90 Cal"],
     ["calories only (a free option)", { price: 0, calorieCount: 170 }, "170 Cal"],
     ["neither", { price: 0 }, ""],
     ["nutritionalInfo calories (PackSlotCard parity)", { price: 0.75, nutritionalInfo: { calorieCount: 360 } }, "+£0.75 | 360 Cal"],
     ["an object-shaped calorie count", { price: 0, calorieCount: { value: 90 } }, "90 Cal"],
-    ["a string price", { price: "2" }, "+£2.00"],
+    ["a string price", { price: "2" }, "+£2"],
+    ["a string fraction", { price: "2.5" }, "+£2.50"],
     ["nothing at all", null, ""],
   ])("%s", (_label, item, expected) => {
     expect(formatOptionMeta(item, "£", t)).toBe(expected);

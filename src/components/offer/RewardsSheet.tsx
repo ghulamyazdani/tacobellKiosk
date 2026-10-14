@@ -36,6 +36,7 @@ import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -344,7 +345,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   };
 
   const priceLine = (entity: RecommendedEntity): string => {
-    const base = `${currency}${entity?.price ?? ""}`;
+    const base = `${currency}${formatPrice(entity?.price)}`;
     const cal = calorieValue(entity);
     return cal ? `${base} | ${t("pack.cal", { value: cal })}` : base;
   };

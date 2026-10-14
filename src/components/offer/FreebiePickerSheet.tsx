@@ -29,6 +29,7 @@ import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface FreebiePickerSheetProps {
@@ -570,13 +571,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           {showPrice && undiscounted > discounted && (
             <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
               {currency}
-              {undiscounted.toFixed(2)}
+              {formatPrice(undiscounted)}
             </span>
           )}
           {showPrice && (
             <span className="text-[24px] font-medium leading-[28px] text-black">
               {currency}
-              {discounted.toFixed(2)}
+              {formatPrice(discounted)}
             </span>
           )}
           <SelectionGlyph
@@ -692,13 +693,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             {showPrice && undiscounted > discounted && (
               <span className="text-[20px] leading-[24px] text-tb-ink-purple/60 line-through">
                 {currency}
-                {undiscounted.toFixed(2)}
+                {formatPrice(undiscounted)}
               </span>
             )}
             {showPrice && (
               <span className="text-[24px] font-medium leading-[28px] text-black">
                 {currency}
-                {discounted.toFixed(2)}
+                {formatPrice(discounted)}
               </span>
             )}
             <SelectionGlyph selected={units > 0} mode="and" />

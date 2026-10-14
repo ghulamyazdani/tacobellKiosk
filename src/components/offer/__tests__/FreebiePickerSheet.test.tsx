@@ -332,8 +332,9 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     const caesar = screen.getByTestId("freebie-option-caesar-dressing");
     expect(tortilla).toHaveTextContent("Tortilla Sauce");
     expect(tortilla).toHaveTextContent("Free");
-    expect(tortilla).toHaveTextContent("£2.00"); // struck full price
-    expect(tortilla).toHaveTextContent("£0.00"); // discounted line
+    // The struck full price, then the discounted line — posistKiosk's
+    // OfferItem format (moduloCalcaledValue): whole amounts print whole.
+    expect(tortilla).toHaveTextContent(/£2£0$/);
     expect(caesar).toHaveTextContent("Caesar Dressing");
 
     const confirm = screen.getByTestId("freebie-confirm");
@@ -493,10 +494,9 @@ describe("FreebiePickerSheet — lane offers review fixes", () => {
     const { onClose } = renderPicker(SIZES_OFFER);
     const [medium, large] = screen.getAllByTestId("freebie-option-fries");
     expect(medium).toHaveTextContent("Medium");
-    expect(medium).toHaveTextContent("£3.00");
+    expect(medium).toHaveTextContent(/£3£0$/);
     expect(large).toHaveTextContent("Large");
-    expect(large).toHaveTextContent("£5.00");
-    expect(large).toHaveTextContent("£0.00");
+    expect(large).toHaveTextContent(/£5£0$/);
 
     await userEvent.click(large);
     expect(tierSessionOpen()).toBe(false);
@@ -575,8 +575,7 @@ describe("FreebiePickerSheet — lane offers review fixes", () => {
     const row = () => screen.getByTestId("freebie-option-half-burger");
     expect(row()).toHaveTextContent("Customized — tap to change");
     // 50% off the £9 base, the £1 add-on in full (discountOnAddon off).
-    expect(row()).toHaveTextContent("£10.00");
-    expect(row()).toHaveTextContent("£5.50");
+    expect(row()).toHaveTextContent(/£10£5\.50$/);
 
     // "Tap to change", then change your mind: BACK keeps the held pick.
     await userEvent.click(row());
@@ -717,8 +716,8 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
     const kiddie = screen.getByTestId("freebie-option-kiddie-meal");
     expect(kiddie).toHaveAttribute("aria-pressed", "true");
     expect(kiddie).toHaveTextContent("Customized — tap to change");
-    expect(kiddie).toHaveTextContent("£13.00"); // struck: base + add-on
-    expect(kiddie).toHaveTextContent("£1.00"); // base free, the add-on charged
+    // Struck: base + add-on; then the base free, the add-on charged.
+    expect(kiddie).toHaveTextContent(/£13£1$/);
     expect(screen.getByTestId("freebie-option-tortilla-sauce")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("freebie-confirm")).toHaveAttribute("aria-disabled", "false");
   });
@@ -848,8 +847,7 @@ describe("FreebiePickerSheet — customizable freebies (lane offers)", () => {
     });
 
     const kiddie = screen.getByTestId("freebie-option-kiddie-meal");
-    expect(kiddie).toHaveTextContent("£14.00");
-    expect(kiddie).toHaveTextContent("£2.00");
+    expect(kiddie).toHaveTextContent(/£14£2$/);
 
     await userEvent.click(screen.getByTestId("freebie-confirm"));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -1677,23 +1675,20 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
     renderPicker({ ...CHOICE_OFFER, _id: "offer-two-chilli", getItems: { items: [chilli] } });
     const row = screen.getByTestId("freebie-option-chilli");
     expect(row).toHaveTextContent("2 x Chilli Manchurian");
-    expect(row).toHaveTextContent("£40.00");
-    expect(row).toHaveTextContent("£39.60");
-    expect(row).not.toHaveTextContent("£20.00");
+    expect(row).toHaveTextContent(/£40£39\.60$/);
+    expect(row).not.toHaveTextContent(/£20(?![\d.])/);
     expect(row).not.toHaveTextContent("£19.80");
   });
 
   it("a category pick prices the units picked; an unpicked row shows one unit", async () => {
     renderPicker(getAfterAll(50));
     const chilli = () => screen.getByTestId("freebie-cat-option-chinese-chilli");
-    expect(chilli()).toHaveTextContent("£20.00");
-    expect(chilli()).toHaveTextContent("£10.00");
+    expect(chilli()).toHaveTextContent(/£20£10$/);
     await userEvent.click(chilli());
     await userEvent.click(chilli());
     expect(chilli()).toHaveTextContent("2 x Chilli Manchurian");
-    expect(chilli()).toHaveTextContent("£40.00");
-    expect(chilli()).toHaveTextContent("£20.00");
-    expect(chilli()).not.toHaveTextContent("£10.00");
-    expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent("£5.00");
+    expect(chilli()).toHaveTextContent(/£40£20$/);
+    expect(chilli()).not.toHaveTextContent(/£10(?![\d.])/);
+    expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent(/£5£2\.50$/);
   });
 });

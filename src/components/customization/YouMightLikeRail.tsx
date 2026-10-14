@@ -61,7 +61,7 @@ export default function YouMightLikeRail({
             entity={entity}
             testId={`pdp-rail-item-${entity.id}`}
             title={name(entity)}
-            price={Number.isFinite(Number(entity.price ?? NaN)) ? Number(entity.price).toFixed(2) : undefined}
+            price={entity.price}
             currency={currency}
             quantity={Number(doesItemExistInCart(entity.id)?.quantity ?? 0)}
             addLabel={addLabel}

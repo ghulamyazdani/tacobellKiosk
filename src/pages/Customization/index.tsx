@@ -54,6 +54,7 @@ import ErrorModal from "../../components/common/ErrorModal";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
 import { selectRecommendationDetour } from "../../redux/features/menuSelections/menuSelections.slice";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -808,7 +809,7 @@ export default function Customization({
           <span data-testid="pdp-price">
             {sizePending
               ? formatMenuPriceLine(SelectedEntity, currency, t)
-              : `${currency}${basePrice.toFixed(2)}${calLabel}`}
+              : `${currency}${formatPrice(basePrice)}${calLabel}`}
           </span>
         </p>
         {pdpDescription && (
@@ -863,7 +864,7 @@ export default function Customization({
                     <p className="pr-[36px] text-[20px] font-medium capitalize text-black">{name(v)}</p>
                     <p className="text-[16px] text-tb-ink-purple/70">
                       {currency}
-                      {Number(v.price ?? 0).toFixed(2)}
+                      {formatPrice(v.price)}
                     </p>
                   </button>
                 );

@@ -129,6 +129,20 @@ describe("MakeItAMealPrompt (P6c — MIAM upsell prompt)", () => {
     expect(screen.getByTestId("miam-combo-combo-1")).toHaveTextContent("£7.99");
   });
 
+  // User decision 2026-10-14: posistKiosk's OptionsUpSell prints the meal's
+  // price with moduloCalcaledValue — a whole price whole (walk: "﷼100.00").
+  it("a whole combo price prints whole: £100, never £100.00", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    const MEAL = { ...COMBO, price: 100 };
+    store.dispatch(
+      openMakeItAMealModal({ isOpen: true, selectedItem: { ...BURGER, upsellItems: [MEAL] }, availableCombos: [MEAL] })
+    );
+    renderPrompt();
+    const card = screen.getByTestId("miam-combo-combo-1");
+    expect(card).toHaveTextContent(/£100(?![\d.])/);
+    expect(card).not.toHaveTextContent("£100.00");
+  });
+
   it("decline adds the ORIGINAL item to the cart, blacklists it and closes the prompt", async () => {
     openPrompt();
     renderPrompt();

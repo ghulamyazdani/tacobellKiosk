@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { getEffectiveMax, getEffectiveMin } from "@cx-sdk/ordering/customization/selectionRules";
+import { formatPrice } from "../../utils/price";
 // ?no-inline: emitted as precached files. Inlined (<4 KB → data URIs) they
 // cost boot-path gzip (SlotSelectionSheet's radio-check precedent, D7).
 import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
@@ -65,13 +66,13 @@ type MetaItem = {
   nutritionalInfo?: { calorieCount?: unknown };
 } | null | undefined;
 
-/** "+£0.50 | 360 Cal": a price only when it costs, calories only when known. */
+/** "+£0.50 | 360 Cal": a price only when it costs (formatPrice: "+£1"), calories only when known. */
 // eslint-disable-next-line react-refresh/only-export-components -- shared by every option surface; HMR falls back to a reload for this file
 export function formatOptionMeta(item: MetaItem, currency: string, t: TFunction): string {
   const cal = item?.calorieCount ?? item?.nutritionalInfo?.calorieCount;
   const calValue = typeof cal === "object" ? (cal as { value?: unknown } | null)?.value : cal;
   const parts: string[] = [];
-  if (Number(item?.price) > 0) parts.push(`+${currency}${Number(item?.price).toFixed(2)}`);
+  if (Number(item?.price) > 0) parts.push(`+${currency}${formatPrice(item?.price)}`);
   if (calValue) parts.push(t("pack.cal", { value: calValue }));
   return parts.join(" | ");
 }

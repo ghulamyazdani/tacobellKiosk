@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
@@ -106,8 +107,8 @@ export default function SelectSizeModal({
   const priceLabel = (v: any) => {
     const p = Number(v?.price ?? 0);
     return p > minPrice
-      ? `+${currency}${(p - minPrice).toFixed(2)}`
-      : `${currency}${p.toFixed(2)}`;
+      ? `+${currency}${formatPrice(p - minPrice)}`
+      : `${currency}${formatPrice(p)}`;
   };
 
   const calText = (v: any) => {

@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
+import { formatPrice } from "../../utils/price";
 import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 // ?no-inline: emitted as a precached file. Inlined (<4 KB → data URI) this
@@ -62,7 +63,7 @@ function SheetBody({
     const calText = cal ? t("pack.cal", { value: cal }) : "";
     const line =
       price > 0
-        ? `+${currency}${price.toFixed(2)}${calText ? ` | ${calText}` : ""}`
+        ? `+${currency}${formatPrice(price)}${calText ? ` | ${calText}` : ""}`
         : calText;
 
     // Figma 1:2814 card: 1px #EBEBEB divider on top, the row 24 px below it

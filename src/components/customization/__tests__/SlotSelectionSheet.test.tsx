@@ -72,6 +72,15 @@ describe("SlotSelectionSheet (Figma 1:4761/1:4692 — SELECT sheet)", () => {
     expect(fries).toHaveTextContent("+£0.75 | 360 Cal");
   });
 
+  // User decision 2026-10-14: posistKiosk's price format (moduloCalcaledValue).
+  it("a whole upgrade price prints whole: '+£2', never '+£2.00'", () => {
+    renderSheet({ options: [COLA, { ...FRIES, price: 2 }] });
+    const fries = screen.getByTestId("slot-option-opt-fries").parentElement as HTMLElement;
+
+    expect(fries).toHaveTextContent("+£2 | 360 Cal");
+    expect(fries).not.toHaveTextContent("+£2.00");
+  });
+
   it("SAVE is locked while min > 0 and nothing is picked; a pick unlocks it and returns the item", async () => {
     const { onSave } = renderSheet();
     const save = screen.getByTestId("slot-sheet-save");
