@@ -219,8 +219,9 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
       const dialog = screen.getByRole("alertdialog", { name: "Remove Item" });
       expect(dialog).toHaveAttribute("data-testid", "remove-item-modal");
+      // The frame's words, its " ?" typo fixed (walk 2026-10-14).
       expect(dialog).toHaveAccessibleDescription(
-        "You are about to delete this item, would you like to continue ?",
+        "You are about to delete this item. Would you like to continue?",
       );
       expect(dialog).toHaveClass("absolute", "inset-0", "z-[80]");
       expect(dialog.querySelector("img")).toBeNull();
