@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { store } from "../../../redux/app/store";
-import { setRecommendationDetour } from "../../../redux/features/menuSelections/menuSelections.slice";
+import {
+  mutateAddToCartModal,
+  setRecommendationDetour,
+} from "../../../redux/features/menuSelections/menuSelections.slice";
 import DetourTapGuard from "../DetourTapGuard";
 
 /*
@@ -87,6 +90,48 @@ describe("DetourTapGuard (review R1)", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    expect(guard()).toBeNull();
+  });
+
+  /*
+    Every menu add now opens the modal (user 2026-10-14), and it mounts in
+    the commit of a card tap, its scrim under the finger: a double tap's
+    second half closed it ~100 ms after it opened (the confirmation gone), or
+    picked the tile beneath. Its close (GOT IT, X, the scrim, ADD TO ORDER)
+    hands the menu back under the finger the same way: a double tap's second
+    half added the card beneath. Both edges arm the guard.
+  */
+  it.each([
+    ["opens: its second half never closes it or picks a tile", false, true],
+    ["closes: its second half never adds the menu card beneath", true, false],
+  ])("the product-added modal %s — 500 ms", (_edge, from, to) => {
+    store.dispatch(mutateAddToCartModal(from));
+    mount();
+    expect(guard()).toBeNull();
+
+    act(() => {
+      store.dispatch(mutateAddToCartModal(to));
+    });
+
+    expect(guard()).toHaveClass("absolute", "inset-0", "z-[58]");
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+    expect(guard()).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(guard()).toBeNull();
+  });
+
+  it("a re-open of a modal already open is no edge: nothing armed", () => {
+    store.dispatch(mutateAddToCartModal(true));
+    mount();
+
+    act(() => {
+      store.dispatch(mutateAddToCartModal({ isOpen: true, item: { id: "next" } }));
+    });
+
     expect(guard()).toBeNull();
   });
 

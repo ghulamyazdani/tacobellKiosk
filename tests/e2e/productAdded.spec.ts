@@ -11,7 +11,7 @@ import {
 } from "./fixtures/backend";
 import { settle } from "./fixtures/capture";
 import { expectNothingDangerousWasContacted, mockCheckoutBackend } from "./fixtures/checkout";
-import { expect, test, type Locator, type Page } from "./fixtures/kiosk";
+import { expect, freezeClock, test, type Locator, type Page } from "./fixtures/kiosk";
 import {
   bootRegisteredToMenu,
   chooseLanguage,
@@ -971,13 +971,74 @@ test.describe("every menu add confirms — a plain one too (user 2026-10-14)", (
     await expect(page.getByTestId("menu-screen")).toBeVisible();
     await expect(modal(page)).toHaveCount(0);
   });
+
+  /*
+    Review: the modal mounts in the commit of the card's tap, its scrim under the finger, so the second half of a
+    double tap closed it ~100 ms after it opened; its GOT IT hands the menu back the same way. The detour tap guard
+    (500 ms) is armed on both edges. Two REAL taps 120 ms apart (page.mouse: two tasks, the screen changes between
+    them) on a frozen clock, so the window cannot run out between them (paytm R7's pattern).
+  */
+  test("A3 DOUBLE TAP: two taps 120 ms apart on a plain card add ONE and the modal stays up — the second half met the guard, never the scrim under it; on GOT IT they close it and add nothing — never the menu card under it", async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await bootToMenu(page);
+    const guard = page.getByTestId("detour-tap-guard");
+    const doubleTap = async ({ x, y }: { x: number; y: number }) => {
+      await page.mouse.click(x, y);
+      await page.clock.runFor(120);
+      await page.mouse.click(x, y);
+    };
+    /** A point `across` the way along `target`, half way down. */
+    const pointOn = async (target: Locator, across = 1 / 2) => {
+      const box = await target.boundingBox();
+      if (!box) throw new Error("nothing to tap");
+      return { x: box.x + box.width * across, y: box.y + box.height / 2 };
+    };
+    /** What a tap at `at` meets now: the modal's closer (its accessible name) or a menu card (its testid). */
+    const under = (at: { x: number; y: number }) =>
+      page.evaluate(({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return el?.closest('[data-testid="product-added-modal"]')
+          ? el.getAttribute("aria-label")
+          : (el?.closest('[data-testid^="item-"]')?.getAttribute("data-testid") ?? null);
+      }, at);
+
+    const sauce = page.getByTestId(`item-${TORTILLA_SAUCE}`);
+    await sauce.scrollIntoViewIfNeeded();
+    const card = await pointOn(sauce);
+    await freezeClock(page);
+    await doubleTap(card);
+    await expect(modal(page)).toBeVisible();
+    await expect(guard).toHaveCount(1);
+    await page.clock.runFor(500);
+    await expect(guard).toHaveCount(0);
+    await expect(modal(page), "the window is over and the modal is still up").toBeVisible();
+    expect(await under(card), "the card's tap point sits over the modal's scrim").toBe(en.language.close);
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: true, item: "Tortilla Sauce", cart: ["Tortilla Sauce x1"] });
+
+    // A quarter along: its centre sits over the gap between two cards.
+    const gotIt = await pointOn(cta(page), 1 / 4);
+    await expect(cta(page)).toHaveText(en.offers.gotIt);
+    await doubleTap(gotIt);
+    await expect(modal(page)).toHaveCount(0);
+    await expect(guard).toHaveCount(1);
+    await page.clock.runFor(500);
+    await expect(guard).toHaveCount(0);
+    await expect(page, "still the menu: no PDP opened under the finger").toHaveURL(/\/menu$/);
+    await expect(modal(page), "no add reopened it").toHaveCount(0);
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: false, cart: ["Tortilla Sauce x1"] });
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    expect(await under(gotIt), "GOT IT sat over a menu card").toMatch(/^item-/);
+  });
 });
 
 /**
  * P8 MOTION: one body, both modes. Under no-preference the card is tapped ~120 ms into its spring (paused there,
- * read live), the pill pops in (tb-pop-in) and the next tap bumps its number (tb-bump), and a choice tap removes
- * the modal from the screen in the same frame (hiding is instant: no exit animation) while Select a Size appears.
- * Under the suite's default reduce the same taps land with every animation ≤ 1 ms.
+ * read live, once the modal's 500 ms double-tap guard has lifted), the pill pops in (tb-pop-in) and the next tap
+ * bumps its number (tb-bump), and a choice tap removes the modal from the screen in the same frame (hiding is
+ * instant: no exit animation) while Select a Size appears. Under the suite's default reduce the same taps land with
+ * every animation ≤ 1 ms.
  */
 async function motionPaths(page: Page, real: boolean) {
   await bootToMenu(page);
@@ -1020,6 +1081,9 @@ async function motionPaths(page: Page, real: boolean) {
     expect(at120.duration, "reduce: the spring ends in 1 ms").toBeLessThanOrEqual(1);
     expect(at120.scale, "reduce: at rest").toBeCloseTo(1, 2);
   }
+  // The modal's first 500 ms swallow taps (the double-tap guard, armed as it opens — user 2026-10-14): the spring is
+  // held at 120 ms while the guard lifts, so the tap still meets the tile mid-spring.
+  await expect(page.getByTestId("detour-tap-guard")).toHaveCount(0);
   await rate(0.1);
   await page.mouse.click(at120.x, at120.y);
   await expect(pill(page, TORTILLA_SAUCE), "the tap mid-spring lands").toHaveText("1");
