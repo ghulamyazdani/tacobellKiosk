@@ -410,6 +410,8 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await expect(host).toHaveCount(0);
     await expect(page).toHaveURL(/\/cart$/);
     await expect(burgerOption).toContainText("Customized");
+    // The held row is priced through redeemGetItem: nothing → Free, never £0.
+    await expect(burgerOption).toContainText(/£8Free$/);
     await expect(page.getByTestId("freebie-confirm")).not.toHaveAttribute(
       "aria-disabled",
       "true"
