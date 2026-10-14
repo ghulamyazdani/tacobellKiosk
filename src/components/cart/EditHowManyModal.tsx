@@ -21,7 +21,9 @@ interface EditHowManyModalProps {
  * 1:4174 numpad family (KioskNumpad). A SPLIT edit, not a quantity setter.
  * Figma draws it over the menu; it opens inside the bag (z-50, like
  * RemoveItemModal) — design-language placement, flagged for sign-off.
- * Lazy (bagLazyParts). X and the scrim cancel; EDIT is inert at 0.
+ * Lazy (bagLazyParts). X and the scrim cancel; EDIT is inert at 0, and a
+ * digit past N or "+" at N is dimmed and inert (the frame draws no disabled
+ * key — design language, flagged for sign-off).
  */
 export default function EditHowManyModal({
   row,
@@ -40,11 +42,15 @@ export default function EditHowManyModal({
   const value = Number(digits);
   const setValue = (k: number) => setDigits(k > 0 ? String(k) : "");
 
-  // The numpad hands over value + key (or the CLEAR / backspace result):
-  // strip leading zeros and ignore a key that would pass N.
+  // A k past N never applies: those digits (the numpad's `accepts`) and "+"
+  // at N render dimmed and aria-disabled, not live-looking keys that do
+  // nothing (walk 2026-10-14). The numpad hands over value + key (or the
+  // CLEAR / backspace result): strip leading zeros, ignore a k past N.
+  const fits = (next: string) => Number(next) <= total;
+  const atMax = value >= total;
   const handleKeys = (next: string) => {
     const normalised = next.replace(/^0+/, "");
-    if (Number(normalised) > total) return;
+    if (!fits(normalised)) return;
     setDigits(normalised);
   };
 
@@ -106,8 +112,9 @@ export default function EditHowManyModal({
                 type="button"
                 data-testid="edit-how-many-increase"
                 aria-label={t("bag.increase")}
+                aria-disabled={atMax}
                 onClick={() => setValue(Math.min(total, value + 1))}
-                className="flex h-[44px] w-[44px] items-center justify-center"
+                className={`flex h-[44px] w-[44px] items-center justify-center ${atMax ? "opacity-40" : ""}`}
               >
                 <img alt="" src={plusIcon} className="h-[36px] w-[36px]" />
               </button>
@@ -116,6 +123,7 @@ export default function EditHowManyModal({
               value={digits}
               onChange={handleKeys}
               maxLength={String(total).length}
+              accepts={fits}
             />
           </div>
         </div>

@@ -15,7 +15,12 @@ import "../../../i18n";
  */
 const renderPad = (
   value: string,
-  overrides: { maxLength?: number; onSubmit?: () => void; noLeadingZero?: boolean } = {}
+  overrides: {
+    maxLength?: number;
+    onSubmit?: () => void;
+    noLeadingZero?: boolean;
+    accepts?: (next: string) => boolean;
+  } = {}
 ) => {
   const onChange = vi.fn();
   const utils = render(
@@ -109,6 +114,40 @@ describe("KioskNumpad (Figma 1:4174 — loyalty numeric keypad)", () => {
       const { onChange } = renderPad("");
       await userEvent.click(screen.getByTestId("numpad-key-0"));
       expect(onChange).toHaveBeenCalledWith("0");
+    });
+  });
+
+  describe("accepts (the edit-how-many cap; walk 2026-10-14)", () => {
+    it("a digit whose next value it rejects is aria-disabled, dimmed, without press travel — and inert", async () => {
+      const { onChange } = renderPad("1", { accepts: (next) => Number(next) <= 12 });
+      for (const digit of ["0", "1", "2"]) {
+        const key = screen.getByTestId(`numpad-key-${digit}`);
+        expect(key).not.toHaveAttribute("aria-disabled");
+        expect(key).not.toHaveClass("opacity-40");
+        expect(key).toHaveClass("active:translate-y-[2px]", "active:bg-tb-purple-press");
+      }
+      for (const digit of ["3", "9"]) {
+        const key = screen.getByTestId(`numpad-key-${digit}`);
+        expect(key).toHaveAttribute("aria-disabled", "true");
+        expect(key).toHaveClass("opacity-40", "min-h-[44px]");
+        expect(key.className).not.toMatch(/active:/);
+      }
+      await userEvent.click(screen.getByTestId("numpad-key-9"));
+      expect(onChange).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByTestId("numpad-key-2"));
+      expect(onChange).toHaveBeenCalledWith("12");
+      // CLEAR and backspace are never gated.
+      expect(screen.getByTestId("numpad-clear")).not.toHaveAttribute("aria-disabled");
+      expect(screen.getByTestId("numpad-backspace")).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("omitted (phone, OTP, tent): no digit is ever disabled, even at maxLength", () => {
+      renderPad("1234", { maxLength: 4 });
+      for (let digit = 0; digit <= 9; digit += 1) {
+        const key = screen.getByTestId(`numpad-key-${digit}`);
+        expect(key).not.toHaveAttribute("aria-disabled");
+        expect(key).not.toHaveClass("opacity-40");
+      }
     });
   });
 

@@ -21,6 +21,13 @@ interface KioskNumpadProps {
    * — the tent number and the edit-how-many count take any digit.
    */
   noLeadingZero?: boolean;
+  /**
+   * The edit-how-many cap: a digit whose next value this rejects can never
+   * apply, so it renders dimmed and inert (aria-disabled — focus stays put)
+   * instead of looking live and doing nothing. Omitted (phone, OTP, tent):
+   * every digit stays live, as before.
+   */
+  accepts?: (next: string) => boolean;
 }
 
 /**
@@ -39,6 +46,7 @@ export default function KioskNumpad({
   maxLength = 16,
   onSubmit,
   noLeadingZero = false,
+  accepts,
 }: KioskNumpadProps) {
   const { t } = useTranslation();
 
@@ -46,9 +54,10 @@ export default function KioskNumpad({
     (key: string) => {
       if (value.length >= maxLength) return;
       if (noLeadingZero && key === "0" && value.length === 0) return;
+      if (accepts && !accepts(value + key)) return;
       onChange(value + key);
     },
-    [value, onChange, maxLength, noLeadingZero]
+    [value, onChange, maxLength, noLeadingZero, accepts]
   );
   const backspace = useCallback(
     () => onChange(value.slice(0, -1)),
@@ -56,25 +65,33 @@ export default function KioskNumpad({
   );
   const clear = useCallback(() => onChange(""), [onChange]);
 
-  const keyBase =
-    "tb-no-press flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px] active:translate-y-[2px] active:border-b-2";
+  const keyShape =
+    "tb-no-press flex h-[90px] items-center justify-center rounded-[10px] border-2 border-b-[5px] border-black min-h-[44px] min-w-[44px]";
+  const keyBase = `${keyShape} active:translate-y-[2px] active:border-b-2`;
   const digitKey = `${keyBase} w-[120px] bg-tb-purple-vibrant active:bg-tb-purple-press`;
+  // A digit that cannot apply: dimmed like EDIT at 0 and the bag's capped
+  // "+" (opacity-40), with no press travel or pressed fill.
+  const offDigitKey = `${keyShape} w-[120px] bg-tb-purple-vibrant opacity-40`;
   const specialKey = `${keyBase} w-[120px] bg-tb-grey-4 active:bg-tb-grey-3`;
 
-  const renderDigit = (digit: string) => (
-    <button
-      key={digit}
-      type="button"
-      data-testid={`numpad-key-${digit}`}
-      aria-label={digit}
-      onClick={() => press(digit)}
-      className={digitKey}
-    >
-      <span className="text-[40px] font-bold leading-none text-tb-surface">
-        {digit}
-      </span>
-    </button>
-  );
+  const renderDigit = (digit: string) => {
+    const off = accepts ? !accepts(value + digit) : false;
+    return (
+      <button
+        key={digit}
+        type="button"
+        data-testid={`numpad-key-${digit}`}
+        aria-label={digit}
+        aria-disabled={off || undefined}
+        onClick={() => press(digit)}
+        className={off ? offDigitKey : digitKey}
+      >
+        <span className="text-[40px] font-bold leading-none text-tb-surface">
+          {digit}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div
