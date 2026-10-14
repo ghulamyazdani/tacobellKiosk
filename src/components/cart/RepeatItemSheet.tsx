@@ -32,7 +32,7 @@ import {
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useGridView from "../../hooks/customization/useGridView";
-import useTagFilter from "../../hooks/menuHooks/useTagFilter";
+import useSellableCombos from "../../hooks/makeItAMeal/useSellableCombos";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import closeIcon from "../../assets/icons/close.svg";
@@ -62,7 +62,8 @@ function SheetBody({ sheet }: { sheet: any }) {
     getAllCustomizationList,
   } = useCartHook();
   const { isShowGridViewEnabled } = useGridView();
-  const { filterByTags } = useTagFilter();
+  // The combos the meal prompt offers — an item with none is no upsell.
+  const { sellableCombos } = useSellableCombos();
   const { openDoubleTierModal } = useMakeItAMeal();
   const comboUpsellEnabled = useSelector(
     (state: RepeatSheetRootState) =>
@@ -162,7 +163,7 @@ function SheetBody({ sheet }: { sheet: any }) {
     dispatch(closeRepeatItemBottomSheet());
     if (!baseItem) return;
 
-    const upsellCtx = { comboUpsellEnabled, isShowGridViewEnabled, filterByTags };
+    const upsellCtx = { comboUpsellEnabled, isShowGridViewEnabled, filterByTags: sellableCombos };
     const upsellWins =
       hasComboUpsell(baseItem, upsellCtx) &&
       !blackListedItemsMIAM?.[baseItem?.id];

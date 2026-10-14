@@ -22,13 +22,6 @@ import {
   setIsForceOpenMakeItAMealModal,
   setTier1BottomSheetAndSelectedEntity,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
-import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
-import { selectAllowMultiplePunch } from "@cx-sdk/catalog/state/appSettings.slice";
-import {
-  toMenuSellableEntity,
-  type ModifierGroupMap,
-} from "@cx-sdk/catalog/recommendation/recommendationUtils";
-import { markUncompletable } from "@cx-sdk/catalog/oos/optionStock";
 import {
   buildVariantSelectionEntity,
   buildVariantTierPayload,
@@ -36,12 +29,11 @@ import {
 import { checkCustomizationType } from "@cx-sdk/catalog/menu/menuUtils";
 import {
   closeBottomSheet,
-  selectOutOfStockItems,
   setSelectedEntity,
 } from "../../redux/features/menuSelections/menuSelections.slice";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
-import useTagFilter from "../../hooks/menuHooks/useTagFilter";
+import useSellableCombos from "../../hooks/makeItAMeal/useSellableCombos";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
@@ -167,14 +159,11 @@ export default function MakeItAMealPrompt() {
 
   const { addItemToCart } = useCartHook();
   const { openDoubleTierModal } = useMakeItAMeal();
-  const { filterByTags } = useTagFilter();
+  const { sellableCombos } = useSellableCombos();
 
   const isOpen = useSelector(makeItAMealIsOpen, shallowEqual);
   const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
   const item = useSelector(makeItMealSelectedItem, shallowEqual);
-  const modifierMap = useSelector(selectModifierMap) as ModifierGroupMap;
-  const stock = useSelector(selectOutOfStockItems);
-  const multiPunch = Boolean(useSelector(selectAllowMultiplePunch));
   const { isSecondary, name, text } = useLocalized();
   // 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
   // headline. The guest's slot only — no cross-language fallback, so an
@@ -185,17 +174,12 @@ export default function MakeItAMealPrompt() {
   const headline = typeof operatorText === "string" ? operatorText.trim() : "";
   const currency = useCurrencySymbol();
 
-  const combos: any[] = useMemo(() => {
-    const resolved = (filterByTags(item?.upsellItems) ?? []) as any[];
-    // UB6 F1: as the menu sells them (upsellItems embed RAW entities) — a dead
-    // pack would sell empty at full price; a dead plain item is one-tap.
-    // walk-oos 2: and as stock sells them — one no guest can complete is out.
-    return resolved
-      .map((c) =>
-        markUncompletable(toMenuSellableEntity(c, modifierMap), modifierMap, stock, multiPunch)
-      )
-      .filter((c: any) => c?.isActive && !c?.outOfStock);
-  }, [item, filterByTags, modifierMap, stock, multiPunch]);
+  // The combos a guest can buy — the same list the add decision counted
+  // (useSellableCombos), so a prompt never opens with no meal on it.
+  const combos: any[] = useMemo(
+    () => sellableCombos(item?.upsellItems),
+    [item, sellableCombos]
+  );
 
   // Multi-combo selection. Derived-with-fallback rather than an effect, so
   // "first preselected" holds even when the combo list changes underneath.

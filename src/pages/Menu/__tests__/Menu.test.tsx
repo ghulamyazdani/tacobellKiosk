@@ -797,8 +797,10 @@ describe("Menu — the funnel events (B3)", () => {
     name: "Greek Salad",
     price: 17,
     subCategoryId: SIDES,
-    // Converted combos are entities (filterEntitiesByTags drops bare ids).
-    upsellItems: [{ id: "combo-1", name: "Salad Meal", tags: ["veg"] }],
+    // Converted combos are entities (filterEntitiesByTags drops bare ids),
+    // active ones (addUpSellEntities resolves no other) — the meal prompt
+    // offers only those, and an item with none is no upsell (walk-oos 2).
+    upsellItems: [{ id: "combo-1", name: "Salad Meal", tags: ["veg"], isActive: true }],
     recommendedItems: [],
     outOfStock: false,
   };

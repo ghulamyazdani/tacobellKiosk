@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import useCartHook from "./useCartHook";
 import useGridView from "../customization/useGridView";
 import useMakeItAMeal from "../makeItAMeal/useMakeItAMeal";
-import useTagFilter from "./useTagFilter";
+import useSellableCombos from "../makeItAMeal/useSellableCombos";
 import {
   buildDirectAddPayload,
   buildMakeItAMealPayload,
@@ -83,7 +83,8 @@ const useAddEntityToCart = () => {
   // which is re-evaluated on every store action.
   const { isShowGridViewEnabled } = useGridView();
   const { openDoubleTierModal } = useMakeItAMeal();
-  const { filterByTags } = useTagFilter();
+  // The combos the meal prompt offers — an item with none is no upsell.
+  const { sellableCombos } = useSellableCombos();
 
   const showRepeatCustomizationRdx = useSelector(selectShowRepeatCustomization);
   const kioskSettingsRdx = useSelector(
@@ -106,7 +107,7 @@ const useAddEntityToCart = () => {
         comboUpsellEnabled: kioskSettingsRdx?.enable_combo_upsell,
         blackListedItems: blackListedItemsMIAM,
         isShowGridViewEnabled,
-        filterByTags,
+        filterByTags: sellableCombos,
       }),
     [
       doesItemExistInCart,
@@ -114,7 +115,7 @@ const useAddEntityToCart = () => {
       kioskSettingsRdx,
       blackListedItemsMIAM,
       isShowGridViewEnabled,
-      filterByTags,
+      sellableCombos,
     ],
   );
 

@@ -11,7 +11,12 @@ import {
   setCartItems,
   setRepeatItemBottomSheet,
 } from "@cx-sdk/ordering/state/cart.slice";
-import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setCurrency, setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  makeItAMealIsOpen,
+  tier1CustomizationSelectedEntity,
+} from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { store } from "../../../redux/app/store";
 import {
   selectRecommendationDetour,
@@ -209,5 +214,70 @@ describe("RepeatItemSheet (contract B2 — repeat customizations)", () => {
     expect(
       screen.getByTestId("repeat-row-cb-1").closest(".overflow-y-auto")
     ).not.toBeNull();
+  });
+});
+
+/*
+  walk-oos 2 (review oos-2 #1): "+ NEW CUSTOMIZATIONS" re-runs the menu's
+  ladder with the meal combos the prompt can offer — a base item whose every
+  combo is dead (its required drink: every option out) is no upsell: it goes
+  on to its customization, never to a meal prompt with no meal on it.
+*/
+describe("RepeatItemSheet — walk-oos 2: no meal prompt without a meal to offer", () => {
+  const DEAD_BOX = { id: "box-dead", name: "Cravings Box", price: 9, isActive: true, modifiers: ["meal_drink"] };
+  const LIVE_BOX = { id: "box-live", name: "Dream Box", price: 8, isActive: true };
+  const seed = (upsellItems: object[]) => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(
+      setRepeatItemBottomSheet({
+        isOpen: true,
+        status: "repeat",
+        baseItem: { ...BURGER_ROW.baseItem, upsellItems },
+        returnTo: "menu",
+      } as any)
+    );
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setKioskSettings({ enable_combo_upsell: true }));
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          sauce_group: {
+            _id: "sauce_group",
+            isActive: true,
+            min: 0,
+            max: 1,
+            constituentItems: [{ id: "onions", name: "Add Onions", isActive: true }],
+          },
+          meal_drink: {
+            _id: "meal_drink",
+            isActive: true,
+            min: 1,
+            max: 1,
+            constituentItems: [{ id: "cola", isActive: true, outOfStock: true }],
+          },
+        },
+      })
+    );
+  });
+
+  it("the only combo dead: the burger's customization opens, no prompt", async () => {
+    seed([DEAD_BOX]);
+    renderSheet();
+    await userEvent.click(screen.getByTestId("repeat-new-customizations"));
+
+    expect(makeItAMealIsOpen(store.getState())).toBe(false);
+    expect(tier1CustomizationSelectedEntity(store.getState())).toMatchObject({ id: "cheese-burger" });
+  });
+
+  it("a live combo beside it: the meal prompt opens", async () => {
+    seed([DEAD_BOX, LIVE_BOX]);
+    renderSheet();
+    await userEvent.click(screen.getByTestId("repeat-new-customizations"));
+
+    expect(makeItAMealIsOpen(store.getState())).toBe(true);
   });
 });

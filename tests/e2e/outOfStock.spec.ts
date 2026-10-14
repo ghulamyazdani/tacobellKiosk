@@ -144,6 +144,25 @@ test.describe("walk-oos — out of stock on the menu, the PDP and the bag", () =
     await expect(page.getByTestId(`quick-add-${DREAM_BOX_SPICY}`)).toBeVisible();
   });
 
+  test("walk-oos 2 — MIAM: the Cheese Burger's only meal is that dead pack — no upsell: the tap opens the burger's own PDP, never a meal prompt with no meal on it", async ({
+    page,
+  }) => {
+    const DREAM_SANDWICH = "65d4a2d2003967427ed83616";
+    await mockKioskBackend(page, {
+      outOfStock: [soldOut(DREAM_SANDWICH, "combo")],
+      settings: { enable_combo_upsell: true },
+    });
+    await bootRegisteredToMenu(page);
+
+    const burger = page.getByTestId(`item-${CHEESE_BURGER}`);
+    await burger.scrollIntoViewIfNeeded();
+    await burger.click();
+
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
+    await expect(page.getByTestId("miam-prompt")).toHaveCount(0);
+  });
+
   test("BAG: an add-on sells out after the menu loaded — PAY's notice and the row NAME it (the pick kept, its line red), PAY stays blocked while it is in the row; Edit shows it Unavailable and deselected; UPDATE; PAY proceeds", async ({
     page,
   }) => {
