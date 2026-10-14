@@ -767,19 +767,22 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   // "Select N" is what CONFIRM needs: group-wise its N units; "or" ONE
   // option — an item 1, a category group its need — named while every
-  // option needs the same; "and" grants everything listed.
+  // option needs the same; "and" every group's need (the item entries come
+  // with the reward).
   const needs = [...entries.map(() => 1), ...groups.map(getCategoryGroupNeed)];
   const selectCount = group
     ? Math.max(1, group.need)
-    : needs.length > 0 && needs.every((need) => need === needs[0])
-      ? needs[0]
-      : 0;
+    : orMode
+      ? needs.length > 0 && needs.every((need) => need === needs[0])
+        ? needs[0]
+        : 0
+      : groups.reduce((sum, section) => sum + getCategoryGroupNeed(section), 0);
   const subtitle =
-    !group && !orMode
-      ? t("offers.freebieSubtitleAnd")
-      : selectCount > 0
-        ? t("offers.picker.groupSubtitle", { count: selectCount })
-        : t("offers.picker.subtitleOption");
+    selectCount > 0
+      ? t("offers.picker.groupSubtitle", { count: selectCount })
+      : orMode
+        ? t("offers.picker.subtitleOption")
+        : t("offers.freebieSubtitleAnd");
 
   // Group mode names what is missing (TB mounts no global error modal).
   const groupHint = !group

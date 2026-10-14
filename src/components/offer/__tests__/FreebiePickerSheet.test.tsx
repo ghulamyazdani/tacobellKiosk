@@ -1588,8 +1588,8 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
     expect(screen.getByRole("dialog", { name: "Choose Your Reward" })).toBeInTheDocument();
     expect(screen.getByTestId("freebie-option-greek-salad")).toHaveTextContent("50% off");
     expect(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce")).toHaveTextContent("1% off");
-    // "and": everything listed is granted — no "Select N" claim.
-    expect(screen.getByText("These items come with your reward.")).toBeInTheDocument();
+    // "and": the salad comes with the reward; the sauces group needs 2 picks.
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
     cleanup();
 
     // One free option is not enough: a free sauce OR a half-price burger.
@@ -1601,6 +1601,40 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
   it("every option 100 % off keeps 'Choose Your Free Item'", () => {
     renderPicker(CAT_OR_OFFER);
     expect(screen.getByRole("dialog", { name: "Choose Your Free Item" })).toBeInTheDocument();
+  });
+
+  // Review of the walk fixes: "And Offer With Varaint" (a fixed item AND any
+  // 2 from a group) read "These items come with your reward." while CONFIRM
+  // waited for 2 picks. An "and" offer asks for every group's need.
+  it("'and' with a group: 'Select 2 items…' — CONFIRM waits for exactly those 2 picks; a second group adds its need", async () => {
+    renderPicker(CAT_AND_OFFER);
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.queryByText("These items come with your reward.")).toBeNull();
+    const confirm = screen.getByTestId("freebie-confirm");
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce"));
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce"));
+    expect(confirm).toHaveAttribute("aria-disabled", "false");
+    cleanup();
+
+    const sides = { ...SAUCES_GROUP, _id: "sides", name: "Sides", quantity: 1 };
+    renderPicker({ ...CAT_AND_OFFER, _id: "offer-two-groups", getItems: { ...CAT_AND_OFFER.getItems, categories: [SAUCES_GROUP, sides] } });
+    expect(screen.getByText("Select 3 items to redeem with your reward.")).toBeInTheDocument();
+  });
+
+  it("'and' without a group keeps 'These items come with your reward.'; Arabic names the group's 2", async () => {
+    renderPicker(AND_OFFER);
+    expect(screen.getByText("These items come with your reward.")).toBeInTheDocument();
+    cleanup();
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderPicker(CAT_AND_OFFER);
+    const subtitle = screen.getByText((_, el) => el?.textContent === i18n.t("offers.picker.groupSubtitle", { count: 2 }));
+    expect(subtitle.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(screen.queryByText(i18n.t("offers.freebieSubtitleAnd"))).toBeNull();
   });
 
   it("'or' options needing different counts (an item = 1, a group of 2): 'Choose one option…', never 'Select 1 item'", () => {
