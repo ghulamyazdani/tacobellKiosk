@@ -38,7 +38,7 @@ describe("parseArgs (fails closed)", () => {
     expect(parseArgs([])).toEqual({ total: TOTAL_JS_BUDGET_KIB, entry: ENTRY_GZIP_BUDGET_KIB });
     expect(TOTAL_JS_BUDGET_KIB).toBe(2000);
     expect(ENTRY_GZIP_BUDGET_KIB % 5).toBe(0); // ceil5(measured + 10) — decision 6
-    expect(ENTRY_GZIP_BUDGET_KIB).toBe(355); // ceil5(344.4 + 10): a raise needs user approval AND this line
+    expect(ENTRY_GZIP_BUDGET_KIB).toBe(360); // ceil5(344.4 + 10) = 355, raised to 360 by the user 2026-10-14: a raise needs user approval AND this line
     expect(parseArgs(["--budget", "3000", "--entry-gzip-budget", "400"])).toEqual({ total: 3000, entry: 400 });
   });
 
