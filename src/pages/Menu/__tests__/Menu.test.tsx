@@ -659,7 +659,22 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     store.dispatch(setTags({ tags: ["veg", "non-veg"] }));
   });
 
-  it("the chips sit in the rail between the bell and the category list", () => {
+  // FILTERS_HIDDEN — user 2026-10-14: "for now disable the filters dont show
+  // it on menu left side bar". The Menu renders MenuFilterChips without
+  // `enabled`; re-enable by passing it there and un-skipping the paused tests.
+  it("filters hidden for now: no chip group in the rail, and a persisted pick never narrows the menu", () => {
+    store.dispatch(setFilters(["non-veg"]));
+    renderMenu();
+
+    expect(screen.queryByRole("group", { name: i18n.t("menu.filters") })).toBeNull();
+    expect(screen.queryByTestId("menu-filter-veg")).toBeNull();
+    expect(screen.queryByTestId("menu-filter-non-veg")).toBeNull();
+    expect(filters()).toEqual([]);
+    expect(itemIds()).toHaveLength(5);
+  });
+
+  // Paused while the chips are hidden (FILTERS_HIDDEN below).
+  it.skip("the chips sit in the rail between the bell and the category list", () => {
     renderMenu();
     const rail = screen.getByTestId("category-rail");
     const group = within(rail).getByRole("group", { name: i18n.t("menu.filters") });
@@ -671,7 +686,8 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     expect(within(rail).getAllByRole("button")[0]).toBe(screen.getByTestId("menu-filter-veg"));
   });
 
-  it("NON-VEG narrows the rail AND the sections; VEG swaps; a re-tap restores the whole menu", () => {
+  // Paused while the chips are hidden (FILTERS_HIDDEN below).
+  it.skip("NON-VEG narrows the rail AND the sections; VEG swaps; a re-tap restores the whole menu", () => {
     renderMenu();
     expect(railIds()).toEqual(["rail-c-mains", "rail-c-drinks", "rail-c-meat"]);
 
@@ -694,7 +710,8 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     expect(itemIds()).toEqual(["item-e-bean", "item-e-chicken", "item-e-veg-bowl", "item-e-cola", "item-e-steak"]);
   });
 
-  it("the selected category filtered away → the first rail row stands in", () => {
+  // Paused while the chips are hidden (FILTERS_HIDDEN below).
+  it.skip("the selected category filtered away → the first rail row stands in", () => {
     renderMenu();
     fireEvent.click(screen.getByTestId("rail-c-drinks"));
     expect(screen.getByTestId("rail-c-drinks")).toHaveClass("bg-tb-purple-vibrant");
@@ -707,7 +724,8 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     expect(screen.getByTestId("rail-c-mains")).toHaveClass("bg-tb-purple-vibrant");
   });
 
-  it("a chip tap returns the pane to its top and the rail to its first row", () => {
+  // Paused while the chips are hidden (FILTERS_HIDDEN below).
+  it.skip("a chip tap returns the pane to its top and the rail to its first row", () => {
     renderMenu();
     // The item pane (the rail's list scrolls too, and comes first).
     const pane = screen.getByTestId("item-e-bean").closest(".overflow-y-auto") as HTMLElement;
@@ -721,7 +739,8 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     expect(screen.getByTestId("rail-c-meat")).not.toHaveClass("bg-tb-purple-vibrant");
   });
 
-  it("a filter that empties the grid is not an empty menu: no refetch, no menu-error, no loading copy — the chips stay to undo it", async () => {
+  // Paused while the chips are hidden (FILTERS_HIDDEN below).
+  it.skip("a filter that empties the grid is not an empty menu: no refetch, no menu-error, no loading copy — the chips stay to undo it", async () => {
     // A stale tag list: VEG is offered, but nothing on this menu is veg.
     store.dispatch(
       setMenuData({

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectTags } from "@cx-sdk/catalog/state/Menu.slice";
@@ -22,6 +23,12 @@ const MARK_ENTITY: Record<DietTag, { tags: string[] }> = {
 interface MenuFilterChipsProps {
   /** After every toggle: the menu returns its pane to the top. */
   onChange?: () => void;
+  /**
+   * Off for now — user 2026-10-14: "for now disable the filters dont show it
+   * on menu left side bar". The Menu passes nothing, so no chip renders and a
+   * persisted pick is cleared; pass `enabled` there to bring them back.
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -38,7 +45,7 @@ interface MenuFilterChipsProps {
  * Menu filters the rail and the sections by it, and useTagFilter already
  * narrows MIAM, the repeat sheet, the upsell and the tenant suggestions.
  */
-export default function MenuFilterChips({ onChange }: MenuFilterChipsProps) {
+export default function MenuFilterChips({ onChange, enabled = false }: MenuFilterChipsProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const tags = useSelector(selectTags) as unknown;
@@ -49,8 +56,14 @@ export default function MenuFilterChips({ onChange }: MenuFilterChipsProps) {
       ?.hide_veg_non_veg
   );
 
+  // Hidden chips must not leave a guest's persisted pick (state.filter.filters
+  // survives a reload) narrowing the menu with nothing on screen to clear it.
+  useEffect(() => {
+    if (!enabled && filters.length > 0) dispatch(setFilters([]));
+  }, [enabled, filters.length, dispatch]);
+
   const chips =
-    hideFilter || hideVegNonVeg
+    !enabled || hideFilter || hideVegNonVeg
       ? []
       : DIET_TAGS.filter((tag) => Array.isArray(tags) && tags.includes(tag));
   if (chips.length === 0) return null;

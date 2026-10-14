@@ -49,40 +49,57 @@ describe("MenuFilterChips (U1 — diet filter chips)", () => {
     });
   });
 
+  it("off by default (user 2026-10-14: filters hidden for now) → no chip, even with both diet tags", () => {
+    const { container } = render(<MenuFilterChips />, { wrapper });
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("off by default → a persisted pick is cleared, so the hidden filter never narrows the menu", () => {
+    store.dispatch(setFilters(["veg"]));
+    render(<MenuFilterChips />, { wrapper });
+    expect(filters()).toEqual([]);
+  });
+
+  it("enabled → a pick is kept", () => {
+    store.dispatch(setFilters(["veg"]));
+    render(<MenuFilterChips enabled />, { wrapper });
+    expect(filters()).toEqual(["veg"]);
+  });
+
   it("no diet tag in the menu → nothing at all", () => {
     store.dispatch(setTags({ tags: ["spicy"] }));
-    const { container } = render(<MenuFilterChips />, { wrapper });
+    const { container } = render(<MenuFilterChips enabled />, { wrapper });
     expect(container).toBeEmptyDOMElement();
   });
 
   it("a menu without any tag list → nothing", () => {
     store.dispatch(setTags({ tags: undefined }));
-    const { container } = render(<MenuFilterChips />, { wrapper });
+    const { container } = render(<MenuFilterChips enabled />, { wrapper });
     expect(container).toBeEmptyDOMElement();
   });
 
   it("hide_filter → nothing", () => {
     store.dispatch(setHideFilter(true));
-    const { container } = render(<MenuFilterChips />, { wrapper });
+    const { container } = render(<MenuFilterChips enabled />, { wrapper });
     expect(container).toBeEmptyDOMElement();
   });
 
   it("hide_veg_non_veg → nothing, even with a stale diet tag list", () => {
     store.dispatch(setKioskSettings({ hide_veg_non_veg: true }));
-    const { container } = render(<MenuFilterChips />, { wrapper });
+    const { container } = render(<MenuFilterChips enabled />, { wrapper });
     expect(container).toBeEmptyDOMElement();
   });
 
   it("only the diet tags the menu carries get a chip, VEG first", () => {
     store.dispatch(setTags({ tags: ["spicy", "non-veg"] }));
-    render(<MenuFilterChips />, { wrapper });
+    render(<MenuFilterChips enabled />, { wrapper });
 
     expect(screen.queryByTestId("menu-filter-veg")).toBeNull();
     expect(screen.getAllByRole("button").map((b) => b.dataset.testid)).toEqual(["menu-filter-non-veg"]);
   });
 
   it("a named group of two toggle buttons, compressed (the rail's Cm Bd), 56 px, each with a decorative mark", () => {
-    render(<MenuFilterChips />, { wrapper });
+    render(<MenuFilterChips enabled />, { wrapper });
 
     const group = screen.getByRole("group", { name: i18n.t("menu.filters") });
     const buttons = screen.getAllByRole("button");
@@ -109,7 +126,7 @@ describe("MenuFilterChips (U1 — diet filter chips)", () => {
 
   it("VEG → ['veg'], pressed, filterApplied {tag_count, tags}, and the menu is told", () => {
     const onChange = vi.fn();
-    render(<MenuFilterChips onChange={onChange} />, { wrapper });
+    render(<MenuFilterChips enabled onChange={onChange} />, { wrapper });
 
     fireEvent.click(chip("veg"));
 
@@ -124,7 +141,7 @@ describe("MenuFilterChips (U1 — diet filter chips)", () => {
 
   it("NON-VEG while VEG is on swaps (one diet at a time)", () => {
     store.dispatch(setFilters(["veg"]));
-    render(<MenuFilterChips />, { wrapper });
+    render(<MenuFilterChips enabled />, { wrapper });
 
     fireEvent.click(chip("non-veg"));
 
@@ -137,7 +154,7 @@ describe("MenuFilterChips (U1 — diet filter chips)", () => {
   it("a re-tap clears the filter: [] and filterRemoved {previous_tag_count}", () => {
     const onChange = vi.fn();
     store.dispatch(setFilters(["non-veg"]));
-    render(<MenuFilterChips onChange={onChange} />, { wrapper });
+    render(<MenuFilterChips enabled onChange={onChange} />, { wrapper });
 
     fireEvent.click(chip("non-veg"));
 
@@ -152,7 +169,7 @@ describe("MenuFilterChips (U1 — diet filter chips)", () => {
     await act(async () => {
       await i18n.changeLanguage("ar");
     });
-    render(<MenuFilterChips />, { wrapper });
+    render(<MenuFilterChips enabled />, { wrapper });
 
     expect(screen.getByRole("group", { name: i18n.t("menu.filters") })).toBeInTheDocument();
     expect(chip("veg")).toHaveTextContent(i18n.t("menu.veg"), { normalizeWhitespace: false });

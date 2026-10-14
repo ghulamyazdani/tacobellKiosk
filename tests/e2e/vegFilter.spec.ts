@@ -116,7 +116,7 @@ function stageBox(locator: Locator) {
 }
 
 test.describe("U1 veg / non-veg marks and the diet filter (/menu)", () => {
-  test("MARKS: every card's price line leads with its diet mark — veg on Cheese Burger, non-veg on Greek Salad; the chips sit under the bell, VEG first", async ({
+  test("MARKS: every card's price line leads with its diet mark — veg on Cheese Burger, non-veg on Greek Salad; no filter chips in the rail (hidden for now)", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -138,18 +138,18 @@ test.describe("U1 veg / non-veg marks and the diet filter (/menu)", () => {
     // Taps pass through the mark to the card's overlay button.
     await expect(burgerMark).toHaveCSS("pointer-events", "none");
 
-    const group = page.getByRole("group", { name: en.menu.filters });
-    await expect(group).toBeVisible();
+    // Filters hidden for now (user 2026-10-14): the marks stay, the chips go,
+    // and the rail starts with its categories.
+    await expect(page.getByRole("group", { name: en.menu.filters })).toHaveCount(0);
+    await expect(chip(page, "veg")).toHaveCount(0);
+    await expect(chip(page, "non-veg")).toHaveCount(0);
     const railButtons = page.getByTestId("category-rail").getByRole("button");
-    await expect(railButtons.nth(0)).toHaveAttribute("data-testid", "menu-filter-veg");
-    await expect(railButtons.nth(1)).toHaveAttribute("data-testid", "menu-filter-non-veg");
-    await expect(chip(page, "veg")).toHaveAttribute("aria-pressed", "false");
-    await expect(chip(page, "veg")).toHaveCSS("font-stretch", "62%");
-    const box = await chip(page, "veg").boundingBox();
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expect(railButtons.nth(0)).toHaveAttribute("data-testid", /^rail-/);
   });
 
-  test("FILTER: NON-VEG keeps its 4 cards and only their category; VEG swaps to its 8; a re-tap restores the whole menu", async ({
+  // Paused: menu filters hidden for now (user 2026-10-14, "for now disable the filters dont show it on
+  // menu left side bar"). Re-enable: pass `enabled` to MenuFilterChips in pages/Menu, un-skip.
+  test.skip("FILTER: NON-VEG keeps its 4 cards and only their category; VEG swaps to its 8; a re-tap restores the whole menu", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -207,7 +207,9 @@ test.describe("U1 veg / non-veg marks and the diet filter (/menu)", () => {
     await expect(page.locator('[data-testid^="menu-filter-"]')).toHaveCount(0);
   });
 
-  test("SESSION: a filter is the guest's own — CANCEL ORDER → /start → the next menu is whole, the chips released", async ({
+  // Paused: menu filters hidden for now (user 2026-10-14, "for now disable the filters dont show it on
+  // menu left side bar"). Re-enable: pass `enabled` to MenuFilterChips in pages/Menu, un-skip.
+  test.skip("SESSION: a filter is the guest's own — CANCEL ORDER → /start → the next menu is whole, the chips released", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -228,7 +230,9 @@ test.describe("U1 veg / non-veg marks and the diet filter (/menu)", () => {
     await expect(chip(page, "veg")).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("ADA: in the reach-zone view the chips sit inside the zone, uncovered, and still filter", async ({ page }) => {
+  // Paused: menu filters hidden for now (user 2026-10-14, "for now disable the filters dont show it on
+  // menu left side bar"). Re-enable: pass `enabled` to MenuFilterChips in pages/Menu, un-skip.
+  test.skip("ADA: in the reach-zone view the chips sit inside the zone, uncovered, and still filter", async ({ page }) => {
     await mockKioskBackend(page);
     await registerToStart(page);
     await startToMenu(page);
