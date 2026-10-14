@@ -288,9 +288,17 @@ export default function BuyStageSheet({
     // them) — the entity is the BASE item, priced alike for every size.
     const size = tileSize(group, entity);
     const imageUrl = resolveEntityImage(entity);
-    // walk-oos 2: a size tile is that size — out when it is (sold out or dead).
+    // walk-oos 2: a sized tile lists only the sizes the offer counts
+    // (resolveBuyStageView narrows them: its one size, or a category's) — out
+    // when every one on offer is (sold out, or no guest can complete it).
+    const flags = (v: unknown) => (v ?? {}) as { isActive?: unknown; outOfStock?: unknown };
+    const onOffer =
+      entity?.hasVariant && !entity?.isVariant
+        ? (entity.variants ?? []).filter((v) => flags(v).isActive !== false)
+        : [];
     const unavailable =
-      !!entity?.outOfStock || (size as { outOfStock?: unknown } | undefined)?.outOfStock === true;
+      !!entity?.outOfStock ||
+      (onOffer.length > 0 && onOffer.every((v) => flags(v).outOfStock === true));
     // handleAdd's own split, side-effect free: a variant or customizable
     // entity opens the tier session (planStagedTierModal), anything else adds.
     const oneTap = isDirectlyAddable(entity as unknown as RecommendedEntity);
