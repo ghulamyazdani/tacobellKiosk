@@ -487,7 +487,10 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
    * A row's price pair (render helper, NOT a component): the struck full
    * price, then what CONFIRM charges — "Free" when that is nothing, never
    * "£0" (posistKiosk OfferItem: effectivePrice <= 0 → offer.badgeFree). A
-   * paid add-on or a partial discount keeps its figure.
+   * paid add-on or a partial discount keeps its figure — NOT posistKiosk
+   * parity: its tile prices the menu entity, so it reads FREE over a paid
+   * add-on, and before any customization (TB shows no pair until then).
+   * Deliberate — TB prices what CONFIRM charges; client sign-off.
    */
   const renderPrice = (undiscounted: number, discounted: number) => (
     <>

@@ -352,7 +352,9 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     const tortilla = screen.getByTestId("freebie-option-tortilla-sauce");
     const caesar = screen.getByTestId("freebie-option-caesar-dressing");
     expect(tortilla).toHaveTextContent("Tortilla Sauce");
-    expect(tortilla).toHaveTextContent("Free");
+    // The Free discount line, between the name and the struck price —
+    // anchored, since the price slot reads "Free" too.
+    expect(tortilla).toHaveTextContent(/^Tortilla SauceFree£2/);
     // The struck full price (moduloCalcaledValue: whole amounts print
     // whole), then what CONFIRM charges — nothing reads "Free", never "£0"
     // (posistKiosk OfferItem: effectivePrice <= 0 → offer.badgeFree).
@@ -1374,7 +1376,9 @@ describe("FreebiePickerSheet — get-category groups (offers-parity F1)", () => 
     const section = screen.getByTestId("freebie-cat-sauces");
     expect(section).toHaveTextContent("Any 2 from Sauces");
     expect(count()).toHaveTextContent("0 of 2 added");
-    expect(option("tortilla-sauce")).toHaveTextContent("Free");
+    // The group's Free line, between the name and the struck price —
+    // anchored, since the price slot reads "Free" too.
+    expect(option("tortilla-sauce")).toHaveTextContent(/^Tortilla SauceFree£2/);
     expect(option("tortilla-sauce")).toHaveTextContent("Tortilla Sauce");
     // The item entry still renders above the section.
     expect(screen.getByTestId("freebie-option-greek-salad")).toBeInTheDocument();
@@ -1742,7 +1746,15 @@ describe("FreebiePickerSheet — a row CONFIRM charges nothing for reads Free", 
   });
 
   it("an amount off that covers the whole price is free too", () => {
-    const fiveOff = { ...orEntry("tortilla-sauce", "Tortilla Sauce"), discountType: "amount", value: 5 };
+    // The entity stamped as the converter stamps it (offerMenuConversion):
+    // the entry's £5 off, max(0, £2 − £5) = £0 — never a 100 % stamp.
+    const entry = orEntry("tortilla-sauce", "Tortilla Sauce");
+    const fiveOff = {
+      ...entry,
+      discountType: "amount",
+      value: 5,
+      entities: { ...entry.entities, discountType: "amount", discountValue: 5, discounted_total_price: 0 },
+    };
     renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
     expect(screen.getByTestId("freebie-option-tortilla-sauce")).toHaveTextContent(/£5 off£2Free$/);
   });
