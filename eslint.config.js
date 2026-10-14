@@ -93,6 +93,33 @@ export default tseslint.config(
     },
   },
   {
+    // Check 8, the bill minimum (user decision 2026-10-14), runs only when
+    // the SDK revalidation rule is handed the bill engine. A call without it
+    // type-checks and skips the check: the menu TOTAL keeps a reward the bag
+    // drops. Tests are exempt: they pin the engine-less verdict.
+    // ponytail: a lint stopgap while lane walk-cards-prices still calls
+    // without the engine; once it merges, make the SDK parameters required
+    // and delete this block.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/__tests__/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='settleCart'][arguments.length<2]",
+          message:
+            "Pass the bill engine (useBillEngine's getCalculatedBill): without it the bill minimum is never checked.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name='shouldDropAppliedOffer'][arguments.length<3]",
+          message:
+            "Pass { cart, getCalculatedBill } (useBillEngine): without it the bill minimum is never checked.",
+        },
+      ],
+    },
+  },
+  {
     // e2e: no fixed sleeps — they flake under load and hide the real wait.
     files: ["tests/e2e/**/*.ts"],
     rules: {
