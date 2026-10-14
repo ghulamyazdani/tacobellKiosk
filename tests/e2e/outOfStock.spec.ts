@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "./fixtures/kiosk";
+import { test, expect, type Page, type Route } from "./fixtures/kiosk";
 import {
   mockKioskBackend,
   fixtureJson,
@@ -154,6 +154,18 @@ test.describe("walk-oos — out of stock on the menu, the PDP and the bag", () =
     await expect(page.getByRole("alertdialog", { name: outOfStock("Extra Pickles") })).toBeVisible();
     await page.getByTestId("global-error-ok").click();
     await expect(page).toHaveURL(/\/cart$/);
+
+    // Review F1: the stock check cannot run (a 500) — fail-open never passes
+    // what the row still flags: the same named notice, PAY stays.
+    const feedDown = (route: Route) => route.fulfill({ status: 500, json: { message: "stock down" } });
+    await page.route("**/api/cx/kiosk/get_out_of_stock", feedDown);
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: outOfStock("Extra Pickles") })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("global-error-ok").click();
+    await expect(page).toHaveURL(/\/cart$/);
+    await page.unroute("**/api/cx/kiosk/get_out_of_stock", feedDown);
 
     // Edit: the PDP shows it Unavailable (PAY's feed) and has deselected it.
     await page.getByTestId(`bag-edit-${burgerId}`).click();

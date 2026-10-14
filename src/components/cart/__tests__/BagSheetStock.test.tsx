@@ -561,6 +561,49 @@ describe("BagSheet PAY re-checks stock (A1)", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
+  /*
+    Review F1: a check that cannot run fails OPEN (D-A1-1) only past what no
+    check has flagged. The fork dropped an out-of-stock pick at PAY 1, so it
+    could never be ordered; TB keeps it in the row, flagged — a failed feed
+    at PAY 2 must not check it out (billed) while the row still names it.
+  */
+  it("walk-oos: PAY 1 flags an add-on, PAY 2's feed fails — the row's own flag still blocks PAY, the notice names it", async () => {
+    store.dispatch(setCartItems([structuredClone(BURRITO)]));
+    mocks.feed.mockResolvedValueOnce([
+      { item_id: "egg", type: "addon", partners: { partner_name: "Kiosk", inStock: false } },
+    ]);
+    renderBag();
+    await pay();
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Egg"));
+    act(() => {
+      store.dispatch(setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" }));
+    });
+
+    mocks.feed.mockRejectedValueOnce(new Error("504"));
+    await pay();
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe("Out of stock: Egg"));
+    expect(sweepFailed()).toBe(true);
+    expect(mocks.feed).toHaveBeenCalledTimes(2);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
+  });
+
+  it.each([
+    ["the item", () => ({ ...BURGER, outOfStock: true }), "Out of stock: Cheese Burger"],
+    ["its size", () => structuredClone(PEPSI_STALE_SIZE), "Out of stock: Pepsi (Large)"],
+  ])("walk-oos: the feed fails with %s flagged by the last PAY — PAY stays, the notice names it", async (_label, flagged, notice) => {
+    store.dispatch(setCartItems([flagged(), { ...SALAD }]));
+    mocks.feed.mockRejectedValue(new Error("504"));
+    renderBag();
+    await pay();
+
+    await waitFor(() => expect(st().appSettings.errorMessageGlobal).toBe(notice));
+    expect(sweepFailed()).toBe(true);
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(screen.getByTestId("bag-pay")).toBeEnabled();
+  });
+
   it("walk-oos: the flagged add-on back in stock — its own flag names it until then; ONE write clears it and PAY proceeds on the bill it rendered", async () => {
     const flagged = structuredClone(BURRITO);
     flagged.customizations[EXTRAS_GROUP._id] = [

@@ -83,7 +83,7 @@ import {
   setCelebratedBarKey,
 } from "../../utils/offerCelebration";
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
-import BagItemRow, { joinNames } from "./BagItemRow";
+import BagItemRow, { joinNames, soldOutNames } from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
@@ -823,8 +823,9 @@ export default function BagSheet({
       // SDK sweep, lazy with the bag's chunk (the 838-line engine stays off
       // the boot path). FAIL-OPEN (D-A1-1, fork parity): a failed chunk, a
       // failed / timed-out feed (10 s transport bound), a non-array feed or
-      // any throw lets PAY through on today's path. No second check before
-      // the Paytm initiate (D-A1-4).
+      // any throw lets PAY through on today's path — past nothing a row
+      // still flags (review F1, below). No second check before the Paytm
+      // initiate (D-A1-4).
       step = "stock_sweep";
       let sweep: CheckoutStockSweep | null = null;
       let parts: typeof import("./bagLazyParts") | null = null;
@@ -851,12 +852,25 @@ export default function BagSheet({
       if (!mountedRef.current) return;
 
       step = "write_back";
-      // The rows PAY wrote (its notice names what they flag).
-      let writtenRows: unknown[] = [];
+      // The rows the notice names from: those PAY just wrote — or, when its
+      // check could not run, the live ones.
+      let stockRows: unknown[] = [];
+      // No check: what the last one flagged in the rows (review F1).
+      let held: { updatedBaseItems: unknown[]; minMaxErroredBaseItems: unknown[] } | undefined;
       if (!sweep || !parts) {
         captureKioskEvent(KioskEventName.ErrorOccurred, {
           error_source: "checkout_stock_sweep",
         });
+        // walk-oos: fail OPEN only past what no check has flagged. An item, a
+        // size or a pick the last PAY found out of stock — the row still
+        // names it — blocks as that PAY did: TB keeps a flagged pick in its
+        // row (the fork dropped it), so letting it through orders and bills it.
+        const live = (store.getState() as { cart?: { cartItems?: unknown } })?.cart?.cartItems;
+        stockRows = Array.isArray(live) ? live : [];
+        const flagged = stockRows
+          .filter((row) => soldOutNames([row], name).length > 0)
+          .map((row) => (row as { itemId?: unknown } | null)?.itemId);
+        if (flagged.length > 0) held = { updatedBaseItems: flagged, minMaxErroredBaseItems: [] };
       } else {
         // CAS (D-A1-5): the guest changed the bag while the check ran — no
         // write; the next PAY checks the bag as it is now.
@@ -885,7 +899,7 @@ export default function BagSheet({
           live: liveRows,
         });
         if (write) {
-          writtenRows = write;
+          stockRows = write;
           replaceCartItems(write);
         }
       }
@@ -893,7 +907,7 @@ export default function BagSheet({
       step = "decision";
       const decision = resolveCheckoutStockDecision({
         cartItems: preSweepRows,
-        outOfStockData: sweep ?? undefined,
+        outOfStockData: sweep ?? held,
         isAnyItemUnavailable,
         tabType,
         skipCRM: shouldSkipCRM(),
@@ -911,10 +925,10 @@ export default function BagSheet({
           // key"): the notice names what is out of stock — the item, its
           // size, or the picks the rows now flag.
           if (decision.showOutOfStockError) {
-            const names = joinNames(
-              parts?.soldOutNames(writtenRows, decision.remainingOutOfStockIds, name) ?? [],
-              i18n.language,
+            const blockedOn = stockRows.filter((row) =>
+              decision.remainingOutOfStockIds.includes((row as { itemId?: unknown } | null)?.itemId),
             );
+            const names = joinNames(soldOutNames(blockedOn, name), i18n.language);
             dispatch(
               setShowErrorModalGlobal({
                 showErrorModal: true,

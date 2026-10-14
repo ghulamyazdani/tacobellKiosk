@@ -55,6 +55,20 @@ export const joinNames = (names: readonly string[], language: string): string =>
   }
 };
 
+/**
+ * What rows flag out of stock, by name: the item, the item (its size), or
+ * each pick PAY kept, flagged (walk-oos). BagSheet's PAY notice — and PAY's
+ * verdict when its check cannot run: those flags still stand (review F1).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared with BagSheet's PAY; HMR falls back to a reload for this file
+export const soldOutNames = (rows: readonly unknown[], name: (entity: unknown) => string): string[] =>
+  rows.flatMap((entry) => {
+    const row = (entry ?? {}) as StockFlags & { customizations?: unknown };
+    if (row.outOfStock) return [name(row)];
+    if (row.selectedVariant?.outOfStock) return [`${name(row)} (${name(row.selectedVariant)})`];
+    return flaggedPicks(row.customizations).map((pick) => name(pick));
+  });
+
 interface BagItemRowProps {
   row: any;
   /** Motion §3.3: a row ADDED while the bag is open rises in (BagSheet decides). */

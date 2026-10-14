@@ -3,7 +3,7 @@
  * with the sweep, through bagLazyParts (never a boot module: the boot path
  * has no budget left for it, P9f).
  */
-import { dropOutOfStockPicks, flaggedPicks } from "@cx-sdk/catalog/oos/optionStock";
+import { dropOutOfStockPicks } from "@cx-sdk/catalog/oos/optionStock";
 import { keepSweptPicksFlagged } from "@cx-sdk/catalog/oos/sweptPicks";
 import { getTotalValueWithApplyAddonPrice } from "@cx-sdk/ordering/customization/pricing";
 import { isRowUnavailable } from "./BagItemRow";
@@ -68,20 +68,3 @@ export function planStockWrite(input: {
   const live = Array.isArray(input.live) ? input.live : [];
   return live.some((row) => clearStockFlags(row) !== row) ? live.map(clearStockFlags) : null;
 }
-
-/**
- * What PAY found out of stock in the rows it blocked on (`ids`), named for
- * its notice: the item, the item (its size), or each pick the row flags.
- */
-export const soldOutNames = (
-  rows: readonly unknown[],
-  ids: readonly unknown[],
-  name: (entity: unknown) => string,
-): string[] =>
-  rows.flatMap((entry) => {
-    const row = entry as StockRow;
-    if (!row || !ids.includes(row.itemId)) return [];
-    if (row.outOfStock) return [name(row)];
-    if (row.selectedVariant?.outOfStock) return [`${name(row)} (${name(row.selectedVariant)})`];
-    return flaggedPicks(row.customizations).map((pick) => name(pick));
-  });
