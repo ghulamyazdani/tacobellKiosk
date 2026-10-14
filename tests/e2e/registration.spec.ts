@@ -298,9 +298,21 @@ test.describe("P6a add-to-cart (mocked backend, real converter + cart engine)", 
     await expect(page.getByTestId("cta-total")).toContainText("£17.00");
 
     // Re-add the same simple item → same row, quantity bumps, total doubles.
+    // The CTA counts units — the bag header's count (walk 2026-10-14) — so the
+    // one row reads "(2)"; the row count comes from the store.
     await salad.click();
-    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
     await expect(page.getByTestId("cta-total")).toContainText("£34.00");
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __kioskStore: { getState: () => { cart?: { cartItems?: unknown[] } } };
+            }
+          ).__kioskStore.getState().cart?.cartItems?.length ?? 0
+      )
+    ).toBe(1);
 
     // Cheese Burger (3 modifier groups) → customization placeholder (P6b).
     // A card opens through its named overlay button, which covers its text.

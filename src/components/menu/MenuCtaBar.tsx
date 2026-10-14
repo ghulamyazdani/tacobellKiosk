@@ -1,6 +1,6 @@
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
+import { cartQuantity, selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCoupons } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import bagIcon from "../../assets/icons/bag.svg";
@@ -19,9 +19,10 @@ interface MenuCtaBarProps {
 
 /**
  * Bottom purple CTA — Figma "CTA": TOTAL left, VIEW MY BAG (n) + bag right.
- * Count = cart rows; total = the slice's live subTotal (recomputed by the
- * add/increment reducers). The full bill (charges/offers) renders on the
- * cart page via the bill engine in P7.
+ * Count = units, the bag header's own `cartQuantity` (it counted rows, so
+ * "VIEW MY BAG (4)" opened "MY BAG (5)" — walk 2026-10-14); total = the
+ * slice's live subTotal (recomputed by the add/increment reducers). The full
+ * bill (charges/offers) renders on the cart page via the bill engine in P7.
  *
  * P7c adds the logged-in variant (Figma menu-rewards 1:3956): the underlined
  * REWARDS / MY REWARDS (n) link takes the left slot and TOTAL stacks over an
@@ -44,11 +45,11 @@ export default function MenuCtaBar({
   const coupons = useSelector(selectCoupons) as unknown[] | null | undefined;
   const { getIsLoyaltyOn } = useAppSettings();
 
-  const itemCount: number = cart?.cartItems?.length ?? 0;
+  const itemCount = Number(useSelector(cartQuantity) ?? 0);
   const netAmount = cart?.subTotal ?? 0;
   // Re-keys the bag mark so tb-bump replays on every add / remove / re-price
-  // (an increment of an existing row changes only the subtotal). It also
-  // bumps once on mount — accepted (motion contract §3.3).
+  // (a re-price changes only the subtotal). It also bumps once on mount —
+  // accepted (motion contract §3.3).
   const bagKey = `${itemCount}:${Number(netAmount).toFixed(2)}`;
 
   // Label per the brief: REWARDS until the lookup has returned a coupon list,

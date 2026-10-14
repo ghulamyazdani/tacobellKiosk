@@ -141,11 +141,13 @@ describe("counts re-key a small leaf (§3.3)", () => {
     expect(added).toHaveClass("tb-bump");
 
     act(() => {
-      store.dispatch(setCartItems([{ ...ROW, quantity: 2 }])); // + on the same row: same count, new subtotal
+      // + on the same row: one row, two units — the count is the bag
+      // header's (units), the subtotal moves with it.
+      store.dispatch(setCartItems([{ ...ROW, quantity: 2 }]));
     });
     const incremented = bag();
     expect(incremented).not.toBe(added);
-    expect(screen.getByTestId("cta-view-bag")).toHaveTextContent("(1)");
+    expect(screen.getByTestId("cta-view-bag")).toHaveTextContent("(2)");
     expect(screen.getByTestId("cta-total")).toHaveTextContent("£5.00");
 
     act(() => {
@@ -154,7 +156,7 @@ describe("counts re-key a small leaf (§3.3)", () => {
     expect(bag()).toBe(incremented);
   });
 
-  it("the loyalty layout's count badge pops in, re-keyed per row count", () => {
+  it("the loyalty layout's count badge pops in, re-keyed per unit count", () => {
     store.dispatch(setKioskSettings({ enable_loyalty: true }));
     store.dispatch(setLoyaltyPartner({ partner: { partner_name: "Xeno" }, partnerDetails: { partner_name: "Xeno" } }));
     render(<MenuCtaBar currency="£" onViewBag={vi.fn()} onOpenRewards={vi.fn()} />, { wrapper });
@@ -174,15 +176,18 @@ describe("counts re-key a small leaf (§3.3)", () => {
     expect(added).not.toBe(empty); // this layout's bag mark re-keys too
 
     act(() => {
-      store.dispatch(setCartItems([{ ...ROW, quantity: 2 }])); // same row count: no replay
+      store.dispatch(setCartItems([{ ...ROW, quantity: 2 }])); // + on the same row: a unit more
     });
-    expect(badge()).toBe(one);
-    expect(bag()).not.toBe(added); // …but the subtotal moved: the mark bumps
+    const two = badge();
+    expect(two).not.toBe(one);
+    expect(two).toHaveTextContent(/^2$/);
+    expect(bag()).not.toBe(added); // …and the subtotal moved: the mark bumps
 
     act(() => {
+      // Two rows of one: still two units — no replay.
       store.dispatch(setCartItems([ROW, { ...ROW, id: "r2", itemId: "y" }]));
     });
-    expect(badge()).not.toBe(one);
+    expect(badge()).toBe(two);
     expect(badge()).toHaveTextContent(/^2$/);
   });
 

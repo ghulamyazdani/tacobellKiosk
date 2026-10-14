@@ -335,7 +335,9 @@ test.describe("Lane offers — BOGO buy stage (item 31)", () => {
     await page.getByTestId("bag-close").click();
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
     await expect(page).toHaveURL(/\/menu$/);
-    await expect(page.getByTestId("cta-view-bag")).toContainText("(2)");
+    // Units, as MY BAG (n) counts them (walk 2026-10-14): the two rows below
+    // hold three — the sauce row is ×2.
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(3)");
     await openBag(page);
     await expect(bagRows(page)).toHaveCount(2);
     await expect(sauceRow.locator('[data-testid^="bag-dec-"] + p')).toHaveText("2");
