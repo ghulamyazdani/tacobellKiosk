@@ -247,7 +247,7 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     expectNothingDangerousWasContacted(checkout);
   });
 
-  test("BACK THROUGH CHECKOUT (a) CRM shown, a table order: forward bag → /tent → /phone → /customerName → /payment, then each BACK lands on the step before with what was entered; nothing placed", async ({
+  test("BACK THROUGH CHECKOUT (a) CRM shown, a table order: forward bag → /tent → /phone → /customerName → /payment → /receipt, then each BACK lands on the step before with what was entered; nothing placed", async ({
     page,
   }) => {
     test.slow();
@@ -267,10 +267,21 @@ test.describe("P8a checkout → PAY AT COUNTER → order push → Order Complete
     await page.getByRole("button", { name: "b", exact: true }).click();
     await page.getByTestId("customer-name-continue").click();
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    // PAY AT COUNTER arms COD and its window routes to the receipt question;
+    // nothing is placed before /receipt's answer (review 2026-10-15: the walk
+    // stopped at /payment, so /receipt's BACK was never taken).
+    await payAtCounterThroughBuffer(page);
+
+    await expect(page.getByTestId("receipt-back")).toHaveText(en.receipt.back);
+    await page.getByTestId("receipt-back").click();
+    await expect(page).toHaveURL(/\/payment$/);
+    await expect(page.getByTestId("payment-total")).toContainText("£9.00");
 
     await expect(page.getByTestId("payment-back")).toHaveText(en.payment.back);
     await page.getByTestId("payment-back").click();
     await expect(page).toHaveURL(/\/customerName$/);
+    // A return: the name screen's CRM prefill (and its wait) is never re-run.
+    await expect(page.getByTestId("customer-name-screen")).toHaveAttribute("data-enter", "back");
     await expect(page.getByTestId("customer-name-input")).toHaveText("tb");
 
     await page.getByTestId("customer-name-back").click();

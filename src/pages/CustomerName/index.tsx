@@ -133,10 +133,13 @@ export default function CustomerName() {
   const [getCustomerNameByNumber] = useGetCustomerNameByNumberMutation();
 
   // The store's name is the starting value; the CRM lookup only runs when it
-  // is empty (contract step 10), so no effect has to seed the field.
+  // is empty (contract step 10), so no effect has to seed the field. Never on
+  // a return (BACK from /payment, usePageEnter's "back"): the guest already
+  // answered, so they find what they left, a blank included, with no second
+  // lookup and its wait (review 2026-10-15).
   const [inputValue, setInputValue] = useState(customerNameRdx);
   const [loadingCRM, setLoadingCRM] = useState(
-    () => phoneNumber.length > 0 && customerNameRdx.length === 0
+    () => enter !== "back" && phoneNumber.length > 0 && customerNameRdx.length === 0
   );
   const [languageOpen, setLanguageOpen] = useState(false);
   const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
@@ -160,7 +163,8 @@ export default function CustomerName() {
    * react-hooks rules forbid set-state-in-effect).
    */
   useEffect(() => {
-    if (phoneNumber.length === 0 || customerNameRdx.length > 0) return;
+    // The mount-time wait above is the one gate.
+    if (!loadingCRM) return;
 
     const request = getCustomerNameByNumber({ phone_number: phoneNumber });
     crmRequest.current = request;
@@ -269,9 +273,10 @@ export default function CustomerName() {
       );
       return;
     }
-    if (trimmed.length > 0) {
-      dispatch(setCustomerName(trimmed));
-    } else {
+    // A blank is committed too: a name the guest removed (on the way back
+    // from /payment, say) must not go out on the order (review 2026-10-15).
+    dispatch(setCustomerName(trimmed));
+    if (trimmed.length === 0) {
       captureKioskEvent(KioskEventName.CRMCustomerNameSkipped, {
         skip_reason: "name_not_mandatory",
       });

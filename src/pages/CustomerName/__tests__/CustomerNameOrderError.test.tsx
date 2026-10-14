@@ -5,7 +5,11 @@ import { MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router
 import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
-import { selectCustomerName, setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import {
+  selectCustomerName,
+  setCustomerName,
+  setPhoneNumberRdx,
+} from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import CustomerName from "../index";
@@ -348,9 +352,80 @@ describe("/customerName — BACK to the step the guest came from", () => {
     mountInFlow();
     fireEvent.click(screen.getByTestId("footer-cancel"));
 
-    expect(screen.getByTestId("cancel-order-cancel")).toHaveTextContent(i18n.t("cancelOrder.back"));
+    // Exact: "No, back to menu" contains "No, back" (review 2026-10-15).
+    expect(screen.getByTestId("cancel-order-cancel").textContent).toBe(i18n.t("cancelOrder.back"));
     fireEvent.click(screen.getByTestId("cancel-order-cancel"));
     expect(screen.getByTestId("customer-name-screen")).toBeInTheDocument();
     expect(screen.queryByTestId("landed")).toBeNull();
+  });
+});
+
+/*
+  Review 2026-10-15: /payment's BACK returns here, to a question the guest
+  has already answered. The return shows what they left, a blank included:
+  no second CRM lookup (up to 10 s behind a full-screen wait, then the CRM
+  name back in the field). And a blank CONTINUE is committed, so a name the
+  guest removed never goes out on the order.
+*/
+describe("/customerName — the way back from /payment", () => {
+  const Landed = () => <p data-testid="landed">{useLocation().pathname}</p>;
+  /** A PUSH, as /payment's BACK is: <Navigate> fires after the first commit. */
+  const mountPushed = () =>
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/from"]}>
+          <Routes>
+            <Route path="/from" element={<Navigate to="/customerName" />} />
+            <Route path="/customerName" element={<CustomerName />} />
+            <Route path="*" element={<Landed />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+  /** The session trail of a guest who answered this screen, then paid's BACK. */
+  const answeredThenBack = () => {
+    notePath("/customerName");
+    notePath("/payment");
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    pay.failed = false;
+    pay.pushing = false;
+    crm.abort.mockReset();
+    crm.lookups.length = 0;
+    notePath("/start");
+    store.dispatch(setKioskSettings({ skip_crm_page: false }));
+    store.dispatch(turnOfLoyalty());
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+  });
+
+  it("a forward entry looks the phone up; the return from /payment does not: no wait, and the blank the guest left stays blank", () => {
+    const forward = mountPushed();
+    expect(crm.lookups).toHaveLength(1);
+    expect(screen.getByTestId("customer-name-loading")).toBeInTheDocument();
+    forward.unmount();
+
+    answeredThenBack();
+    mountPushed();
+
+    expect(screen.getByTestId("customer-name-screen")).toHaveAttribute("data-enter", "back");
+    expect(crm.lookups).toHaveLength(1);
+    expect(screen.queryByTestId("customer-name-loading")).toBeNull();
+    expect(screen.getByTestId("customer-name-input").textContent).toBe(i18n.t("customerName.placeholder"));
+    expect(screen.getByTestId("customer-name-continue")).toBeEnabled();
+  });
+
+  it("the name cleared on the way back: CONTINUE commits the blank, so the removed name never goes out", () => {
+    store.dispatch(setCustomerName("John"));
+    answeredThenBack();
+    mountPushed();
+    expect(screen.getByTestId("customer-name-input").textContent).toBe("John");
+
+    fireEvent.click(screen.getByTestId("customer-name-clear"));
+    fireEvent.click(screen.getByTestId("customer-name-continue"));
+
+    expect(screen.getByTestId("landed")).toHaveTextContent("/payment");
+    expect(selectCustomerName(store.getState())).toBe("");
   });
 });

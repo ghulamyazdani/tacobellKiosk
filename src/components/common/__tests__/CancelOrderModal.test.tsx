@@ -108,7 +108,8 @@ describe("CancelOrderModal — the guest's answer is reported (audit-fixes B3)",
       <CancelOrderModal open onConfirm={onConfirm} onCancel={onCancel} keepLabel={i18n.t("cancelOrder.back")} />
     );
     const no = screen.getByTestId("cancel-order-cancel");
-    expect(no).toHaveTextContent(i18n.t("cancelOrder.back"));
+    // Exact: "No, back to menu" contains "No, back" (review 2026-10-15).
+    expect(no.textContent).toBe(i18n.t("cancelOrder.back"));
     const [backdrop] = screen.getAllByRole("button", { name: i18n.t("cancelOrder.back") });
     expect(backdrop).not.toBe(no);
     fireEvent.click(backdrop);

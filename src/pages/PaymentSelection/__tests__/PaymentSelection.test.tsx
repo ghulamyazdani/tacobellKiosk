@@ -1086,8 +1086,10 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       await act(async () => {
         await i18n.changeLanguage("ar");
       });
-      expect(back).toHaveTextContent(i18n.t("payment.back"));
-      expect(back.textContent).not.toContain(i18n.t("cancelOrder.cancel"));
+      // Exact, Arabic, and no "menu" (القائمة) in the copy itself (review 2026-10-15).
+      expect(back.textContent).toBe(i18n.t("payment.back"));
+      expect(back.textContent).toMatch(/\p{Script=Arabic}/u);
+      expect(back.textContent).not.toContain("القائمة");
       await act(async () => {
         await i18n.changeLanguage("en");
       });

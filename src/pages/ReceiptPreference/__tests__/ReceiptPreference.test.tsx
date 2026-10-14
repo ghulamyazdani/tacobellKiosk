@@ -240,6 +240,22 @@ describe("/receipt — one question, YES / NO (print only)", () => {
     expect(mockPushOrder).not.toHaveBeenCalled();
   });
 
+  // Review 2026-10-15: PLACING and the order-error panel cover BACK for a
+  // finger only. A keyboard / AT BACK under the push would reach /payment,
+  // where a second order can start.
+  it.each([
+    ["while the order is being pushed", () => new Promise(() => {})],
+    ["once the push has failed (the panel's exits only)", rejectWith(TIMED_OUT)],
+  ])("BACK is refused %s — it stays on /receipt", async (_when, push) => {
+    mockPushOrder.mockImplementation(push);
+    mount();
+    await placeOrder();
+    fireEvent.click(screen.getByTestId("receipt-back"));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockPushOrder).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["YES", "receipt-print", "print"],
     ["NO", "receipt-none", "none"],
