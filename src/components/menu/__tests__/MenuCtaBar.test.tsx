@@ -118,6 +118,22 @@ describe("MenuCtaBar — TOTAL is the bag's Total", () => {
     expect(total()).toBe("Total: £17");
   });
 
+  // Rule 2: the bar is on screen all through the menu, so a row the bill
+  // engine cannot price (a VARIANT row without its size) must never take the
+  // menu down — the cart's own subtotal stands in.
+  it("a row the engine cannot price: no crash — the cart subtotal stands in", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(
+      setCartItems([{ id: "v", itemId: "v-1", name: "Sized", quantity: 2, type: "VARIANT", price: 4.5, total_price: 4.5 }]),
+    );
+    render(
+      <Provider store={store}>
+        <MenuCtaBar currency="£" onViewBag={vi.fn()} />
+      </Provider>,
+    );
+    expect(total()).toBe("Total: £9");
+  });
+
   it("agrees with the open bag's Total as rows and rewards change", () => {
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
