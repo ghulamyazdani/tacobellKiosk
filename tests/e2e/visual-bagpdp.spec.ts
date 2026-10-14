@@ -494,6 +494,23 @@ test.describe("lane bag-pdp — captures with the real fonts", () => {
       await eatIn.click();
       await expect(confirm).toBeVisible();
       await capture(page, `bagpdp-${mode}-08-switch-confirm-back`);
+      // The CTA pair wraps a longer name (walk 2026-10-14); this one still
+      // fits one line, as the frame draws it.
+      expect
+        .soft(
+          await page.getByTestId("bag-ordertype-confirm-no").evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const tops = [...range.getClientRects()]
+              .filter((r) => r.width > 0.5)
+              .map((r) => r.top)
+              .sort((a, b) => a - b);
+            // Runs whose tops sit within half a line (20 px) share a line.
+            return tops.filter((top, i) => i === 0 || top - tops[i - 1] > 10).length;
+          }),
+          "No, keep Take Away on one line"
+        )
+        .toBe(1);
       await page.getByTestId("bag-ordertype-confirm-no").click();
       await expect(confirm).toHaveCount(0);
     });

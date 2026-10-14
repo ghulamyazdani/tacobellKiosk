@@ -21,9 +21,9 @@ const BASE = {
   row: "flex gap-[26px]",
   // Walk 2026-10-14: the pair WRAPS (a label never spills out of its CTA).
   secondary:
-    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] border border-tb-purple px-[12px] py-[8px] text-[18px] leading-[20px] text-tb-purple [overflow-wrap:anywhere]",
+    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] border border-tb-purple px-[10px] py-[8px] text-[18px] leading-[20px] text-tb-purple [overflow-wrap:anywhere]",
   primary:
-    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] px-[12px] py-[8px] bg-tb-purple text-[18px] leading-[20px] text-tb-surface [overflow-wrap:anywhere]",
+    "tb-display flex min-h-[60px] w-[280px] items-center justify-center rounded-[4px] px-[10px] py-[8px] bg-tb-purple text-[18px] leading-[20px] text-tb-surface [overflow-wrap:anywhere]",
 };
 
 const renderModal = (props: Partial<Parameters<typeof ErrorModal>[0]> = {}) =>
