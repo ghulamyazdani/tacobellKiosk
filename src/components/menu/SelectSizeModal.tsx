@@ -26,7 +26,8 @@ const ADA_LIST_TOP = 164;
 const ADA_LIST_HEIGHT = ADA_MODAL_MAX_HEIGHT - ADA_LIST_TOP - 108;
 
 /** Never behind a modal dialog: this one in a dev re-run, or one its CONTINUE opened. */
-const restoreFocus = (opener: Element | null) => {
+// eslint-disable-next-line react-refresh/only-export-components -- shared with ProductAddedModal; HMR falls back to a reload for this file
+export const restoreFocus = (opener: Element | null) => {
   if (opener instanceof HTMLElement && !document.querySelector('[aria-modal="true"]')) opener.focus({ preventScroll: true });
 };
 

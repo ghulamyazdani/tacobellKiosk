@@ -1031,6 +1031,25 @@ test.describe("every menu add confirms — a plain one too (user 2026-10-14)", (
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     expect(await under(gotIt), "GOT IT sat over a menu card").toMatch(/^item-/);
   });
+
+  test("A4 KEYBOARD: Enter on a plain card's '+' adds it and moves focus into the dialog, on GOT IT — the next Enter closes it, never a second add behind it — and focus goes back to the '+'", async ({
+    page,
+  }) => {
+    await bootToMenu(page);
+    const plusButton = page.getByTestId(`quick-add-${TORTILLA_SAUCE}`);
+    await plusButton.scrollIntoViewIfNeeded();
+    await plusButton.focus();
+
+    await page.keyboard.press("Enter");
+    await expect(modal(page)).toBeVisible();
+    await expect(cta(page)).toBeFocused();
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: true, cart: ["Tortilla Sauce x1"] });
+
+    await page.keyboard.press("Enter");
+    await expect(modal(page)).toHaveCount(0);
+    await expect(plusButton).toBeFocused();
+    await expect.poll(() => snapshot(page)).toMatchObject({ open: false, cart: ["Tortilla Sauce x1"] });
+  });
 });
 
 /**

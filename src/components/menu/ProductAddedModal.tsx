@@ -2,7 +2,7 @@
  * Cart/menu entities flow through untyped from the legacy converters; typed
  * in the domain passes. Do not add NEW anys.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useTranslation } from "react-i18next";
 import {
@@ -25,6 +25,7 @@ import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { formatMenuPriceLine } from "./MenuItemCard";
+import { restoreFocus } from "./SelectSizeModal";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 import minusIcon from "../../assets/icons/qty-minus.svg?no-inline";
@@ -62,7 +63,9 @@ interface LiveCart {
  * Opens on EVERY add its caller does not suppress (useCartHook.openAddedModal,
  * user 2026-10-14): a plain one too, the menu's +1 on a row already in the
  * bag included — posistKiosk opens it for a plain add only when it has
- * recommendations. The strip comes from the SDK resolver
+ * recommendations. Its open and its close arm DetourTapGuard (500 ms), so a
+ * double tap's second half meets neither its scrim nor the menu card under
+ * its GOT IT. The strip comes from the SDK resolver
  * (resolveItemRecommendations) over the menu-sellable map and the LIVE
  * out-of-stock map. CSS entrance only: the Figma Smart Animate spring
  * (index.css tb-modal-spring).
@@ -93,8 +96,24 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
     [modal, entityMap, outOfStockItems]
   );
 
+  // The app's modal focus: the CTA takes it on every show (autoFocus,
+  // ErrorModal's) — a keyboard Enter on a menu "+" otherwise added again
+  // behind the dialog — and the opener gets it back on close
+  // (SelectSizeModal's restoreFocus), kept through a detour. Read while
+  // rendering the open edge, before autoFocus moves focus in.
+  const isOpen = Boolean(modal?.isOpen);
+  const [focusReturn, setFocusReturn] = useState({ isOpen, opener: null as Element | null });
+  if (focusReturn.isOpen !== isOpen) {
+    setFocusReturn({ isOpen, opener: isOpen ? document.activeElement : null });
+  }
+  const { opener } = focusReturn;
+  useEffect(() => {
+    if (!isOpen) return;
+    return () => restoreFocus(opener);
+  }, [isOpen, opener]);
+
   // A suggestion's chooser is up: still open, picks kept, not shown.
-  if (!modal?.isOpen || detour) return null;
+  if (!isOpen || detour) return null;
 
   const close = () => dispatch(mutateAddToCartModal(false));
   /** A tile's picks: its one-tap units plus its parked rows. */
@@ -312,6 +331,7 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
           <button
             type="button"
             data-testid="added-continue"
+            autoFocus
             onClick={addToOrder}
             className="tb-display h-[60px] w-full rounded-[4px] bg-tb-purple text-[18px] leading-[16px] text-tb-surface"
           >
