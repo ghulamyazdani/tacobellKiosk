@@ -18,7 +18,14 @@ import { clippedText } from "./fixtures/clippedText";
  * list's scroll box on the last one — the tenant's "NEW HERFY / SUPER /
  * CATGEORY"). A row is now AT LEAST 64 px with 8 px insets: one and two lines
  * keep the 64 px pill, three lines make it 88; a word wider than the box breaks
- * inside it. The selected pill is the row's own fill, so it grows with it.
+ * inside it. The selected pill is the row's own fill, so it grows with it, and
+ * the text block sits centred in its row (a 1-line label at 20..44 of 64, as
+ * Figma draws it) whatever does the centring — the button's own centring
+ * today; a `flex` row without `items-center` would pin it to the top inset.
+ *
+ * The pane's section headings (Exp Bl 64) break a word wider than the pane too:
+ * the one-word name ran 1,185 px in its 768 px h2, cut at the screen edge, and
+ * the pane scrolled sideways (1,209 of 816 px).
  *
  * Fixture: the slim menu split into four rows — "Meals / Combos" (2 lines in
  * EN), "Side Orders" (1 line), the tenant's own spelling (3 lines; a longer
@@ -29,6 +36,12 @@ import { clippedText } from "./fixtures/clippedText";
  * EN and ADA read the self-hosted Archivo, so their line counts are pinned.
  * Arabic renders in the machine's fallback face: there only the geometry and
  * "the long alias wraps to 3+ lines" are asserted (its text is ~2.5 boxes wide).
+ * NOT asserted, because it depends on the face: at 30/24 the macOS fallback's
+ * Arabic ink (21–22 px above the baseline, 6–10 below) overlaps the next line
+ * by 4–7 px in every multi-line Arabic row (the line boxes here are centre
+ * ± 12 px: they cannot see ink). That is a client sign-off item that waits on
+ * the Arabic face (S1). `[&:lang(ar)]:leading-[32px]` would clear it on macOS
+ * (≥ 0.8 px), with rows of 64 / 80 / 112 px and an AR pitch in rowHeight.
  */
 
 /** The tenant's category, in its own spelling. */
@@ -106,6 +119,8 @@ interface Row {
   clientWidth: number;
   /** Line boxes outside the row, text runs outside its 179 px text box. */
   outside: string[];
+  /** The text block's centre (first line box top to last bottom) minus the row's, layout px. */
+  offCentre: number;
   selected: boolean;
   filled: boolean;
 }
@@ -150,6 +165,7 @@ async function probeRows(page: Page): Promise<Row[]> {
         scrollWidth: row.scrollWidth,
         clientWidth: row.clientWidth,
         outside,
+        offCentre: ((Math.min(...centres) + Math.max(...centres)) / 2 - (box.top + box.bottom) / 2) / k,
         selected: row.getAttribute("aria-current") === "true",
         filled: style.backgroundColor !== "rgba(0, 0, 0, 0)",
       };
@@ -165,6 +181,7 @@ function expectWholeRows(rows: Row[], mode: Mode) {
     expect.soft(row.scrollHeight, `${label}: scrollHeight`).toBeLessThanOrEqual(row.clientHeight);
     expect.soft(row.scrollWidth, `${label}: scrollWidth`).toBeLessThanOrEqual(row.clientWidth);
     expect.soft(row.height, `${label}: ${row.lines} line(s)`).toBe(rowHeight(row.lines));
+    expect.soft(Math.abs(row.offCentre), `${label}: text block off its row's centre`).toBeLessThanOrEqual(1);
   }
   const lines = Object.fromEntries(rows.map((r) => [r.id, r.lines]));
   if (mode === "ar") {
@@ -174,9 +191,25 @@ function expectWholeRows(rows: Row[], mode: Mode) {
   }
 }
 
+/** The pane's section headings wider than their own box, and the pane's sideways scroll. */
+async function probeHeadings(page: Page) {
+  return page.getByTestId("menu-screen").evaluate((root) => {
+    const headings = [...root.querySelectorAll<HTMLElement>('[data-testid^="section-"] :is(h2, h3)')];
+    const pane = headings[0]?.closest("section")?.parentElement;
+    return {
+      count: headings.length,
+      wide: headings
+        .filter((h) => h.scrollWidth > h.clientWidth)
+        .map((h) => `${h.tagName} "${h.textContent}": ${h.scrollWidth} of ${h.clientWidth}`),
+      paneScrollWidth: pane?.scrollWidth ?? NaN,
+      paneClientWidth: pane?.clientWidth ?? NaN,
+    };
+  });
+}
+
 test.describe("rail-wrap — long category names grow their rail row", () => {
   for (const mode of ["en", "ar", "ada"] as const) {
-    test(`${mode.toUpperCase()}: every rail name shows whole — 1 and 2 lines keep the 64 px row, 3+ lines grow it (88 for 3), one long word breaks inside the 179 px box; the selected pill grows with its row`, async ({
+    test(`${mode.toUpperCase()}: every rail name shows whole — 1 and 2 lines keep the 64 px row, 3+ lines grow it (88 for 3), one long word breaks inside the 179 px box, the text centred; the selected pill grows with its row; the section headings break a long word too`, async ({
       page,
     }) => {
       test.slow();
@@ -185,6 +218,13 @@ test.describe("rail-wrap — long category names grow their rail row", () => {
       expectWholeRows(await probeRows(page), mode);
       const railCuts = (await clippedText(page)).filter((s) => s.includes(" in rail-"));
       expect.soft(railCuts, `${mode}: rail text the layout cuts off`).toEqual([]);
+
+      const headings = await probeHeadings(page);
+      expect(headings.count, "an h2 per category (one sub-category each: no h3)").toBe(4);
+      expect.soft(headings.wide, `${mode}: section headings wider than their box`).toEqual([]);
+      expect
+        .soft(headings.paneScrollWidth, `${mode}: the pane scrolls sideways`)
+        .toBeLessThanOrEqual(headings.paneClientWidth);
 
       // The tenant row selected: the vibrant pill is the whole grown row.
       await page.getByTestId(`rail-${TENANT}`).click();
