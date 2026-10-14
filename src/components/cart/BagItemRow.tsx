@@ -114,6 +114,10 @@ export default function BagItemRow({
   // already false), a Free/X%-off chip, and the discounted price with the
   // undiscounted one struck through when greater (contract).
   const isGetItemRow = Boolean(row?.isGetItem);
+  // No stepper on a reward row, so its units lead the name — the picker's
+  // "2 x" (walk 2026-10-14: two units read as one beside their line price).
+  const rewardUnits =
+    isGetItemRow && quantity > 1 ? `${t("bag.lineQty", { qty: quantity })} ` : "";
   const undiscountedLine =
     Number(row?.undiscounted_total_price ?? row?.total_price ?? 0) * quantity;
   const discountedLine =
@@ -238,6 +242,7 @@ export default function BagItemRow({
           <div className="flex min-w-0 items-start gap-[12px]">
             <VegMark entity={row} size={24} className="mt-[6px]" />
             <p className="min-w-0 text-[32px] font-medium capitalize leading-[36px] tracking-[-1px] text-black">
+              {rewardUnits}
               {name(row)}
             </p>
           </div>

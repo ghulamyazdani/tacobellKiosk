@@ -1623,4 +1623,43 @@ describe("FreebiePickerSheet — the header names the discount and the picks it 
     expect(subtitle.textContent).toMatch(/\p{Script=Arabic}/u);
     expect(subtitle.textContent).not.toBe(i18n.t("offers.picker.groupSubtitle", { count: 1 }));
   });
+
+  // Walk 2026-10-14: "2 X Chilli Manchurian £20.00 → £19.80" — a unit price
+  // beside a two-unit label. A row prices the units it names, like the bag.
+  it("a two-unit grant prices both units: '2 x Chilli Manchurian' £40.00 → £39.60", () => {
+    const chilli = {
+      ...orEntry("chilli", "Chilli Manchurian"),
+      discountType: "percent",
+      value: 1,
+      quantity: 2,
+      entities: {
+        ...sauceEntity("chilli", "Chilli Manchurian"),
+        price: 20,
+        discountValue: 1,
+        undiscounted_total_price: 20,
+        discounted_total_price: 19.8,
+      },
+    };
+    renderPicker({ ...CHOICE_OFFER, _id: "offer-two-chilli", getItems: { items: [chilli] } });
+    const row = screen.getByTestId("freebie-option-chilli");
+    expect(row).toHaveTextContent("2 x Chilli Manchurian");
+    expect(row).toHaveTextContent("£40.00");
+    expect(row).toHaveTextContent("£39.60");
+    expect(row).not.toHaveTextContent("£20.00");
+    expect(row).not.toHaveTextContent("£19.80");
+  });
+
+  it("a category pick prices the units picked; an unpicked row shows one unit", async () => {
+    renderPicker(getAfterAll(50));
+    const chilli = () => screen.getByTestId("freebie-cat-option-chinese-chilli");
+    expect(chilli()).toHaveTextContent("£20.00");
+    expect(chilli()).toHaveTextContent("£10.00");
+    await userEvent.click(chilli());
+    await userEvent.click(chilli());
+    expect(chilli()).toHaveTextContent("2 x Chilli Manchurian");
+    expect(chilli()).toHaveTextContent("£40.00");
+    expect(chilli()).toHaveTextContent("£20.00");
+    expect(chilli()).not.toHaveTextContent("£10.00");
+    expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent("£5.00");
+  });
 });

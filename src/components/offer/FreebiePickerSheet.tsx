@@ -511,15 +511,15 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       ? redeemGetItem(stagedRow, entry?.discountType, 1, entry?.value, false)
       : entity;
     const showPrice = plain || staged;
-    const undiscounted = Number(
-      priced?.undiscounted_total_price ?? priced?.price ?? 0,
-    );
-    const discounted = Number(
-      priced?.discounted_total_price ?? priced?.price ?? 0,
-    );
     // Group mode names the units picked; otherwise the grant's own quantity.
     const lineQty = groupWise ? units : Number(entry?.quantity ?? 1);
     const qtyPrefix = lineQty > 1 ? `${t("bag.lineQty", { qty: lineQty })} ` : "";
+    // The price covers the units the row names, as the bag line will.
+    const lineUnits = lineQty > 1 ? lineQty : 1;
+    const undiscounted =
+      Number(priced?.undiscounted_total_price ?? priced?.price ?? 0) * lineUnits;
+    const discounted =
+      Number(priced?.discounted_total_price ?? priced?.price ?? 0) * lineUnits;
 
     const row = (
       <button
@@ -645,8 +645,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       ? redeemGetItem(held, section?.discountType, 1, section?.value, false)
       : entity;
     const showPrice = plain || !!held;
-    const undiscounted = Number(priced?.undiscounted_total_price ?? priced?.price ?? 0);
-    const discounted = Number(priced?.discounted_total_price ?? priced?.price ?? 0);
+    // The units picked, priced together (one unit while none is picked).
+    const lineUnits = units > 1 ? units : 1;
+    const undiscounted =
+      Number(priced?.undiscounted_total_price ?? priced?.price ?? 0) * lineUnits;
+    const discounted =
+      Number(priced?.discounted_total_price ?? priced?.price ?? 0) * lineUnits;
     const qtyPrefix = units > 1 ? `${t("bag.lineQty", { qty: units })} ` : "";
     const imageUrl = resolveEntityImage(entity);
     return (
