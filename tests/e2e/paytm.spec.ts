@@ -95,9 +95,10 @@ import {
  *
  * ── E8 vs the contract ──────────────────────────────────────────────────
  * Contract §P8b-16 E8 says busy → PAY ANOTHER WAY. The frozen SDK rule makes
- * busy RETRYABLE (decidePaytmInitiate), so the busy modal offers TRY AGAIN +
- * BACK TO BAG; PAY ANOTHER WAY belongs to the non-retryable local refusals
- * (E8b). Both exits are covered, each where the product offers it.
+ * busy RETRYABLE (decidePaytmInitiate), so the busy modal offers CLOSE + TRY
+ * AGAIN; the non-retryable local refusals (E8b) offer CLOSE alone. CLOSE IS
+ * the other way (user 2026-10-14): it closes the modal over the tiles, where
+ * E8 then pays at the counter.
  *
  * The backend mock, the clock helpers and the licence step are the shared
  * harness's (fixtures/backend.ts, fixtures/kiosk.ts, pages/boot.ts), behind
@@ -1400,25 +1401,29 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 2 });
   });
 
-  test("E8 EDC BUSY: the busy modal on /payment (retryable: TRY AGAIN with NEW ids, no PAY ANOTHER WAY), BACK TO BAG → intact bag; no status, no void", async ({
+  test("E8 EDC BUSY: the busy modal on /payment offers CLOSE + TRY AGAIN, focus on CLOSE; TRY AGAIN retries with NEW ids; CLOSE → the tiles, disarmed, the bag intact — PAY AT COUNTER then places ONE COD order; no status, no void", async ({
     page,
   }) => {
     test.slow();
     const mocks = await bootToPayment(page, { script: { edcInit: () => EDC_BUSY } });
-    const { paytm } = mocks;
+    const { checkout, paytm } = mocks;
     await armPaytm(page, "payment-card");
     await page.clock.runFor(3_000);
 
     const modal = page.getByTestId("paytm-initiate-failed");
+    const close = page.getByTestId("paytm-initiate-close");
     await expect(modal).toBeVisible({ timeout: 15_000 });
     await expect(modal).toContainText(en.paytm.failed.busy);
     // Over /payment's tiles (moved off /receipt, 2026-10-13).
     await expect(page).toHaveURL(/\/payment$/);
     await expect(page.getByTestId("payment-screen")).toBeAttached();
     await expect(page.getByTestId("receipt-screen")).toHaveCount(0);
+    // CLOSE + TRY AGAIN and nothing else (user 2026-10-14: no BACK TO MY BAG).
+    await expect(modal.getByRole("button")).toHaveCount(2);
     await expect(page.getByTestId("paytm-initiate-retry")).toBeVisible();
-    await expect(page.getByTestId("paytm-initiate-other")).toHaveCount(0);
-    await expect(page.getByTestId("paytm-initiate-bag")).toBeVisible();
+    await expect(close).toHaveText(en.language.close);
+    // The safe choice: TRY AGAIN mints new ids and may arm the terminal.
+    await expect(close).toBeFocused();
     // A clean refusal clears the ids: /start has nothing to release.
     expect((await paymentSlice(page)).posBillNo).toBe("");
 
@@ -1427,17 +1432,36 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     await expect(modal).toBeVisible();
     expect(paytm.bodies.edcInit[1].posBillNo).not.toBe(paytm.bodies.edcInit[0].posBillNo);
 
-    await page.getByTestId("paytm-initiate-bag").click();
-    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
-    await expect(page).toHaveURL(/\/cart$/);
-    await expect(page.locator('[data-testid^="bag-row-"]')).toHaveCount(1);
-    await expect(page.getByTestId("bag-pay")).toContainText("9.00");
+    await close.click();
+    await expect(modal).toHaveCount(0);
+    await expect(page).toHaveURL(/\/payment$/);
+    for (const tile of ["payment-card", "payment-qr", "payment-counter"]) {
+      await expect(page.getByTestId(tile)).toBeVisible();
+    }
+    // The bag is intact (the same £9.00), its way back is still there, and
+    // nothing is armed or open.
+    await expect(page.getByTestId("payment-total")).toContainText("9.00");
+    await expect(page.getByTestId("payment-back")).toBeVisible();
+    const slice = await paymentSlice(page);
+    expect(slice.paymentType).toBe("");
+    expect(slice.posBillNo).toBe("");
+
+    // PAY AT COUNTER, end to end (the flowing clock also runs CLOSE's tap guard out).
+    await page.clock.resume();
+    await chooseMethod(page, "payment-counter");
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    // ONE COD order carrying the intact bag: the one Cheese Burger.
+    expect(checkout.lastPlaceOrderBody).toMatchObject({
+      payments: { type: "COD" },
+      items: [{ name: "Cheese Burger" }],
+    });
     expect(paytm.counts.edcStatus).toBe(0);
     expect(paytm.counts.edcCancel).toBe(0);
-    expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 2 });
+    expectMoneyInvariants(mocks, { placeOrder: 1, dqrInit: 0, edcInit: 2 });
   });
 
-  test("E8b a LOCAL refusal (no usable Paytm row at initiate time) sends nothing and offers PAY ANOTHER WAY, which closes the modal in place on /payment", async ({
+  test("E8b a LOCAL refusal (no usable Paytm row at initiate time) sends nothing and offers ONE button, CLOSE, which closes the modal in place on /payment", async ({
     page,
   }) => {
     test.slow();
@@ -1455,17 +1479,21 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
 
     const modal = page.getByTestId("paytm-initiate-failed");
     await expect(modal).toBeVisible({ timeout: 15_000 });
-    await expect(modal).toContainText(en.paytm.failed.start);
+    // A retry would only be refused again: CLOSE alone, focused, and copy
+    // that does not ask for one.
+    await expect(modal).toContainText(en.paytm.failed.startNoRetry);
+    await expect(modal.getByRole("button")).toHaveCount(1);
+    await expect(page.getByTestId("paytm-initiate-close")).toBeFocused();
     await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
     await expect(page).toHaveURL(/\/payment$/);
-    await page.getByTestId("paytm-initiate-other").click();
+    await page.getByTestId("paytm-initiate-close").click();
     await expect(modal).toHaveCount(0);
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/payment$/);
     // Disarmed: no stale gateway type survives into a later payload.
     expect((await paymentSlice(page)).paymentType).toBe("");
-    // Only the counter is left to offer — and it is live once PAY ANOTHER
-    // WAY's tap guard has run out (500 ms; the clock is frozen).
+    // Only the counter is left to offer — and it is live once CLOSE's tap
+    // guard has run out (500 ms; the clock is frozen).
     await expect(page.getByTestId("payment-counter")).toBeVisible();
     await expect(page.getByTestId("payment-card")).toHaveCount(0);
     await expect(page.getByTestId("payment-tap-guard")).toHaveCount(1);
@@ -1878,7 +1906,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expectMoneyInvariants(mocks, { placeOrder: 0, dqrInit: 0, edcInit: 1 });
   });
 
-  test("E19 CHUNK FAILURE before the initiate: the lazy /paymentPolling screen never arrives — a LOCAL refusal (PAY ANOTHER WAY, nothing sent, never a reload mid-session); with the network back the same document refuses again; the next splash reloads it and the next guest's checkout initiates once onto the screen", async ({
+  test("E19 CHUNK FAILURE before the initiate: the lazy /paymentPolling screen never arrives — a LOCAL refusal (CLOSE alone, nothing sent, never a reload mid-session); with the network back the same document refuses again; the next splash reloads it and the next guest's checkout initiates once onto the screen", async ({
     page,
   }) => {
     test.setTimeout(150_000);
@@ -1895,8 +1923,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     const expectRefusedWithNothingSent = async () => {
       const modal = page.getByTestId("paytm-initiate-failed");
       await expect(modal).toBeVisible({ timeout: 15_000 });
-      await expect(modal).toContainText(en.paytm.failed.start);
-      await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
+      await expect(modal).toContainText(en.paytm.failed.startNoRetry);
+      await expect(modal.getByRole("button")).toHaveCount(1);
+      await expect(page.getByTestId("paytm-initiate-close")).toBeVisible();
       await expect(page).toHaveURL(/\/payment$/);
       expect(paytm.total, "Paytm calls without the screen").toBe(0);
       expect((await paymentSlice(page)).posBillNo).toBe("");
@@ -1908,11 +1937,11 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     expect(await reloadFlagged(page)).toBe(true);
 
     // The network is back, but this document remembers the failed fetch (the
-    // module map): PAY ANOTHER WAY (closes in place) → the same tile → refused
+    // module map): CLOSE (closes in place) → the same tile → refused
     // again, nothing sent — an initiate here would arm a terminal no screen
     // can settle.
     await page.unroute(PAYTM_CHUNK, abort);
-    await page.getByTestId("paytm-initiate-other").click();
+    await page.getByTestId("paytm-initiate-close").click();
     await expect(page.getByTestId("paytm-initiate-failed")).toHaveCount(0);
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 10_000 });
     await armPaytm(page, "payment-card");

@@ -579,17 +579,19 @@ test.describe("lane fonts — payment captures", () => {
       const failed = page.getByTestId("paytm-initiate-failed");
       await expect(failed).toContainText(t.paytm.failed.busy, { timeout: 15_000 });
       await expect(page.getByTestId("paytm-initiate-retry")).toBeVisible();
+      await expect(page.getByTestId("paytm-initiate-close")).toBeVisible();
       await capture(page, `pay-07-initiate-busy-${mode}`);
 
-      // TRY AGAIN with no usable row left: the local refusal (E8b).
+      // TRY AGAIN with no usable row left: the local refusal (E8b), CLOSE alone.
       await servePayment(page, []);
       await page.getByTestId("paytm-initiate-retry").click();
-      await expect(page.getByTestId("paytm-initiate-other")).toBeVisible();
-      await expect(failed).toContainText(t.paytm.failed.start);
+      await expect(failed).toContainText(t.paytm.failed.startNoRetry);
+      await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
+      await expect(page.getByTestId("paytm-initiate-close")).toBeVisible();
       await capture(page, `pay-08-initiate-refused-${mode}`);
       await servePayment(page, ["PaytmEdc", "PaytmDynamicQr"]);
-      // PAY ANOTHER WAY closes the modal in place: already on /payment.
-      await page.getByTestId("paytm-initiate-other").click();
+      // CLOSE closes the modal in place: already on /payment.
+      await page.getByTestId("paytm-initiate-close").click();
       await expect(failed).toHaveCount(0);
       await expect(page.getByTestId("payment-card")).toBeVisible({ timeout: 10_000 });
 

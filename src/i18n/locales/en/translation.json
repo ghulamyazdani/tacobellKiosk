@@ -472,9 +472,9 @@
       "cancelled": "The payment was cancelled.",
       "expired": "Time ran out and the payment was cancelled. If you were charged, please speak to a team member.",
       "start": "We couldn't start the payment. Please try again or pay another way.",
+      "startNoRetry": "We couldn't start the payment. Please pay another way.",
       "busy": "The card machine is busy. Please ask a team member or pay another way.",
-      "tryAgain": "Try again",
-      "payAnotherWay": "Pay another way"
+      "tryAgain": "Try again"
     },
     "unknown": {
       "title": "We couldn't confirm your payment",
