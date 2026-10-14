@@ -117,7 +117,7 @@ async function pickAndSave(page: Page, offerId: string) {
 }
 
 test.describe("Walk 2026-10-14 — the quoted saving is the applied saving", () => {
-  test("a 50 %-off Large is quoted £3.50 (its £7, not the £13 parent) and the bag applies £3.50; with it applied, 50 % off the order previews £4.00 — the swap applies £4.00", async ({
+  test("a 50 %-off Large is quoted £3.50 (its £7, not the £13 parent) and the bag applies £3.50; with it applied, 50 % off the order previews £4 — the swap applies £4", async ({
     page,
   }) => {
     test.slow();
@@ -141,9 +141,12 @@ test.describe("Walk 2026-10-14 — the quoted saving is the applied saving", () 
     // swap leaves (never 50 % of £8 + the £3.50 reward row = £5.75).
     await page.getByTestId("bag-rewards-applied").click();
     await expect(page.getByTestId("rewards-sheet")).toBeVisible();
-    await expect(page.getByTestId(`offer-row-body-${HALF_ORDER._id}`)).toContainText("Save £4.00");
+    // The second line itself: the row's text runs it into "50% off your order".
+    await expect(
+      page.getByTestId(`offer-row-body-${HALF_ORDER._id}`).getByText("Save £4", { exact: true })
+    ).toBeVisible();
     await pickAndSave(page, HALF_ORDER._id);
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText("Save £4.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(/Save £4(?![\d.])/);
     await expect(bagRows(page)).toHaveCount(1); // the reward row went with the swap
   });
 
@@ -221,10 +224,10 @@ test.describe("Review of the walk fixes — what the picker asks for, what the a
     await confirm.click();
     await expect(picker).toHaveCount(0);
     // £17 salad + 2 × £2 sauces, all free.
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText("Save £21.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(/Save £21(?![\d.])/);
   });
 
-  test("an 'or' reward quoted 'up to £17.00' and applied at £2.00: the reopened sheet's applied row reads the bag's £2.00", async ({
+  test("an 'or' reward quoted 'up to £17' and applied at £2: the reopened sheet's applied row reads the bag's £2", async ({
     page,
   }) => {
     test.slow();
@@ -233,18 +236,18 @@ test.describe("Review of the walk fixes — what the picker asks for, what the a
     await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
     await openBag(page);
     await openRewardsSheet(page);
-    await expect(page.getByTestId(`offer-row-body-${SALAD_OR_SAUCE._id}`)).toContainText("Save up to £17.00");
+    await expect(page.getByTestId(`offer-row-body-${SALAD_OR_SAUCE._id}`)).toContainText(/Save up to £17(?![\d.])/);
     await pickAndSave(page, SALAD_OR_SAUCE._id);
 
     await page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`).click();
     await page.getByTestId("freebie-confirm").click();
     await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText("Save £2.00");
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(/Save £2(?![\d.])/);
 
     await page.getByTestId("bag-rewards-applied").click();
     const applied = page.getByTestId(`offer-row-body-${SALAD_OR_SAUCE._id}`);
     await expect(applied).toContainText("Applied");
-    await expect(applied).toContainText("Save £2.00");
+    await expect(applied).toContainText(/Save £2(?![\d.])/);
     await expect(applied).not.toContainText("up to");
   });
 });

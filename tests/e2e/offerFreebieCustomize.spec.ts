@@ -357,7 +357,7 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await page.getByTestId("freebie-confirm").click();
     await expect(page.getByTestId("offer-applied-celebration")).toBeVisible();
     await expect(page.getByTestId("offer-applied-celebration")).toContainText(
-      "You save £8.00"
+      /You save £8(?![\d.])/
     );
     await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
     await expect(page).toHaveURL(/\/cart$/);
@@ -428,7 +428,7 @@ test.describe("Lane offers — customizable freebies (item 32)", () => {
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£8.00`);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(FREE_BURGER.name);
-    await expect(page.getByTestId("bag-rewards-applied")).toContainText(`${MINUS}£8.00`);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText(new RegExp(`${MINUS}£8(?![\\d.])`));
   });
 
   test("E3 PDP BACK keeps the picker intact with nothing staged; X after a held customisation applies nothing and leaves no orphan rows or tier session", async ({

@@ -124,7 +124,7 @@ async function expectFlatAutoApplied(page: Page) {
   // 2.2 s auto-close and pass.
   expect(await page.getByTestId("offer-applied-celebration").count()).toBe(0);
   await expect(page.getByTestId("bag-rewards-applied")).toContainText("£2 off your order");
-  await expect(page.getByTestId("bag-rewards-applied")).toContainText(`${MINUS}£2.00`);
+  await expect(page.getByTestId("bag-rewards-applied")).toContainText(new RegExp(`${MINUS}£2(?![\\d.])`));
   await expect(page.getByTestId("bag-rewards-entry")).toHaveCount(0);
   await expect(page.getByTestId("bag-subtotal")).toContainText("£8.00");
   await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);

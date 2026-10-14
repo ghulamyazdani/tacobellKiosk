@@ -197,7 +197,7 @@ const applicableBuy = (rawItems: unknown[]) => ({
 });
 const itemOffer = (over: Record<string, unknown>) => ({ ...clone(offersFixture[2]), ...over });
 
-/** £25 minimum: locked under an £8 cart, with the pink "Add £17.00+" nudge. */
+/** £25 minimum: locked under an £8 cart, with the pink "Add £17+" nudge. */
 const PERCENT_25 = named(offersFixture[0], "25% Off Your Entire Order Above £25 (Max £10 Off)");
 const FLAT_2 = named(offersFixture[1], "£2 Off Any Order — Taco Tuesday Special");
 const FREE_SALAD = named(offersFixture[2], "Free Value Rice Bowl Combo With Every Order");

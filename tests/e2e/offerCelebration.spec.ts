@@ -80,7 +80,7 @@ async function expectFlatApplied(page: Page) {
 }
 
 test.describe("Lane offers — offer-applied celebration (item 33)", () => {
-  test("E1 APPLY FLAT: the card shows 'You save £2.00' with confetti, taps pass through it, it hides within 5 s; on a re-apply, Remove works at once while the card shows", async ({
+  test("E1 APPLY FLAT: the card shows 'You save £2' with confetti, taps pass through it, it hides within 5 s; on a re-apply, Remove works at once while the card shows", async ({
     page,
   }) => {
     test.slow();
@@ -93,7 +93,7 @@ test.describe("Lane offers — offer-applied celebration (item 33)", () => {
     await expect(card(page)).toBeVisible();
     await expect(card(page)).toContainText("Reward applied!");
     await expect(card(page)).toContainText("£2 off your order");
-    await expect(card(page)).toContainText("You save £2.00");
+    await expect(card(page)).toContainText(/You save £2(?![\d.])/);
     await expect(card(page).locator(".tb-confetti-piece")).toHaveCount(28);
     // Non-blocking: a tap on the card lands on the bag under it.
     expect(await tapPassesThroughCard(page)).toBe(true);

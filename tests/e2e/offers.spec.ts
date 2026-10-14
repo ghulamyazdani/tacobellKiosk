@@ -18,7 +18,7 @@ import {
   chooseLanguage,
   pickPipelineToMenu,
 } from "./pages/boot";
-import { addViaPdp, openBag, bagRows, openRewardsSheet } from "./pages/order";
+import { addOneTap, addViaPdp, openBag, bagRows, openRewardsSheet } from "./pages/order";
 import { axeSweep, targetProblems, englishCopy, untranslatedCopy, arabicNotIsolated } from "./fixtures/a11y";
 import { settle } from "./fixtures/capture";
 
@@ -124,7 +124,7 @@ async function applySauceOfferViaPicker(page: Page) {
 }
 
 test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
-  test("SHEET STATES: £8 cart — flat-2 + both freebies eligible with radios; percent-25 locked with the exact pink nudge and no radio; suggested rail covers the £17.00 gap", async ({
+  test("SHEET STATES: £8 cart — flat-2 + both freebies eligible with radios; percent-25 locked with the exact pink nudge and no radio; suggested rail covers the £17 gap", async ({
     page,
   }) => {
     test.slow();
@@ -154,18 +154,18 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     await expect(page.getByTestId(`offer-radio-${OFFER_FREE_SAUCE}`)).toBeVisible();
 
     // percent-25 is locked (minBill 25 vs £8 cart): no radio, pink nudge
-    // with the exact £17.00 gap wording (decision 1).
+    // with the exact £17 gap wording (decision 1; posistKiosk's amt()).
     await expect(page.getByTestId(`offer-radio-${OFFER_PERCENT}`)).toHaveCount(0);
     await expect(page.getByTestId(`offer-row-nudge-${OFFER_PERCENT}`)).toHaveText(
-      "Add £17.00+ to your order to be eligible to redeem this reward"
+      "Add £17+ to your order to be eligible to redeem this reward"
     );
 
     // Suggested rail (decision 4): TOP locked offer has a minBill gap →
-    // upsell-pool items priced at/above the £17.00 short — exactly the
+    // upsell-pool items priced at/above the £17 short — exactly the
     // plain-add Greek Salad (£17 ≥ £17; Large Fries needs customization).
     await expect(page.getByTestId("offer-suggested-rail")).toBeVisible();
     await expect(page.getByTestId("offer-suggested-rail")).toContainText(
-      "Suggested £17.00+ Items"
+      "Suggested £17+ Items"
     );
     await expect(
       page.getByTestId(`offer-suggested-item-${GREEK_SALAD}`)
@@ -200,7 +200,7 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
       "£2 off your order"
     );
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(
-      `${MINUS}£2.00`
+      new RegExp(`${MINUS}£2(?![\\d.])`)
     );
     await expect(page.getByTestId("bag-rewards-remove")).toBeVisible();
     await expect(page.getByTestId("bag-rewards-entry")).toHaveCount(0);
@@ -363,7 +363,7 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
       "Free Greek Salad with your order"
     );
     await expect(page.getByTestId("bag-rewards-applied")).toContainText(
-      `${MINUS}£17.00`
+      new RegExp(`${MINUS}£17(?![\\d.])`)
     );
 
     // Remove the offer → the freebie row disappears with it, totals restore.
@@ -524,7 +524,7 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     );
     // The honest post-exit figure: the bag is empty (see header).
     await expect(page.getByTestId("offer-removal-notice")).toContainText(
-      "Your total is now £0.00"
+      /Your total is now £0(?![\d.])/
     );
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
 
@@ -564,7 +564,7 @@ test.describe("P7b Offers (rewards sheet, apply/remove, freebies)", () => {
     const notice = page.getByTestId("offer-removal-notice");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("Free Greek Salad with your order");
-    await expect(notice).toContainText("Your total is now £9.00");
+    await expect(notice).toContainText(/Your total is now £9(?![\d.])/);
     await expect(page.getByTestId("global-error")).toHaveCount(0);
     await expect(page).toHaveURL(/\/cart$/);
     await page.getByTestId("offer-removal-gotit").click();
@@ -778,8 +778,8 @@ test.describe("Lane offers-parity — category freebies, descriptions, availabil
       "Buy 2 Tortilla Sauce & get 1 Caesar Dressing for free"
     );
     await expect(page.getByTestId(`offer-row-desc-${EXCEPT_SAUCES._id}`)).toHaveText("10% off everything except Sauces");
-    await expect(page.getByTestId("offer-row-body-offer-flat-2")).toContainText("Save £2.00");
-    await expect(page.getByTestId("offer-row-desc-offer-flat-2")).toHaveText("£2.00 off your order");
+    await expect(page.getByTestId("offer-row-body-offer-flat-2")).toContainText(/Save £2(?![\d.])/);
+    await expect(page.getByTestId("offer-row-desc-offer-flat-2")).toHaveText("£2 off your order");
     await expect(page.getByTestId("offer-row-more-offer-flat-2")).toHaveCount(0);
 
     const desc = page.getByTestId(`offer-row-desc-${LONG_PICK._id}`);
@@ -922,5 +922,91 @@ test.describe("Lane offers-parity — category freebies, descriptions, availabil
       await expandLong(page);
       await expectClean(page, "e-a1-rewards-expanded-ada");
     });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Review 2026-10-14 — the menu TOTAL is the bag's Total as the bag will
+ * open: its least-value lock and its revalidation only run while it is
+ * open, so the TOTAL prices the cart they will leave (settleCart). The
+ * walk's own case: a least-value reward, the bag closed, the menu changed.
+ * ------------------------------------------------------------------ */
+/** Least-value: any 2 of Cheese Burger (£8) / Tortilla Sauce (£2), the cheapest one free. */
+const LEAST_BURGER_SAUCE = itemOffer({
+  _id: "offer-least-burger-sauce",
+  name: "Any 2, the cheapest free",
+  getItemOnly: false,
+  getLeastValueItem: true,
+  leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
+  applicable: applicable([
+    { item: { baseItemId: CHEESE_BURGER, name: "Cheese Burger" } },
+    { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" } },
+  ]),
+  getItems: { items: [], categories: [] },
+});
+
+/** The menu's repeat sheet (a tap on the in-bag burger): its row's + or −, then closed. */
+async function repeatBurger(page: Page, step: "inc" | "dec") {
+  const card = page.getByTestId(`item-${CHEESE_BURGER}`);
+  await card.scrollIntoViewIfNeeded();
+  await card.click();
+  await expect(page.getByTestId("repeat-sheet")).toBeVisible();
+  const row = page.locator('[data-testid^="repeat-row-"]').first();
+  const itemId = ((await row.getAttribute("data-testid")) ?? "").replace("repeat-row-", "");
+  await page.getByTestId(`repeat-${step}-${itemId}`).click();
+  await page.getByTestId("repeat-sheet-close").click();
+  await expect(page.getByTestId("repeat-sheet")).toHaveCount(0);
+}
+
+/** Two burgers, the reward applied from the sheet (one £8 burger free: £9), the bag closed. */
+async function twoBurgersOneFree(page: Page) {
+  await mockKioskBackend(page);
+  await routeOffers(page, [LEAST_BURGER_SAUCE]);
+  await bootRegisteredToMenu(page);
+  await addCheeseBurgerViaPdp(page);
+  await repeatBurger(page, "inc");
+  await openBag(page);
+  await openRewardsSheet(page);
+  await pickAndSave(page, LEAST_BURGER_SAUCE._id);
+  await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£8.00`);
+  await expect(page.getByTestId("bag-total")).toContainText("£9.00");
+  await page.getByTestId("bag-close").click();
+  await expect(page).toHaveURL(/\/menu$/);
+  await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
+}
+
+test.describe("Review 2026-10-14 — the menu TOTAL is the bag's Total as the bag will open", () => {
+  test("least-value: a £2 sauce added on the menu takes the free unit in the TOTAL at once — the figure the bag then shows", async ({
+    page,
+  }) => {
+    test.slow();
+    await twoBurgersOneFree(page);
+
+    // The bag is closed: only the TOTAL can move the free unit to the sauce
+    // (the stale lock kept a burger free: £12).
+    await addOneTap(page, TORTILLA_SAUCE, "(3)");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £18$/);
+    await openBag(page);
+    await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
+    await expect(page.getByTestId("bag-total")).toContainText("£18.00");
+  });
+
+  test("least-value: a menu-side − below the buy quantity never reads £0 — the TOTAL leaves out the reward the bag drops", async ({
+    page,
+  }) => {
+    test.slow();
+    await twoBurgersOneFree(page);
+
+    // One burger left: the reward no longer applies — £8 + VAT, never the
+    // stale lock's free burger (£0).
+    await repeatBurger(page, "dec");
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
+    await openBag(page);
+    const notice = page.getByTestId("offer-removal-notice");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(/Your total is now £9(?![\d.])/);
+    await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
+    await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
 });
