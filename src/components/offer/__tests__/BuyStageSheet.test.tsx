@@ -475,13 +475,13 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
     applicable: applicable([{ item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }]),
   };
 
-  it("buy side met + a minItems gap: no 'Reward unlocked!'; 'Add 2+ more items…' shows WITHOUT a CONTINUE tap; onContinue never runs", async () => {
+  it("buy side met + a minItems gap: no 'Reward unlocked!'; 'Add 2 more items…' shows WITHOUT a CONTINUE tap; onContinue never runs", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
     const { onContinue } = renderStage(MIN_FOUR);
 
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 2+ more items to your order to be eligible to redeem this reward"
+      "Add 2 more items to your order to be eligible to redeem this reward"
     );
     const cont = screen.getByTestId("buy-stage-continue");
     expect(cont).toHaveAttribute("aria-disabled", "true");
@@ -496,7 +496,7 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1", 2), freebie]));
     renderStage(MIN_FOUR);
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 1+ more items to your order to be eligible to redeem this reward"
+      "Add 1 more item to your order to be eligible to redeem this reward"
     );
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
   });
@@ -516,7 +516,7 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
 
     await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 1+ more items to your order to be eligible to redeem this reward"
+      "Add 1 more item to your order to be eligible to redeem this reward"
     );
     await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
     expect(screen.getByTestId("buy-stage-unlocked")).toHaveTextContent("Reward unlocked!");

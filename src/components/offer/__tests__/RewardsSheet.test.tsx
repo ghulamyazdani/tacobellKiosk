@@ -612,7 +612,7 @@ describe("RewardsSheet — offers-parity", () => {
     store.dispatch(setFilteredOffers([leastWithMin(3)]));
     renderWithAddItems(vi.fn());
     expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
-      "Add 2+ more items to your order to be eligible to redeem this reward"
+      "Add 2 more items to your order to be eligible to redeem this reward"
     );
     expect(screen.getByTestId("offer-row-add-items-offer-least-min")).toBeInTheDocument();
   });
@@ -622,7 +622,7 @@ describe("RewardsSheet — offers-parity", () => {
     store.dispatch(setFilteredOffers([leastWithMin(5)]));
     renderWithAddItems(vi.fn());
     expect(screen.getByTestId("offer-row-nudge-offer-least-min")).toHaveTextContent(
-      "Add 2+ more items to your order to be eligible to redeem this reward"
+      "Add 2 more items to your order to be eligible to redeem this reward"
     );
     expect(screen.queryByTestId("offer-row-add-items-offer-least-min")).toBeNull();
   });

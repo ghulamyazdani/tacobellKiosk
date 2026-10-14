@@ -93,12 +93,9 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         return t("offers.addNudge", {
           amount: `${currency}${Number(gap?.amountShort ?? 0).toFixed(2)}`,
         });
-      case "minItems": {
-        const short = Number(gap?.countShort) || 0;
-        return short === 1
-          ? t("offers.removedReasonItemsOne")
-          : t("offers.removedReasonItemsOther", { count: short });
-      }
+      case "minItems":
+        // The sheet's min-items nudge, word for word (a plural family).
+        return t("offers.addNudgeItems", { count: Number(gap?.countShort) || 0 });
       case "itemCriteria":
         return t("offers.lockedItemCriteria");
       case "bogoBuySide":

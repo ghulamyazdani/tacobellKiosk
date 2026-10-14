@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OfferRow from "../OfferRow";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Contract mock-offer base (only the fields OfferRow's copy paths read). */
 const offerBase = {
@@ -308,7 +308,7 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
       onAddItems,
     });
     const nudge = screen.getByTestId("offer-row-nudge-offer-min-items");
-    expect(nudge).toHaveTextContent("Add 2+ more items to your order to be eligible to redeem this reward");
+    expect(nudge).toHaveTextContent("Add 2 more items to your order to be eligible to redeem this reward");
     const addItems = screen.getByTestId("offer-row-add-items-offer-min-items");
     expect(addItems.tagName).toBe("BUTTON");
     // One 206 px column holds both, the nudge first.
@@ -319,6 +319,36 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
     await userEvent.click(addItems);
     expect(onAddItems).toHaveBeenCalledTimes(1);
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("walk 2026-10-14: the minItems nudge is plural-aware — the REWARD REMOVED notice's own wording, EN and AR", async () => {
+    const minItems = (countShort: number) =>
+      lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
+        reason: "minItems",
+        countShort,
+      });
+    renderRow({ entry: minItems(1) });
+    expect(screen.getByTestId("offer-row-nudge-offer-min-items")).toHaveTextContent(
+      /^Add 1 more item to your order to be eligible to redeem this reward$/
+    );
+    cleanup();
+    renderRow({ entry: minItems(3) });
+    expect(screen.getByTestId("offer-row-nudge-offer-min-items")).toHaveTextContent(
+      /^Add 3 more items to your order to be eligible to redeem this reward$/
+    );
+    cleanup();
+
+    await i18n.changeLanguage("ar");
+    try {
+      renderRow({ entry: minItems(2) });
+      const nudge = screen.getByTestId("offer-row-nudge-offer-min-items");
+      expect(nudge).toHaveTextContent(i18n.t("offers.addNudgeItems", { count: 2 }));
+      expect(nudge.textContent).toMatch(/\p{Script=Arabic}/u);
+      expect(nudge.textContent).not.toMatch(/\+/);
+      expect(nudge.textContent).not.toBe(i18n.t("offers.addNudgeItems", { count: 1 }));
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 
   it("the minItems nudge still names the item shortfall", () => {

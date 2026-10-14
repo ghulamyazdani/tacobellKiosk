@@ -210,7 +210,8 @@
     "saveSelection": "Save Selection",
     "remove": "Remove",
     "addNudge": "Add {{amount}}+ to your order to be eligible to redeem this reward",
-    "addNudgeItems": "Add {{count}}+ more items to your order to be eligible to redeem this reward",
+    "addNudgeItems_one": "Add {{count}} more item to your order to be eligible to redeem this reward",
+    "addNudgeItems_other": "Add {{count}} more items to your order to be eligible to redeem this reward",
     "suggestedItems": "Suggested {{amount}}+ Items",
     "lockedBogoBuySide": "Add the qualifying items to unlock this reward",
     "lockedItemCriteria": "Needs specific items in your order",
@@ -242,8 +243,6 @@
     "removedTitle": "Reward Removed",
     "removedBody": "{{name}} no longer applies to your order.",
     "removedNewTotal": "Your total is now {{amount}}",
-    "removedReasonItemsOne": "Add 1 more item to your order to be eligible to redeem this reward",
-    "removedReasonItemsOther": "Add {{count}} more items to your order to be eligible to redeem this reward",
     "gotIt": "GOT IT",
     "notApplicable": "This reward can't be applied to your current order",
     "buyStage": {
