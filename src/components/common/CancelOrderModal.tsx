@@ -18,6 +18,8 @@ interface CancelOrderModalProps {
  * Analytics (audit-fixes B3, fork StartOverConfirmationModal): YES sends
  * StartOverAffirmFromFooter + KioskReset, NO and the backdrop
  * StartOverCancelFromFooter + AccountSignoutCancel — before the callbacks.
+ * Focus moves in on NO, BACK TO MENU: the safe choice (WAI-ARIA APG), so a
+ * keypad Enter never wipes the order.
  */
 export default function CancelOrderModal({
   open,
@@ -72,6 +74,7 @@ export default function CancelOrderModal({
           <button
             type="button"
             data-testid="cancel-order-cancel"
+            autoFocus
             onClick={keep}
             className="min-h-[56px] min-w-[280px] rounded-[6px] border-2 border-tb-purple bg-tb-surface px-[24px] py-[14px] text-[20px] font-bold uppercase tracking-[1px] text-tb-purple"
           >

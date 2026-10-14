@@ -89,6 +89,14 @@ describe("CancelOrderModal — the guest's answer is reported (audit-fixes B3)",
     expect(screen.getByTestId("cancel-order-cancel")).not.toHaveClass("active:bg-tb-red-press");
   });
 
+  // Walk 2026-10-14: focus moves into the dialog on the safe choice, so a
+  // keypad Enter keeps the order (it stayed on the footer's CANCEL ORDER).
+  it("focus starts on NO, BACK TO MENU — never YES, CANCEL ORDER", () => {
+    mount();
+    expect(screen.getByTestId("cancel-order-cancel")).toHaveFocus();
+    expect(screen.getByTestId("cancel-order-confirm")).not.toHaveFocus();
+  });
+
   it("closed: nothing rendered, nothing reported", () => {
     const { container } = mount(false);
 

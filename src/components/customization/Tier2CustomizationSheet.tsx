@@ -612,7 +612,8 @@ export default function Tier2CustomizationSheet() {
   // Inline confirm (design-language modal, z-[70]) — render helper, used for
   // the discard prompt and the item-24 removal confirm (same copy: the fork's
   // own removal dialog says the equivalent). An alertdialog that takes focus
-  // (ErrorModal precedent; IdleGuard ignores focus events).
+  // on Keep editing — the safe choice, as ErrorModal's confirms (IdleGuard
+  // ignores focus events).
   const renderConfirm = (
     testIdPrefix: string,
     onKeep: () => void,
@@ -644,6 +645,7 @@ export default function Tier2CustomizationSheet() {
           <button
             type="button"
             data-testid={`${testIdPrefix}-cancel`}
+            autoFocus
             onClick={onKeep}
             className="h-[64px] min-w-[220px] rounded-[8px] border-2 border-tb-purple px-[24px] text-[20px] font-bold text-tb-purple"
           >
@@ -652,7 +654,6 @@ export default function Tier2CustomizationSheet() {
           <button
             type="button"
             data-testid={`${testIdPrefix}-confirm`}
-            autoFocus
             onClick={onConfirm}
             className="h-[64px] min-w-[220px] rounded-[8px] bg-tb-purple px-[24px] text-[20px] font-bold text-tb-surface"
           >

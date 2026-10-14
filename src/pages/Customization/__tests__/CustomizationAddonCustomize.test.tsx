@@ -309,7 +309,9 @@ describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork's fl
     expect(screen.getByTestId("pdp-addon-remove-cancel")).toHaveTextContent(i18n.t("pdp.keepItem"));
     const yes = screen.getByTestId("pdp-addon-remove-confirm");
     expect(yes).toHaveTextContent(i18n.t("pdp.removeThisItem"));
-    expect(yes).toHaveFocus();
+    // Focus on NO, KEEP IT — the safe choice (walk 2026-10-14).
+    expect(screen.getByTestId("pdp-addon-remove-cancel")).toHaveFocus();
+    expect(yes).not.toHaveFocus();
     expect(yes).toHaveClass("bg-tb-red");
 
     await tap(screen.getByTestId("pdp-addon-remove-cancel"));
@@ -475,6 +477,8 @@ describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork's fl
     // Row 16: a PLAIN card replacing a customized pick asks.
     await tap(cta(SWAP, "slaw"));
     expect(screen.getByTestId("pdp-addon-replace")).toHaveTextContent(replaceTitle("Large Fries 2"));
+    // Focus on NO, KEEP IT — the safe choice (walk 2026-10-14).
+    expect(screen.getByTestId("pdp-addon-replace-cancel")).toHaveFocus();
     await tap(screen.getByTestId("pdp-addon-replace-cancel"));
     expect(screen.queryByTestId("pdp-addon-replace")).toBeNull();
     expect(idsOf(SWAP)).toEqual(["fries2"]);

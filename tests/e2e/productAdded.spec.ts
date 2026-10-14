@@ -847,6 +847,39 @@ test.describe("the product-added modal stages its suggestions (posistKiosk parit
       picked: { [TORTILLA_SAUCE]: 1 },
     });
   });
+
+  test("P9 FROM THE BAG (walk 2026-10-14): Complete Your Meal → the Large Fries PDP → ADD TO BAG lands it back in the bag with NO added modal waiting under the bag (the same add from a menu card confirms with one); closing the bag shows a bare /menu", async ({
+    page,
+  }) => {
+    test.slow();
+    await bootToMenu(page);
+    await openSaladModal(page);
+    await cta(page).click(); // NO THANKS: nothing picked
+    await expect(modal(page)).toHaveCount(0);
+    await openBag(page);
+
+    // Large Fries' one optional group: the rail detours through the PDP and back to /cart.
+    const fries = page.getByTestId(`bag-rail-item-${LARGE_FRIES}`);
+    await fries.scrollIntoViewIfNeeded();
+    await fries.click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£9.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page).toHaveURL(/\/cart$/, { timeout: 10_000 });
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await expect.poll(() => snapshot(page)).toMatchObject({
+      open: false,
+      detour: false,
+      cart: ["Greek Salad x1", "Large Fries x1"],
+    });
+
+    // Nothing was waiting under the bag.
+    await page.getByTestId("bag-close").click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    await expect(modal(page)).toHaveCount(0);
+    expect((await snapshot(page)).open).toBe(false);
+  });
 });
 
 /**

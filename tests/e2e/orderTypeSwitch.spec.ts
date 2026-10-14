@@ -17,7 +17,15 @@ import {
   GREEK_SALAD,
   TORTILLA_SAUCE,
 } from "./fixtures/backend";
-import { bootRegisteredToMenu, registerToStart, startOrderTo } from "./pages/boot";
+import {
+  bootRegisteredToMenu,
+  chooseLanguage,
+  pickPipelineToMenu,
+  registerToStart,
+  startOrderTo,
+  startToSecond,
+} from "./pages/boot";
+import { clippedText } from "./fixtures/clippedText";
 import { addOneTap, addViaPdp, openBag, bagRows, loyaltyRows, typeDigits } from "./pages/order";
 import {
   mockCheckoutBackend,
@@ -115,6 +123,7 @@ interface Pipeline {
   tab_id: string;
   tab_type: string;
   primary_name: string;
+  secondary_name?: string;
 }
 
 const EAT_IN: Pipeline = { _id: "p1", tab_id: "t1", tab_type: "dine_in", primary_name: "Dine In" };
@@ -202,6 +211,10 @@ interface SwitchMockOptions {
   sized?: boolean;
   /** A modifier group the take-away menu REQUIRES (min 1); dine-in keeps it optional. */
   requiredOnT2?: string;
+  /** Arabic as the secondary language (the footer's language sheet offers it). */
+  arabic?: boolean;
+  /** The ADA reach-zone view on offer (get_kiosk_settings accessibility_mode). */
+  ada?: boolean;
 }
 
 interface SwitchNet {
@@ -229,12 +242,21 @@ async function mockKioskBackend(
     loyalty = false,
     sized = false,
     requiredOnT2,
+    arabic = false,
+    ada = false,
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
   // Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. Loyalty on
   // routes /second through the /phone lookup (loyalty.spec.ts); its
   // skip_crm_page: false wins over SKIP_CRM's.
-  await mockBackend(page, { settings: { ...SKIP_CRM, ...(loyalty ? LOYALTY_SETTINGS : {}) } });
+  await mockBackend(page, {
+    arabic,
+    settings: {
+      ...SKIP_CRM,
+      ...(ada ? { accessibility_mode: true } : {}),
+      ...(loyalty ? LOYALTY_SETTINGS : {}),
+    },
+  });
   // Print agent aborted + every gateway 500-guarded (fixture header).
   const checkout = await mockCheckoutBackend(page, checkoutOptions);
   const net: SwitchNet = { t2Menu: "ok", t2Charges: "ok", held: [], calls: [], checkout };
@@ -520,6 +542,8 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await expect(confirm).toHaveAccessibleDescription(COPY.confirmBody);
     await expect(page.getByTestId("bag-ordertype-confirm-yes")).toHaveText(COPY.confirmYes);
     await expect(page.getByTestId("bag-ordertype-confirm-no")).toHaveText(COPY.confirmNo);
+    // Focus on NO: a keypad Enter never switches (walk 2026-10-14).
+    await expect(page.getByTestId("bag-ordertype-confirm-no")).toBeFocused();
     await capture(page, "order-type-confirm");
 
     await page.getByTestId("bag-ordertype-confirm-no").click();
@@ -1169,4 +1193,80 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     // The short name beside it is untouched.
     await expect(eatInSegment(page)).toHaveText(EAT_IN.primary_name);
   });
+
+  /*
+    Walk 2026-10-14: "NO, KEEP RESTAURANTS CO." ran past its 280 px button
+    (nowrap, overflow visible) and under YES, SWITCH. A name is data, so the
+    confirm's CTAs wrap inside their buttons — in English, in Arabic (the
+    secondary_name) and in the ADA reach zone.
+  */
+  const LONG_CURRENT = "Restaurants Co. Express Counter, Upper Food Court";
+  const LONG_CURRENT_AR = "ركن المطاعم السريع، الطابق العلوي لساحة الطعام";
+  for (const mode of ["en", "ar", "ada"] as const) {
+    test(`LONG NAME CONFIRM (${mode}): 'No, keep <a long current name>' wraps inside its button — no label leaves its CTA, the pair never overlaps`, async ({
+      page,
+    }) => {
+      test.slow();
+      await mockKioskBackend(page, {
+        pipelines: [
+          { ...EAT_IN, primary_name: LONG_CURRENT, secondary_name: LONG_CURRENT_AR },
+          TAKE_OUT,
+        ],
+        arabic: mode === "ar",
+        ada: mode === "ada",
+      });
+      await registerToStart(page);
+      await startToSecond(page);
+      if (mode === "ar") await chooseLanguage(page, "ar");
+      await pickPipelineToMenu(page);
+      if (mode === "ada") {
+        await page.getByTestId("footer-ada").click();
+        await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+      }
+      await addOneTap(page, GREEK_SALAD, "(1)");
+      await openBag(page);
+      await takeOutSegment(page).click();
+      const no = page.getByTestId("bag-ordertype-confirm-no");
+      await expect(no).toContainText(mode === "ar" ? LONG_CURRENT_AR : LONG_CURRENT);
+
+      const geometry = await page.getByTestId("bag-ordertype-confirm").evaluate((dialog) => {
+        const [noButton, yesButton] = [...dialog.querySelectorAll("button")];
+        const measure = (button: Element) => {
+          const box = button.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(button);
+          const runs = [...range.getClientRects()].filter((r) => r.width > 0.5);
+          // Runs whose tops sit within half a line (20 px) share a line.
+          const tops = runs.map((r) => r.top).sort((a, b) => a - b);
+          const lines = tops.filter((top, i) => i === 0 || top - tops[i - 1] > 10).length;
+          return {
+            lines,
+            inside: runs.every(
+              (r) =>
+                r.left >= box.left - 1 &&
+                r.right <= box.right + 1 &&
+                r.top >= box.top - 1 &&
+                r.bottom <= box.bottom + 1
+            ),
+            scrolls: button.scrollWidth > button.clientWidth,
+          };
+        };
+        return {
+          no: measure(noButton),
+          yes: measure(yesButton),
+          apart: noButton.getBoundingClientRect().right <= yesButton.getBoundingClientRect().left,
+        };
+      });
+      expect(geometry).toMatchObject({
+        no: { inside: true, scrolls: false },
+        yes: { lines: 1, inside: true, scrolls: false },
+        apart: true,
+      });
+      // Long enough to need a second line — else this proves nothing.
+      expect(geometry.no.lines).toBeGreaterThan(1);
+      // The shared probe: nothing in the confirm is cut off or spills.
+      expect((await clippedText(page)).filter((line) => line.includes("bag-ordertype-confirm"))).toEqual([]);
+      await capture(page, `order-type-confirm-long-${mode}`);
+    });
+  }
 });

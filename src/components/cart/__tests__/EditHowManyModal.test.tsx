@@ -146,6 +146,67 @@ describe("EditHowManyModal — value, keys, exits, layout (item 20)", () => {
     expect(value()).toBe("12");
   });
 
+  /*
+    Walk 2026-10-14 (2 Noodles): 3–9 looked live and did nothing; "+" looked
+    live at the cap. Every key or "+" that cannot apply is aria-disabled and
+    dimmed (opacity-40, EDIT-at-0's look) — the rest stay exactly as they were.
+  */
+  const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+  const offKeys = () =>
+    DIGITS.filter((d) => screen.getByTestId(`numpad-key-${d}`).getAttribute("aria-disabled") === "true");
+  const dimmedKeys = () => DIGITS.filter((d) => screen.getByTestId(`numpad-key-${d}`).classList.contains("opacity-40"));
+
+  it("N = 2: at 0 the digits past 2 are disabled and dimmed; 0, 1, 2, CLEAR and backspace stay live", () => {
+    const { value, key } = setup(2);
+    expect(offKeys()).toEqual(["3", "4", "5", "6", "7", "8", "9"]);
+    expect(dimmedKeys()).toEqual(offKeys());
+    for (const id of ["numpad-key-0", "numpad-key-1", "numpad-key-2", "numpad-clear", "numpad-backspace"]) {
+      expect(screen.getByTestId(id)).not.toHaveAttribute("aria-disabled");
+      expect(screen.getByTestId(id)).not.toHaveClass("opacity-40");
+    }
+    // A disabled key is inert (and has no press travel).
+    expect(screen.getByTestId("numpad-key-5").className).not.toMatch(/active:/);
+    key("5");
+    key("9");
+    expect(value()).toBe("0");
+    // With a digit in, nothing more fits a one-digit N: every digit is off.
+    key("1");
+    expect(value()).toBe("1");
+    expect(offKeys()).toEqual(DIGITS);
+    fireEvent.click(screen.getByTestId("numpad-backspace"));
+    expect(offKeys()).toEqual(["3", "4", "5", "6", "7", "8", "9"]);
+  });
+
+  it("N = 12: after 1 only 0, 1 and 2 still fit; at 12 every digit is off", () => {
+    const { value, key } = setup(12);
+    expect(offKeys()).toEqual([]); // any first digit fits 12
+    key("1");
+    expect(offKeys()).toEqual(["3", "4", "5", "6", "7", "8", "9"]);
+    key("2");
+    expect(value()).toBe("12");
+    expect(offKeys()).toEqual(DIGITS);
+  });
+
+  it("'+' is aria-disabled and dimmed at N, live below it; '−' is left as it was", () => {
+    const { value } = setup(2);
+    const plus = screen.getByTestId("edit-how-many-increase");
+    expect(plus).toHaveAttribute("aria-disabled", "false");
+    expect(plus).not.toHaveClass("opacity-40");
+    fireEvent.click(plus);
+    fireEvent.click(plus);
+    expect(value()).toBe("2");
+    expect(plus).toHaveAttribute("aria-disabled", "true");
+    expect(plus).toHaveClass("opacity-40");
+    fireEvent.click(plus); // inert at N
+    expect(value()).toBe("2");
+    const minus = screen.getByTestId("edit-how-many-decrease");
+    expect(minus).not.toHaveAttribute("aria-disabled");
+    expect(minus).not.toHaveClass("opacity-40");
+    fireEvent.click(minus);
+    expect(plus).toHaveAttribute("aria-disabled", "false");
+    expect(plus).not.toHaveClass("opacity-40");
+  });
+
   it("leading zeros are normalised away; a one-digit N still takes its first key", () => {
     const { value, key } = setup(9);
     key("0");

@@ -295,13 +295,13 @@
   },
   "removeItem": {
     "title": "Remove Item",
-    "body": "You are about to delete this item, would you like to continue ?",
+    "body": "You are about to delete this item. Would you like to continue?",
     "confirm": "Yes, Delete",
     "cancel": "No, Back to Cart"
   },
   "cancelOrder": {
     "title": "Confirm Cancellation",
-    "body": "You are about to cancel your order, would you like to continue ?",
+    "body": "You are about to cancel your order. Would you like to continue?",
     "cancel": "No, back to menu",
     "confirm": "Yes, cancel order"
   },

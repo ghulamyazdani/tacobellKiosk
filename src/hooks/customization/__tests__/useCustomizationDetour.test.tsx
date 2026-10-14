@@ -180,3 +180,98 @@ describe("useCustomization — every PDP exit ends a suggestion detour (added-mo
     expect(detour()).toBe(false);
   });
 });
+
+/*
+  Walk 2026-10-14: a PDP opened from the bag — Complete Your Meal, the repeat
+  sheet's NEW CUSTOMIZATIONS (direction "cart") — returns to the bag on ADD TO
+  BAG, but its customized add opened the added modal anyway: it waited under
+  the bag and greeted the guest on /menu ("YOUR PRODUCT HAS BEEN ADDED",
+  a pre-discount Total). An add that returns to the bag never opens it; the
+  same add from the menu still does.
+*/
+describe("useCustomization — an add that returns to the bag never opens the added modal", () => {
+  const LARGE_SIZE = { id: "burger-l", name: "Large", price: 9, isActive: true, modifiers: [SAUCE._id] };
+  const SIZED = { ...BURGER, modifiers: [], hasVariant: true, variants: [LARGE_SIZE] };
+
+  /** The PDP's binding of the hook, entered with `state` (useAddEntityToCart's router state). */
+  const mountFrom = (state: unknown) =>
+    renderHook(
+      () =>
+        useCustomization({
+          cartRef: { current: null },
+          isOpenBottomSheet: useSelector(makeItAMealTier1BottomSheet),
+          SelectedEntity: useSelector(tier1CustomizationSelectedEntity),
+          selectedCustomizations: useSelector(tier1SelectedCustomization),
+          setSelectedCustomizations: setTier1SelectedCustomization,
+        }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <Provider store={store}>
+            <MemoryRouter initialEntries={[{ pathname: "/customization", state }]}>{children}</MemoryRouter>
+          </Provider>
+        ),
+      }
+    );
+
+  /** Opens the session on `entity`, mounts the PDP from `state`, picks a sauce (and the size), ADD TO BAG. */
+  const addFrom = (state: unknown, type: "customizableItem" | "variant", entity: object) => {
+    store.dispatch(
+      setTier1BottomSheetAndSelectedEntity({
+        bottomSheet: { isOpen: true, status: "", type, openType: "new", editCustomizationContent: {} },
+        selectedEntity: entity,
+      })
+    );
+    const { result } = mountFrom(state);
+    if (type === "variant") {
+      act(() => {
+        result.current.setSelectedVariant(LARGE_SIZE);
+        result.current.fetchAddonsForSelectedVariant(LARGE_SIZE);
+      });
+    }
+    act(() => {
+      store.dispatch(setTier1SelectedCustomization({ [SAUCE._id]: [{ ...SAUCE.constituentItems[0], quantity: 1 }] }));
+    });
+    let added: unknown;
+    act(() => {
+      added = result.current.addCustomizationToCart(undefined);
+    });
+    return added;
+  };
+
+  const rows = () => (store.getState() as unknown as { cart: { cartItems: { id?: string }[] } }).cart.cartItems;
+
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setModifiersMap({ modifiersMap: { [SAUCE._id]: SAUCE } }));
+    store.dispatch(openMakeItAMealSession());
+  });
+
+  it.each([
+    ["options (CUSTOMIZABLE)", "customizableItem", BURGER],
+    ["a size (VARIANT)", "variant", SIZED],
+  ] as const)("%s from the bag (direction 'cart'): the row lands, the added modal stays shut", (_kind, type, entity) => {
+    expect(addFrom({ direction: "cart" }, type, entity)).toBe(true);
+    expect(rows().map((row) => row.id)).toEqual([BURGER.id]);
+    expect(selectAddToCartModal(store.getState())).toBe(false);
+  });
+
+  it("an explicit returnPath of /cart is the bag too", () => {
+    expect(addFrom({ returnPath: "/cart" }, "customizableItem", BURGER)).toBe(true);
+    expect(rows()).toHaveLength(1);
+    expect(selectAddToCartModal(store.getState())).toBe(false);
+  });
+
+  it.each([
+    ["no router state (a menu card)", undefined],
+    ["direction 'menu'", { direction: "menu" }],
+  ])("control — %s: the same customized add still opens the added modal", (_from, state) => {
+    expect(addFrom(state, "customizableItem", BURGER)).toBe(true);
+    expect(rows()).toHaveLength(1);
+    expect(selectAddToCartModal(store.getState())).toBe(true);
+    expect(selectAddToCartItem(store.getState())).toMatchObject({ id: BURGER.id });
+  });
+});

@@ -213,14 +213,15 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       expect(cartState().cartItems[0].quantity).toBe(1);
     });
 
-    it("C4a: the modal is ErrorModal's 680 shell (Figma 1:4551) — no mark, the body, NO, BACK TO CART left, the red YES, DELETE focused; the scrim is inert", async () => {
+    it("C4a: the modal is ErrorModal's 680 shell (Figma 1:4551) — no mark, the body, NO, BACK TO CART left and focused (the safe choice), the red YES, DELETE right; the scrim is inert", async () => {
       store.dispatch(setCartItems([{ ...BURGER_ROW }]));
       renderSheet();
       await userEvent.click(screen.getByTestId("bag-dec-cb-1"));
       const dialog = screen.getByRole("alertdialog", { name: "Remove Item" });
       expect(dialog).toHaveAttribute("data-testid", "remove-item-modal");
+      // The frame's words, its " ?" typo fixed (walk 2026-10-14).
       expect(dialog).toHaveAccessibleDescription(
-        "You are about to delete this item, would you like to continue ?",
+        "You are about to delete this item. Would you like to continue?",
       );
       expect(dialog).toHaveClass("absolute", "inset-0", "z-[80]");
       expect(dialog.querySelector("img")).toBeNull();
@@ -229,9 +230,11 @@ describe("BagSheet (Figma 1:3171 / 1:3236 — MY BAG)", () => {
       expect(confirm).toBe(screen.getByTestId("remove-item-confirm"));
       expect(cancel).toHaveTextContent("No, Back to Cart");
       expect(confirm).toHaveTextContent("Yes, Delete");
-      expect(confirm).toHaveClass("bg-tb-red", "h-[60px]", "w-[280px]");
-      expect(cancel).toHaveClass("border-tb-purple", "h-[60px]", "w-[280px]");
-      expect(confirm).toHaveFocus();
+      expect(confirm).toHaveClass("bg-tb-red", "min-h-[60px]", "w-[280px]");
+      expect(cancel).toHaveClass("border-tb-purple", "min-h-[60px]", "w-[280px]");
+      // Walk 2026-10-14: a keypad Enter on open keeps the row.
+      expect(cancel).toHaveFocus();
+      expect(confirm).not.toHaveFocus();
       // Inert scrim: tapping outside the card keeps the modal and the row.
       await userEvent.click(dialog.querySelector('[aria-hidden="true"]') as HTMLElement);
       expect(screen.getByTestId("remove-item-modal")).toBeInTheDocument();

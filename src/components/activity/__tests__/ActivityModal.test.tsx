@@ -228,6 +228,15 @@ describe("Activity Center — accessible names (P9f)", () => {
     expect(input).toBe(screen.getByTestId("activity-passcode-input"));
     expect(input).toHaveAttribute("type", "password");
   });
+
+  // Walk 2026-10-14 (every confirm): focus starts on the safe choice.
+  it("the logout confirm puts focus on Cancel, never on Yes, logout", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("activity-logout"));
+    const confirm = screen.getByTestId("activity-logout-confirm");
+    expect(within(confirm).getByRole("button", { name: i18n.t("activity.cancel") })).toHaveFocus();
+    expect(screen.getByTestId("activity-logout-yes")).not.toHaveFocus();
+  });
 });
 
 /*

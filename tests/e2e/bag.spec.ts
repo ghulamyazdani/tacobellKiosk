@@ -254,9 +254,11 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await openBag(page);
     const itemId = await firstBagRowItemId(page);
 
-    // qty 1 decrease → REMOVE ITEM confirm, not a silent delete.
+    // qty 1 decrease → REMOVE ITEM confirm, not a silent delete. Focus on
+    // NO, BACK TO CART: a keypad Enter keeps the row (walk 2026-10-14).
     await page.getByTestId(`bag-dec-${itemId}`).click();
     await expect(page.getByTestId("remove-item-modal")).toBeVisible();
+    await expect(page.getByTestId("remove-item-cancel")).toBeFocused();
 
     // Cancel: modal gone, row untouched.
     await page.getByTestId("remove-item-cancel").click();
@@ -331,7 +333,7 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("bag-sheet")).toContainText("My Bag (1)");
   });
 
-  test("SPLIT EDIT: Edit on a ×3 row asks how many first (EDIT inert at 0, keys past 3 ignored); editing 2 adds Add Cheese to a new ×2 row beside the ×1 — £29.00 — and a reload keeps both rows", async ({
+  test("SPLIT EDIT: Edit on a ×3 row asks how many first (EDIT inert at 0, keys past 3 disabled, dimmed and inert); editing 2 adds Add Cheese to a new ×2 row beside the ×1 — £29.00 — and a reload keeps both rows", async ({
     page,
   }) => {
     test.slow();
@@ -356,12 +358,24 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("customization-screen")).toHaveCount(0);
     await expect(modal).toBeVisible();
 
-    // A key past N is ignored; N = 3 has one digit, so a second key is too.
-    await page.getByTestId("numpad-key-4").click();
+    // A key past N is disabled and dimmed (walk 2026-10-14) — and inert,
+    // forced past Playwright's aria-disabled refusal. N = 3 has one digit,
+    // so once a digit is in, every digit is.
+    const key = (digit: string) => page.getByTestId(`numpad-key-${digit}`);
+    for (const digit of ["4", "9"]) {
+      await expect(key(digit)).toBeDisabled();
+      await expect(key(digit)).toHaveCSS("opacity", "0.4");
+    }
+    for (const digit of ["0", "1", "2", "3"]) {
+      await expect(key(digit)).toBeEnabled();
+      await expect(key(digit)).toHaveCSS("opacity", "1");
+    }
+    await key("4").click({ force: true });
     await expect(value).toHaveText("0");
-    await page.getByTestId("numpad-key-2").click();
+    await key("2").click();
     await expect(value).toHaveText("2");
-    await page.getByTestId("numpad-key-1").click();
+    await expect(key("1")).toBeDisabled();
+    await key("1").click({ force: true });
     await expect(value).toHaveText("2");
     await expect(editCta).toHaveAttribute("aria-disabled", "false");
     await test.info().attach("edit-how-many", {
@@ -432,11 +446,18 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("customization-screen")).toHaveCount(0);
 
     await page.getByTestId(`bag-edit-${itemId}`).click();
-    // The − / + pill (Figma 1:4460) is clamped to 0…N: four taps on + stop at 3.
+    // The − / + pill (Figma 1:4460) is clamped to 0…N: three taps on + reach
+    // 3, where + is disabled and dimmed (walk 2026-10-14) — a forced fourth
+    // tap stays at 3.
     const value = page.getByTestId("edit-how-many-value");
-    for (let tap = 0; tap < 4; tap++) {
-      await page.getByTestId("edit-how-many-increase").click();
+    const plus = page.getByTestId("edit-how-many-increase");
+    for (let tap = 0; tap < 3; tap++) {
+      await plus.click();
     }
+    await expect(value).toHaveText("3");
+    await expect(plus).toBeDisabled();
+    await expect(plus).toHaveCSS("opacity", "0.4");
+    await plus.click({ force: true });
     await expect(value).toHaveText("3");
     await page.getByTestId("edit-how-many-decrease").click();
     await expect(value).toHaveText("2");
@@ -540,8 +561,10 @@ test.describe("P7a My Bag (bag sheet on /cart)", () => {
     await expect(page.getByTestId("cta-total")).toContainText("£17.00");
 
     // Cancel path 1: dismiss keeps the order (no teardown without confirm).
+    // Focus moves in on NO, BACK TO MENU (walk 2026-10-14).
     await page.getByTestId("footer-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
+    await expect(page.getByTestId("cancel-order-cancel")).toBeFocused();
     await page.getByTestId("cancel-order-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toHaveCount(0);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");

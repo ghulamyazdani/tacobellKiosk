@@ -12,8 +12,8 @@ interface RemoveItemModalProps {
  * (audit-fixes C4a): 680 × 396, no mark, "REMOVE ITEM" + the two-line body,
  * 280 × 60 CTAs 26 px apart — outlined "NO, BACK TO CART" left, red filled
  * "YES, DELETE" right (`danger`). An alertdialog with an inert scrim (a
- * backdrop tap no longer cancels) and focus on YES, DELETE — the ErrorModal
- * precedent (sign-off).
+ * backdrop tap no longer cancels) and focus on NO, BACK TO CART — the safe
+ * choice (WAI-ARIA APG alertdialog; a keypad Enter never deletes).
  *
  * Purely presentational: the caller owns what confirm / cancel dispatch.
  * Mounted inside the bag's z-40 context, where ErrorModal's z-80 clears the
@@ -32,6 +32,7 @@ export default function RemoveItemModal({
     <ErrorModal
       testId="remove-item-modal"
       icon={false}
+      initialFocus="secondary"
       title={t("removeItem.title")}
       message={t("removeItem.body")}
       secondary={{
