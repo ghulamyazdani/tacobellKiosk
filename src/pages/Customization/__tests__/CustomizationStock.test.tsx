@@ -16,7 +16,12 @@ import {
   setTier1SelectedCustomization,
   tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
-import { setEntityMenuObject, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  setEntityMenuObject,
+  setMinMaxErroredBaseItems,
+  setModifiersMap,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
@@ -25,6 +30,7 @@ import {
   setSelectedEntity,
 } from "../../../redux/features/menuSelections/menuSelections.slice";
 import Customization from "../index";
+import BagItemRow from "../../../components/cart/BagItemRow";
 import "../../../i18n";
 
 /*
@@ -365,6 +371,71 @@ describe("PDP out-of-stock options (walk-oos)", () => {
     renderPdp();
 
     expect(picks(EXTRAS_L._id)).toEqual(["chikken"]);
+  });
+
+  // Review: a realistic sized row (hasVariant on the row, as the commit
+  // builder spreads the entity) commits through the VARIANT branch — which
+  // kept the row in PAY's lists, so the bag still said it had a problem.
+  it("EDIT a SIZED row (the VARIANT commit): UPDATE without the sold-out pick lets PAY's verdicts on the row go — the bag row no longer says it has a problem", () => {
+    const EXTRAS_L = {
+      ...TEST3,
+      _id: "cola_l_addons",
+      name: "Extras",
+      max: 2,
+      multiplePunchMax: 2,
+      constituentItems: [
+        { id: "egg", name: "Egg", price: 1, isActive: true, entityType: "Addon", outOfStock: false },
+        { id: "ham", name: "Ham", price: 2, isActive: true, entityType: "Addon", outOfStock: false },
+      ],
+    };
+    const LARGE = { id: "cola-l", name: "Large", price: 3, isActive: true, outOfStock: false, modifiers: [EXTRAS_L._id] };
+    const COLA = { id: "cola", name: "Cola", price: 2, hasVariant: true, isVariant: false, variants: [LARGE] };
+    // buildVariantCommitPayload's shape: the entity spread into the row.
+    const row = {
+      ...COLA,
+      itemId: "c-1",
+      quantity: 1,
+      type: "VARIANT",
+      baseItemPrice: 2,
+      variantPrice: 3,
+      total_price: 6,
+      selectedVariant: LARGE,
+      selectedVariantModifiers: LARGE.modifiers,
+      baseItem: { ...COLA, selectedVariantId: LARGE.id, selectedVariantName: LARGE.name },
+      customizations: {
+        [EXTRAS_L._id]: [
+          { id: "egg", name: "Egg", price: 1, quantity: 1, entityType: "Addon", outOfStock: true },
+          { id: "ham", name: "Ham", price: 2, quantity: 1, entityType: "Addon" },
+        ],
+      },
+    };
+    openEdit(row, [EXTRAS_L]);
+    // What the last PAY wrote: Egg out of stock, the row in both lists.
+    store.dispatch(setOutOfStockItems({ egg: { _id: "egg", type: "addon", inStock: false } }));
+    store.dispatch(setUpdatedBaseItems({ updatedBaseItems: ["c-1", "other-1"] }));
+    store.dispatch(setMinMaxErroredBaseItems({ minMaxErroredBaseItems: ["c-1", "other-2"] }));
+    renderPdp();
+    expect(picks(EXTRAS_L._id)).toEqual(["ham"]);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("pdp-add-to-bag"));
+    });
+    const state = store.getState() as any;
+    const [committed] = state.cart.cartItems;
+    expect(committed).toMatchObject({ itemId: "c-1", type: "VARIANT" });
+    expect(committed.customizations[EXTRAS_L._id].map((pick: any) => pick.id)).toEqual(["ham"]);
+    expect(state.menu.updatedBaseItems).toEqual(["other-1"]);
+    expect(state.menu.minMaxErroredBaseItems).toEqual(["other-2"]);
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <BagItemRow row={committed} currency="£" onEdit={vi.fn()} onRequestRemove={vi.fn()} />
+        </MemoryRouter>
+      </Provider>
+    );
+    expect(screen.getByTestId("bag-edit-c-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("bag-changed-c-1")).not.toBeInTheDocument();
   });
 
   it("EDIT: a pick whose option left the menu goes by its own PAY flag — flagged, it is deselected", () => {
