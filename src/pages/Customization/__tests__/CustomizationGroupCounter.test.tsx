@@ -33,7 +33,8 @@ const ROWS = [
 ];
 const GROUP_ID = "wings_test1_addons";
 
-const seed = (bounds: Record<string, unknown>, rows = ROWS) => {
+/** `sized`: one size (6 pc) carrying the group — the PDP opens on it (a lone size is the choice). */
+const seed = (bounds: Record<string, unknown>, rows = ROWS, sized = false) => {
   store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(
     setModifiersMap({
@@ -45,8 +46,22 @@ const seed = (bounds: Record<string, unknown>, rows = ROWS) => {
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
     setTier1BottomSheetAndSelectedEntity({
-      bottomSheet: { isOpen: true, status: "", type: "customizableItem", openType: "new", editCustomizationContent: {} },
-      selectedEntity: { id: "wings", name: "Honey BBQ Wings", price: 100, modifiers: [GROUP_ID] },
+      bottomSheet: {
+        isOpen: true,
+        status: "",
+        type: sized ? "variant" : "customizableItem",
+        openType: "new",
+        editCustomizationContent: {},
+      },
+      selectedEntity: sized
+        ? {
+            id: "wings",
+            name: "Honey BBQ Wings",
+            price: 0,
+            hasVariant: true,
+            variants: [{ id: "wings-6", name: "6 pc", price: 100, isActive: true, modifiers: [GROUP_ID] }],
+          }
+        : { id: "wings", name: "Honey BBQ Wings", price: 100, modifiers: [GROUP_ID] },
     }),
   );
   render(
@@ -297,5 +312,43 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expect(el.textContent).toContain("من");
     expect(el).not.toHaveTextContent("of");
     expect(header().lastElementChild).toBe(el);
+  });
+
+  describe("a SIZED item: the commit counts units, like the counter (user decision 2026-10-14)", () => {
+    const committed = () =>
+      (store.getState() as { cart: { cartItems: { type: string; customizations: Record<string, unknown[]> }[] } })
+        .cart.cartItems[0];
+
+    it("a required stepper (2 / 4, item cap 2) met through units: Missi Roti ×2 reads '2 of 4' and ADD TO BAG takes it; ×1 is named", async () => {
+      seed({ min: 2, max: 4, multiplePunchMin: 2, multiplePunchMax: 4, multiplePunchMaxItem: 2 }, ROWS, true);
+
+      expect(screen.queryByTestId("pdp-variant-picker")).toBeNull();
+      expectCounter(0, 4);
+      await tap(plus("Missi Roti"));
+      expect(await addToBag()).toBe(false);
+      expect(section()).toHaveClass("ring-red-500");
+      await tap(screen.getByTestId("pdp-incomplete-gotit"));
+
+      await tap(plus("Missi Roti"));
+      expect(picks()).toEqual([["missi", 2]]);
+      expectCounter(2, 4);
+      expect(await addToBag()).toBe(true);
+      expect(committed().type).toBe("VARIANT");
+      expect(committed().customizations[GROUP_ID]).toEqual([expect.objectContaining({ id: "missi", quantity: 2 })]);
+    });
+
+    it("plain cards (2 / 3) keep counting picks: one pick is named, two commit", async () => {
+      seed({ min: 2, max: 3, multiplePunchMin: 2, multiplePunchMax: 3, multiplePunchMaxItem: 1 }, ROWS, true);
+
+      await tap(screen.getByTestId("pdp-option-missi"));
+      expectCounter(1, 3);
+      expect(await addToBag()).toBe(false);
+      await tap(screen.getByTestId("pdp-incomplete-gotit"));
+
+      await tap(screen.getByTestId("pdp-option-garlic"));
+      expectCounter(2, 3);
+      expect(await addToBag()).toBe(true);
+      expect(committed().customizations[GROUP_ID]).toHaveLength(2);
+    });
   });
 });

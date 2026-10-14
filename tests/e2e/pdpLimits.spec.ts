@@ -31,6 +31,9 @@ import { stageBox } from "./fixtures/a11y";
  *   against the group max the "+" refuses at, a max of 1 included, at the
  *   header's right edge (the ADA view too); ADD TO BAG takes what they
  *   show. A 0 / 0 stepper has none (PROGRESS R13: the commit's cap is 0).
+ * - SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required
+ *   stepper group on a size is met by one option ×2 — the sized item's
+ *   commit counts units, as the counter does (it counted rows and refused).
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
  * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
@@ -92,6 +95,15 @@ function sizedRequiredGroupMenu(): MenuJson {
   const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
   if (!cheese) throw new Error("fixture: no Extra Cheese group");
   cheese.min = 1;
+  return menu;
+}
+
+/** Large carries Cheese Burger's "Without" group as a REQUIRED stepper: 2 / 4, item cap 2. */
+function sizedStepperMinMenu(): MenuJson {
+  const menu = sizedMenu([WITHOUT_GROUP]);
+  const without = menu.modifiers.find((group) => group._id === WITHOUT_GROUP);
+  if (!without) throw new Error("fixture: no Without group");
+  Object.assign(without, { min: 2, max: 4, multiplePunchMin: 2, multiplePunchMax: 4, multiplePunchMaxItem: 2 });
   return menu;
 }
 
@@ -412,5 +424,47 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
     await expect.poll(() => cartRowCount(page)).toBe(1);
+  });
+
+  test("SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required 2 / 4 stepper on a size, met by Without Ketchup ×2 — '2 of 4', and ADD TO BAG commits it (the sized commit counts units, like the counter)", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { menu: sizedStepperMinMenu() });
+    await bootRegisteredToMenu(page);
+    await openPdp(page, SIZED_ITEM);
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+
+    const without = page.getByTestId(`pdp-group-${WITHOUT_GROUP}`);
+    const count = (picked: number) =>
+      (en.pdp.groupCount as string).replace("{{count}}", String(picked)).replace("{{max}}", "4");
+    await expect(without).toContainText(en.pdp.required);
+    await expect(without).toContainText(count(0));
+    const plus = page.getByRole("button", { name: `${en.pdp.increase} Without Ketchup` });
+    await plus.click();
+    await plus.click();
+    await expect(without).toContainText(count(2));
+    await test.info().attach("pdp-sized-stepper-min", { body: await page.screenshot(), contentType: "image/png" });
+
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect.poll(() => cartRowCount(page)).toBe(1);
+    const committed = await page.evaluate(
+      (groupId) =>
+        (
+          window as unknown as {
+            __kioskStore: {
+              getState: () => {
+                cart: { cartItems: { type: string; customizations: Record<string, { quantity: number }[]> }[] };
+              };
+            };
+          }
+        ).__kioskStore
+          .getState()
+          .cart.cartItems.map((row) => [row.type, row.customizations[groupId]?.map((pick) => pick.quantity)]),
+      WITHOUT_GROUP,
+    );
+    expect(committed).toEqual([["VARIANT", [2]]]);
   });
 });
