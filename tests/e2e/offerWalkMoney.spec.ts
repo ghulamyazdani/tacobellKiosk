@@ -5,6 +5,7 @@ import {
   clone,
   CHEESE_BURGER,
   GREEK_SALAD,
+  TORTILLA_SAUCE,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
 import { addViaPdp, openBag, bagRows, openRewardsSheet } from "./pages/order";
@@ -159,5 +160,91 @@ test.describe("Walk 2026-10-14 — the quoted saving is the applied saving", () 
     await expect(tile).toContainText("(Large)");
     await expect(tile).toContainText("£7");
     await expect(tile).not.toContainText("£13");
+  });
+});
+
+/* Review of the walk fixes — the picker asks for what CONFIRM needs, and the applied row is the bag's figure. */
+const SAUCES_SUB = "5dd1092fbec752021df55e1c"; // Tortilla £2, Caesar £2, BBQ Sauce £1 (PDP)
+const freeEntry = (_id: string, baseItemId: string, name: string, relation: "and" | "or") => ({
+  _id,
+  baseItemId,
+  name,
+  relation,
+  discountType: "percent",
+  value: 100,
+  quantity: 1,
+});
+
+/** "And Offer With Varaint"-shaped: a Greek Salad AND any 2 sauces. */
+const SALAD_AND_TWO_SAUCES = itemOffer({
+  _id: "offer-salad-and-two-sauces",
+  name: "A salad and any 2 sauces",
+  getItems: {
+    items: [freeEntry("gi-and-salad", GREEK_SALAD, "Greek Salad", "and")],
+    categories: [{ _id: SAUCES_SUB, name: "Sauces", quantity: 2, relation: "and", value: 100, discountType: "percent" }],
+  },
+});
+
+/** A Greek Salad (£17) OR a Tortilla Sauce (£2): "up to £17", the guest takes the sauce. */
+const SALAD_OR_SAUCE = itemOffer({
+  _id: "offer-salad-or-sauce",
+  name: "A salad or a sauce",
+  getItems: {
+    items: [
+      freeEntry("gi-or-salad", GREEK_SALAD, "Greek Salad", "or"),
+      freeEntry("gi-or-sauce", TORTILLA_SAUCE, "Tortilla Sauce", "or"),
+    ],
+    categories: [],
+  },
+});
+
+test.describe("Review of the walk fixes — what the picker asks for, what the applied row says", () => {
+  test("an 'and' reward with a group says 'Select 2 items…' and CONFIRM waits for both picks", async ({ page }) => {
+    test.slow();
+    await mockBackend(page, { offers: [SALAD_AND_TWO_SAUCES] });
+    await bootRegisteredToMenu(page);
+    await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
+    await openBag(page);
+    await openRewardsSheet(page);
+    await pickAndSave(page, SALAD_AND_TWO_SAUCES._id);
+
+    const picker = page.getByTestId("freebie-picker");
+    await expect(picker).toContainText("Select 2 items to redeem with your reward.");
+    await expect(picker).not.toContainText("These items come with your reward.");
+    const confirm = page.getByTestId("freebie-confirm");
+    const tortilla = page.getByTestId(`freebie-cat-option-${SAUCES_SUB}-${TORTILLA_SAUCE}`);
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await tortilla.click();
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await tortilla.click();
+    await expect(confirm).toHaveAttribute("aria-disabled", "false");
+    await confirm.click();
+    await expect(picker).toHaveCount(0);
+    // £17 salad + 2 × £2 sauces, all free.
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText("Save £21.00");
+  });
+
+  test("an 'or' reward quoted 'up to £17.00' and applied at £2.00: the reopened sheet's applied row reads the bag's £2.00", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockBackend(page, { offers: [SALAD_OR_SAUCE] });
+    await bootRegisteredToMenu(page);
+    await addViaPdp(page, CHEESE_BURGER, { expectedCta: "£8.00" });
+    await openBag(page);
+    await openRewardsSheet(page);
+    await expect(page.getByTestId(`offer-row-body-${SALAD_OR_SAUCE._id}`)).toContainText("Save up to £17.00");
+    await pickAndSave(page, SALAD_OR_SAUCE._id);
+
+    await page.getByTestId(`freebie-option-${TORTILLA_SAUCE}`).click();
+    await page.getByTestId("freebie-confirm").click();
+    await expect(page.getByTestId("freebie-picker")).toHaveCount(0);
+    await expect(page.getByTestId("bag-rewards-applied")).toContainText("Save £2.00");
+
+    await page.getByTestId("bag-rewards-applied").click();
+    const applied = page.getByTestId(`offer-row-body-${SALAD_OR_SAUCE._id}`);
+    await expect(applied).toContainText("Applied");
+    await expect(applied).toContainText("Save £2.00");
+    await expect(applied).not.toContainText("up to");
   });
 });
