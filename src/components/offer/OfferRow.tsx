@@ -5,6 +5,7 @@ import {
   getOfferMechanic,
   type SavingsOffer,
 } from "@cx-sdk/ordering/offer/offerSavings";
+import { buildBuyGetDescription } from "@cx-sdk/ordering/offer/offerDescription";
 import { lockedGapPresentation } from "@cx-sdk/ordering/offer/offersSheetLogic";
 import { mechanicSpecFor } from "@cx-sdk/ordering/offer/savingsLinePolicy";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -155,12 +156,24 @@ export default function OfferRow({
           get: spec.get,
         });
       case "groupWise":
-        return t("offers.mechGroupWise", { count: spec.count });
       case "freeItem":
-        return t("offers.mechFreeItem");
       case "bogo":
       default:
-        return t("offers.mechBogo");
+        // "Free" only when every get clause — the clauses the description
+        // prints — is 100 % off; a discount is named by that description.
+        if (
+          (buildBuyGetDescription(offer)?.get ?? []).some(
+            (clause) => clause.discount?.kind !== "free",
+          )
+        ) {
+          return description || t("offers.mechGetDiscounted");
+        }
+        if (spec.code === "groupWise") {
+          return t("offers.mechGroupWise", { count: spec.count });
+        }
+        return spec.code === "freeItem"
+          ? t("offers.mechFreeItem")
+          : t("offers.mechBogo");
     }
   };
 

@@ -342,16 +342,29 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       .forEach((row) => removeGetItemsById(row.itemId, "itemId"));
   };
 
+  /** "Free" is a 100 % percent stamp — nothing less (an item entry or a group). */
+  const isFree = (stamp: any): boolean =>
+    stamp?.discountType === "percent" && Number(stamp?.value) === 100;
   const discountLine = (entry: any): string => {
+    if (isFree(entry)) return t("offers.free");
     if (entry?.discountType === "percent") {
-      return Number(entry?.value) === 100
-        ? t("offers.free")
-        : t("offers.percentOff", { value: entry?.value });
+      return t("offers.percentOff", { value: entry?.value });
     }
     return t("offers.amountOff", {
       amount: `${currency}${Number(entry?.value ?? 0).toFixed(2)}`,
     });
   };
+
+  // The header (walk 2026-10-14): "free" only when every option is; one
+  // shared discount is named; mixed stamps read neutral — each row names
+  // its own (discountLine).
+  const options: any[] = [...entries, ...groups];
+  const lines = options.map(discountLine);
+  const title = options.every(isFree)
+    ? t("offers.freebieTitle")
+    : lines.every((line) => line === lines[0])
+      ? t("offers.freebieTitleDiscount", { discount: lines[0] })
+      : t("offers.freebieTitleMixed");
 
   // Group mode: exactly getQuantity units (the SDK commit exists only then).
   // Or-mode: one complete option — the item radio, or a group at its need.
@@ -748,6 +761,22 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
     );
   };
 
+  // "Select N" is what CONFIRM needs: group-wise its N units; "or" ONE
+  // option — an item 1, a category group its need — named while every
+  // option needs the same; "and" grants everything listed.
+  const needs = [...entries.map(() => 1), ...groups.map(getCategoryGroupNeed)];
+  const selectCount = group
+    ? Math.max(1, group.need)
+    : needs.length > 0 && needs.every((need) => need === needs[0])
+      ? needs[0]
+      : 0;
+  const subtitle =
+    !group && !orMode
+      ? t("offers.freebieSubtitleAnd")
+      : selectCount > 0
+        ? t("offers.picker.groupSubtitle", { count: selectCount })
+        : t("offers.picker.subtitleOption");
+
   // Group mode names what is missing (TB mounts no global error modal).
   const groupHint = !group
     ? null
@@ -783,14 +812,10 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           id="freebie-picker-title"
           className="tb-display mb-[8px] px-[96px] text-center text-[32px] leading-[32px] tracking-[-1px] text-tb-purple"
         >
-          {t("offers.freebieTitle")}
+          {title}
         </h2>
         <p className="mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80">
-          {group && group.need > 1
-            ? t("offers.picker.groupSubtitle", { count: group.need })
-            : orMode || group
-              ? t("offers.freebieSubtitleOr")
-              : t("offers.freebieSubtitleAnd")}
+          {subtitle}
         </p>
         <button
           type="button"

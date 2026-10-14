@@ -209,6 +209,97 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * Walk 2026-10-14: "Free item with your order" sat above "Get 1 Noodles
+ * (FULL) at 50% off". A get reward says "free" only when every get clause
+ * is 100 % off; otherwise the mechanic line names the discount (the
+ * description, which prints each clause's) — never "free".
+ * ------------------------------------------------------------------ */
+describe("OfferRow — a discounted get reward is never labelled free", () => {
+  const NOODLES = { id: "noodles", name: "Noodles", price: 5 };
+  const getEntry = (discountType: string, value: number) => ({
+    _id: "gi-noodles-full",
+    relation: "and",
+    quantity: 1,
+    discountType,
+    value,
+    entities: NOODLES,
+  });
+  const getOffer = (kind: "freeItem" | "bogo" | "groupWise", items: object[], categories: object[] = []) => ({
+    ...offerBase,
+    _id: `offer-${kind}`,
+    name: "Variant With And With Category",
+    type: { name: "item", value: 0 },
+    getItemOnly: kind === "freeItem",
+    buygetGroupWiseOffer: kind === "groupWise",
+    buygetGroupWiseOfferValues: { discountType: "percent", value: 50, getQuantity: 2, buyQuantity: 1 },
+    minBillAmount: 100,
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: kind === "freeItem" ? [] : [{ item: { baseItemId: "burger" }, quantity: 1, relation: "and" }],
+    },
+    getItems: { items, categories },
+  });
+  /** Locked by the bill minimum: the mechanic line IS the second line. */
+  const locked = (offer: any, kind: string) => ({
+    offer,
+    saving: { amount: 0, certainty: "upTo", kind, requiresChoice: true, lockReason: "minBill" },
+    eligible: false,
+    gap: { reason: "minBill", amountShort: 40 },
+  });
+  const DESCRIPTION = "Get 1 Noodles (FULL) at 50% off";
+
+  it("a 50 %-off free-item get: the second line names the discount (the description), never 'Free item…', and is not repeated", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 50)]), "freeItem"), description: DESCRIPTION });
+    const row = screen.getByTestId("offer-row-offer-freeItem");
+    expect(row).toHaveTextContent(DESCRIPTION);
+    expect(row).not.toHaveTextContent(/free/i);
+    expect(screen.queryByTestId("offer-row-desc-offer-freeItem")).toBeNull();
+  });
+
+  it("…with no description to name it, a neutral discounted line — still never 'free'", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("amount", 2)]), "freeItem") });
+    const row = screen.getByTestId("offer-row-offer-freeItem");
+    expect(row).toHaveTextContent("Discounted item with your order");
+    expect(row).not.toHaveTextContent(/free/i);
+  });
+
+  it("a 1 %-off category pick counts too (the clause the description prints for a group)", () => {
+    const chinese = {
+      _id: "chinese",
+      name: "Chinese",
+      quantity: 2,
+      relation: "and",
+      discountType: "percent",
+      value: 1,
+      entities: [{ id: "chilli", name: "Chilli Manchurian", price: 20, type: "ITEM" }],
+    };
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 100)], [chinese]), "freeItem") });
+    expect(screen.getByTestId("offer-row-offer-freeItem")).not.toHaveTextContent("Free item with your order");
+  });
+
+  it("bogo and group-wise lines follow the same rule", () => {
+    renderRow({ entry: locked(getOffer("bogo", [getEntry("percent", 50)]), "bogo") });
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Discounted item with your order");
+    expect(screen.getByTestId("offer-row-offer-bogo")).not.toHaveTextContent(/free/i);
+    cleanup();
+    renderRow({ entry: locked(getOffer("groupWise", [getEntry("percent", 50)]), "groupWise") });
+    expect(screen.getByTestId("offer-row-offer-groupWise")).toHaveTextContent("Discounted item with your order");
+    expect(screen.getByTestId("offer-row-offer-groupWise")).not.toHaveTextContent(/free/i);
+  });
+
+  it("every clause 100 % off: the free lines stay", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 100)]), "freeItem") });
+    expect(screen.getByTestId("offer-row-offer-freeItem")).toHaveTextContent("Free item with your order");
+    cleanup();
+    renderRow({ entry: locked(getOffer("bogo", [getEntry("percent", 100)]), "bogo") });
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Buy & get free — pick yours");
+    cleanup();
+    renderRow({ entry: locked(getOffer("groupWise", [getEntry("percent", 100)]), "groupWise") });
+    expect(screen.getByTestId("offer-row-offer-groupWise")).toHaveTextContent("Pick 2 free");
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * Lane "offers" (item 31): the ADD ITEMS buy-stage entry. Only a LOCKED
  * bogoBuySide row renders it, and only when the sheet hands it onAddItems.
  * ------------------------------------------------------------------ */

@@ -2,7 +2,7 @@
  * Offer and getItems-entry fixtures mirror the untyped SDK converter output;
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -19,7 +19,7 @@ import { store } from "../../../redux/app/store";
 import FreebiePickerSheet from "../FreebiePickerSheet";
 import OfferTierHost from "../OfferTierHost";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Paid row so the cart is non-empty when a freebie commits (P7a parity). */
 const BURGER_ROW = {
@@ -1507,5 +1507,120 @@ describe("FreebiePickerSheet — get-category groups (offers-parity F1)", () => 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(cartState().getItems).toEqual([]);
     expect(getItemRows()).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Walk 2026-10-14 ("Testing Get After All"): the header promised a FREE
+ * item over options that were all 50 % off, and "Select 1 item" above
+ * "Any 2 from Chinese · 0 of 2 added". "Free" only when every option is
+ * 100 % off; one shared discount is named; mixed stamps get a neutral
+ * title (each row names its own). "Select N" is the count CONFIRM needs.
+ * ------------------------------------------------------------------ */
+describe("FreebiePickerSheet — the header names the discount and the picks it needs", () => {
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  /** "Any 2 from Chinese" at `value` % off — the walk's category-only "or" offer. */
+  const chinese = (value: number) => ({
+    _id: "chinese",
+    name: "Chinese",
+    quantity: 2,
+    relation: "or",
+    value,
+    discountType: "percent",
+    entities: [
+      { ...catPlain("chilli", "Chilli Manchurian", 20), discountValue: value, discounted_total_price: 20 - (20 * value) / 100 },
+      { ...catPlain("noodles", "Noodles", 5), discountValue: value, discounted_total_price: 5 - (5 * value) / 100 },
+    ],
+  });
+  const getAfterAll = (value: number) => ({
+    ...offerBase,
+    _id: `offer-get-after-all-${value}`,
+    name: "Testing Get After All",
+    isAndOffer: false,
+    getItems: { items: [], categories: [chinese(value)] },
+  });
+  const title = () => screen.getByRole("dialog").querySelector("#freebie-picker-title");
+
+  it("all options 50 % off, a group of 2: 'Choose Your 50% off Item' + 'Select 2 items…' — the header never says free", () => {
+    renderPicker(getAfterAll(50));
+    expect(screen.getByRole("dialog", { name: "Choose Your 50% off Item" })).toBeInTheDocument();
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-cat-count-chinese")).toHaveTextContent("0 of 2 added");
+    expect(title()).not.toHaveTextContent(/free/i);
+    expect(screen.queryByText("Select 1 item to redeem with your reward.")).toBeNull();
+  });
+
+  it("1 %-off picks name 1 % — never the FREE ITEM header", () => {
+    renderPicker(getAfterAll(1));
+    expect(screen.getByRole("dialog", { name: "Choose Your 1% off Item" })).toBeInTheDocument();
+  });
+
+  it("an amount off is named in the deployment's currency", () => {
+    const fiveOff = { ...orEntry("tortilla-sauce", "Tortilla Sauce"), discountType: "amount", value: 5 };
+    renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
+    expect(screen.getByRole("dialog", { name: "Choose Your £5.00 off Item" })).toBeInTheDocument();
+  });
+
+  it("mixed stamps (a 50 % item + a 1 % group): the neutral 'Choose Your Reward' — each row names its own", () => {
+    const mixed = {
+      ...CAT_AND_OFFER,
+      _id: "offer-mixed-stamps",
+      getItems: {
+        items: [{ ...AND_OFFER.getItems.items[0], value: 50 }],
+        categories: [{ ...SAUCES_GROUP, value: 1 }],
+      },
+    };
+    renderPicker(mixed);
+    expect(screen.getByRole("dialog", { name: "Choose Your Reward" })).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-option-greek-salad")).toHaveTextContent("50% off");
+    expect(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce")).toHaveTextContent("1% off");
+    // "and": everything listed is granted — no "Select N" claim.
+    expect(screen.getByText("These items come with your reward.")).toBeInTheDocument();
+    cleanup();
+
+    // One free option is not enough: a free sauce OR a half-price burger.
+    renderPicker(HALF_BURGER_OFFER);
+    expect(screen.getByRole("dialog", { name: "Choose Your Reward" })).toBeInTheDocument();
+    expect(screen.getByText("Select 1 item to redeem with your reward.")).toBeInTheDocument();
+  });
+
+  it("every option 100 % off keeps 'Choose Your Free Item'", () => {
+    renderPicker(CAT_OR_OFFER);
+    expect(screen.getByRole("dialog", { name: "Choose Your Free Item" })).toBeInTheDocument();
+  });
+
+  it("'or' options needing different counts (an item = 1, a group of 2): 'Choose one option…', never 'Select 1 item'", () => {
+    renderPicker(CAT_OR_OFFER);
+    expect(screen.getByText("Choose one option to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.queryByText("Select 1 item to redeem with your reward.")).toBeNull();
+  });
+
+  it("Arabic: the discount title and the plural 'Select N' resolve in Arabic", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderPicker(getAfterAll(50));
+    const heading = title() as HTMLElement;
+    expect(heading).toHaveTextContent(
+      i18n.t("offers.freebieTitleDiscount", { discount: i18n.t("offers.percentOff", { value: 50 }) })
+    );
+    expect(heading.textContent).toMatch(/\p{Script=Arabic}/u);
+    const subtitle = screen.getByText((_, el) => el?.textContent === i18n.t("offers.picker.groupSubtitle", { count: 2 }));
+    expect(subtitle.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(subtitle.textContent).not.toBe(i18n.t("offers.picker.groupSubtitle", { count: 1 }));
   });
 });
