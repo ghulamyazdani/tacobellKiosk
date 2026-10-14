@@ -15,9 +15,10 @@ export const STAGE_HEIGHT = 1920;
  * floor — so the right value depends on the cabinet's panel size and mounting
  * height. Retune only this one; the reach zone, the overlay caps and the
  * flex pages (Menu, PDP) follow it. LOWERING it is always safe.
- * RAISING it past 816 is not: the frameless pages' ADA tops are tuned to the
- * 1122 zone (CustomerPhone's skip meets the footer above 816, Tent 822,
- * CustomerName 837 — see their `ponytail:` notes) and must be re-derived.
+ * RAISING it past 820 is not: the frameless pages' ADA layouts are tuned to
+ * the 1122 zone (CustomerPhone's centred block outgrows the space above
+ * CONTINUE past 820, Tent 822, CustomerName 837 — see their `ponytail:`
+ * notes) and must be re-derived.
  */
 export const ADA_BRAND_ZONE_HEIGHT = 798;
 /** 1122 at the Figma calibration. */
