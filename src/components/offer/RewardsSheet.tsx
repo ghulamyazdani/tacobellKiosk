@@ -70,6 +70,12 @@ export interface RewardsSheetProps {
    * fallback).
    */
   onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
+  /**
+   * What the applied offer takes off the live bill (the bag's
+   * getBillOfferDiscount): its row restates the bag's "Save £X", never the
+   * rank-time "up to" (walk 2026-10-14: the bag read £5.40, the row £6.20).
+   */
+  appliedSaving?: number;
 }
 
 /** resolveBuyStageView's menu inputs, as the untyped Menu slice holds them. */
@@ -122,18 +128,14 @@ const noop = () => undefined;
 const selectCartItems = (state: { cart?: { cartItems?: unknown } }): unknown =>
   state?.cart?.cartItems;
 
-interface SheetBodyProps {
-  onClose: () => void;
-  onNeedsPicker?: (offer: SavingsOffer) => void;
-  onAddItems?: (offer: SavingsOffer, view: BuyStageView) => void;
-}
+type SheetBodyProps = Omit<RewardsSheetProps, "open">;
 
 /**
  * Sheet body — mounted only while open (default export below, RepeatItemSheet
  * house pattern), so the radio state re-seeds from the applied offer on every
  * (re)open without a setState-in-effect.
  */
-function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
+function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetBodyProps) {
   const { t } = useTranslation();
 
   const filteredOffers = useSelector(selectFilteredOffers) as
@@ -406,10 +408,15 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
     const view =
       onAddItems && !lockedByReward ? buyStageViews.get(id) : undefined;
     const copy = descriptions.get(id);
+    // The applied row says what the bag applies — an exact figure, the same.
+    const entry =
+      appliedId === id && appliedSaving !== undefined
+        ? { ...row, saving: { ...row.saving, amount: appliedSaving, certainty: "exact" as const } }
+        : row;
     return (
       <OfferRow
         key={id}
-        entry={row}
+        entry={entry}
         selected={interactive && pickedId === id}
         applied={appliedId === id}
         currency={currency}
@@ -589,18 +596,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems }: SheetBodyProps) {
  * XENO reward in the bag and no offer applied, a pink line explains that
  * offers can't be combined with it and every row is inert.
  */
-export default function RewardsSheet({
-  open,
-  onClose,
-  onNeedsPicker,
-  onAddItems,
-}: RewardsSheetProps) {
+export default function RewardsSheet({ open, ...body }: RewardsSheetProps) {
   if (!open) return null;
-  return (
-    <SheetBody
-      onClose={onClose}
-      onNeedsPicker={onNeedsPicker}
-      onAddItems={onAddItems}
-    />
-  );
+  return <SheetBody {...body} />;
 }

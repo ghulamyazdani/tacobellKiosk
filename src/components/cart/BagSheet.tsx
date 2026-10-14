@@ -1515,6 +1515,7 @@ export default function BagSheet({
         <Suspense fallback={rewardsLoading}>
           <RewardsSheet
             open={rewardsOpen}
+            appliedSaving={offerDiscount}
             onClose={() => setRewardsOpen(false)}
             onNeedsPicker={(offer) => setPickerOffer(offer)}
             onAddItems={(offer, view) => {

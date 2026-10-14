@@ -266,6 +266,51 @@ describe("RewardsSheet (Figma 1:3824 / 1:3858 / 1:3924 — REWARDS)", () => {
     expect(cartState().cartOffer._id).toBe("offer-flat-2");
   });
 
+  // Review of the walk fixes: the bag read "Save £5.40" while the reopened
+  // sheet's APPLIED row read "Save up to £6.20" (the rank-time ceiling). The
+  // applied row restates what the bag applies.
+  it("the APPLIED row reads the bag's figure (appliedSaving), never the rank-time 'up to'; other rows keep theirs", () => {
+    const SALAD_OR_SAUCE = {
+      ...CHOICE_OFFER,
+      _id: "offer-salad-or-sauce",
+      name: "A salad or a sauce",
+      getItems: {
+        items: [
+          CHOICE_OFFER.getItems.items[0],
+          {
+            ...CHOICE_OFFER.getItems.items[1],
+            _id: "gi-salad",
+            baseItemId: "greek-salad",
+            name: "Greek Salad",
+            entities: { ...sauceEntity("greek-salad", "Greek Salad"), price: 17, undiscounted_total_price: 17 },
+          },
+        ],
+      },
+    };
+    const FLAT_3 = { ...FLAT_OFFER, _id: "offer-flat-3", name: "£3 off your order", type: { name: "amount", value: 3 } };
+    store.dispatch(setFilteredOffers([SALAD_OR_SAUCE, FLAT_3]));
+    store.dispatch(applyOffer({ offer: SALAD_OR_SAUCE }));
+    const sheet = (appliedSaving?: number) =>
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={["/cart"]}>
+            <RewardsSheet open onClose={vi.fn()} appliedSaving={appliedSaving} />
+          </MemoryRouter>
+        </Provider>
+      );
+
+    const { unmount } = sheet();
+    expect(screen.getByTestId("offer-row-body-offer-salad-or-sauce")).toHaveTextContent("Save up to £17.00");
+    unmount();
+
+    sheet(2);
+    const applied = screen.getByTestId("offer-row-body-offer-salad-or-sauce");
+    expect(applied).toHaveTextContent("Applied");
+    expect(applied).toHaveTextContent("Save £2.00");
+    expect(applied).not.toHaveTextContent("up to");
+    expect(screen.getByTestId("offer-row-body-offer-flat-3")).toHaveTextContent("Save £3.00");
+  });
+
   it("pick + SAVE commits through the apply core (atomic swap) and closes", async () => {
     store.dispatch(setFilteredOffers([FLAT_OFFER, PERCENT_OFFER]));
     const { onClose, onNeedsPicker } = renderSheet();
