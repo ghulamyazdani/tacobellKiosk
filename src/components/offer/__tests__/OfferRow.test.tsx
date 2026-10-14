@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OfferRow from "../OfferRow";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Contract mock-offer base (only the fields OfferRow's copy paths read). */
 const offerBase = {
@@ -209,6 +209,150 @@ describe("OfferRow (Figma rewards 1:3824 / 1:3858 — one sheet row)", () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * Walk 2026-10-14: "Free item with your order" sat above "Get 1 Noodles
+ * (FULL) at 50% off". A get reward says "free" only when every get clause
+ * is 100 % off; otherwise the mechanic line names the discount (the
+ * description, which prints each clause's) — never "free".
+ * ------------------------------------------------------------------ */
+describe("OfferRow — a discounted get reward is never labelled free", () => {
+  const NOODLES = { id: "noodles", name: "Noodles", price: 5 };
+  const getEntry = (discountType: string, value: number) => ({
+    _id: "gi-noodles-full",
+    relation: "and",
+    quantity: 1,
+    discountType,
+    value,
+    entities: NOODLES,
+  });
+  const getOffer = (kind: "freeItem" | "bogo" | "groupWise", items: object[], categories: object[] = []) => ({
+    ...offerBase,
+    _id: `offer-${kind}`,
+    name: "Variant With And With Category",
+    type: { name: "item", value: 0 },
+    getItemOnly: kind === "freeItem",
+    buygetGroupWiseOffer: kind === "groupWise",
+    buygetGroupWiseOfferValues: { discountType: "percent", value: 50, getQuantity: 2, buyQuantity: 1 },
+    minBillAmount: 100,
+    applicable: {
+      ...offerBase.applicable,
+      rawItems: kind === "freeItem" ? [] : [{ item: { baseItemId: "burger" }, quantity: 1, relation: "and" }],
+    },
+    getItems: { items, categories },
+  });
+  /** Locked by the bill minimum: the mechanic line IS the second line. */
+  const locked = (offer: any, kind: string) => ({
+    offer,
+    saving: { amount: 0, certainty: "upTo", kind, requiresChoice: true, lockReason: "minBill" },
+    eligible: false,
+    gap: { reason: "minBill", amountShort: 40 },
+  });
+  const DESCRIPTION = "Get 1 Noodles (FULL) at 50% off";
+
+  it("a 50 %-off free-item get: the second line names the discount (the description), never 'Free item…', and is not repeated", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 50)]), "freeItem"), description: DESCRIPTION });
+    const row = screen.getByTestId("offer-row-offer-freeItem");
+    expect(row).toHaveTextContent(DESCRIPTION);
+    expect(row).not.toHaveTextContent(/free/i);
+    expect(screen.queryByTestId("offer-row-desc-offer-freeItem")).toBeNull();
+  });
+
+  it("…with no description to name it, a neutral discounted line — still never 'free'", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("amount", 2)]), "freeItem") });
+    const row = screen.getByTestId("offer-row-offer-freeItem");
+    expect(row).toHaveTextContent("Discounted item with your order");
+    expect(row).not.toHaveTextContent(/free/i);
+  });
+
+  it("a 1 %-off category pick counts too (the clause the description prints for a group)", () => {
+    const chinese = {
+      _id: "chinese",
+      name: "Chinese",
+      quantity: 2,
+      relation: "and",
+      discountType: "percent",
+      value: 1,
+      entities: [{ id: "chilli", name: "Chilli Manchurian", price: 20, type: "ITEM" }],
+    };
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 100)], [chinese]), "freeItem") });
+    expect(screen.getByTestId("offer-row-offer-freeItem")).not.toHaveTextContent("Free item with your order");
+  });
+
+  it("bogo and group-wise lines follow the same rule", () => {
+    renderRow({ entry: locked(getOffer("bogo", [getEntry("percent", 50)]), "bogo") });
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Discounted item with your order");
+    expect(screen.getByTestId("offer-row-offer-bogo")).not.toHaveTextContent(/free/i);
+    cleanup();
+    renderRow({ entry: locked(getOffer("groupWise", [getEntry("percent", 50)]), "groupWise") });
+    expect(screen.getByTestId("offer-row-offer-groupWise")).toHaveTextContent("Discounted item with your order");
+    expect(screen.getByTestId("offer-row-offer-groupWise")).not.toHaveTextContent(/free/i);
+  });
+
+  it("every clause 100 % off: the free lines stay", () => {
+    renderRow({ entry: locked(getOffer("freeItem", [getEntry("percent", 100)]), "freeItem") });
+    expect(screen.getByTestId("offer-row-offer-freeItem")).toHaveTextContent("Free item with your order");
+    cleanup();
+    renderRow({ entry: locked(getOffer("bogo", [getEntry("percent", 100)]), "bogo") });
+    expect(screen.getByTestId("offer-row-offer-bogo")).toHaveTextContent("Buy & get free — pick yours");
+    cleanup();
+    renderRow({ entry: locked(getOffer("groupWise", [getEntry("percent", 100)]), "groupWise") });
+    expect(screen.getByTestId("offer-row-offer-groupWise")).toHaveTextContent("Pick 2 free");
+  });
+
+  // Review of the walk fixes: computeLeastValueDiscount applies
+  // leastItemValueCount.getDiscount %, so the least-value line follows the
+  // same rule — "free" only at 100 % (no getDiscount reads as 100).
+  describe("least-value", () => {
+    const least = (getQuantity: number, getDiscount: number | null) => ({
+      offer: {
+        ...offerBase,
+        _id: `offer-least-${getQuantity}-${getDiscount}`,
+        name: "LeastValue Offer",
+        type: { name: "item", value: 0 },
+        getLeastValueItem: true,
+        leastItemValueCount: { buyQuantity: 3, getQuantity, getDiscount },
+      },
+      saving: { amount: 4, certainty: "exact", kind: "leastValue", requiresChoice: false },
+      eligible: true,
+      gap: undefined,
+    });
+    const desc = (entry: any) => screen.getByTestId(`offer-row-desc-${entry.offer._id}`);
+
+    it("below 100 % the line names the discount — one or several cheapest — never 'free'", () => {
+      const two = least(2, 50);
+      renderRow({ entry: two });
+      expect(desc(two)).toHaveTextContent(/^Buy 3, your 2 cheapest items are 50% off$/);
+      cleanup();
+      const one = least(1, 50);
+      renderRow({ entry: one });
+      expect(desc(one)).toHaveTextContent(/^Buy 3, your cheapest item is 50% off$/);
+    });
+
+    it("100 %, or no getDiscount at all, stays free", () => {
+      const full = least(2, 100);
+      renderRow({ entry: full });
+      expect(desc(full)).toHaveTextContent(/^Buy 3, your 2 cheapest items are free$/);
+      cleanup();
+      const unset = least(1, null);
+      renderRow({ entry: unset });
+      expect(desc(unset)).toHaveTextContent(/^Buy 3, your cheapest item is free$/);
+    });
+
+    it("Arabic names the discount too", async () => {
+      await i18n.changeLanguage("ar");
+      try {
+        const two = least(2, 50);
+        renderRow({ entry: two });
+        expect(desc(two)).toHaveTextContent(i18n.t("offers.mechLeastValueDiscountOther", { buy: 3, get: 2, value: 50 }));
+        expect(desc(two).textContent).toMatch(/\p{Script=Arabic}/u);
+        expect(desc(two).textContent).not.toBe(i18n.t("offers.mechLeastValueOther", { buy: 3, get: 2 }));
+      } finally {
+        await i18n.changeLanguage("en");
+      }
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * Lane "offers" (item 31): the ADD ITEMS buy-stage entry. Only a LOCKED
  * bogoBuySide row renders it, and only when the sheet hands it onAddItems.
  * ------------------------------------------------------------------ */
@@ -308,7 +452,7 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
       onAddItems,
     });
     const nudge = screen.getByTestId("offer-row-nudge-offer-min-items");
-    expect(nudge).toHaveTextContent("Add 2+ more items to your order to be eligible to redeem this reward");
+    expect(nudge).toHaveTextContent("Add 2 more items to your order to be eligible to redeem this reward");
     const addItems = screen.getByTestId("offer-row-add-items-offer-min-items");
     expect(addItems.tagName).toBe("BUTTON");
     // One 206 px column holds both, the nudge first.
@@ -319,6 +463,36 @@ describe("OfferRow — ADD ITEMS on locked bogoBuySide rows", () => {
     await userEvent.click(addItems);
     expect(onAddItems).toHaveBeenCalledTimes(1);
     expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("walk 2026-10-14: the minItems nudge is plural-aware — the REWARD REMOVED notice's own wording, EN and AR", async () => {
+    const minItems = (countShort: number) =>
+      lockedEntry({ ...FLAT_OFFER, _id: "offer-min-items", minItemCount: 3 }, "amountComplete", {
+        reason: "minItems",
+        countShort,
+      });
+    renderRow({ entry: minItems(1) });
+    expect(screen.getByTestId("offer-row-nudge-offer-min-items")).toHaveTextContent(
+      /^Add 1 more item to your order to be eligible to redeem this reward$/
+    );
+    cleanup();
+    renderRow({ entry: minItems(3) });
+    expect(screen.getByTestId("offer-row-nudge-offer-min-items")).toHaveTextContent(
+      /^Add 3 more items to your order to be eligible to redeem this reward$/
+    );
+    cleanup();
+
+    await i18n.changeLanguage("ar");
+    try {
+      renderRow({ entry: minItems(2) });
+      const nudge = screen.getByTestId("offer-row-nudge-offer-min-items");
+      expect(nudge).toHaveTextContent(i18n.t("offers.addNudgeItems", { count: 2 }));
+      expect(nudge.textContent).toMatch(/\p{Script=Arabic}/u);
+      expect(nudge.textContent).not.toMatch(/\+/);
+      expect(nudge.textContent).not.toBe(i18n.t("offers.addNudgeItems", { count: 1 }));
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 
   it("the minItems nudge still names the item shortfall", () => {

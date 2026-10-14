@@ -1135,7 +1135,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await openBag(page);
     await openRewardsSheet(page);
     await expect(page.getByTestId(`offer-row-nudge-${LEAST_MIN._id}`)).toHaveText(
-      "Add 1+ more items to your order to be eligible to redeem this reward"
+      "Add 1 more item to your order to be eligible to redeem this reward"
     );
     await page.getByTestId(`offer-row-add-items-${LEAST_MIN._id}`).click();
     await expect(page.getByTestId("rewards-sheet")).toHaveCount(0);
@@ -1150,7 +1150,7 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await expect(page.getByTestId("bag-discounts")).toHaveText(`${MINUS}£2.00`);
   });
 
-  test("E-C5 plain-or + minItemCount 4: nudge + ADD ITEMS → + Tortilla → 'Add 2+ more items…' at once, no 'Reward unlocked!'; ×2 more → unlocked → CONTINUE → applied, and never 'Reward Removed'", async ({
+  test("E-C5 plain-or + minItemCount 4: nudge + ADD ITEMS → + Tortilla → 'Add 2 more items…' at once, no 'Reward unlocked!'; ×2 more → unlocked → CONTINUE → applied, and never 'Reward Removed'", async ({
     page,
   }) => {
     test.slow();
@@ -1161,14 +1161,14 @@ test.describe("Lane offers-parity — the buy stage for category and min-items o
     await openBag(page);
     await openRewardsSheet(page);
     await expect(page.getByTestId(`offer-row-nudge-${MIN_FOUR_BOGO._id}`)).toHaveText(
-      "Add 3+ more items to your order to be eligible to redeem this reward"
+      "Add 3 more items to your order to be eligible to redeem this reward"
     );
     await page.getByTestId(`offer-row-add-items-${MIN_FOUR_BOGO._id}`).click();
     await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
 
     await page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`).click();
     await expect(page.getByTestId("buy-stage-hint")).toHaveText(
-      "Add 2+ more items to your order to be eligible to redeem this reward"
+      "Add 2 more items to your order to be eligible to redeem this reward"
     );
     await expect(page.getByTestId("buy-stage-unlocked")).toHaveCount(0);
     await expect(page.getByTestId("buy-stage-continue")).toHaveAttribute("aria-disabled", "true");

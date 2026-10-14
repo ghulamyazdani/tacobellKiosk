@@ -383,12 +383,93 @@ describe("BuyStageSheet — tiles and modes", () => {
     ).toBeInTheDocument();
   });
 
+  it("walk 2026-10-14: a least stage names how many go free from the row's own source (leastItemValueCount.getQuantity) — EN and AR", async () => {
+    // "Buy 3, your 2 cheapest items are free" on the row; the stage said "your cheapest".
+    const LEAST_TWO = {
+      ...LEAST,
+      _id: "offer-least-two",
+      leastItemValueCount: { buyQuantity: 3, getQuantity: 2, getDiscount: 100 },
+    };
+    renderStage(LEAST_TWO);
+    const sheet = screen.getByTestId("buy-stage-sheet");
+    expect(within(sheet).getByText("Add any 3 from below — your 2 cheapest become free")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent(
+      "Your 2 lowest-priced qualifying items become free"
+    );
+    expect(sheet).not.toHaveTextContent("your cheapest becomes free");
+    cleanup();
+
+    // Arabic carries its own plural forms (never the English fallback, never the singular).
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderStage(LEAST_TWO);
+    const note = screen.getByTestId("buy-stage-least-note");
+    expect(note).toHaveTextContent(i18n.t("offers.buyStage.leastNote", { count: 2 }));
+    expect(note.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(note.textContent).not.toBe(i18n.t("offers.buyStage.leastNote", { count: 1 }));
+    expect(screen.getByTestId("buy-stage-sheet")).toHaveTextContent(
+      i18n.t("offers.buyStage.subtitleLeast", { count: 2, buy: 3 })
+    );
+  });
+
+  it("review of the walk fixes: a least stage below 100 % names its discount, never 'free' — EN and AR", async () => {
+    // computeLeastValueDiscount applies getDiscount %: 50 here, not free.
+    const leastAt = (getQuantity: number) => ({
+      ...LEAST,
+      _id: `offer-least-half-${getQuantity}`,
+      leastItemValueCount: { buyQuantity: 3, getQuantity, getDiscount: 50 },
+    });
+    renderStage(leastAt(2));
+    const sheet = screen.getByTestId("buy-stage-sheet");
+    expect(within(sheet).getByText("Add any 3 from below — your 2 cheapest are 50% off")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent(
+      "Your 2 lowest-priced qualifying items are 50% off"
+    );
+    // (The offer's own name may say free; the stage's copy never does.)
+    expect(sheet).not.toHaveTextContent(/becomes? free/);
+    cleanup();
+
+    renderStage(leastAt(1));
+    expect(screen.getByText("Add any 3 from below — your cheapest is 50% off")).toBeInTheDocument();
+    expect(screen.getByTestId("buy-stage-least-note")).toHaveTextContent("Your lowest-priced qualifying item is 50% off");
+    cleanup();
+
+    // No getDiscount configured reads as 100 % — free, as the engine prices it.
+    renderStage({ ...leastAt(2), leastItemValueCount: { buyQuantity: 3, getQuantity: 2, getDiscount: null } });
+    expect(screen.getByText("Add any 3 from below — your 2 cheapest become free")).toBeInTheDocument();
+    cleanup();
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderStage(leastAt(2));
+    const note = screen.getByTestId("buy-stage-least-note");
+    expect(note).toHaveTextContent(i18n.t("offers.buyStage.leastNoteDiscount", { count: 2, value: 50 }));
+    expect(note.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(note.textContent).not.toBe(i18n.t("offers.buyStage.leastNote", { count: 2 }));
+    expect(screen.getByTestId("buy-stage-sheet")).toHaveTextContent(
+      i18n.t("offers.buyStage.subtitleLeastDiscount", { count: 2, buy: 3, value: 50 })
+    );
+  });
+
   it("a variant-id buy entry names its variant: 'Fries (Large)'", () => {
     const view = viewFor(LARGE_FRIES_BOGO, {
       "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },
     });
     renderStage(LARGE_FRIES_BOGO, view);
     expect(screen.getByTestId("buy-stage-tile-fries")).toHaveTextContent("Fries (Large)");
+  });
+
+  it("walk 2026-10-14: a size tile prices the size it names, not the base item (Fries base £0, Large £5)", () => {
+    const view = viewFor(LARGE_FRIES_BOGO, {
+      "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } },
+    });
+    renderStage(LARGE_FRIES_BOGO, view);
+    const tile = screen.getByTestId("buy-stage-tile-fries");
+    expect(tile).toHaveTextContent("Fries (Large)");
+    expect(tile).toHaveTextContent("£5");
+    expect(tile).not.toHaveTextContent("£0");
   });
 
   it("a tile's price line carries the deployment's symbol (UB1 — never a bare amount)", () => {
@@ -434,13 +515,13 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
     applicable: applicable([{ item: { baseItemId: SAUCE.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" }]),
   };
 
-  it("buy side met + a minItems gap: no 'Reward unlocked!'; 'Add 2+ more items…' shows WITHOUT a CONTINUE tap; onContinue never runs", async () => {
+  it("buy side met + a minItems gap: no 'Reward unlocked!'; 'Add 2 more items…' shows WITHOUT a CONTINUE tap; onContinue never runs", async () => {
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1")]));
     const { onContinue } = renderStage(MIN_FOUR);
 
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 2+ more items to your order to be eligible to redeem this reward"
+      "Add 2 more items to your order to be eligible to redeem this reward"
     );
     const cont = screen.getByTestId("buy-stage-continue");
     expect(cont).toHaveAttribute("aria-disabled", "true");
@@ -455,7 +536,7 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
     store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceRow("s-1", 2), freebie]));
     renderStage(MIN_FOUR);
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 1+ more items to your order to be eligible to redeem this reward"
+      "Add 1 more item to your order to be eligible to redeem this reward"
     );
     expect(screen.queryByTestId("buy-stage-unlocked")).toBeNull();
   });
@@ -475,7 +556,7 @@ describe("BuyStageSheet — offers-parity: the blocker after the buy side is met
 
     await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
     expect(screen.getByTestId("buy-stage-hint")).toHaveTextContent(
-      "Add 1+ more items to your order to be eligible to redeem this reward"
+      "Add 1 more item to your order to be eligible to redeem this reward"
     );
     await userEvent.click(screen.getByTestId(`buy-stage-inc-${SAUCE.id}`));
     expect(screen.getByTestId("buy-stage-unlocked")).toHaveTextContent("Reward unlocked!");

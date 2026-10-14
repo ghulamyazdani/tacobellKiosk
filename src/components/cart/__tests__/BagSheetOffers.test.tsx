@@ -3,7 +3,7 @@
  * converter output; typed in the P7+ domain passes. Do not add NEW anys.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -232,6 +232,14 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(await screen.findByTestId("rewards-sheet")).toBeInTheDocument();
   });
 
+  it("walk 2026-10-14: the entry row's offer name takes the rows' casing (CSS capitalize), never the raw 'amount ic'", () => {
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setFilteredOffers([{ ...FLAT_OFFER, name: "amount ic" }]));
+    renderSheet();
+    const teaser = within(screen.getByTestId("bag-rewards-entry")).getByText("amount ic");
+    expect(teaser).toHaveClass("capitalize");
+  });
+
   it("offers-parity (review 1 F-5): the entry row never names a 'Not available right now' offer — a sold-out buy side", () => {
     // The Caesar is on the menu but sold out: the offer ranks as the gone row.
     const soldOut = {
@@ -380,6 +388,49 @@ describe("BagSheet offers vertical (Figma 1:3137 — Rewards in MY BAG)", () => 
     expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent(
       "Save £17.00"
     );
+  });
+
+  // Review of the walk fixes: the bag read "Save £5.40" while the reopened
+  // sheet's APPLIED row read "Save up to £6.20". The sheet's applied row now
+  // restates the bag's own figure.
+  it("the reopened sheet's APPLIED row reads the bag's 'Save £X', never the offer's 'up to' ceiling", async () => {
+    // "A salad (£17) or a sauce (£2)", the guest took the sauce.
+    const sauceEntry = {
+      ...SALAD_ENTRY,
+      _id: "gi-sauce",
+      baseItemId: "tortilla-sauce",
+      name: "Tortilla Sauce",
+      relation: "or",
+      entities: { ...saladEntity, id: "tortilla-sauce", name: "Tortilla Sauce", price: 2, undiscounted_total_price: 2 },
+    };
+    const SALAD_OR_SAUCE = {
+      ...FREE_SALAD_OFFER,
+      _id: "offer-salad-or-sauce",
+      name: "A salad or a sauce",
+      isAndOffer: false,
+      getItems: { items: [{ ...SALAD_ENTRY, relation: "or" }, sauceEntry] },
+    };
+    const sauceReward = {
+      ...SALAD_FREEBIE_ROW,
+      id: "tortilla-sauce",
+      itemId: "ts-1",
+      uniqueItemId: "ts-1",
+      name: "Tortilla Sauce",
+      price: 2,
+      total_price: 2,
+      undiscounted_total_price: 2,
+    };
+    store.dispatch(setCartItems([{ ...BURGER_ROW }, sauceReward]));
+    store.dispatch(setFilteredOffers([SALAD_OR_SAUCE]));
+    store.dispatch(applyOffer({ offer: SALAD_OR_SAUCE }));
+    renderSheet();
+    expect(screen.getByTestId("bag-rewards-applied")).toHaveTextContent("Save £2.00");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rewards & Offers" }));
+    const applied = await screen.findByTestId("offer-row-body-offer-salad-or-sauce");
+    expect(applied).toHaveTextContent("Applied");
+    expect(applied).toHaveTextContent("Save £2.00");
+    expect(applied).not.toHaveTextContent("Save up to £17.00");
   });
 
   it("REVALIDATION: removing the BOGO's buy-side row auto-removes the offer and opens the removal notice; GOT IT closes it", async () => {

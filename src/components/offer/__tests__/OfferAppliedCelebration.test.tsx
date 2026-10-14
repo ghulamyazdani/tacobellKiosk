@@ -116,6 +116,12 @@ describe("OfferAppliedCelebration", () => {
     expect((shown as HTMLElement).querySelectorAll(".tb-confetti-piece")).toHaveLength(28);
   });
 
+  it("walk 2026-10-14: the name takes the rows' casing (CSS capitalize) — 'Maha Offer 50% on all item' never shows raw", () => {
+    renderCard(2);
+    customerApply("Maha Offer 50% on all item");
+    expect(within(card() as HTMLElement).getByText("Maha Offer 50% on all item")).toHaveClass("capitalize");
+  });
+
   it("no saving line for a £0 discount", () => {
     renderCard(0);
     customerApply();

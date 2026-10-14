@@ -2,7 +2,7 @@
  * Offer and getItems-entry fixtures mirror the untyped SDK converter output;
  * typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -19,7 +19,7 @@ import { store } from "../../../redux/app/store";
 import FreebiePickerSheet from "../FreebiePickerSheet";
 import OfferTierHost from "../OfferTierHost";
 import useOrderHook from "../../../hooks/menuHooks/useOrderHook";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Paid row so the cart is non-empty when a freebie commits (P7a parity). */
 const BURGER_ROW = {
@@ -1507,5 +1507,193 @@ describe("FreebiePickerSheet — get-category groups (offers-parity F1)", () => 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(cartState().getItems).toEqual([]);
     expect(getItemRows()).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Walk 2026-10-14 ("Testing Get After All"): the header promised a FREE
+ * item over options that were all 50 % off, and "Select 1 item" above
+ * "Any 2 from Chinese · 0 of 2 added". "Free" only when every option is
+ * 100 % off; one shared discount is named; mixed stamps get a neutral
+ * title (each row names its own). "Select N" is the count CONFIRM needs.
+ * ------------------------------------------------------------------ */
+describe("FreebiePickerSheet — the header names the discount and the picks it needs", () => {
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: { pickle_group: PICKLE_GROUP } }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  /** "Any 2 from Chinese" at `value` % off — the walk's category-only "or" offer. */
+  const chinese = (value: number) => ({
+    _id: "chinese",
+    name: "Chinese",
+    quantity: 2,
+    relation: "or",
+    value,
+    discountType: "percent",
+    entities: [
+      { ...catPlain("chilli", "Chilli Manchurian", 20), discountValue: value, discounted_total_price: 20 - (20 * value) / 100 },
+      { ...catPlain("noodles", "Noodles", 5), discountValue: value, discounted_total_price: 5 - (5 * value) / 100 },
+    ],
+  });
+  const getAfterAll = (value: number) => ({
+    ...offerBase,
+    _id: `offer-get-after-all-${value}`,
+    name: "Testing Get After All",
+    isAndOffer: false,
+    getItems: { items: [], categories: [chinese(value)] },
+  });
+  const title = () => screen.getByRole("dialog").querySelector("#freebie-picker-title");
+
+  it("all options 50 % off, a group of 2: 'Choose Your 50% off Item' + 'Select 2 items…' — the header never says free", () => {
+    renderPicker(getAfterAll(50));
+    expect(screen.getByRole("dialog", { name: "Choose Your 50% off Item" })).toBeInTheDocument();
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-cat-count-chinese")).toHaveTextContent("0 of 2 added");
+    expect(title()).not.toHaveTextContent(/free/i);
+    expect(screen.queryByText("Select 1 item to redeem with your reward.")).toBeNull();
+  });
+
+  it("1 %-off picks name 1 % — never the FREE ITEM header", () => {
+    renderPicker(getAfterAll(1));
+    expect(screen.getByRole("dialog", { name: "Choose Your 1% off Item" })).toBeInTheDocument();
+  });
+
+  it("an amount off is named in the deployment's currency", () => {
+    const fiveOff = { ...orEntry("tortilla-sauce", "Tortilla Sauce"), discountType: "amount", value: 5 };
+    renderPicker({ ...CHOICE_OFFER, _id: "offer-five-off", getItems: { items: [fiveOff] } });
+    expect(screen.getByRole("dialog", { name: "Choose Your £5.00 off Item" })).toBeInTheDocument();
+  });
+
+  it("mixed stamps (a 50 % item + a 1 % group): the neutral 'Choose Your Reward' — each row names its own", () => {
+    const mixed = {
+      ...CAT_AND_OFFER,
+      _id: "offer-mixed-stamps",
+      getItems: {
+        items: [{ ...AND_OFFER.getItems.items[0], value: 50 }],
+        categories: [{ ...SAUCES_GROUP, value: 1 }],
+      },
+    };
+    renderPicker(mixed);
+    expect(screen.getByRole("dialog", { name: "Choose Your Reward" })).toBeInTheDocument();
+    expect(screen.getByTestId("freebie-option-greek-salad")).toHaveTextContent("50% off");
+    expect(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce")).toHaveTextContent("1% off");
+    // "and": the salad comes with the reward; the sauces group needs 2 picks.
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
+    cleanup();
+
+    // One free option is not enough: a free sauce OR a half-price burger.
+    renderPicker(HALF_BURGER_OFFER);
+    expect(screen.getByRole("dialog", { name: "Choose Your Reward" })).toBeInTheDocument();
+    expect(screen.getByText("Select 1 item to redeem with your reward.")).toBeInTheDocument();
+  });
+
+  it("every option 100 % off keeps 'Choose Your Free Item'", () => {
+    renderPicker(CAT_OR_OFFER);
+    expect(screen.getByRole("dialog", { name: "Choose Your Free Item" })).toBeInTheDocument();
+  });
+
+  // Review of the walk fixes: "And Offer With Varaint" (a fixed item AND any
+  // 2 from a group) read "These items come with your reward." while CONFIRM
+  // waited for 2 picks. An "and" offer asks for every group's need.
+  it("'and' with a group: 'Select 2 items…' — CONFIRM waits for exactly those 2 picks; a second group adds its need", async () => {
+    renderPicker(CAT_AND_OFFER);
+    expect(screen.getByText("Select 2 items to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.queryByText("These items come with your reward.")).toBeNull();
+    const confirm = screen.getByTestId("freebie-confirm");
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce"));
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByTestId("freebie-cat-option-sauces-tortilla-sauce"));
+    expect(confirm).toHaveAttribute("aria-disabled", "false");
+    cleanup();
+
+    const sides = { ...SAUCES_GROUP, _id: "sides", name: "Sides", quantity: 1 };
+    renderPicker({ ...CAT_AND_OFFER, _id: "offer-two-groups", getItems: { ...CAT_AND_OFFER.getItems, categories: [SAUCES_GROUP, sides] } });
+    expect(screen.getByText("Select 3 items to redeem with your reward.")).toBeInTheDocument();
+  });
+
+  it("'and' without a group keeps 'These items come with your reward.'; Arabic names the group's 2", async () => {
+    renderPicker(AND_OFFER);
+    expect(screen.getByText("These items come with your reward.")).toBeInTheDocument();
+    cleanup();
+
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderPicker(CAT_AND_OFFER);
+    const subtitle = screen.getByText((_, el) => el?.textContent === i18n.t("offers.picker.groupSubtitle", { count: 2 }));
+    expect(subtitle.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(screen.queryByText(i18n.t("offers.freebieSubtitleAnd"))).toBeNull();
+  });
+
+  it("'or' options needing different counts (an item = 1, a group of 2): 'Choose one option…', never 'Select 1 item'", () => {
+    renderPicker(CAT_OR_OFFER);
+    expect(screen.getByText("Choose one option to redeem with your reward.")).toBeInTheDocument();
+    expect(screen.queryByText("Select 1 item to redeem with your reward.")).toBeNull();
+  });
+
+  it("Arabic: the discount title and the plural 'Select N' resolve in Arabic", async () => {
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    renderPicker(getAfterAll(50));
+    const heading = title() as HTMLElement;
+    expect(heading).toHaveTextContent(
+      i18n.t("offers.freebieTitleDiscount", { discount: i18n.t("offers.percentOff", { value: 50 }) })
+    );
+    expect(heading.textContent).toMatch(/\p{Script=Arabic}/u);
+    const subtitle = screen.getByText((_, el) => el?.textContent === i18n.t("offers.picker.groupSubtitle", { count: 2 }));
+    expect(subtitle.textContent).toMatch(/\p{Script=Arabic}/u);
+    expect(subtitle.textContent).not.toBe(i18n.t("offers.picker.groupSubtitle", { count: 1 }));
+  });
+
+  // Walk 2026-10-14: "2 X Chilli Manchurian £20.00 → £19.80" — a unit price
+  // beside a two-unit label. A row prices the units it names, like the bag.
+  it("a two-unit grant prices both units: '2 x Chilli Manchurian' £40.00 → £39.60", () => {
+    const chilli = {
+      ...orEntry("chilli", "Chilli Manchurian"),
+      discountType: "percent",
+      value: 1,
+      quantity: 2,
+      entities: {
+        ...sauceEntity("chilli", "Chilli Manchurian"),
+        price: 20,
+        discountValue: 1,
+        undiscounted_total_price: 20,
+        discounted_total_price: 19.8,
+      },
+    };
+    renderPicker({ ...CHOICE_OFFER, _id: "offer-two-chilli", getItems: { items: [chilli] } });
+    const row = screen.getByTestId("freebie-option-chilli");
+    expect(row).toHaveTextContent("2 x Chilli Manchurian");
+    expect(row).toHaveTextContent("£40.00");
+    expect(row).toHaveTextContent("£39.60");
+    expect(row).not.toHaveTextContent("£20.00");
+    expect(row).not.toHaveTextContent("£19.80");
+  });
+
+  it("a category pick prices the units picked; an unpicked row shows one unit", async () => {
+    renderPicker(getAfterAll(50));
+    const chilli = () => screen.getByTestId("freebie-cat-option-chinese-chilli");
+    expect(chilli()).toHaveTextContent("£20.00");
+    expect(chilli()).toHaveTextContent("£10.00");
+    await userEvent.click(chilli());
+    await userEvent.click(chilli());
+    expect(chilli()).toHaveTextContent("2 x Chilli Manchurian");
+    expect(chilli()).toHaveTextContent("£40.00");
+    expect(chilli()).toHaveTextContent("£20.00");
+    expect(chilli()).not.toHaveTextContent("£10.00");
+    expect(screen.getByTestId("freebie-cat-option-chinese-noodles")).toHaveTextContent("£5.00");
   });
 });

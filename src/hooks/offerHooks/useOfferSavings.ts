@@ -32,6 +32,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap, selectVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
 import useOrderHook from "../menuHooks/useOrderHook";
 import useOfferHook from "./useOfferHook";
 import {
@@ -156,6 +157,9 @@ function useOfferSavings() {
     () => buildMenuPresence(entityMap, variantObject),
     [entityMap, variantObject],
   );
+  // enable_dis_addon: a get discount covers the add-ons too (redeemGetItem),
+  // so a reward the guest builds with add-ons has no "up to" to quote.
+  const addonsDiscounted = Boolean(useSelector(selectDiscountOnAddon));
   const { getCalculatedBill } = useOrderHook();
   const { isItemWiseOfferApplicable, isBOGOOfferApplicable } = useOfferHook();
 
@@ -169,6 +173,12 @@ function useOfferSavings() {
    * least-value annotation reuse another offer's freebie distribution and
    * misprice the candidate. Cleared, the distribution is recomputed for the
    * candidate, which is what we want to quote.
+   *
+   * The applied offer's reward rows (isGetItem) are dropped too: every apply
+   * sweeps them before the swap (useOfferApply.clearFreebieRows), so a
+   * preview over them priced a bag no swap leaves — walk 2026-10-14: "Save
+   * £34.80" shown, £12.50 applied. The baseline subtotal (min-bill gaps)
+   * comes through here as well, so it is that bag's too.
    */
   /**
    * getCalculatedBill and cartRdx get fresh identities from useOrderHook /
@@ -189,6 +199,7 @@ function useOfferSavings() {
       try {
         return calc({
           ...cart,
+          cartItems: (cart.cartItems ?? []).filter((item) => !item?.isGetItem),
           cartOffer: offer,
           lockedFreebieAllocation: undefined,
         }) as CalculatedBill;
@@ -311,8 +322,8 @@ function useOfferSavings() {
   // side is a gone row (lane offers-parity F4 — posistKiosk's rank filter).
   const rank = useCallback(
     (offers: SavingsOffer[] | null | undefined): RankedOffer<SavingsOffer>[] =>
-      rankOffersForKiosk(offers, context, isOnMenu),
-    [context, isOnMenu],
+      rankOffersForKiosk(offers, context, isOnMenu, addonsDiscounted),
+    [context, isOnMenu, addonsDiscounted],
   );
 
   const gapFor = useCallback(
@@ -341,7 +352,7 @@ function useOfferSavings() {
       if (!offersToWarm?.length) return;
       const run = () => {
         try {
-          rankOffersForKiosk(offersToWarm, context, isOnMenu);
+          rankOffersForKiosk(offersToWarm, context, isOnMenu, addonsDiscounted);
           offersToWarm.forEach((o) => netAfter(o));
         } catch {
           /* prewarming must never break anything */
@@ -353,7 +364,7 @@ function useOfferSavings() {
         setTimeout(run, 300);
       }
     },
-    [context, netAfter, isOnMenu],
+    [context, netAfter, isOnMenu, addonsDiscounted],
   );
 
   return {

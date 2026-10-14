@@ -166,6 +166,43 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
       expect(screen.queryByTestId("bag-dec-pep-1")).not.toBeInTheDocument();
       expect(screen.queryByTestId("bag-edit-pep-1")).not.toBeInTheDocument();
     });
+
+    // Walk 2026-10-14: "Chilli Manchurian [1% OFF] £40.00 → £39.60" for two
+    // units with no quantity anywhere. A reward row has no stepper, so its
+    // units lead the name ("2 x", the picker's and the add-on lines' prefix).
+    const CHILLI_REWARD = {
+      id: "chilli",
+      itemId: "chilli-g1",
+      uniqueItemId: "chilli-g1-u",
+      name: "Chilli Manchurian",
+      type: "ITEM",
+      price: 20,
+      total_price: 20,
+      quantity: 2,
+      customizations: {},
+      isGetItem: true,
+      discountType: "percent",
+      discountValue: 1,
+      undiscounted_total_price: 20,
+      discounted_total_price: 19.8,
+    };
+
+    it("a reward row of 2 units names them: '2 x Chilli Manchurian', £40.00 struck over £39.60", () => {
+      renderRow(CHILLI_REWARD);
+      const row = screen.getByTestId("bag-row-chilli-g1");
+      expect(row).toHaveTextContent("2 x Chilli Manchurian");
+      expect(row).toHaveTextContent("£40.00");
+      expect(row).toHaveTextContent("£39.60");
+      expect(screen.getByTestId("bag-free-chip-chilli-g1")).toHaveTextContent("1% off");
+    });
+
+    it("a reward row of 1 unit stays bare (no '1 x'), and a paid row never takes the prefix", () => {
+      renderRow({ ...CHILLI_REWARD, quantity: 1 });
+      expect(screen.getByTestId("bag-row-chilli-g1")).not.toHaveTextContent(/\d x Chilli/);
+      expect(screen.getByTestId("bag-row-chilli-g1")).toHaveTextContent("£19.80");
+      renderRow({ ...ITEM_ROW, quantity: 2 });
+      expect(screen.getByTestId("bag-row-fries-1")).not.toHaveTextContent("2 x Large Fries");
+    });
   });
 
   describe("Edit link guard matrix (contract B1)", () => {

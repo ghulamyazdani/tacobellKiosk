@@ -1344,7 +1344,8 @@ export default function BagSheet({
                         {t("offers.entryTitle")}
                       </span>
                       {bestRankedName && (
-                        <span className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
+                        // capitalize: the offer name's one casing (the rows').
+                        <span className="text-[24px] capitalize leading-[24px] tracking-[-0.12px] text-tb-ink-purple">
                           {bestRankedName}
                         </span>
                       )}
@@ -1514,6 +1515,7 @@ export default function BagSheet({
         <Suspense fallback={rewardsLoading}>
           <RewardsSheet
             open={rewardsOpen}
+            appliedSaving={offerDiscount}
             onClose={() => setRewardsOpen(false)}
             onNeedsPicker={(offer) => setPickerOffer(offer)}
             onAddItems={(offer, view) => {

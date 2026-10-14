@@ -26,6 +26,14 @@ interface OfferRemovalNoticeProps {
 }
 
 /**
+ * Stands in for the offer name so the translated sentence can be split
+ * around it: the name then renders as its own element, in the one casing
+ * every other surface gives it (CSS capitalize). In Arabic the slot's
+ * isolate marks land either side of the name, so it stays isolated.
+ */
+const NAME_SLOT = "\u0000";
+
+/**
  * REWARD REMOVED notice — locked decision 6: design-language centered modal
  * (no dedicated Figma frame — flagged for client sign-off) driven by
  * `cart.offerRemovalModal`, opened by useOfferApply.handleCartDrivenRemoval.
@@ -93,12 +101,9 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         return t("offers.addNudge", {
           amount: `${currency}${Number(gap?.amountShort ?? 0).toFixed(2)}`,
         });
-      case "minItems": {
-        const short = Number(gap?.countShort) || 0;
-        return short === 1
-          ? t("offers.removedReasonItemsOne")
-          : t("offers.removedReasonItemsOther", { count: short });
-      }
+      case "minItems":
+        // The sheet's min-items nudge, word for word (a plural family).
+        return t("offers.addNudgeItems", { count: Number(gap?.countShort) || 0 });
       case "itemCriteria":
         return t("offers.lockedItemCriteria");
       case "bogoBuySide":
@@ -111,6 +116,7 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
   };
 
   const reason = reasonLine(gap?.reason);
+  const [bodyBefore, bodyAfter = ""] = t("offers.removedBody", { name: NAME_SLOT }).split(NAME_SLOT);
 
   return (
     // `fixed`, not `absolute` (RemoveItemModal precedent): the bag can
@@ -129,7 +135,11 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
         </h2>
         {removedOffer?.name ? (
           <p className="mx-auto mb-[16px] max-w-[560px] text-[26px] leading-[34px] text-black">
-            {t("offers.removedBody", { name: removedOffer.name })}
+            {bodyBefore}
+            <span data-testid="offer-removal-name" className="capitalize">
+              {removedOffer.name}
+            </span>
+            {bodyAfter}
           </p>
         ) : null}
         {reason ? (

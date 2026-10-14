@@ -57,7 +57,8 @@ function CelebrationCard({ name, amount }: { name: string; amount: string | null
           {t("offers.celebrate.title")}
         </p>
         {name && (
-          <p className="line-clamp-2 text-[24px] font-medium leading-[28px] tracking-[-0.5px] text-tb-surface">
+          // capitalize: the offer name's one casing, as every row prints it.
+          <p className="line-clamp-2 text-[24px] font-medium capitalize leading-[28px] tracking-[-0.5px] text-tb-surface">
             {name}
           </p>
         )}

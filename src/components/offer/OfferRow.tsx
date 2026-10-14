@@ -5,6 +5,7 @@ import {
   getOfferMechanic,
   type SavingsOffer,
 } from "@cx-sdk/ordering/offer/offerSavings";
+import { buildBuyGetDescription } from "@cx-sdk/ordering/offer/offerDescription";
 import { lockedGapPresentation } from "@cx-sdk/ordering/offer/offersSheetLogic";
 import { mechanicSpecFor } from "@cx-sdk/ordering/offer/savingsLinePolicy";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -149,19 +150,39 @@ export default function OfferRow({
           })
         );
       case "leastValueOne":
-        return t("offers.mechLeastValueOne", { buy: spec.buy });
-      case "leastValueOther":
-        return t("offers.mechLeastValueOther", {
-          buy: spec.buy,
-          get: spec.get,
-        });
+      case "leastValueOther": {
+        // "Free" only at 100 % — computeLeastValueDiscount's rule: no
+        // getDiscount is 100, any other value is the cheapest's discount.
+        const off = Number(offer?.leastItemValueCount?.getDiscount ?? 100);
+        const discounted = Number.isFinite(off) && off !== 100;
+        if (spec.code === "leastValueOne") {
+          return discounted
+            ? t("offers.mechLeastValueDiscountOne", { buy: spec.buy, value: off })
+            : t("offers.mechLeastValueOne", { buy: spec.buy });
+        }
+        return discounted
+          ? t("offers.mechLeastValueDiscountOther", { buy: spec.buy, get: spec.get, value: off })
+          : t("offers.mechLeastValueOther", { buy: spec.buy, get: spec.get });
+      }
       case "groupWise":
-        return t("offers.mechGroupWise", { count: spec.count });
       case "freeItem":
-        return t("offers.mechFreeItem");
       case "bogo":
       default:
-        return t("offers.mechBogo");
+        // "Free" only when every get clause — the clauses the description
+        // prints — is 100 % off; a discount is named by that description.
+        if (
+          (buildBuyGetDescription(offer)?.get ?? []).some(
+            (clause) => clause.discount?.kind !== "free",
+          )
+        ) {
+          return description || t("offers.mechGetDiscounted");
+        }
+        if (spec.code === "groupWise") {
+          return t("offers.mechGroupWise", { count: spec.count });
+        }
+        return spec.code === "freeItem"
+          ? t("offers.mechFreeItem")
+          : t("offers.mechBogo");
     }
   };
 

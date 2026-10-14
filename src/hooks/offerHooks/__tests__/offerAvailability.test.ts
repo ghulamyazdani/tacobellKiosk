@@ -254,6 +254,250 @@ describe("rankOffersForKiosk", () => {
     expect(rankOffersForKiosk([either], ctx, isOnMenu)[0].saving.amount).toBe(30);
   });
 
+  /* ---------------------------------------------------------------- *
+   * Walk 2026-10-14: "And Offer With Varaint" (Noodles HALF at 50 % +
+   * any 2 Chinese at 1 %) read "Save up to £1.20" and saved £5.40 — the
+   * fixed size priced off the BASE item (£5 − its £5 stamp = £0). An "up
+   * to" covers every get component: each fixed entry at the dearest unit
+   * it can be × its units, and every category group (F5).
+   * ---------------------------------------------------------------- */
+  const SIZES = [
+    { id: "noodles-q", name: "QUARTER", price: 5, isActive: true },
+    { id: "noodles-h", name: "HALF", price: 10, isActive: true },
+    { id: "noodles-f", name: "FULL", price: 15, isActive: true },
+  ];
+  const NOODLES_BASE = { id: "noodles", name: "Noodles", price: 5, hasVariant: true, variants: SIZES };
+  /** The converter's variant-id grant: the BASE spread, stamps from the size. */
+  const sizeGrant = (size: (typeof SIZES)[number], percent: number) => ({
+    ...NOODLES_BASE,
+    type: "VARIANT",
+    isVariantSelected: true,
+    selectedVariant: { ...size, discounted_total_price: size.price - (size.price * percent) / 100 },
+    undiscounted_total_price: size.price,
+    discounted_total_price: size.price - (size.price * percent) / 100,
+  });
+  const entry = (entities: object, percent: number, extra: object = {}) => ({
+    relation: "and",
+    quantity: 1,
+    discountType: "percent",
+    value: percent,
+    entities,
+    ...extra,
+  });
+  /** The converter's `isAndOffer` stamp rides on top (SavingsOffer does not declare it). */
+  type OfferExtra = Partial<SavingsOffer> & { isAndOffer?: boolean };
+  const getOffer = (_id: string, items: object[], categories: object[] = [], extra: OfferExtra = {}) =>
+    ({
+      ...bogo([]),
+      _id,
+      getItemOnly: true,
+      getItems: { items, categories },
+      ...extra,
+    }) as SavingsOffer;
+  const priced = (offer: SavingsOffer) => rankOffersForKiosk([offer], ctx, isOnMenu)[0];
+
+  it("the walk's fixed size + category: up to £6.20 (HALF £5 + the picks' £1.20), never below the £5.40 it applies", () => {
+    const chinese = {
+      _id: "chinese",
+      name: "Chinese",
+      quantity: 2,
+      relation: "and",
+      value: 1,
+      discountType: "percent",
+      entities: [
+        { id: "chilli", price: 20, type: "ITEM", discounted_total_price: 19.8, undiscounted_total_price: 20 },
+        meal("five-meat", 100),
+        { ...NOODLES_BASE, type: "VARIANT" },
+      ],
+    };
+    const offer = getOffer("and-offer-with-variant", [entry(sizeGrant(SIZES[1], 50), 50)], [chinese]);
+    const row = priced(offer);
+    expect(row.saving).toMatchObject({ certainty: "upTo" });
+    expect(row.saving.amount).toBeCloseTo(6.2, 10);
+    expect(row.saving.amount).toBeGreaterThanOrEqual(5.4);
+    expect(row.offer).toBe(offer); // the rank-time copy never leaves rankOffersForKiosk
+  });
+
+  it("a fixed size alone is exact at its own size: HALF at 50 % → £5 (the base price gave £0)", () => {
+    expect(priced(getOffer("half", [entry(sizeGrant(SIZES[1], 50), 50)])).saving).toMatchObject({
+      amount: 5,
+      certainty: "exact",
+    });
+  });
+
+  it("an entry's units count: 2 × HALF or 1 × FULL at 50 % → up to £10", () => {
+    const offer = getOffer("get-variant-2", [
+      entry(sizeGrant(SIZES[1], 50), 50, { relation: "or", quantity: 2 }),
+      entry(sizeGrant(SIZES[2], 50), 50, { relation: "or" }),
+    ]);
+    expect(priced(offer).saving).toMatchObject({ amount: 10, certainty: "upTo" });
+  });
+
+  it("a customizable grant (no converter stamps) counts at its base: a free £9 burger → £9", () => {
+    expect(priced(getOffer("free-burger", [entry(meal("burger", 9), 100)])).saving).toMatchObject({
+      amount: 9,
+      certainty: "exact",
+    });
+  });
+
+  it("an open size choice is 'up to' its dearest pickable size — a sold-out or ceiling-disabled size never counts", () => {
+    const open = {
+      ...NOODLES_BASE,
+      type: "VARIANT",
+      variants: [
+        ...SIZES,
+        { id: "noodles-xl", name: "XL", price: 30, isActive: true, outOfStock: true },
+        { id: "noodles-xxl", name: "XXL", price: 40, isActive: true, isGetVariantDisabled: true },
+        { id: "noodles-off", name: "OFF", price: 50, isActive: false },
+      ],
+    };
+    expect(priced(getOffer("open-size", [entry(open, 50)])).saving).toMatchObject({
+      amount: 7.5,
+      certainty: "upTo",
+    });
+  });
+
+  it("a category pick with a size choice is 'up to' its dearest size: any 1 Noodles free → £15, not the £5 base", () => {
+    const noodles = {
+      _id: "noodles-group",
+      name: "Noodles",
+      quantity: 1,
+      relation: "and",
+      value: 100,
+      discountType: "percent",
+      entities: [{ ...NOODLES_BASE, type: "VARIANT" }],
+    };
+    expect(priced(getOffer("any-noodles", [], [noodles])).saving).toMatchObject({ amount: 15, certainty: "upTo" });
+  });
+
+  it("an out-of-stock grant gives nothing; plain items keep their price (and/or)", () => {
+    const sauce = { id: "sauce", price: 2, type: "ITEM", discounted_total_price: 0, undiscounted_total_price: 2 };
+    const salad = { id: "salad", price: 17, type: "ITEM", discounted_total_price: 0, undiscounted_total_price: 17 };
+    expect(
+      priced(getOffer("and", [entry(sauce, 100), entry({ ...meal("burger", 9), outOfStock: true }, 100)])).saving
+    ).toMatchObject({ amount: 2, certainty: "exact" });
+    expect(
+      priced(getOffer("or", [entry(sauce, 100, { relation: "or" }), entry(salad, 100, { relation: "or" })])).saving
+    ).toMatchObject({ amount: 17, certainty: "upTo" });
+  });
+
+  it("group-wise: N units, a fixed entry repeating and any other once (the picker's rule)", () => {
+    const sauce = { id: "sauce", price: 2, type: "ITEM", discounted_total_price: 1, undiscounted_total_price: 2 };
+    const groupWise = (getQuantity: number, items: object[]) =>
+      getOffer(`gw-${getQuantity}`, items, [], {
+        getItemOnly: false,
+        buygetGroupWiseOffer: true,
+        buygetGroupWiseOfferValues: { discountType: "percent", value: "50", getQuantity, buyQuantity: 1 },
+      });
+    // Pick 2: the burger once (£4.50), then a sauce (£1) — never 2 × £4.50.
+    expect(priced(groupWise(2, [entry(sauce, 50), entry(meal("burger", 9), 50)])).saving.amount).toBe(5.5);
+    // Pick 3 over one plain sauce: it repeats — 3 × £1 (the top-3 list gave £1).
+    expect(priced(groupWise(3, [entry(sauce, 50)])).saving.amount).toBe(3);
+    // Pick 2 over two fixed sizes: FULL twice at 50 % — 2 × £7.50.
+    expect(
+      priced(groupWise(2, [entry(sizeGrant(SIZES[1], 50), 50), entry(sizeGrant(SIZES[2], 50), 50)])).saving.amount
+    ).toBe(15);
+  });
+
+  /* ---------------------------------------------------------------- *
+   * Review of the walk fixes: the figure is what the picker can give.
+   * ---------------------------------------------------------------- */
+  const FRIES_SIZES = [
+    { id: "fries-s", name: "S", price: 2, isActive: true },
+    { id: "fries-m", name: "M", price: 4, isActive: true },
+    { id: "fries-l", name: "L", price: 6, isActive: true },
+  ];
+  const FRIES_OPEN = { id: "fries", name: "Fries", price: 2, hasVariant: true, type: "VARIANT", variants: FRIES_SIZES };
+  /** The converter's variant-id grant of one fries size. */
+  const friesSize = (size: (typeof FRIES_SIZES)[number]) => ({
+    ...FRIES_OPEN,
+    isVariantSelected: true,
+    selectedVariant: { ...size, discounted_total_price: 0 },
+    undiscounted_total_price: size.price,
+    discounted_total_price: 0,
+  });
+  /** Plain BOGO, same-or-less: buy a burger, get fries no dearer than it. */
+  const sameOrLess = (_id: string, items: object[], extra: OfferExtra = {}) =>
+    ({ ...bogo([itemRaw("burger", "and")]), _id, sameOrLess: true, getItems: { items, categories: [] }, ...extra }) as SavingsOffer;
+  const fiveBurger: SavingsContext = {
+    ...ctx,
+    cartItems: [{ id: "burger", itemId: "burger-1", type: "ITEM", price: 5, quantity: 1 }],
+  };
+
+  it("same-or-less with ONLY fixed get entries is priced under SAVE's ceiling: an open size up to £4 (M) under a £5 burger, never £6 (L)", () => {
+    const open = rankOffersForKiosk([sameOrLess("sol-open", [entry(FRIES_OPEN, 100)])], fiveBurger, isOnMenu)[0];
+    expect(open.saving).toMatchObject({ amount: 4, certainty: "upTo" });
+    // Two fixed sizes as alternatives: the ceiling drops Large, so Medium's £4.
+    const either = sameOrLess(
+      "sol-either",
+      [entry(friesSize(FRIES_SIZES[2]), 100, { relation: "or" }), entry(friesSize(FRIES_SIZES[1]), 100, { relation: "or" })],
+      { isAndOffer: false }
+    );
+    expect(rankOffersForKiosk([either], fiveBurger, isOnMenu)[0].saving).toMatchObject({ amount: 4, certainty: "upTo" });
+  });
+
+  it("an 'or' offer is ONE option, never the sum: a £17 salad or any 2 £2 sauces → up to £17", () => {
+    const salad = { id: "salad", price: 17, type: "ITEM", discounted_total_price: 0, undiscounted_total_price: 17 };
+    const sauces = { _id: "sauces", name: "Sauces", quantity: 2, relation: "or", value: 100, discountType: "percent", entities: [SAUCE] };
+    const offer = getOffer("salad-or-sauces", [entry(salad, 100, { relation: "or" })], [sauces], { isAndOffer: false });
+    expect(priced(offer).saving).toMatchObject({ amount: 17, certainty: "upTo" });
+    // The picker's "or" mode, whatever carries it: the converter's isAndOffer
+    // false over "and" entries (£5 or £3), or a group's "or" beside an item.
+    const five = { id: "five", price: 5, type: "ITEM" };
+    const three = { id: "three", price: 3, type: "ITEM" };
+    expect(
+      priced(getOffer("flag-or", [entry(five, 100), entry(three, 100)], [], { isAndOffer: false })).saving
+    ).toMatchObject({ amount: 5, certainty: "upTo" });
+    expect(priced(getOffer("group-or", [entry(five, 100)], [sauces])).saving).toMatchObject({
+      amount: 5,
+      certainty: "upTo",
+    });
+    // A group can be the best option: a £2 sauce or any 2 £17 salads → £34.
+    const salads = { ...sauces, _id: "salads", name: "Salads", entities: [{ id: "salad", price: 17, type: "ITEM" }] };
+    expect(priced(getOffer("salads-or", [entry(SAUCE, 100, { relation: "or" })], [salads])).saving).toMatchObject({
+      amount: 34,
+      certainty: "upTo",
+    });
+  });
+
+  describe("enable_dis_addon: a reward the guest builds with add-ons quotes no figure", () => {
+    const burger = { ...meal("burger", 9), modifiers: ["extras"] };
+    const rank = (offer: SavingsOffer, addonsDiscounted: boolean) =>
+      rankOffersForKiosk([offer], ctx, isOnMenu, addonsDiscounted)[0].saving;
+
+    it("a customizable grant: £9 exact with the setting off; no figure (an 'up to' £0) with it on — never an 'exact' below what CONFIRM stamps", () => {
+      const offer = getOffer("free-burger-addons", [entry(burger, 100)]);
+      expect(rank(offer, false)).toMatchObject({ amount: 9, certainty: "exact" });
+      expect(rank(offer, true)).toMatchObject({ amount: 0, certainty: "upTo" });
+    });
+
+    it("a customizable category pick, or an open size whose sizes carry add-ons, takes the figure with it", () => {
+      const chinese = { _id: "chinese", name: "Chinese", quantity: 1, relation: "and", value: 50, discountType: "percent" };
+      const withBurger = getOffer("cat-addons", [], [{ ...chinese, entities: [SAUCE, burger] }]);
+      expect(rank(withBurger, false).amount).toBe(4.5);
+      expect(rank(withBurger, true)).toMatchObject({ amount: 0, certainty: "upTo" });
+      const sized = { ...NOODLES_BASE, type: "VARIANT", variants: SIZES.map((size) => ({ ...size, modifiers: ["toppings"] })) };
+      expect(rank(getOffer("size-addons", [entry(sized, 50)]), true)).toMatchObject({ amount: 0, certainty: "upTo" });
+    });
+
+    it("nothing built with add-ons keeps its figure: a fixed size, a plain item, a size choice without add-ons", () => {
+      // The menu's plain items carry an empty group list.
+      const half = getOffer("half-on", [entry(sizeGrant(SIZES[1], 50), 50), entry({ ...SAUCE, modifiers: [] }, 100)]);
+      expect(rank(half, true)).toMatchObject({ amount: 7, certainty: "exact" });
+      // A fixed size is granted as-is, even when its sizes carry add-on groups.
+      const toppedHalf = {
+        ...sizeGrant(SIZES[1], 50),
+        variants: SIZES.map((size) => ({ ...size, modifiers: ["toppings"] })),
+      };
+      expect(rank(getOffer("topped-half-on", [entry(toppedHalf, 50)]), true)).toMatchObject({
+        amount: 5,
+        certainty: "exact",
+      });
+      const open = { ...NOODLES_BASE, type: "VARIANT" };
+      expect(rank(getOffer("open-on", [entry(open, 50)]), true)).toMatchObject({ amount: 7.5, certainty: "upTo" });
+    });
+  });
+
   it("a throw anywhere → plain rankOffers (the bag never breaks)", () => {
     const exploding: MenuPresence = () => {
       throw new Error("boom");
