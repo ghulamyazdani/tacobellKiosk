@@ -169,8 +169,9 @@ function InSessionOverlays() {
  * Rule 1 (P8b; receipt-after-payment 2026-10-13):
  *   /payment → /paymentPolling   the initiate (3 s window, CANCEL inside it)
  *                                 and the resume guard
- *   /payment → /cart             the initiate failure modal's BACK TO BAG
- *                                 (PAY ANOTHER WAY closes it in place)
+ *   /payment (initiate failed)   no edge: CLOSE (· TRY AGAIN) closes the
+ *                                 modal in place, over the tiles (its BACK
+ *                                 TO BAG → /cart was removed 2026-10-14)
  *   /receipt → /paymentPolling   the resume guard only (no initiate there)
  *   /paymentPolling → /receipt   paid; the post-payment question has NO
  *                                 BACK (a placed, paid order — Order

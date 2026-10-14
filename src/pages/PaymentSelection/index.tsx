@@ -39,7 +39,7 @@ const PAYMENT_BUFFER_MS = 3000;
 
 /**
  * How long the screen swallows taps on arrival and after the window's CANCEL
- * or the failure modal's PAY ANOTHER WAY (ReachZone's exit-guard pattern).
+ * or the failure modal's CLOSE (ReachZone's exit-guard pattern).
  * Those close at once over the tiles, and /paymentPolling's TRY AGAIN lands
  * its guest here under the same finger, so the second tap of a double tap
  * would arm a tile — whose window now ENDS in an initiate (review 2 F1).
@@ -107,14 +107,15 @@ function PaymentChrome({ ada }: { ada: boolean }) {
  * posistKiosk PaymentSelection.tsx:239-257 initiates in its buffer timer), so
  * Cancel is still strictly before money moves, and the receipt question
  * comes after the payment (user 2026-10-13). Its wait (PleaseWait 1:4456) and
- * failure modal (1:6288 layout: TRY AGAIN · PAY ANOTHER WAY, which closes it
- * in place · BACK TO BAG) sit over this screen. A tap guard keeps the second
- * tap of a double tap off the tiles (TAP_GUARD_MS). Credentials are never
- * dispatched from here (D11).
+ * failure modal (1:6288 layout: CLOSE · TRY AGAIN, or CLOSE alone when a retry
+ * would only be refused again) sit over this screen; CLOSE closes it in place,
+ * back on the tiles to pick any method (user 2026-10-14). A tap guard keeps
+ * the second tap of a double tap off the tiles (TAP_GUARD_MS). Credentials
+ * are never dispatched from here (D11).
  *
- * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only)
- * and the initiate failure modal's BACK TO BAG /payment → /cart (moved from
- * /receipt). COD keeps /payment → /receipt.
+ * Rule 1: /payment → /paymentPolling (the initiate — NEW edge, was guard-only).
+ * The failure modal adds no edge (its BACK TO BAG → /cart was removed
+ * 2026-10-14; BACK TO MENU stays the way back). COD keeps /payment → /receipt.
  *
  * Layout (D9, design language, flagged): the frame's CTA Cards are 416×416
  * in an 856 px row (1:3375 / 1:3376); one tile keeps 416×416, n ≥ 2 tiles
@@ -178,7 +179,7 @@ export default function PaymentSelection() {
   const [armedType, setArmedType] = useState<string | null>(null);
   const bufferTimer = useRef<number | null>(null);
   const viewedFired = useRef(false);
-  // Armed at mount; CANCEL and PAY ANOTHER WAY re-arm it (TAP_GUARD_MS).
+  // Armed at mount; CANCEL and the failure modal's CLOSE re-arm it (TAP_GUARD_MS).
   const [tapGuard, setTapGuard] = useState(true);
   // Rule 5: the guard's timer never outlives it (or the screen).
   useEffect(() => {
@@ -338,19 +339,21 @@ export default function PaymentSelection() {
     });
   }, [armedType, cancelCheckout, dispatch, netAmountRdx]);
 
-  /** Initiate failure exits: nothing is in flight once the modal is up. */
-  const handlePaytmOtherWay = useCallback(() => {
+  /**
+   * The initiate failure modal's CLOSE: nothing is in flight once it is up,
+   * and the hook already cleared the attempt's ids. Back on the tiles, so
+   * disarm like CANCEL: no stale gateway type survives into a later payload.
+   */
+  const handlePaytmClose = useCallback(() => {
     dismissPaytm();
     setTapGuard(true);
-    // Already on /payment: disarm like CANCEL, so no stale gateway type
-    // survives into a later payload.
     dispatch(setKioskPaymentType({ type: "" }));
   }, [dismissPaytm, dispatch]);
-
-  const handlePaytmBackToBag = useCallback(() => {
-    dismissPaytm();
-    navigate("/cart");
-  }, [dismissPaytm, navigate]);
+  const paytmClose = {
+    label: t("language.close"),
+    onClick: handlePaytmClose,
+    testId: "paytm-initiate-close",
+  };
 
   if (showUnavailable) {
     return (
@@ -492,6 +495,10 @@ export default function PaymentSelection() {
           message={t(
             paytmFailure.reason === "busy" ? "paytm.failed.busy" : "paytm.failed.start"
           )}
+          // Focus on CLOSE, the safe choice: TRY AGAIN mints new ids and may
+          // arm the card machine. A refusal that would only refuse again
+          // gets CLOSE alone (it autofocuses as the only CTA).
+          initialFocus="secondary"
           primary={
             paytmFailure.retryable
               ? {
@@ -499,17 +506,9 @@ export default function PaymentSelection() {
                   onClick: retryPaytm,
                   testId: "paytm-initiate-retry",
                 }
-              : {
-                  label: t("paytm.failed.payAnotherWay"),
-                  onClick: handlePaytmOtherWay,
-                  testId: "paytm-initiate-other",
-                }
+              : paytmClose
           }
-          secondary={{
-            label: t("orderError.backToBag"),
-            onClick: handlePaytmBackToBag,
-            testId: "paytm-initiate-bag",
-          }}
+          secondary={paytmFailure.retryable ? paytmClose : undefined}
         />
       )}
     </div>

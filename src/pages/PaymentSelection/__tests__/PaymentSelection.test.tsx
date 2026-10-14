@@ -3,7 +3,7 @@
  * with those slices, not here. Do not add NEW anys.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
@@ -16,6 +16,7 @@ import {
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setAmount, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { getDetailedPaymentType } from "@cx-sdk/ordering/order/orderBuilder";
+import { readOpenPaytmSession } from "@cx-sdk/payments/gateways/paytmKiosk";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import PaymentSelection from "../index";
@@ -657,10 +658,15 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       or leave the screen.
     */
     const modal = () => screen.getByTestId("paytm-initiate-failed");
+    /** The modal's CTAs in DOM order (ErrorModal renders the secondary first). */
+    const ctaIds = () =>
+      within(modal())
+        .getAllByRole("button")
+        .map((cta) => cta.dataset.testid);
     const preparing = () => screen.queryByTestId("paytm-preparing");
 
     // U3
-    it("busy: PleaseWait while initiating (a covered tile and BACK TO MENU do nothing), then the busy modal; TRY AGAIN → a second initiate with NEW ids; BACK TO BAG → /cart", async () => {
+    it("busy: PleaseWait while initiating (a covered tile and BACK TO MENU do nothing), then the busy modal — CLOSE · TRY AGAIN, focus on CLOSE; TRY AGAIN → a second initiate with NEW ids; CLOSE → the tiles, in place", async () => {
       store.dispatch(setPaymentSettings([EDC, DQR]));
       const first = deferred<unknown>();
       const second = deferred<unknown>();
@@ -685,8 +691,11 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(preparing()).not.toBeInTheDocument();
       expect(modal()).toHaveTextContent(i18n.t("paytm.failed.title"));
       expect(modal()).toHaveTextContent(i18n.t("paytm.failed.busy"));
+      expect(ctaIds()).toEqual(["paytm-initiate-close", "paytm-initiate-retry"]);
       expect(screen.getByTestId("paytm-initiate-retry")).toHaveTextContent(i18n.t("paytm.failed.tryAgain"));
-      expect(screen.queryByTestId("paytm-initiate-other")).not.toBeInTheDocument();
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveTextContent(i18n.t("language.close"));
+      // The safe choice: TRY AGAIN mints new ids and may arm the terminal.
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveFocus();
       // Under the modal a covered tile stays inert too (nothing is in flight
       // there, so BACK keeps its way out — the unavailable branch needs it).
       tap("payment-qr");
@@ -702,15 +711,54 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
 
       await act(async () => second.resolve(BUSY));
       await flush();
-      tap("paytm-initiate-bag");
-      expect(mockNavigate.mock.calls).toEqual([["/cart"]]);
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveFocus();
+      tap("paytm-initiate-close");
       expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(tileIds()).toEqual(["payment-card", "payment-qr", "payment-counter"]);
       expect(m.edc).toHaveBeenCalledTimes(2);
       expect(events("payment_viewed")).toHaveLength(1);
     });
 
+    // The live walk (2026-10-14): this modal offered only BACK TO MY BAG and
+    // TRY AGAIN — no way to stay on /payment and pay another way.
+    it("a retryable rejection (\"We couldn't start the payment\"): CLOSE · TRY AGAIN, focus on CLOSE; CLOSE closes it in place with the attempt cleared — no ids, no armed type, no open session — and PAY AT COUNTER runs its window to /receipt", async () => {
+      store.dispatch(setPaymentSettings([EDC, DQR]));
+      m.edc.mockResolvedValue({ error: { status: 400, data: { msg: "Invalid request" } } });
+      mount();
+      tap("payment-card");
+      advance(3000);
+      await flush();
+
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(ctaIds()).toEqual(["paytm-initiate-close", "paytm-initiate-retry"]);
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveFocus();
+      // Under the modal the hook has cleared the ids; the type stays armed
+      // for TRY AGAIN until the guest decides.
+      expect(state().payment.posBillNo).toBe("");
+      expect(state().payment.paymentType).toBe("PaytmEdc");
+
+      tap("paytm-initiate-close");
+      expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(tileIds()).toEqual(["payment-card", "payment-qr", "payment-counter"]);
+      expect(state().payment.paymentType).toBe("");
+      expect(state().payment.posBillNo).toBe("");
+      expect(readOpenPaytmSession(state().payment)).toBeNull();
+
+      advance(500); // CLOSE's tap guard
+      tap("payment-counter");
+      expect(state().payment.paymentType).toBe("PAY_AT_RESTAURANT");
+      expect(buffer()).toHaveTextContent(i18n.t("payment.placingOrder"));
+      advance(3000);
+      await flush();
+      expect(mockNavigate.mock.calls).toEqual([["/receipt"]]);
+      expect(m.edc).toHaveBeenCalledTimes(1);
+      expect(m.dqr).not.toHaveBeenCalled();
+    });
+
     // U4 (a)
-    it("a local refusal (the Paytm rows gone during the window): the non-retryable modal at 3000 ms; PAY ANOTHER WAY closes it in place, disarmed, nothing minted or sent; PAY AT COUNTER is live", async () => {
+    it("a local refusal (the Paytm rows gone during the window): the non-retryable modal at 3000 ms offers CLOSE alone, focused; it closes it in place, disarmed, nothing minted or sent; PAY AT COUNTER is live", async () => {
       store.dispatch(setPaymentSettings([EDC]));
       mount();
       tap("payment-card");
@@ -721,9 +769,11 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       await flush();
 
       expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-      expect(screen.queryByTestId("paytm-initiate-retry")).not.toBeInTheDocument();
-      expect(screen.getByTestId("paytm-initiate-other")).toHaveTextContent(i18n.t("paytm.failed.payAnotherWay"));
-      tap("paytm-initiate-other");
+      // A retry would only be refused again; CLOSE is the one way on.
+      expect(ctaIds()).toEqual(["paytm-initiate-close"]);
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveTextContent(i18n.t("language.close"));
+      expect(screen.getByTestId("paytm-initiate-close")).toHaveFocus();
+      tap("paytm-initiate-close");
 
       expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalled();
@@ -736,7 +786,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
     });
 
     // U4 (b)
-    it("the /paymentPolling chunk did not arrive: the same refusal; PAY ANOTHER WAY → a fresh tap on the SAME tile opens the window again and refuses again — nothing minted or sent", async () => {
+    it("the /paymentPolling chunk did not arrive: the same refusal; CLOSE → a fresh tap on the SAME tile opens the window again and refuses again — nothing minted or sent", async () => {
       store.dispatch(setPaymentSettings([EDC]));
       m.loadScreen.mockResolvedValue(null);
       mount();
@@ -744,7 +794,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       advance(3000);
       await flush();
       expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-      tap("paytm-initiate-other");
+      tap("paytm-initiate-close");
       expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
 
       tap("payment-card");
@@ -817,7 +867,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       Review 2 F1: a window's end is an initiate now, so a tile armed by the
       second tap of a double tap moves money 3 s later. That tap lands on
       whatever this screen paints under the finger: a tile under the window's
-      CANCEL or the modal's PAY ANOTHER WAY (both close at once), and on
+      CANCEL or the modal's CLOSE (both close at once), and on
       arrival a tile under /paymentPolling's TRY AGAIN. jsdom does not
       hit-test, so these pin the guard's life; paytm.spec R7 / R8 drive the
       real double taps.
@@ -851,18 +901,23 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(tapGuard()).not.toBeInTheDocument();
     });
 
-    it("PAY ANOTHER WAY re-arms the tap guard for 500 ms; the window's own end does not", async () => {
+    it.each([
+      ["a local refusal's CLOSE (alone)", false],
+      ["a retryable rejection's CLOSE (beside TRY AGAIN)", true],
+    ])("%s re-arms the tap guard for 500 ms; the window's own end does not", async (_label, retryable) => {
       store.dispatch(setPaymentSettings([EDC]));
-      m.loadScreen.mockResolvedValue(null);
+      if (retryable) m.edc.mockResolvedValue({ error: { status: 400, data: {} } });
+      else m.loadScreen.mockResolvedValue(null);
       mount();
       advance(500);
       tap("payment-card");
       advance(3000);
       await flush();
       expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(screen.queryByTestId("paytm-initiate-retry") !== null).toBe(retryable);
       expect(tapGuard()).not.toBeInTheDocument();
 
-      tap("paytm-initiate-other");
+      tap("paytm-initiate-close");
       expect(tapGuard()).toBeInTheDocument();
       advance(500);
       expect(tapGuard()).not.toBeInTheDocument();
