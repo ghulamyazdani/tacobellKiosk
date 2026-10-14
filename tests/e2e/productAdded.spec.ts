@@ -202,7 +202,7 @@ const tileIds = (page: Page) =>
  * exclusive VAT 15 % and the engine rounds the Total to the whole pound (bag.spec header: round(SubTotal × 1.15)),
  * so the subtotals the tests name read as these bag Totals.
  */
-const BAG_TOTAL: Record<number, number> = { 17: 20, 19: 22, 21: 24, 23: 26, 24: 28, 26: 30 };
+const BAG_TOTAL: Record<number, number> = { 2: 2, 4: 5, 6: 7, 17: 20, 19: 22, 21: 24, 23: 26, 24: 28, 26: 30, 34: 39 };
 const totalText = (subtotal: number) => `${en.menu.total} £${BAG_TOTAL[subtotal]}`;
 const selectedText = (count: number) => en.added.selected.replace("{{value}}", String(count));
 /** The "−"'s glyph file: the trash at one pick, "−" from two. */
