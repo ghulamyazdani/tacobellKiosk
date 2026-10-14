@@ -6,7 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * visual-bagpdp settle verbatim: every <img> complete and every finite CSS keyframe animation (sheet
- * and dialog entrances) at rest; an infinite pulse is exempt.
+ * and dialog entrances) at rest; an infinite pulse is exempt, and so is Order Complete's countdown
+ * fill (it runs until the screen leaves; under reduce it is not rendered at all).
  */
 export async function settle(page: Page) {
   await expect
@@ -20,6 +21,7 @@ export async function settle(page: Page) {
               (animation) =>
                 !(animation instanceof CSSAnimation) ||
                 animation.playState !== "running" ||
+                animation.animationName === "tb-countdown-fill" ||
                 !Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity),
             ),
       ),

@@ -29,7 +29,7 @@ import i18n from "../../../i18n";
   HOUSE STYLE: real store + Provider + MemoryRouter + RESET_STATE + i18n.
 
   Mocked, and only these:
-  - useNavigate, so the one exit (the 20 s timer → /start) is assertable;
+  - useNavigate, so the one exit (the countdown → /start) is assertable;
   - the analytics adapter (pass-through), so the order of the exit events
     — and that nothing resets the analytics session here (audit-fixes B3:
     the next guest's splash tap does) — is assertable;
@@ -146,10 +146,13 @@ const tick = (seconds: number) => {
 const root = () => screen.getByTestId("order-success");
 const orderNumber = () => screen.getByTestId("order-number").textContent;
 const heading = () => root().textContent ?? "";
-const panel = () => screen.getByTestId("order-success-panel");
-const unlock = () => screen.queryByTestId("order-success-unlock");
-/** The three annotation lines (each a rotated span in its positioned box). */
-const unlockLines = () => [...(unlock()?.querySelectorAll("span") ?? [])];
+const newOrder = () => screen.getByTestId("order-success-new-order");
+/** START NEW ORDER's ticking part, as rendered after the label. */
+const countdown = () => screen.getByTestId("order-success-countdown").textContent;
+const label = (seconds: number) => ` · ${i18n.t("success.countdown", { seconds })}`;
+const fill = () => screen.getByTestId("order-success-countdown-fill");
+/** The sr-only status as the first tick fills it (19 s left, unless that tick was late). */
+const sentence = (seconds = ORDER_SUCCESS_COUNTDOWN_SECONDS - 1) => i18n.t("success.countdownA11y", { seconds });
 /** Figma copy with no data source (QR, points, campaign) and the old panel's promo copy. */
 const OMITTED_COPY = /scan to earn|110 points|for your meal|earn points|decades|merch|tuesday drops/i;
 
@@ -197,8 +200,6 @@ describe("OrderSuccess — Order Complete", () => {
 
       expect(heading()).toContain(i18n.t("success.thankYou"));
       expect(heading()).not.toContain(i18n.t("success.orderHeading"));
-      // Loyalty off: no points pitch at all (D8).
-      expect(unlock()).toBeNull();
     });
 
     it('greets a recognised loyalty customer with the "ORDER" heading', () => {
@@ -206,8 +207,6 @@ describe("OrderSuccess — Order Complete", () => {
       mount();
 
       expect(heading()).toContain(i18n.t("success.orderHeading"));
-      // 1:3437 draws no unlock pitch for a customer already in loyalty.
-      expect(unlock()).toBeNull();
     });
 
     it("treats loyalty-on-but-anonymous as a guest", () => {
@@ -235,23 +234,26 @@ describe("OrderSuccess — Order Complete", () => {
   });
 
   /*
-    Figma 1:5932 / 1:3437 draw no control and no countdown: the screen has
-    exactly one exit, its 20 s timer (user decision 2026-10-12 — the Rule 1
-    "way back" exemption of an order confirmation).
+    Figma 1:5932 / 1:3437 draw no control and no countdown. The screen has
+    one exit (user decision 2026-10-12 — the Rule 1 "way back" exemption of
+    an order confirmation), taken by its countdown or by START NEW ORDER
+    (user 2026-10-13), whose label shows the countdown (user 2026-10-14).
   */
-  describe("one control: START NEW ORDER (user 2026-10-13)", () => {
+  describe("one control: START NEW ORDER, counting down (users 2026-10-13 / 2026-10-14)", () => {
     it.each([
       ["a guest", () => undefined],
       ["a guest on a loyalty deployment", loyaltyOn],
       ["an identified customer", signIn],
       ["ADA", () => store.dispatch(toggleAccessibilityMode())],
-    ])("%s: the one button is START NEW ORDER; no progress bar, no countdown copy", (_who, seed) => {
+    ])("%s: the one button is START NEW ORDER, named without its seconds, showing the full countdown; no progressbar role", (_who, seed) => {
       seed();
       mount();
 
-      expect(screen.getAllByRole("button")).toEqual([screen.getByRole("button", { name: /start new order/i })]);
+      expect(screen.getAllByRole("button")).toEqual([
+        screen.getByRole("button", { name: i18n.t("success.startNewOrder") }),
+      ]);
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS));
       expect(screen.queryByRole("progressbar")).toBeNull();
-      expect(heading()).not.toMatch(/returning|start over|seconds?\b/i);
     });
   });
 
@@ -277,7 +279,7 @@ describe("OrderSuccess — Order Complete", () => {
       expect(state().menu.menu).toEqual(MENU_FIXTURE);
     });
 
-    it("leaves the screen as it is on the way out: an identified customer under ADA keeps the ORDER heading, the number, the 725 panel and the zone (an emptied store would commit the guest frame on the full stage first)", () => {
+    it("leaves the screen as it is on the way out: an identified customer under ADA keeps the ORDER heading, the number and the zone's layout — no bell, START NEW ORDER at its foot (an emptied store would commit the guest frame on the full stage first)", () => {
       signIn();
       store.dispatch(toggleAccessibilityMode());
       mount();
@@ -286,7 +288,9 @@ describe("OrderSuccess — Order Complete", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/start");
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(i18n.t("success.orderHeading"));
       expect(orderNumber()).toBe("#12345");
-      expect(panel()).toHaveClass("top-[725px]", "invisible");
+      expect(screen.queryByAltText("Taco Bell")).toBeNull();
+      expect(newOrder()).toHaveClass("bottom-[24px]");
+      expect(newOrder()).not.toHaveClass("top-[1812px]");
       expect(state().customerInfo.customerInfo.customerPhone).toBe("9876543210");
       expect(state().appSettings.accessibilityMode).toBe(true);
     });
@@ -296,6 +300,7 @@ describe("OrderSuccess — Order Complete", () => {
       tick(ORDER_SUCCESS_COUNTDOWN_SECONDS - 5);
       fireEvent.pointerDown(root());
       fireEvent.click(root());
+      expect(countdown()).toBe(label(5));
       tick(5);
 
       expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -308,6 +313,7 @@ describe("OrderSuccess — Order Complete", () => {
       act(() => {
         store.dispatch(toggleAccessibilityMode());
       });
+      expect(countdown()).toBe(label(5));
       tick(5);
 
       expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -341,6 +347,143 @@ describe("OrderSuccess — Order Complete", () => {
       tick(ORDER_SUCCESS_COUNTDOWN_SECONDS * 2);
 
       expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /*
+    The countdown (user 2026-10-14; design language — client sign-off): ONE
+    clock, a deadline fixed at mount and read by a 1 s interval, drives the
+    digits AND the exit, so the label can never disagree with the screen.
+    The fill is CSS (index.css .tb-countdown-fill; jsdom runs no animation),
+    so here: its class, its duration's source and its identity.
+  */
+  describe("the countdown (user 2026-10-14)", () => {
+    beforeEach(() => {
+      analyticsLog.length = 0;
+    });
+
+    afterEach(async () => {
+      await act(async () => {
+        await i18n.changeLanguage("en");
+      });
+    });
+
+    it("the label counts 20, 19 … 1, a second apart; at 0 the exit fires ONCE, as the timeout, and the clock stops", () => {
+      mount();
+      analyticsLog.length = 0; // the mount's OrderSuccessViewed
+
+      const seen = [countdown()];
+      for (let second = 1; second < ORDER_SUCCESS_COUNTDOWN_SECONDS; second += 1) {
+        tick(1);
+        seen.push(countdown());
+      }
+      expect(seen).toEqual(
+        Array.from({ length: ORDER_SUCCESS_COUNTDOWN_SECONDS }, (_, i) => label(ORDER_SUCCESS_COUNTDOWN_SECONDS - i))
+      );
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      tick(1);
+      expect(mockNavigate.mock.calls).toEqual([["/start"]]);
+      expect(analyticsLog[0]).toEqual(["capture", KioskEventName.startOverFromOrderSuccessTimeoutTriggered]);
+      expect(vi.getTimerCount()).toBe(0);
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(analyticsLog.filter(([, event]) => event === KioskEventName.startOverFromOrderSuccessTimeoutTriggered)).toHaveLength(1);
+    });
+
+    it("reads the deadline, not a tick count: a late tick catches up — the screen reader's sentence too — and one past the deadline exits", () => {
+      mount();
+      // A throttled timer: the wall clock runs on 5 s with no tick.
+      vi.setSystemTime(Date.now() + 5_000);
+      tick(1);
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 6));
+      expect(screen.getByRole("status").textContent).toBe(sentence(ORDER_SUCCESS_COUNTDOWN_SECONDS - 6));
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      vi.setSystemTime(Date.now() + 60_000);
+      tick(1);
+      expect(mockNavigate.mock.calls).toEqual([["/start"]]);
+      expect(analyticsLog).toContainEqual(["capture", KioskEventName.startOverFromOrderSuccessTimeoutTriggered]);
+    });
+
+    it("START NEW ORDER exits at once with the tap event and stops the clock: the digits freeze, the countdown never fires", () => {
+      mount();
+      tick(5);
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 5));
+      analyticsLog.length = 0;
+
+      fireEvent.click(newOrder());
+
+      expect(mockNavigate.mock.calls).toEqual([["/start"]]);
+      expect(analyticsLog[0]).toEqual(["capture", KioskEventName.startOverFromOrderSuccessClicked]);
+      expect(vi.getTimerCount()).toBe(0);
+      tick(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 5));
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(analyticsLog.map(([, event]) => event)).not.toContain(
+        KioskEventName.startOverFromOrderSuccessTimeoutTriggered
+      );
+    });
+
+    it("the accessible name never ticks (aria-label; the digits aria-hidden) and the screen reader gets the countdown ONCE: one sr-only status that mounts EMPTY (a live region must exist before its text does), is filled by the first tick, and never changes after", () => {
+      mount();
+      const button = screen.getByRole("button", { name: i18n.t("success.startNewOrder") });
+      expect(button).toHaveAttribute("aria-label", i18n.t("success.startNewOrder"));
+      expect(screen.getByTestId("order-success-countdown")).toHaveAttribute("aria-hidden", "true");
+      const status = screen.getByRole("status");
+      expect(status).toHaveClass("sr-only");
+      expect(status.textContent).toBe("");
+
+      tick(1);
+      expect(screen.getByRole("status")).toBe(status);
+      expect(status.textContent).toBe(sentence());
+
+      tick(7);
+
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS - 8));
+      expect(button).toHaveAccessibleName(i18n.t("success.startNewOrder"));
+      expect(screen.getByRole("status")).toBe(status);
+      expect(status.textContent).toBe(sentence());
+      // No per-second live region: the sentence is the screen's only one.
+      expect(root().querySelectorAll('[aria-live], [role="status"], [role="timer"], [role="alert"], [role="log"]')).toHaveLength(1);
+    });
+
+    it("the fill: aria-hidden, the ONE CSS animation class, its duration fed from the constant, clipped by the button — nothing inline moves it, and no tick or ADA switch remounts it (a remount would restart the slide)", () => {
+      mount();
+      const slide = fill();
+      expect(slide).toHaveAttribute("aria-hidden", "true");
+      // 15 %: the white label over it keeps 3:1 on tb-orchid (contrast.test; 20 % gave 2.93).
+      expect(slide).toHaveClass("tb-countdown-fill", "absolute", "inset-0", "bg-tb-surface/15");
+      expect(slide.style.getPropertyValue("--tb-countdown")).toBe(`${ORDER_SUCCESS_COUNTDOWN_SECONDS}s`);
+      expect([slide.style.transform, slide.style.animation, slide.style.width]).toEqual(["", "", ""]);
+      expect(slide.parentElement).toBe(newOrder());
+      expect(newOrder()).toHaveClass("overflow-hidden", "rounded-[8px]");
+
+      tick(5);
+      act(() => {
+        store.dispatch(toggleAccessibilityMode());
+      });
+      tick(5);
+
+      expect(fill()).toBe(slide);
+    });
+
+    it("Arabic: the label and its seconds in Arabic with Western digits, one dir=auto leaf; the name and the sentence in Arabic", async () => {
+      await act(async () => {
+        await i18n.changeLanguage("ar");
+      });
+      mount();
+
+      expect(countdown()).toBe(label(ORDER_SUCCESS_COUNTDOWN_SECONDS));
+      expect(countdown()).toContain(`${ORDER_SUCCESS_COUNTDOWN_SECONDS}`);
+      expect(countdown()).toContain("ث");
+      expect(screen.getByTestId("order-success-countdown").parentElement).toHaveAttribute("dir", "auto");
+      expect(newOrder()).toHaveAccessibleName(i18n.t("success.startNewOrder"));
+      expect(screen.getByRole("status").textContent).toBe("");
+      tick(1);
+      expect(countdown()).toContain(`${ORDER_SUCCESS_COUNTDOWN_SECONDS - 1}`);
+      expect(screen.getByRole("status").textContent).toBe(sentence());
+      expect(screen.getByRole("status").textContent).toContain("ثانية");
     });
   });
 
@@ -451,7 +594,7 @@ describe("OrderSuccess — Order Complete", () => {
   });
 
   describe("idle (P9a)", () => {
-    it("holds the idle clock while up — its own 20 s timer owns the exit", () => {
+    it("holds the idle clock while up — its own countdown owns the exit", () => {
       // A push that outlived the hold cap left an idle period running; unheld,
       // it could prompt over this screen or end the session before the exit
       // sends its analytics.
@@ -476,11 +619,12 @@ describe("OrderSuccess — Order Complete", () => {
 
 /*
   Lane order-success — Figma 1:5932 (guest) and 1:3437 (identified loyalty
-  customer), drawn where data exists: the "Gradient" + plastic_2 sheen, the
-  photo panel (412×900, r56) at each frame's own top, Figma's one PROCEED
-  line for every payment, and the guest's UNLOCK FREEBIES WITH POINTS only
-  where loyalty is on. The QR, the points figure and the campaign copy have
-  no source and are omitted, never faked.
+  customer), drawn where data exists: the "Gradient" + plastic_2 sheen and
+  Figma's one PROCEED line for every payment. The photo panel and the
+  guest's UNLOCK FREEBIES WITH POINTS are gone (user 2026-10-14: "remove the
+  static image in the middle"; the unlock arrow pointed into the photo). The
+  QR, the points figure and the campaign copy have no source and are
+  omitted, never faked.
 */
 describe("OrderSuccess — the Figma frames (lane order-success)", () => {
   beforeEach(() => {
@@ -510,71 +654,39 @@ describe("OrderSuccess — the Figma frames (lane order-success)", () => {
   });
 
   it.each([
-    ["a guest (1:5932)", () => undefined, "top-[792px]", "top-[725px]", "panel-guest"],
-    ["a guest on a loyalty deployment (1:5932)", loyaltyOn, "top-[792px]", "top-[725px]", "panel-guest"],
-    ["an identified customer (1:3437)", signIn, "top-[725px]", "top-[792px]", "panel-loyalty"],
-  ])("%s: the photo panel — 412×900 at x 334, r56, clipped, its frame's photo and nothing else", (_who, seed, top, otherTop, asset) => {
+    ["a guest (1:5932)", () => undefined, ["sheen", "bell"]],
+    ["a guest on a loyalty deployment (1:5932)", loyaltyOn, ["sheen", "bell"]],
+    ["an identified customer (1:3437)", signIn, ["sheen", "bell"]],
+    ["ADA", () => store.dispatch(toggleAccessibilityMode()), ["sheen"]],
+    [
+      "ADA, a guest on a loyalty deployment",
+      () => {
+        loyaltyOn();
+        store.dispatch(toggleAccessibilityMode());
+      },
+      ["sheen"],
+    ],
+  ])("%s: no photo panel and no UNLOCK FREEBIES WITH POINTS (user 2026-10-14) — the only pictures are the sheen and the bell, and no QR", (_who, seed, pictures) => {
     seed();
     mount();
 
-    const box = panel();
-    expect(box).toHaveClass(top, "absolute", "left-[334px]", "h-[900px]", "w-[412px]", "rounded-[56px]", "overflow-hidden");
-    expect(box).not.toHaveClass(otherTop);
-    const images = box.querySelectorAll("img");
-    expect(images).toHaveLength(1);
-    expect(images[0]).toHaveAttribute("alt", "");
-    expect(images[0]).toHaveAttribute("draggable", "false");
-    expect(images[0].getAttribute("src")).toContain(asset);
-    // No QR (the Figma one scans to a brewery) and no copy on the photo.
-    expect(box.querySelector("svg")).toBeNull();
-    expect(box.textContent).toBe("");
-  });
-
-  it("a guest on a loyalty deployment gets UNLOCK / FREEBIES / WITH POINTS in reading order, FREEBIES yellow, under the mirrored arrow — painted AFTER the panel, so the arrowhead sits over the photo", () => {
-    loyaltyOn();
-    mount();
-
-    const wrap = unlock() as HTMLElement;
-    expect(wrap).toBeInTheDocument();
-    // Real text (contract §3.5): nothing on its way up hides it from assistive tech.
-    expect(wrap.closest('[aria-hidden="true"]')).toBeNull();
-    expect(unlockLines().map((line) => line.textContent)).toEqual([
-      i18n.t("success.unlockTop"),
-      i18n.t("success.unlockFreebies"),
-      i18n.t("success.unlockBottom"),
-    ]);
-    const [top, freebies, bottom] = unlockLines();
-    expect(freebies).toHaveClass("text-tb-yellow", "tb-display", "font-bold", "rotate-15", "whitespace-nowrap");
-    for (const line of [top, bottom]) {
-      expect(line).toHaveClass("text-tb-surface", "font-bold", "uppercase", "rotate-15", "whitespace-nowrap");
-    }
-    expect(top.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[875.22px]", "top-[1367.53px]");
-    expect(freebies.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[866.49px]", "top-[1384.21px]");
-    expect(bottom.parentElement).toHaveClass("absolute", "-translate-x-1/2", "left-[859.72px]", "top-[1418.77px]");
-
-    const arrow = wrap.querySelector("img") as HTMLImageElement;
-    expect(arrow).toHaveClass("absolute", "left-[707.75px]", "top-[1272.6px]", "h-[63.434px]", "w-[144.259px]", "-scale-x-100", "rotate-[39.4deg]");
-    expect(arrow).toHaveAttribute("alt", "");
-    expect(arrow).toHaveAttribute("draggable", "false");
-    expect(arrow.getAttribute("src")).toContain("unlock-arrow");
-
-    expect(panel().compareDocumentPosition(wrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId("order-success-panel")).toBeNull();
+    expect(screen.queryByTestId("order-success-unlock")).toBeNull();
+    // The bell is a small SVG, inlined as a data: URI — known by its alt.
+    const what = (img: HTMLImageElement) =>
+      img.alt === "Taco Bell" ? "bell" : img.getAttribute("src")?.includes("plastic-overlay") ? "sheen" : img.getAttribute("src");
+    expect([...root().querySelectorAll("img")].map(what)).toEqual(pictures);
+    expect(root().querySelector("svg, canvas")).toBeNull();
+    expect(heading()).not.toMatch(/unlock|freebies|with points/i);
   });
 
   it.each([
     ["loyalty is off", () => undefined],
+    ["a guest on a loyalty deployment", loyaltyOn],
     ["an identified customer (1:3437)", signIn],
     ["an identified customer on a loyalty-OFF deployment", () => store.dispatch(setPhoneNumberRdx("9876543210"))],
-  ])("no unlock pitch when %s — and no QR, points or campaign copy anywhere", (_when, seed) => {
+  ])("no QR, points or campaign copy anywhere when %s", (_when, seed) => {
     seed();
-    mount();
-
-    expect(unlock()).toBeNull();
-    expect(heading()).not.toMatch(OMITTED_COPY);
-  });
-
-  it("no QR, points or campaign copy on the guest's loyalty frame either", () => {
-    loyaltyOn();
     mount();
 
     expect(heading()).not.toMatch(OMITTED_COPY);
@@ -596,15 +708,17 @@ describe("OrderSuccess — the Figma frames (lane order-success)", () => {
 
 /*
   Lane figma-polish S4 #5/#6/#7, rebuilt by lane order-success — the text
-  block of 1:5932 (guest) and 1:3437 / 1:3778 (loyalty) at top 345: a guest
-  gets the Title/H3 thank-you (48/44, −1) on Figma's two lines ("THANK YOU" /
-  "FOR YOUR ORDER"), 24 above the Title/H1 number (116/98, −3.27); a loyalty
+  block of 1:5932 (guest) and 1:3437 / 1:3778 (loyalty): a guest gets the
+  Title/H3 thank-you (48/44, −1) on Figma's two lines ("THANK YOU" / "FOR
+  YOUR ORDER"), 24 above the Title/H1 number (116/98, −3.27); a loyalty
   customer gets ONE H1 block — "ORDER" and the number both 116/98, the
-  number at mt-0. The bell sits at 128; ADA centres the block in the reach
-  zone and drops the bell.
+  number at mt-0. With the panel gone (user 2026-10-14) ONE rule centres
+  the block on the page: the stage, or ADA's reach zone. The bell sits at
+  128; ADA drops it.
 */
 describe("OrderSuccess — the Figma text block (S4)", () => {
   const H1 = ["text-[116px]", "leading-[98px]", "tracking-[-3.27px]"];
+  const CENTRED = ["absolute", "left-1/2", "top-1/2", "-translate-x-1/2", "-translate-y-1/2", "w-[920px]"];
   const heading = () => screen.getByRole("heading", { level: 1 });
   const block = () => heading().parentElement as HTMLElement;
   const number = () => screen.getByTestId("order-number");
@@ -621,7 +735,7 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     vi.useRealTimers();
   });
 
-  it("guest: the thank-you is Title/H3 on Figma's two lines (pre-line, no 569 box); the H1 number 24 below it; the block at 345 (920 wide); the bell at 128", () => {
+  it("guest: the thank-you is Title/H3 on Figma's two lines (pre-line, no 569 box); the H1 number 24 below it; the block centred on the stage (920 wide, never Figma's 345 top); the bell at 128", () => {
     mount();
 
     // toHaveTextContent would collapse the copy's line break, not the expected string's.
@@ -631,13 +745,13 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     expect(heading()).not.toHaveClass("mx-auto");
     expect(heading()).not.toHaveClass("text-[116px]");
     expect(number()).toHaveClass(...H1, "mt-[24px]");
-    expect(block()).toHaveClass("top-[345px]", "w-[920px]");
-    expect(block()).not.toHaveClass("top-1/2");
+    expect(block()).toHaveClass(...CENTRED);
+    expect(block()).not.toHaveClass("top-[345px]");
     expect(screen.getByTestId("order-success-proceed")).toHaveClass("tb-compressed", "mt-[24px]", "text-[34px]", "leading-[38px]");
     expect(screen.getAllByAltText("Taco Bell")[0]).toHaveClass("top-[128px]");
   });
 
-  it("loyalty: ONE H1 block — 'ORDER' and the number both 116/98 −3.27, the number at mt-0, natural width", () => {
+  it("loyalty: ONE H1 block — 'ORDER' and the number both 116/98 −3.27, the number at mt-0, natural width — centred like the guest's", () => {
     signIn();
     mount();
 
@@ -647,30 +761,32 @@ describe("OrderSuccess — the Figma text block (S4)", () => {
     expect(heading()).not.toHaveClass("text-[48px]");
     expect(number()).toHaveClass(...H1, "mt-0");
     expect(number()).not.toHaveClass("mt-[24px]");
-    expect(block()).toHaveClass("top-[345px]");
+    expect(block()).toHaveClass(...CENTRED);
   });
 
-  it("ADA centres the block in the reach zone (never the 345 top) and drops the bell; the classes follow the same split", () => {
+  it("ONE centring rule for both modes: ADA's block carries exactly the stage's classes (centred in the reach zone, never a top or bottom offset) and drops the bell", () => {
+    const view = mount();
+    const stageClasses = block().className;
+    view.unmount();
+
     store.dispatch(toggleAccessibilityMode());
     mount();
 
-    expect(block()).toHaveClass("top-1/2", "-translate-y-1/2", "-translate-x-1/2");
-    expect(block()).not.toHaveClass("top-[345px]");
-    expect(block().className).not.toContain("bottom-[");
+    expect(block().className).toBe(stageClasses);
+    expect(block()).toHaveClass(...CENTRED);
+    expect(block().className).not.toMatch(/\b(top|bottom)-\[/);
     expect(heading()).toHaveClass("whitespace-pre-line", "text-[48px]");
     expect(screen.queryByAltText("Taco Bell")).not.toBeInTheDocument();
   });
 });
 
 /*
-  Lane motion, rebuilt by lane order-success (MV2). The text block and the
-  photo panel are .tb-enter blocks under the page's latched data-enter; the
-  unlock arrow pops 300 ms in and its three lines 380 ms in (tokens, never
-  raw ms); the number pops with ONE burst on an in-session arrival. Mounting
-  a block (or flipping display: none → block) after the arrival would START
-  its entrance on a live page — the ADA exit did (D-M6: the mode switch never
-  animates). ADA hides the panel and the unlock with `invisible`, which
-  restarts nothing.
+  Lane motion, rebuilt by lane order-success (MV2). The text block is the
+  one .tb-enter block under the page's latched data-enter; the number pops
+  with ONE burst on an in-session arrival; the countdown fill slides in CSS
+  (the countdown block above). Mounting a block after the arrival would
+  START its entrance — or restart the slide — on a live page; the ADA exit
+  did once (D-M6: the mode switch never animates).
 */
 describe("OrderSuccess — motion (lane motion)", () => {
   beforeEach(() => {
@@ -684,41 +800,20 @@ describe("OrderSuccess — motion (lane motion)", () => {
     vi.useRealTimers();
   });
 
-  it("the ADA switch never remounts or un-displays the panel or the unlock (D-M6)", () => {
+  it("the ADA switch never remounts the text block or the countdown fill (D-M6)", () => {
     loyaltyOn();
     store.dispatch(toggleAccessibilityMode());
     mount();
-    const inAda = [panel(), unlock() as HTMLElement];
-    expect(inAda[0]).toHaveClass("tb-enter", "invisible");
-    expect(inAda[1]).toHaveClass("invisible");
+    const block = screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+    const slide = fill();
+    expect(block).toHaveClass("tb-enter");
 
     act(() => {
       store.dispatch(toggleAccessibilityMode()); // the brand-panel exit
     });
-    expect(panel()).toBe(inAda[0]);
-    expect(unlock()).toBe(inAda[1]);
-    for (const element of inAda) {
-      expect(element).not.toHaveClass("invisible");
-      expect(element).not.toHaveClass("hidden");
-    }
-  });
 
-  it("the unlock arrow pops 300 ms in and each line box 380 ms in — on the motion tokens, never raw ms", () => {
-    loyaltyOn();
-    mount();
-    const wrap = unlock() as HTMLElement;
-
-    expect(wrap.querySelector("img")).toHaveClass(
-      "tb-pop-in",
-      "[animation-delay:calc(var(--tb-dur-page)+var(--tb-stagger))]"
-    );
-    const boxes = unlockLines().map((line) => line.parentElement);
-    expect(boxes).toHaveLength(3);
-    for (const box of boxes) {
-      expect(box).toHaveClass("tb-pop-in", "[animation-delay:calc(var(--tb-dur-page)+3*var(--tb-stagger))]");
-    }
-    // The wrapper itself is static: the pops are the only motion in it.
-    expect(wrap.className).not.toMatch(/tb-(enter|pop-in)/);
+    expect(screen.getByRole("heading", { level: 1 }).parentElement).toBe(block);
+    expect(fill()).toBe(slide);
   });
 
   /** A PUSH from another route: <Navigate> fires after the first commit. */
@@ -756,17 +851,16 @@ describe("OrderSuccess — motion (lane motion)", () => {
     expect(orderNumber()).toBe("#12345"); // empty pieces: the called-out number is intact
   });
 
-  it("tb-enter [--i] on the text block and the panel (0–1) — never the bell, the layers or the unlock", () => {
-    loyaltyOn(); // the unlock is on screen
+  it("tb-enter [--i:0] on the text block only — never the bell, the layers, the button or its fill", () => {
+    loyaltyOn();
     notePath("/start");
     mountPushed();
     const blocks = [...root().querySelectorAll(".tb-enter")];
-    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1"]);
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0"]);
     expect(blocks[0]).toContainElement(screen.getByTestId("order-number"));
     expect(blocks[0]).toContainElement(screen.getByTestId("order-success-proceed"));
-    expect(blocks[1]).toBe(panel());
     expect(screen.getByAltText("Taco Bell").closest(".tb-enter")).toBeNull();
-    expect(unlock()?.closest(".tb-enter")).toBeNull();
+    expect(newOrder().closest(".tb-enter")).toBeNull();
     expect(screen.getByTestId("order-success-bg").closest(".tb-enter")).toBeNull();
   });
 });

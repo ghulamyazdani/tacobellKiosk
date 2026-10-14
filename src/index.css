@@ -422,6 +422,18 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
   .tb-nudge {
     animation: tb-nudge var(--tb-dur-nudge) ease-in-out var(--tb-dur-page) 3;
   }
+  /* Order Complete's START NEW ORDER countdown (design language, user
+   * 2026-10-14): the fill slides in from the left edge over --tb-countdown,
+   * which the page feeds from ORDER_SUCCESS_COUNTDOWN_SECONDS — LTR in
+   * Arabic too ("RTL text, LTR layout": nothing sets dir="rtl"), like the
+   * idle prompt's START AGAIN. ONE linear run that nothing waits on (the
+   * page's interval owns the exit); from-only + backwards, so its end state
+   * is its own full box. Hidden under reduce (the block below): the digits
+   * carry the countdown. */
+  .tb-countdown-fill {
+    --tb-countdown-from: -100%;
+    animation: tb-countdown-fill var(--tb-countdown) linear backwards;
+  }
   /* Infinite loops: never a transform loop on/around a tap target. */
   .tb-attract {
     animation: tb-attract var(--tb-dur-attract) ease-in-out infinite;
@@ -481,6 +493,9 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
 }
 @keyframes tb-nudge {
   50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }
+}
+@keyframes tb-countdown-fill {
+  from { transform: translateX(var(--tb-countdown-from)); }
 }
 @keyframes tb-attract {
   50% { opacity: 0.65; }
@@ -555,6 +570,11 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
     transition-duration: 0s !important;
   }
   .tb-confetti-piece {
+    display: none;
+  }
+  /* At rest the countdown fill would be FULL for the whole countdown (its
+   * end state); the digits carry it. */
+  .tb-countdown-fill {
     display: none;
   }
 }

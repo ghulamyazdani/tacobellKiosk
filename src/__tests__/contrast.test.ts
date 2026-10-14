@@ -35,13 +35,17 @@ const luminance = (c: Rgb) => {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
-/** fg (optionally at Tailwind's /alpha, composited in 8 bits) on bg. */
-const contrast = (fg: string, bg: string, alpha = 1) => {
+/** fg at Tailwind's /alpha over bg, composited in 8 bits. */
+const over = (fg: string, bg: string, alpha: number): Rgb => {
   const back = rgb(bg);
-  const front = rgb(fg).map((v, i) => Math.round(v * alpha + back[i] * (1 - alpha))) as Rgb;
-  const [hi, lo] = [luminance(front), luminance(back)].sort((a, b) => b - a);
+  return rgb(fg).map((v, i) => Math.round(v * alpha + back[i] * (1 - alpha))) as Rgb;
+};
+const ratio = (a: Rgb, b: Rgb) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 };
+/** fg (optionally at Tailwind's /alpha, composited in 8 bits) on bg. */
+const contrast = (fg: string, bg: string, alpha = 1) => ratio(over(fg, bg, alpha), rgb(bg));
 
 describe("tb-* text pairs meet WCAG AA 4.5:1 (P9f)", () => {
   it("parses the palette from src/index.css", () => {
@@ -98,6 +102,28 @@ describe("veg / non-veg mark tokens on white ≥ 3:1 (audit-fixes U1)", () => {
   ])("%s ≈ %s:1", (token, ratio) => {
     expect(contrast(token, "white")).toBeGreaterThanOrEqual(3);
     expect(contrast(token, "white")).toBeCloseTo(ratio, 1);
+  });
+});
+
+/*
+  Order Complete's START NEW ORDER (lane success-timer, user 2026-10-14): its
+  white 24 px label is large text (WCAG 1.4.3: 3:1) on tb-orchid — the
+  gradient's end colour, solid from 94.4 % of the stage, so under the button
+  at 1812 — and the countdown fill slides tb-surface/N across it. N is read
+  from the page, so a heavier fill fails here.
+*/
+describe("START NEW ORDER on tb-orchid, under its countdown fill, ≥ 3:1 (large text)", () => {
+  const page = readFileSync(join(SRC, "pages", "OrderSuccess", "index.tsx"), "utf8");
+  const alpha = Number(page.match(/\btb-countdown-fill\b[^"]*\bbg-tb-surface\/(\d+)\b/)?.[1]) / 100;
+
+  it("white on tb-orchid (the label before the fill reaches it) ≈ 3.76:1", () => {
+    expect(contrast("white", "tb-orchid")).toBeCloseTo(3.76, 2);
+  });
+
+  it("white on tb-orchid under the fill — tb-surface at the page's alpha — ≥ 3:1 (/20 was 2.93:1)", () => {
+    expect(alpha).toBeGreaterThan(0);
+    expect(ratio(rgb("white"), over("tb-surface", "tb-orchid", alpha))).toBeGreaterThanOrEqual(3);
+    expect(ratio(rgb("white"), over("tb-surface", "tb-orchid", 0.2))).toBeCloseTo(2.93, 2);
   });
 });
 

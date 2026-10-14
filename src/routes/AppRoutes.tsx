@@ -122,8 +122,9 @@ function InSessionOverlays() {
  *                the method tap); Paytm AFTER the payment (2026-10-13)
  *   /paymentPolling Paytm settlement (P8b): EDC instructions or the UPI QR,
  *                settled by status reads — the BACKEND places the order
- *   /orderSuccess order complete — no controls (Figma 1:5932 / 1:3437); its
- *                20 s timer returns to /start, whose mount runs the reset
+ *   /orderSuccess order complete (Figma 1:5932 / 1:3437, no photo panel):
+ *                START NEW ORDER counts the 20 s down; a tap or 0 returns
+ *                to /start, whose mount runs the reset
  *
  * IDLE SUBTREE (P9a) — every route from /second on (and "*") sits inside the
  * pathless IdleGuard layout route, the fork's IdleChecksRoutes: one timer for

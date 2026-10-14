@@ -454,9 +454,15 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await arrives(page, rate, "payment-screen", 3, () => page.getByTestId("bag-pay").click());
     await arrives(page, rate, "receipt-screen", 2, () => payAtCounter(page));
     const success = page.getByTestId("order-success");
-    await arrives(page, rate, "order-success", 2, () => page.getByTestId("receipt-none").click(), async () => {
-      const pops = named(await animations(page, '[data-testid="order-success"]'), "tb-pop-in");
-      expect(pops.map((a) => a.on), "only the order number pops (loyalty off: no unlock pitch)").toEqual(["order-number"]);
+    // ONE entering block, the text (the photo panel was removed, user 2026-10-14).
+    await arrives(page, rate, "order-success", 1, () => page.getByTestId("receipt-none").click(), async () => {
+      const seen = await animations(page, '[data-testid="order-success"]');
+      expect(named(seen, "tb-pop-in").map((a) => a.on), "only the order number pops").toEqual(["order-number"]);
+      // START NEW ORDER's countdown fill: one 20 s linear slide (composited — animations() checks M12).
+      expect(
+        named(seen, "tb-countdown-fill").map((a) => [a.on, a.duration, a.iterations, a.from]),
+        "the countdown fill slides from the left edge for the whole countdown"
+      ).toEqual([["order-success-countdown-fill", 20_000, 1, "translateX(-100%)"]]);
     });
     // The in-session arrival celebrates once (a reload never does: the burst needs data-enter).
     await expect(page.getByTestId("order-number").locator(".tb-confetti-piece")).toHaveCount(28);
@@ -472,7 +478,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await page.getByTestId("bag-pay").click();
     await payAtCounter(page);
     // The 2nd customer's Order Complete arrives forward.
-    await arrives(page, rate, "order-success", 2, () => page.getByTestId("receipt-none").click());
+    await arrives(page, rate, "order-success", 1, () => page.getByTestId("receipt-none").click());
 
     // A reload (POP) on Order Complete replays nothing: no entrance, no burst.
     await page.reload();
@@ -1166,15 +1172,20 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 }); // past the 3 s window
     await page.getByTestId("receipt-none").click();
     await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
-    await settle(page); // its entrance and its one burst are over
+    await settle(page); // its entrance and its one burst are over (the countdown fill runs on)
     const rate = await slowMotion(page);
     await rate(0.1); // a replay would still be running when read
+    const slideAt = () =>
+      page.getByTestId("order-success-countdown-fill").evaluate((el) => Number(el.getAnimations()[0]?.currentTime ?? -1));
+    const before = await slideAt();
+    expect(before, "the fill is well into its slide").toBeGreaterThan(500);
     await page.getByTestId("ada-brand-zone").click();
     await expect(page.getByTestId("ada-brand-zone")).toHaveCount(0);
     const replayed = (await animations(page, '[data-testid="order-success"]')).filter(
-      (a) => a.kind === "CSSAnimation" && a.state === "running"
+      (a) => a.kind === "CSSAnimation" && a.state === "running" && a.name !== "tb-countdown-fill"
     );
     expect(replayed.map((a) => `${a.name} on ${a.on}`), "nothing replays on the ADA exit").toEqual([]);
+    expect(await slideAt(), "the countdown fill slides on — never restarted").toBeGreaterThanOrEqual(before);
     await rate(1);
   });
 

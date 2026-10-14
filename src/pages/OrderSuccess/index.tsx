@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -19,14 +19,13 @@ import type {
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
 import tbBell from "../../assets/brand/tb-bell.svg";
-import panelGuest from "../../assets/order-complete/panel-guest.webp";
-import panelLoyalty from "../../assets/order-complete/panel-loyalty.webp";
-import unlockArrow from "../../assets/order-complete/unlock-arrow.svg";
 
 /**
  * /orderSuccess — Order Complete, as Figma draws it: 1:5932 "No Loyalty"
  * (a guest) and 1:3437 "Has Loyalty" (a customer who identified themselves
- * this session), laid out in design pixels on the 1080x1920 KioskStage.
+ * this session), laid out in design pixels on the 1080x1920 KioskStage —
+ * without the frames' photo panel (user 2026-10-14: "remove the static
+ * image in the middle").
  *
  * REDUX ONLY — this screen makes NO network call of its own. The order it
  * shows was placed before the navigation (usePayAtCounter, or the backend
@@ -39,53 +38,51 @@ import unlockArrow from "../../assets/order-complete/unlock-arrow.svg";
  * (the splash's crop of it: the frames' own crop puts the scratches
  * 90–150 px higher and ~3.5 % larger, and reaches past this bitmap's
  * bottom edge, so it needs its own asset — client sign-off);
- * the bell at (490, 128); the text block at 345 — a guest's 48/44 "THANK
- * YOU / FOR YOUR ORDER" over the 116/98 number, a loyalty customer's ONE
- * 116/98 "ORDER #NNNNN" block — and Figma's one "PROCEED TO FRONT COUNTER"
- * for every payment (a payment-dependent line is client sign-off P8b-11);
- * the 412×900 r56 photo panel at x 334, top 792 (guest) / 725 (loyalty),
- * each frame's own photo (the 20 % purple tint baked in); and the guest's
- * UNLOCK / FREEBIES / WITH POINTS with its arrow, drawn AFTER the panel so
- * the arrowhead paints over the photo as in the frame.
+ * the bell at (490, 128); the text block — a guest's 48/44 "THANK YOU /
+ * FOR YOUR ORDER" over the 116/98 number, a loyalty customer's ONE 116/98
+ * "ORDER #NNNNN" block — and Figma's one "PROCEED TO FRONT COUNTER" for
+ * every payment (a payment-dependent line is client sign-off P8b-11).
+ * With the panel gone the text block is centred on the page (the stage, or
+ * ADA's reach zone) instead of Figma's top 345.
  *
  * ── OMITTED, deliberately NOT faked (BACKEND_CONTRACT_PROPOSALS §2) ─────
  * | Figma                               | here                            |
+ * | the 412×900 photo panel and the     | none — removed (user            |
+ * | "UNLOCK FREEBIES WITH POINTS" arrow |  2026-10-14); the arrow pointed |
+ * |                                     |  into the photo                 |
  * | QR (both frames)                    | none — the drawn one scans to a |
  * |                                     | brewery; no CX source exists    |
  * | "SCAN TO EARN 110 POINTS…" + arrow  | none — needs the QR and a       |
  * |                                     | points figure (contract A)      |
  * | "EXCLUSIVE DECADES MERCH" + arrow,  | none — a dated campaign with no |
  * | "CHECKOUT NEXT TUESDAY DROPS"       | source (contract B)             |
- * | "UNLOCK FREEBIES WITH POINTS"       | a guest on a loyalty deployment |
- * |                                     | only: without loyalty a points  |
- * |                                     | pitch is false                  |
  *
- * ── ONE EXIT (Rule 1; user decision 2026-10-12) ─────────────────────────
- * Neither frame has a control or a countdown, so neither does this screen.
- * ORDER_SUCCESS_COUNTDOWN_SECONDS after it opens (a touch does not extend
- * it) it returns to Splash (/start) — the only exit, and Rule 2's "never
- * hang". Rule 1's "a way BACK" does not apply to a placed order: the guest's
- * exit is the timer (the next guest may wait up to 20 s on a screen with no
- * control). The idle clock is held (useIdleHold) and a reload restarts the
- * timer at mount. The exit only navigates (after the last-chance print):
- * /start's mount runs the FULL reset, as for every other way to the splash.
- * Never reset-then-navigate here (hazard H1): RR7 navigates in a
- * transition, so the emptied store would commit — and paint — on THIS
- * route first (a blank number; the guest frame for an identified customer;
- * the full stage under ADA; English under Arabic). Only the payment slice
- * is emptied first — nothing on screen shows it, and the print that reads
- * its type has run — because /start's Paytm release must find no open
- * session for an order that is already paid.
+ * ── ONE EXIT, COUNTED DOWN (Rule 1; user decisions 2026-10-12/13/14) ────
+ * Neither frame has a control or a countdown; this screen has both, in the
+ * design language (client sign-off): START NEW ORDER, whose label counts
+ * ORDER_SUCCESS_COUNTDOWN_SECONDS down from arrival (a touch does not
+ * extend it) while a fill slides across it, and which a tap takes at once.
+ * At 0 it returns to Splash (/start) — Rule 2's "never hang". Rule 1's "a
+ * way BACK" does not apply to a placed order. The idle clock is held
+ * (useIdleHold) and a reload restarts the countdown at mount. The exit only
+ * navigates (after the last-chance print): /start's mount runs the FULL
+ * reset, as for every other way to the splash. Never reset-then-navigate
+ * here (hazard H1): RR7 navigates in a transition, so the emptied store
+ * would commit — and paint — on THIS route first (a blank number; the guest
+ * frame for an identified customer; the full stage under ADA; English under
+ * Arabic). Only the payment slice is emptied first — nothing on screen
+ * shows it, and the print that reads its type has run — because /start's
+ * Paytm release must find no open session for an order that is already
+ * paid.
  *
  * ── ADA (P9c, design language — neither frame has an ADA variant) ───────
- * The 1122 px reach zone cannot hold the 900 px panel: ADA drops the bell,
- * hides the panel and the unlock with `invisible` (never unmounted, never
- * `hidden` — either would replay their entrance on the ADA exit, D-M6) and
- * centres the text block in the zone.
+ * The bell is dropped; the text block is centred in the reach zone (the
+ * same rule as the stage's) and START NEW ORDER sits at the zone's foot.
  *
  * ── DIVERGENCES FROM THE FORK ───────────────────────────────────────────
  * - The fork's timer seeds 10, declares 20 and draws (30 - t) / 40: here
- *   ONE number, and no bar (Figma draws none).
+ *   ONE clock (a deadline fixed at mount) drives the digits and the exit,
+ *   and the fill runs the same 20 s in CSS.
  * - The fork's "Verifying payment" → "Placing order" theatre is deferred
  *   with the POS printing vertical: the order is placed before we arrive.
  * - The fork hand-rolls its clear lists here; TB's canonical
@@ -95,27 +92,15 @@ import unlockArrow from "../../assets/order-complete/unlock-arrow.svg";
 /** The auto exit, in seconds from arrival — its single source of truth. */
 export const ORDER_SUCCESS_COUNTDOWN_SECONDS = 20;
 
+/** The START NEW ORDER fill's run, fed from the constant (index.css .tb-countdown-fill). */
+const COUNTDOWN_FILL = {
+  "--tb-countdown": `${ORDER_SUCCESS_COUNTDOWN_SECONDS}s`,
+} as CSSProperties;
+
 /** Only the fields this screen reads off `order.currentOrder`. */
 interface CurrentOrderSnapshot {
   orderId?: string;
 }
-
-/** 1:5932 "with points" / "unlock" (Bd 28.601/1.1, white). */
-const UNLOCK_BODY =
-  "rotate-15 whitespace-nowrap text-[28.601px] font-bold uppercase leading-[1.1] text-tb-surface";
-/**
- * 1:5932 nodes 1:6281-1:6283, reading order: each box is the rotated
- * line's frame, centred on its Figma x (-translate-x-1/2).
- */
-const UNLOCK_LINES = [
-  ["success.unlockTop", "left-[875.22px] top-[1367.53px] h-[61.261px] w-[124.9px]", UNLOCK_BODY],
-  [
-    "success.unlockFreebies",
-    "left-[866.49px] top-[1384.21px] h-[86.847px] w-[193.62px]",
-    "tb-display font-bold rotate-15 whitespace-nowrap text-[28.601px] leading-[38.134px] text-tb-yellow",
-  ],
-  ["success.unlockBottom", "left-[859.72px] top-[1418.77px] h-[79.119px] w-[191.549px]", UNLOCK_BODY],
-] as const;
 
 export default function OrderSuccess() {
   const enter = usePageEnter();
@@ -135,7 +120,7 @@ export default function OrderSuccess() {
   const { getIsLoyaltyOn } = useAppSettings();
   const { printOrderTicket } = usePrintUtility();
 
-  // This screen owns its exit (the 20 s timer below). A push that outlived
+  // This screen owns its exit (the countdown below). A push that outlived
   // IDLE_HOLD_MAX_MS left an idle period running from the cap, and a route
   // change is not activity — unheld, that period could prompt over this
   // confirmation or end the session before the exit sends its analytics.
@@ -153,8 +138,6 @@ export default function OrderSuccess() {
   // thank-you. Loyalty being ON is not enough — the customer must actually
   // have identified themselves this session.
   const isLoggedIn = getIsLoyaltyOn() && phoneRdx.length > 0;
-  // The guest frame's points pitch is true only where loyalty exists (D8).
-  const showUnlock = !isLoggedIn && getIsLoyaltyOn();
 
   // Last 5 characters of order.orderId — the number called out at the
   // counter, and the same slice the printed ticket puts in big type.
@@ -200,17 +183,31 @@ export default function OrderSuccess() {
     printReceiptOnce();
   }, [printReceiptOnce]);
 
-  // How the screen ends — the 20 s timer or START NEW ORDER (user
-  // 2026-10-13): ONE timer that flips state, armed at mount and cleared on
-  // unmount (Rule 5), and whichever comes first wins.
+  // How the screen ends — the countdown reaching 0 or START NEW ORDER (user
+  // 2026-10-13): whichever comes first wins.
   const [exitBy, setExitBy] = useState<"timeout" | "tap" | null>(null);
+
+  // The countdown (user 2026-10-14) has ONE clock: a deadline fixed at
+  // mount, read by a 1 s interval, so the digits and the exit can never
+  // disagree — and a late (throttled) tick catches up instead of drifting.
+  // The interval stops once the exit is decided and on unmount (Rule 5).
+  const [secondsLeft, setSecondsLeft] = useState(ORDER_SUCCESS_COUNTDOWN_SECONDS);
+  // The sr-only status's seconds, latched by the FIRST tick: a live region
+  // must exist before its text does (screen readers skip a region that
+  // mounts already filled), so it mounts empty and is filled once.
+  const [announced, setAnnounced] = useState(0);
+  const deadlineRef = useRef(0);
   useEffect(() => {
-    const id = window.setTimeout(
-      () => setExitBy((by) => by ?? "timeout"),
-      ORDER_SUCCESS_COUNTDOWN_SECONDS * 1000,
-    );
-    return () => window.clearTimeout(id);
-  }, []);
+    if (exitBy) return;
+    deadlineRef.current ||= Date.now() + ORDER_SUCCESS_COUNTDOWN_SECONDS * 1000;
+    const id = window.setInterval(() => {
+      const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+      setSecondsLeft(left);
+      setAnnounced((first) => first || left);
+      if (left === 0) setExitBy((by) => by ?? "timeout");
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [exitBy]);
 
   // The exit: back to Splash, whose mount runs the full reset (header, H1).
   // The next guest's splash tap starts their analytics session (audit-fixes
@@ -242,9 +239,9 @@ export default function OrderSuccess() {
   }, [dispatch, navigate, netAmountRdx, orderIdRdx, printReceiptOnce, exitBy]);
 
   return (
-    // Motion §2.7 / MV2: the text block and the panel arrive (.tb-enter),
-    // the number pops (one burst), then the unlock arrow (300 ms) and its
-    // lines (380 ms) pop; the layers and the bell stay.
+    // Motion §2.7 / MV2: the text block arrives (.tb-enter), the number pops
+    // (one burst) and the countdown fill slides for the whole countdown; the
+    // layers, the bell and the button stay.
     <div
       data-testid="order-success"
       data-enter={enter}
@@ -274,13 +271,13 @@ export default function OrderSuccess() {
         />
       )}
 
-      {/* Text block of 1:5932 / 1:3778, top 345 (920 wide so a wide number
-          never clips). Guest: Title/H3 (48/44, −1) on the frame's two
-          lines, 24 above the Title/H1 number. Loyalty: "ORDER" and the
-          number are ONE H1 block (both 116/98, −3.27). */}
-      <div
-        className={`tb-enter [--i:0] absolute left-1/2 ${ada ? "top-1/2 -translate-y-1/2" : "top-[345px]"} w-[920px] -translate-x-1/2 text-center`}
-      >
+      {/* Text block of 1:5932 / 1:3778 (920 wide so a wide number never
+          clips), centred on the page — the stage, or ADA's reach zone — now
+          that the photo panel under it is gone (user 2026-10-14). Guest:
+          Title/H3 (48/44, −1) on the frame's two lines, 24 above the
+          Title/H1 number. Loyalty: "ORDER" and the number are ONE H1 block
+          (both 116/98, −3.27). */}
+      <div className="tb-enter [--i:0] absolute left-1/2 top-1/2 w-[920px] -translate-x-1/2 -translate-y-1/2 text-center">
         <h1
           className={`tb-display text-tb-surface ${
             isLoggedIn
@@ -309,59 +306,47 @@ export default function OrderSuccess() {
         >
           {t("success.proceedToCounter")}
         </p>
+        {/* The countdown for a screen reader, ONCE: mounted empty, filled by
+            the first tick with that tick's value, never ticked after (the
+            idle prompt's countdownA11y) — no per-second live region. */}
+        <p data-testid="order-success-countdown-a11y" role="status" className="sr-only">
+          {announced > 0 && t("success.countdownA11y", { seconds: announced })}
+        </p>
       </div>
 
-      {/* The frame's photo, NO QR (header). In ADA `invisible`, never
-          unmounted or `hidden`: either would replay its entrance on the ADA
-          exit (the mode switch never animates — motion D-M6). */}
-      <div
-        data-testid="order-success-panel"
-        className={`tb-enter [--i:1] absolute left-[334px] ${isLoggedIn ? "top-[725px]" : "top-[792px]"} h-[900px] w-[412px] overflow-hidden rounded-[56px] ${ada ? "invisible" : ""}`}
-      >
-        <img
-          alt=""
-          draggable={false}
-          src={isLoggedIn ? panelLoyalty : panelGuest}
-          className="h-full w-full object-cover"
-        />
-      </div>
-
-      {/* 1:6280 + 1:6284, AFTER the panel: both are absolute with z-index
-          auto, so tree order paints the arrowhead over the photo (x 715–745
-          inside the panel's right edge at 746). Positioned against the
-          root; real text, so not aria-hidden. */}
-      {showUnlock && (
-        <div
-          data-testid="order-success-unlock"
-          className={ada ? "invisible" : undefined}
-        >
-          <img
-            alt=""
-            draggable={false}
-            src={unlockArrow}
-            className="tb-pop-in [animation-delay:calc(var(--tb-dur-page)+var(--tb-stagger))] absolute left-[707.75px] top-[1272.6px] h-[63.434px] w-[144.259px] -scale-x-100 rotate-[39.4deg]"
-          />
-          {UNLOCK_LINES.map(([key, box, line]) => (
-            <div
-              key={key}
-              className={`tb-pop-in [animation-delay:calc(var(--tb-dur-page)+3*var(--tb-stagger))] absolute flex items-center justify-center -translate-x-1/2 ${box}`}
-            >
-              <span className={line}>{t(key)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* START NEW ORDER (user 2026-10-13; design language — Figma draws no
-          control): the CTA_Sheet_Fixed outline at 1812 (ADA: the zone's
-          foot), ending the screen the same way the timer does. */}
+      {/* START NEW ORDER (user 2026-10-13) and its countdown (user
+          2026-10-14) — design language, Figma draws neither: the
+          CTA_Sheet_Fixed outline at 1812 (ADA: the zone's foot). The label
+          carries the seconds left; behind it a 15 % white fill slides in
+          from the left edge — LTR in Arabic too, like the idle prompt's
+          START AGAIN — over the same countdown (.tb-countdown-fill: CSS only
+          and nothing waits on it — the interval above owns the exit; hidden
+          under reduced motion, where the digits carry it). 15 %, not 20:
+          the white 24 px label over the fill on tb-orchid must keep large
+          text's 3:1 (20 % gave 2.93; contrast.test). The accessible name
+          never ticks: aria-label, the digits aria-hidden. */}
       <button
         type="button"
         data-testid="order-success-new-order"
+        aria-label={t("success.startNewOrder")}
         onClick={() => setExitBy((by) => by ?? "tap")}
-        className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
+        className={`tb-display absolute left-[24px] ${ada ? "bottom-[24px]" : "top-[1812px]"} h-[84px] w-[1032px] overflow-hidden rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface`}
       >
-        {t("success.startNewOrder")}
+        <span
+          aria-hidden="true"
+          data-testid="order-success-countdown-fill"
+          className="tb-countdown-fill absolute inset-0 bg-tb-surface/15"
+          style={COUNTDOWN_FILL}
+        />
+        {/* dir="auto" on this LEAF only: in Arabic the label and its
+            seconds read right to left, as one line. */}
+        <span dir="auto" className="relative">
+          {t("success.startNewOrder")}
+          <span aria-hidden="true" data-testid="order-success-countdown">
+            {" · "}
+            {t("success.countdown", { seconds: secondsLeft })}
+          </span>
+        </span>
       </button>
     </div>
   );
