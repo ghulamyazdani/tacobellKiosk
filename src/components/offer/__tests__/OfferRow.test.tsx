@@ -673,7 +673,15 @@ describe("OfferRow — description, Show more, overlay radio (offers-parity)", (
     expect(desc).toHaveTextContent(LONG);
     expect(line.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(desc).toHaveAttribute("dir", "auto");
-    expect(desc).toHaveClass("text-start", "text-[18px]", "leading-[20px]", "text-tb-grey-1", "line-clamp-2");
+    expect(desc).toHaveClass("text-[18px]", "leading-[20px]", "text-tb-grey-1", "line-clamp-2");
+  });
+
+  it("walk w3: an Arabic (RTL) description starts every line at the title's left edge — physical text-left, never text-start (which right-aligned it under the left-aligned title and Save line: a ragged block)", () => {
+    renderRow({ description: "خصم 50٪ على Afghani Chaap، Burger و5 أخرى · بحد أقصى ﷼150.00" });
+    const desc = screen.getByTestId("offer-row-desc-offer-flat-2");
+    expect(desc).toHaveAttribute("dir", "auto"); // its lines still READ right to left
+    expect(desc).toHaveClass("text-left");
+    expect(desc).not.toHaveClass("text-start");
   });
 
   it("no description block when it repeats the second line, and none on a gone row", () => {

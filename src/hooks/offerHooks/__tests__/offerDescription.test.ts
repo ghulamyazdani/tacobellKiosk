@@ -526,6 +526,19 @@ describe("U2 — the item-criteria scope line, through useOfferDescription", () 
     expect(text(SEVEN)).toBe("50% off Burger, Afghani Chaap, +5 more · up to £150.00");
   });
 
+  it("walk w3, AR: 'and N more' joins the list with its own 'و' — no comma before it ('، و5 أخرى' was a doubled joiner)", async () => {
+    store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    const ar = (key: string, values?: Record<string, unknown>) => strip(i18n.t(key, values));
+    const scope = `Burger${ar("offers.scopeSeparator")}Afghani Chaap و5 أخرى`;
+    expect(strip(text(SEVEN))).toBe(
+      ar("offers.upTo", { line: ar("offers.mechPercentItemsOnly", { value: 50, scope }), max: "£150.00" })
+    );
+    expect(strip(text(SEVEN))).not.toMatch(/،\s*و/);
+  });
+
   it("the amount cap prints min(value, maxDiscount) (F5)", () => {
     expect(text(AMOUNT_CAPPED)).toBe("£45.00 off everything except Breads, Burger");
   });

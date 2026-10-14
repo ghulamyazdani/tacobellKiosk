@@ -148,10 +148,12 @@ export default function useOfferDescription(): (
           };
           const scope: OfferScope | null = getOfferScope(offer, resolveName);
           if (scope) {
-            const separator = t("offers.scopeSeparator");
-            const listed = scope.names.join(separator);
+            const listed = scope.names.join(t("offers.scopeSeparator"));
+            // scopeMore carries its own joiner: EN ", +N more", AR " وN
+            // أخرى" — "و" is the "and", so a comma before it doubled it
+            // ("، و5 أخرى", walk w3).
             const scopeText = rtlRun(
-              scope.overflow > 0 ? `${listed}${separator}${t("offers.scopeMore", { qty: scope.overflow })}` : listed,
+              scope.overflow > 0 ? `${listed}${t("offers.scopeMore", { qty: scope.overflow })}` : listed,
             );
             const value = Number(offer.type?.value) || 0;
             const cap = Number(offer.maxDiscount) || 0;
