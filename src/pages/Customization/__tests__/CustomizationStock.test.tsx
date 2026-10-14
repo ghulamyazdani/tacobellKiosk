@@ -119,8 +119,9 @@ const openNew = (entity: any, groups: any[]) => {
   );
 };
 
-/** BagSheet.handleEditRow's recipe (CUSTOMIZABLE). */
+/** BagSheet.handleEditRow's recipe (a CUSTOMIZABLE row, or a VARIANT one). */
 const openEdit = (row: any, groups: any[]) => {
+  const type = row.type === "VARIANT" ? "variant" : "customizableItem";
   store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
   store.dispatch(setModifiersMap({ modifiersMap: groupsMap(...groups) }));
   store.dispatch(setCartItems([{ ...row }]));
@@ -131,8 +132,8 @@ const openEdit = (row: any, groups: any[]) => {
   store.dispatch(
     setTier1BottomSheet({
       isOpen: true,
-      type: "customizableItem",
-      status: "customizableItem",
+      type,
+      status: type,
       openType: "edit",
       editCustomizationContent: row,
     })
@@ -333,6 +334,62 @@ describe("PDP out-of-stock options (walk-oos)", () => {
 
     expect(picks(TEST3._id)).toEqual(["chikken"]);
   });
+
+  // Review F2: the sized-row branch restores the row's picks itself (its
+  // add-on fetch wipes them) — a flagged add-on kept there would sit
+  // Unavailable with no REMOVE, and every PAY would block on it again.
+  it("EDIT a SIZED row: its add-ons out of stock now are deselected too — the stamp's and the feed map's", () => {
+    const EXTRAS_L = { ...TEST3, _id: "cola_l_addons" };
+    const LARGE = { id: "cola-l", name: "Large", price: 3, isActive: true, outOfStock: false, modifiers: [EXTRAS_L._id] };
+    const row = {
+      id: "cola",
+      itemId: "c-1",
+      name: "Cola",
+      quantity: 1,
+      type: "VARIANT",
+      price: 2,
+      variantPrice: 3,
+      total_price: 49,
+      selectedVariant: LARGE,
+      baseItem: { id: "cola", name: "Cola", price: 2, hasVariant: true, variants: [LARGE] },
+      customizations: {
+        [EXTRAS_L._id]: [
+          { id: "mac", name: "Maharaja MAC", price: 15, quantity: 1, entityType: "Addon" },
+          { id: "butter", name: "Butter Chicken Burger", price: 19, quantity: 1, entityType: "Addon", outOfStock: true },
+          { id: "chikken", name: "Mc Chikken Burger", price: 12, quantity: 1, entityType: "Addon" },
+        ],
+      },
+    };
+    openEdit(row, [EXTRAS_L]);
+    store.dispatch(setOutOfStockItems({ butter: { _id: "butter", type: "addon", inStock: false } }));
+    renderPdp();
+
+    expect(picks(EXTRAS_L._id)).toEqual(["chikken"]);
+  });
+
+  it("EDIT: a pick whose option left the menu goes by its own PAY flag — flagged, it is deselected", () => {
+    const row = {
+      id: "wings",
+      itemId: "w-1",
+      name: "Honey BBQ Wings",
+      quantity: 1,
+      type: "CUSTOMIZABLE",
+      price: 100,
+      total_price: 117,
+      modifiers: [TEST3._id],
+      baseItem: { id: "wings", name: "Honey BBQ Wings", price: 100, modifiers: [TEST3._id] },
+      customizations: {
+        [TEST3._id]: [
+          { id: "retired", name: "Retired Burger", price: 5, quantity: 1, entityType: "Addon", outOfStock: true },
+          { id: "chikken", name: "Mc Chikken Burger", price: 12, quantity: 1, entityType: "Addon" },
+        ],
+      },
+    };
+    openEdit(row, [TEST3]);
+    renderPdp();
+
+    expect(picks(TEST3._id)).toEqual(["chikken"]);
+  });
 });
 
 describe("PDP out-of-stock sizes and pack slots (walk-oos)", () => {
@@ -415,5 +472,64 @@ describe("PDP out-of-stock sizes and pack slots (walk-oos)", () => {
       screen.getByTestId("slot-sheet").querySelectorAll('[data-testid^="slot-option-"]')
     ).map((node) => node.getAttribute("data-testid"));
     expect(rows).toEqual(["slot-option-nachos", "slot-option-fries"]);
+  });
+
+  /** "Side": Fries out of stock by the menu's stamp, Nachos and Salad in stock. */
+  const SIDE = {
+    _id: "box_1_combo",
+    name: "Side",
+    type: "Combo",
+    min: 1,
+    max: 1,
+    multiplePunchMin: 1,
+    multiplePunchMax: 1,
+    multiplePunchMaxItem: 1,
+    order: 1,
+    isActive: true,
+    constituentItems: [
+      { id: "fries", name: "Fries", price: 0, isActive: true, entityType: "Combo", outOfStock: true, image_url: "https://e2e.test/fries.png" },
+      { id: "nachos", name: "Nachos", price: 0, isActive: true, entityType: "Combo", outOfStock: false, image_url: "https://e2e.test/nachos.png" },
+      { id: "salad", name: "Salad", price: 0, isActive: true, entityType: "Combo", outOfStock: false, image_url: "https://e2e.test/salad.png" },
+    ],
+  };
+  const boxOf = (slot: { _id: string }) => ({ id: "box", name: "Box", price: 9, modifiers: [slot._id] });
+  const sheetRows = () =>
+    Array.from(screen.getByTestId("slot-sheet").querySelectorAll('[data-testid^="slot-option-"]')).map((node) =>
+      node.getAttribute("data-testid")
+    );
+
+  // Review F3: the sheet reads PAY's fresher feed map (a combo row), not the
+  // stamp alone — else Edit drops the pick and the sheet sells it again.
+  it("a pack slot: PAY's feed map greys a side the menu's stamp still sells — unavailable in the sheet, last, nothing to tap", () => {
+    openNew(boxOf(SIDE), [SIDE]);
+    store.dispatch(setOutOfStockItems({ nachos: { _id: "nachos", type: "combo", inStock: false } }));
+    renderPdp();
+
+    expect(screen.getByTestId(`pack-slot-${SIDE._id}`).querySelector("img")?.getAttribute("src")).toBe(
+      "https://e2e.test/salad.png"
+    );
+    fireEvent.click(screen.getByTestId(`pack-slot-open-${SIDE._id}`));
+    const nachos = screen.getByRole("group", { name: "Nachos, unavailable" });
+    expect(nachos).toHaveAttribute("data-testid", "slot-option-nachos");
+    expect(within(nachos).queryByRole("button")).not.toBeInTheDocument();
+    expect(sheetRows()).toEqual(["slot-option-salad", "slot-option-fries", "slot-option-nachos"]);
+  });
+
+  // Review F10: no in-stock option to preview — the empty slot never shows a
+  // sold-out photo in full colour under SELECT: it takes the unavailable look.
+  it.each([
+    ["every option", SIDE.constituentItems],
+    ["its one option", [SIDE.constituentItems[0]]],
+  ])("a pack slot with %s out of stock: the slot card is unavailable — grey photo, the chip, nothing to open", (_label, options) => {
+    const gone = { ...SIDE, constituentItems: options.map((o) => ({ ...o, outOfStock: true })) };
+    openNew(boxOf(gone), [gone]);
+    renderPdp();
+
+    const card = screen.getByRole("group", { name: "Side, unavailable" });
+    expect(card).toHaveAttribute("data-testid", `pack-slot-${SIDE._id}`);
+    expect(card).toHaveAttribute("aria-disabled", "true");
+    expect(card).toHaveTextContent("Unavailable");
+    expect(card.querySelector("img")).toHaveClass("opacity-40", "grayscale");
+    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
   });
 });
