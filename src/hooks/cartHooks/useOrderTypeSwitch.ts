@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useStore } from "react-redux";
 import type { UnknownAction } from "@reduxjs/toolkit";
-import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  setEntityMap,
+  setMinMaxErroredBaseItems,
+  setModifiersMap,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { setTent } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   selectCurrentSession,
@@ -199,8 +204,12 @@ export default function useOrderTypeSwitch(opts: {
       );
       dispatch(pushCharges(allCharges));
       // walk-oos (review F5): stock is per tab — the old tab's PAY feed map
-      // must not grey what this one sells; its menu's stamps take over.
+      // must not grey what this one sells; its menu's stamps take over. Its
+      // PAY lists go too (review F4): no red line on a row this tab serves —
+      // the re-price already cleared the rows' own old-tab flags.
       dispatch(setOutOfStockItems({}));
+      dispatch(setUpdatedBaseItems({ updatedBaseItems: [] }));
+      dispatch(setMinMaxErroredBaseItems({ minMaxErroredBaseItems: [] }));
       if (plan.reprice.changed) dispatch(setCartItems(plan.reprice.rows));
       // A tent number typed on the old tab (/tent BACK keeps it) belongs to
       // that tab's table; the order builder sends it whatever the tab type.

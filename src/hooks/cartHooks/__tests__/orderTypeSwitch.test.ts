@@ -14,7 +14,9 @@ import {
 import {
   resetCategorySelection,
   setEntityMap,
+  setMinMaxErroredBaseItems,
   setModifiersMap,
+  setUpdatedBaseItems,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { setTent, tentRdx } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCurrentSession, setDpItemsMap } from "@cx-sdk/catalog/state/dynamicPricing.slice";
@@ -58,6 +60,7 @@ import {
   setSelectedLanguage,
 } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
+import { soldOutNames } from "../../../components/cart/BagItemRow";
 import { IdleHoldContext } from "../../utils/useIdleTimeout";
 import useOrderTypeSwitch from "../useOrderTypeSwitch";
 
@@ -603,6 +606,82 @@ describe("repriceCartForMenu — the switch's money (item 19)", () => {
     same.rows.forEach((row, i) => expect(row).toBe(ROWS[i]));
   });
 
+  /* ---- walk-oos 2 (review F4, user 2026-10-14 "Fix it"): the old tab's PAY verdicts ---- */
+
+  /** BAG.size with its size flagged (the old tab's PAY found the Large out of stock). */
+  const soldOutSize = (row: Obj = BAG.size as Obj): Obj => ({
+    ...row,
+    selectedVariant: { ...(row.selectedVariant as Obj), outOfStock: true },
+  });
+
+  it("keepSoldOutPicks: a row the new tab serves sheds the old tab's PAY flags — the item's, its window's, its size's — and nothing else moves; without it they ride along", () => {
+    const salad = { ...(BAG.item as Obj), outOfStock: true };
+    const burger = { ...(BAG.burger as Obj), isAvailable: false };
+    const soda = soldOutSize();
+
+    const plan = repriceCartForMenu([salad, burger, soda], SAME.index, { keepSoldOutPicks: true });
+
+    expect(plan).toMatchObject({ removed: [], removedLoyalty: [], repriced: 3, changed: true });
+    expect(plan.rows).toEqual([
+      { ...salad, outOfStock: false },
+      { ...burger, isAvailable: true },
+      { ...soda, selectedVariant: { ...(soda.selectedVariant as Obj), outOfStock: false } },
+    ]);
+    // Callers without the mode: today's rule — the same rows, flags and all.
+    const plain = repriceCartForMenu([salad, burger, soda], SAME.index);
+    expect(plain.changed).toBe(false);
+    plain.rows.forEach((row, i) => expect(row).toBe([salad, burger, soda][i]));
+    // No flag, no key: a row that never carried `isAvailable` is still the identity.
+    const bare: Obj = { ...(BAG.item as Obj) };
+    delete bare.isAvailable;
+    expect(repriceCartForMenu([bare], SAME.index, { keepSoldOutPicks: true }).rows[0]).toBe(bare);
+    // A tab that prices the Large at 4: the size keeps that money, flag cleared.
+    const largeAt4 = convert(
+      rawMenu((menu) => {
+        const sodaEntity = menu.categories[0].subCategories[0].entities.find((e) => e.id === SODA) as Obj;
+        (sodaEntity.variants as Obj[])[1].price = 4;
+      }),
+    );
+    const [moved] = repriceCartForMenu([soda], largeAt4.index, { keepSoldOutPicks: true }).rows as Obj[];
+    expect(moved).toMatchObject({ variantPrice: 4, total_price: 0.5 + 4 });
+    expect(moved.selectedVariant).toMatchObject({ id: SODA_L, price: 4, outOfStock: false });
+  });
+
+  it("keepSoldOutPicks: a reward the new tab serves sheds the old tab's PAY flags — its own, its size's, its picks' — at its money; one it cannot serve is reversed untouched", () => {
+    const flaggedPickles = { ...picksOf(BAG.burger, PICKLES_GROUP)[0], outOfStock: true };
+    const reward = {
+      ...(BAG.burger as Obj),
+      isLoyaltyItem: true,
+      outOfStock: true,
+      customizations: { ...((BAG.burger as Obj).customizations as Obj), [PICKLES_GROUP]: [flaggedPickles] },
+    };
+    const sizeReward: Obj = { ...soldOutSize(), isLoyaltyItem: true, isAvailable: false };
+
+    const plan = repriceCartForMenu([reward, sizeReward], SAME.index, { keepSoldOutPicks: true });
+
+    // Only the flags: a reward is never re-priced (D1) — yet the rewrite counts, so the switch writes it.
+    expect(plan).toMatchObject({ removed: [], removedLoyalty: [], repriced: 2, changed: true });
+    expect(plan.rows).toEqual([
+      {
+        ...reward,
+        outOfStock: false,
+        customizations: { ...(reward.customizations as Obj), [PICKLES_GROUP]: [{ ...flaggedPickles, outOfStock: false }] },
+      },
+      {
+        ...sizeReward,
+        isAvailable: true,
+        selectedVariant: { ...(sizeReward.selectedVariant as Obj), outOfStock: false },
+      },
+    ]);
+    const plain = repriceCartForMenu([reward, sizeReward], SAME.index);
+    expect(plain.changed).toBe(false);
+    plain.rows.forEach((row, i) => expect(row).toBe([reward, sizeReward][i]));
+    // Pickles out of stock on this tab: reversed (D1), the row as it was.
+    const gone = repriceCartForMenu([reward], soldOutIn(PICKLES_GROUP, PICKLES), { keepSoldOutPicks: true });
+    expect(gone).toMatchObject({ removedLoyalty: [reward], repriced: 0, changed: false });
+    expect(gone.rows[0]).toBe(reward);
+  });
+
   it("a size row whose variant id is gone from its base item is 'missingVariant'", () => {
     const soda = entities()[SODA];
     const plan = repriceCartForMenu([BAG.size], {
@@ -958,6 +1037,8 @@ describe("useOrderTypeSwitch — the executor", () => {
       "offer/setFilteredOffers",
       "cart/pushCharges", // the final, deterministic composition
       "menuSelections/setOutOfStockItems", // walk-oos: the old tab's PAY stock map goes
+      "menu/setUpdatedBaseItems", // …and its PAY lists (review F4)
+      "menu/setMinMaxErroredBaseItems",
       "cart/setCartItems",
       "appSettings/setTent", // the old tab's table number never rides along
     ]);
@@ -1438,5 +1519,34 @@ describe("useOrderTypeSwitch — the executor", () => {
     expect(
       (store.getState() as unknown as { menuSelections: { outOfStockItems: unknown } }).menuSelections.outOfStockItems,
     ).toEqual({});
+  });
+
+  it("walk-oos 2 (review F4): the old tab's PAY flagged the salad and the Large soda; the new tab serves both — the flags and PAY's lists go, so nothing names them (and a failed feed at the next PAY holds nothing)", async () => {
+    const salad: Obj = { ...(BAG.item as Obj), outOfStock: true };
+    const soda: Obj = { ...(BAG.size as Obj), selectedVariant: { ...((BAG.size as Obj).selectedVariant as Obj), outOfStock: true } };
+    store.dispatch(setCartItems([salad, soda]));
+    store.dispatch(setUpdatedBaseItems({ updatedBaseItems: [salad.itemId, soda.itemId] }));
+    store.dispatch(setMinMaxErroredBaseItems({ minMaxErroredBaseItems: ["x-1"] }));
+    const name = (entity: unknown) => String((entity as Obj).name);
+    expect(soldOutNames(cartOf(), name)).toEqual(["Greek Salad", "Soda (Large)"]); // precondition
+    // The new tab: the same menu, prices and all.
+    stageMenu(async (_t, _r, _c, _p, opts) => {
+      stageIndex(opts, SAME.index);
+      return { categories: [{}] };
+    });
+    const { hook } = mount();
+    expect(await run(hook)).toEqual({ ok: true, removedRows: [], offerDropped: false });
+
+    expect(cartOf()).toEqual([
+      { ...salad, outOfStock: false },
+      { ...soda, selectedVariant: { ...(soda.selectedVariant as Obj), outOfStock: false } },
+    ]);
+    expect(net.replaceDexie).toHaveBeenCalledWith(cartOf());
+    expect(soldOutNames(cartOf(), name)).toEqual([]);
+    const { menu } = store.getState() as unknown as {
+      menu: { updatedBaseItems: unknown[]; minMaxErroredBaseItems: unknown[] };
+    };
+    expect(menu.updatedBaseItems).toEqual([]);
+    expect(menu.minMaxErroredBaseItems).toEqual([]);
   });
 });
