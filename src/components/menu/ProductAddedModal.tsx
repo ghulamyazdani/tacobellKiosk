@@ -25,7 +25,7 @@ import { resolveItemRecommendations } from "@cx-sdk/catalog/recommendation/recom
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { selectMenuSellableEntityMap } from "../../hooks/menuHooks/useCartUpsell";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
-import { useCartTotal } from "../../hooks/cartHooks/useCartBill";
+import useCartTotal from "../../hooks/cartHooks/useCartTotal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
@@ -107,8 +107,9 @@ const withPicks = (
  * + a status), its "−" takes one back, and the Total is the bag's own Total
  * (after rewards, taxes and round off — user decision 2026-10-14) with the
  * picks in it: the bag's bill (useCartTotal) over the cart ADD TO ORDER would
- * leave (withPicks), printed as posistKiosk prints this modal's total
- * (formatPrice). ADD TO ORDER buys them; X and the scrim throw them away.
+ * leave (withPicks) as the bag leaves it once it opens — an offer it applies
+ * by itself included, ranked over that cart — printed as posistKiosk prints
+ * this modal's total (formatPrice). ADD TO ORDER buys them; X and the scrim throw them away.
  * With nothing to buy the same button only closes and says so: NO THANKS
  * over a strip, GOT IT without one (posistKiosk's "No, Thanks" / "Okay").
  * The frame has no VIEW MY BAG; the menu's CTA bar keeps that edge.

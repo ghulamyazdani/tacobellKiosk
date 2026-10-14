@@ -4,7 +4,7 @@
  */
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
@@ -15,6 +15,7 @@ import {
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCurrentSession } from "@cx-sdk/catalog/state/dynamicPricing.slice";
 import { applyOffer, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
+import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { store } from "../../../redux/app/store";
 import BagSheet from "../../cart/BagSheet";
 import {
@@ -610,6 +611,38 @@ describe("ProductAddedModal (Figma 1:4589)", () => {
       </Provider>,
     );
     expect(screen.getByTestId("bag-total").textContent).toBe("£12.00");
+  });
+
+  // Review 2026-10-14 (round 2): the bag applies an operator-flagged offer by
+  // itself when it opens (the walk's Happy Hour), so the preview carries it —
+  // ranked over the cart ADD TO ORDER would leave, never the store's: a pick
+  // that reaches the offer's minimum brings it in.
+  it("a flagged offer the picks qualify for is in the preview Total — the Total the bag shows once ADD TO ORDER has bought them and it has applied the offer", async () => {
+    store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
+    store.dispatch(setCartItems(CART));
+    store.dispatch(
+      setFilteredOffers([{ ...FLAT_TWO, _id: "auto-min-15", autoApplied: true, minBillAmount: 15 }])
+    );
+    render(<ProductAddedModal onQuickAdd={vi.fn()} />, { wrapper });
+    open({ id: "added", recommendedItems: [TACO.id] });
+    const total = () => screen.getByTestId("added-total").textContent;
+    // £12 < £15: the bag would not apply it.
+    expect(total()).toBe(`${i18n.t("menu.total")} £12`);
+
+    stage(TACO.id);
+    // + the £4 Taco = £16 ≥ £15 — the store's cart is still £12.
+    expect(total()).toBe(`${i18n.t("menu.total")} £14`);
+
+    fireEvent.click(screen.getByTestId("added-continue"));
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={["/cart"]}>
+          <BagSheet open onClose={vi.fn()} />
+        </MemoryRouter>
+      </Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("bag-total").textContent).toBe("£14.00"));
+    expect((store.getState() as any).cart.cartOffer._id).toBe("auto-min-15");
   });
 
   it("a whole Total prints whole and the bag's round off applies: £13.80 → £14", () => {

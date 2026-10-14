@@ -21,7 +21,9 @@ import { addViaPdp, openBag, bagRows } from "./pages/order";
  * its outcome — latches it off for the whole session (persisted, so a
  * crash-reload keeps the latch), and only the next customer (/start's reset)
  * gets it again. It also applies mid-bag when the cart reaches an offer's
- * minimum, but never under an open rewards list.
+ * minimum, but never under an open rewards list. The menu applies nothing,
+ * yet its TOTAL is the bag's Total as the bag will leave it, so it carries
+ * the offer before the bag opens — and leaves it out once latched (E1, E3).
  *
  * "No celebration card" is a ONE-SHOT count read in the commit that applied
  * the offer: the card auto-closes after 2.2 s, so a retrying toHaveCount(0)
@@ -162,9 +164,10 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await routeOffers(page, [AUTO_FLAT]);
     await bootRegisteredToMenu(page);
     await addCheeseBurgerViaPdp(page);
-    // The menu never auto-applies: its bar shows the bag's Total with no
-    // reward yet — £8 + VAT, rounded (user decision 2026-10-14).
-    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
+    // The menu applies nothing, but its bar is the bag's Total as the bag
+    // leaves it once it opens — the flagged offer in it already: £8 − £2 +
+    // VAT, rounded (user decision 2026-10-14; it read £9 until the bag opened).
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £7$/);
     await openBag(page);
 
     await expectFlatAutoApplied(page);
@@ -246,6 +249,9 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
 
     await page.getByTestId("bag-close").click();
     await expect(page).toHaveURL(/\/menu$/);
+    // The latch keeps the machine out of the bag, so the bar leaves the
+    // offer out too: £8 + VAT, rounded.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
     await page.getByTestId("footer-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toBeVisible();
     await page.getByTestId("cancel-order-confirm").click();
@@ -254,6 +260,8 @@ test.describe("Lane offers — auto-apply (item 34)", () => {
     await startToMenu(page);
     await expect(page.getByTestId("cta-view-bag")).toContainText("(0)");
     await addCheeseBurgerViaPdp(page);
+    // A new customer: the bag will apply it again, and the bar says so first.
+    await expect(page.getByTestId("cta-total")).toHaveText(/: £7$/);
     await openBag(page);
     await expectFlatAutoApplied(page);
   });

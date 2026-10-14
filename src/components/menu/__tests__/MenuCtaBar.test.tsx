@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import {
@@ -7,11 +7,14 @@ import {
   applyOffer,
   cartQuantity,
   decreaseItemQuantity,
+  openOfferRemovalModal,
   removeCartOffer,
   setCartItems,
 } from "@cx-sdk/ordering/state/cart.slice";
+import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { setCurrency, setDeploymentInfo } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { optOutOfAutoApply } from "../../../redux/features/offerSession/offerSession.slice";
 import BagSheet from "../../cart/BagSheet";
 import MenuCtaBar from "../MenuCtaBar";
 
@@ -308,5 +311,99 @@ describe("MenuCtaBar — TOTAL is the Total of the bag as it opens (settled)", (
     openBag();
     expect(cart().cartOffer).toEqual({});
     expect(bagTotal()).toBe("£6.00");
+  });
+});
+
+/*
+  Review 2026-10-14 (round 2): the open bag applies an operator-flagged offer
+  by itself (useOfferAutoApply) — the walk tenant's "Happy Hour 25 % APPLIED
+  FOR YOU": the menu read ﷼47.25 until VIEW MY BAG, then the bag ﷼35.44. The
+  TOTAL carries that offer before the bag ever opens, live as the cart
+  changes, and leaves it out wherever the bag would not apply it.
+*/
+const AUTO_FLAT_TWO = { ...FLAT_TWO, _id: "auto-flat-2", autoApplied: true };
+/** Redeemed 100 % XENO reward (BagSheetOffersLane's REWARD_ROW): £17 → £0. */
+const REWARD_ROW = {
+  id: "reward",
+  itemId: "lr-1",
+  name: "Greek Salad",
+  quantity: 1,
+  type: "ITEM",
+  isLoyaltyItem: true,
+  isRedeemed: true,
+  discount_type: "percentage",
+  discount_value: 100,
+  price: 0,
+  total_price: 0,
+  undiscounted_price: 17,
+  undiscounted_total_price: 17,
+};
+
+describe("MenuCtaBar — TOTAL carries the offer the bag applies by itself when it opens", () => {
+  beforeEach(() => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setDeploymentInfo([{ name: "disable_roundoff", selected: true }]));
+    store.dispatch(setCartItems([{ ...BURRITO }]));
+  });
+
+  it("a flagged offer is in the TOTAL before the bag opens — nothing applied yet — and it is the Total the bag shows once it has applied it", async () => {
+    store.dispatch(setFilteredOffers([AUTO_FLAT_TWO]));
+    renderBar();
+    // £17.20 − £2 = £15.20 + VAT £2.28 — never the £19.78 of the bare bag.
+    expect(total()).toBe("Total: £17.48");
+    expect(cart().cartOffer).toEqual({});
+
+    openBag();
+    await waitFor(() => expect(cart().cartOffer._id).toBe("auto-flat-2"));
+    expect(bagTotal()).toBe("£17.48");
+    expect(total()).toBe("Total: £17.48");
+  });
+
+  it("live with the bag closed: a flagged offer's £20 minimum, reached by an add on the menu, brings it in; a removal takes it out", () => {
+    store.dispatch(setFilteredOffers([{ ...AUTO_FLAT_TWO, minBillAmount: 20 }]));
+    renderBar();
+    // £17.20 < £20: the bag would not apply it.
+    expect(total()).toBe("Total: £19.78");
+
+    act(() => {
+      store.dispatch(addItemToCartRdx({ ...main("drink", 3, 1), taxes: [VAT15] }));
+    });
+    // £20.20 ≥ £20: £18.20 + VAT £2.73.
+    expect(total()).toBe("Total: £20.93");
+
+    act(() => {
+      store.dispatch(decreaseItemQuantity({ id: "row-drink", IDKEY: "itemId" }));
+    });
+    expect(total()).toBe("Total: £19.78");
+    expect(cart().cartOffer).toEqual({});
+  });
+
+  it.each([
+    ["an unflagged offer", () => store.dispatch(setFilteredOffers([FLAT_TWO]))],
+    [
+      "the customer's opt-out latch (they acted on offers)",
+      () => {
+        store.dispatch(setFilteredOffers([AUTO_FLAT_TWO]));
+        store.dispatch(optOutOfAutoApply());
+      },
+    ],
+    [
+      "a XENO reward in the bag, the slot empty (D3)",
+      () => {
+        store.dispatch(setFilteredOffers([AUTO_FLAT_TWO]));
+        store.dispatch(addItemToCartRdx({ ...REWARD_ROW }));
+      },
+    ],
+    [
+      "the removal notice up",
+      () => {
+        store.dispatch(setFilteredOffers([AUTO_FLAT_TWO]));
+        store.dispatch(openOfferRemovalModal(FLAT_TWO));
+      },
+    ],
+  ])("%s: the bag would not apply it, so the TOTAL leaves it out", (_case, arrange) => {
+    arrange();
+    renderBar();
+    expect(total()).toBe("Total: £19.78");
   });
 });

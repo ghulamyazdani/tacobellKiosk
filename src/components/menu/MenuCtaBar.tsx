@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { cartQuantity, selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCoupons } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
-import { useCartTotal } from "../../hooks/cartHooks/useCartBill";
+import useCartTotal from "../../hooks/cartHooks/useCartTotal";
 import { formatPrice } from "../../utils/price";
 import bagIcon from "../../assets/icons/bag.svg";
 
@@ -25,8 +25,9 @@ interface MenuCtaBarProps {
  * "VIEW MY BAG (4)" opened "MY BAG (5)" — walk 2026-10-14). TOTAL = the
  * bag's own Total, after rewards, taxes and round off (user decision
  * 2026-10-14; it was the pre-tax subtotal: ﷼65.00 over a ﷼34.13 bag): the
- * bag's bill over the live cart (useCartTotal), so it is never 0 or stale
- * before the bag opens. posistKiosk's MenuFooter prints it with
+ * bag's bill over the live cart as the bag leaves it once it opens — settled,
+ * with the offer it applies by itself (useCartTotal) — so it is never 0 or
+ * stale before the bag opens. posistKiosk's MenuFooter prints it with
  * moduloCalcaledValue (formatPrice).
  *
  * P7c adds the logged-in variant (Figma menu-rewards 1:3956): the underlined

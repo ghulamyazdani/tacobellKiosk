@@ -17,14 +17,14 @@ import {
   getCalculatedBill,
   type CartConversionContext,
 } from "@cx-sdk/ordering/order/orderBuilder";
-import { settleCart } from "@cx-sdk/ordering/offer/offerRevalidation";
 
 /**
  * The SDK bill engine bound to the store's pricing context (tab, settings,
  * the add-on discount rule, the live cart's offer) — gathered in this ONE
- * place: useOrderHook converts and prices with it (the bag, the checkout,
- * the offer probes) and the hooks below total with it. Selectors only — no
- * router, no order machinery — so a menu surface can price the bag too.
+ * place: useOrderHook converts and prices with it (the bag, the checkout),
+ * useOfferSavings probes with it, useCartBill (the bag) and useCartTotal
+ * (outside it) total with it. Selectors only — no router, no order
+ * machinery — so a menu surface can price the bag too.
  */
 export function useBillEngine() {
   const tabIdRdx = useSelector(selectTabId);
@@ -45,7 +45,7 @@ export function useBillEngine() {
   };
 }
 
-const hasRows = (cart: any): boolean => (cart?.cartItems?.length ?? 0) > 0;
+export const hasRows = (cart: any): boolean => (cart?.cartItems?.length ?? 0) > 0;
 
 /** A bill's Total — after rewards, taxes and round off (getNetAmount); 0 without one. */
 export const billTotal = (bill: any): number =>
@@ -60,28 +60,4 @@ export default function useCartBill(cart: any): any {
   const { getCalculatedBill: calculate } = useBillEngine();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => (hasRows(cart) ? calculate(cart) : null), [cart]);
-}
-
-/**
- * The bag's Total over `cart` for a surface outside the bag — the menu CTA
- * bar, the product-added modal: the SAME engine and billTotal as the bag's
- * Total, over the cart as the open bag settles it (settleCart), so the two
- * never disagree (walk 2026-10-14: the menu read the ﷼65.00 subtotal over a
- * ﷼34.13 bag). Computed here, not read off the slice's netAmount, which the
- * bag mirrors only while it is open — 0.00 or stale before (the 2026-10-07
- * note). 0 for an empty cart. Rule 2: a row the engine cannot price never
- * takes the menu down — the cart's own subtotal stands in (the bag itself
- * would fail on that row too).
- */
-export function useCartTotal(cart: any): number {
-  const { getCalculatedBill: calculate } = useBillEngine();
-  return useMemo(() => {
-    if (!hasRows(cart)) return 0;
-    try {
-      return billTotal(calculate(settleCart(cart)));
-    } catch {
-      return Number(cart?.subTotal) || 0;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart]);
 }
