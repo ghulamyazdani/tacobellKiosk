@@ -16,7 +16,7 @@ import {
   setTier1SelectedCustomization,
   tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
-import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMenuObject, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { store } from "../../../redux/app/store";
@@ -513,6 +513,38 @@ describe("PDP out-of-stock sizes and pack slots (walk-oos)", () => {
     expect(nachos).toHaveAttribute("data-testid", "slot-option-nachos");
     expect(within(nachos).queryByRole("button")).not.toBeInTheDocument();
     expect(sheetRows()).toEqual(["slot-option-salad", "slot-option-fries", "slot-option-nachos"]);
+  });
+
+  // Review: the slot sheet's Customize guard. A sold-out side that has
+  // options of its own must not offer Customize — its tier-2 SAVE would put
+  // the sold-out side into the slot.
+  it("a pack slot: a sold-out side with options of its own offers no Customize — an in-stock one does", () => {
+    const DIP = {
+      _id: "side_dip_addons",
+      name: "Dip",
+      min: 0,
+      max: 1,
+      multiplePunchMin: 0,
+      multiplePunchMax: 1,
+      multiplePunchMaxItem: 1,
+      order: 1,
+      isActive: true,
+      constituentItems: [{ id: "ranch", name: "Ranch", price: 0, isActive: true, entityType: "Addon" }],
+    };
+    // Both sides are items with a Dip group (tier-2 capable); Fries is out of
+    // stock as a slot option (its combo stamp), not as an item.
+    const withDip = (id: string, name: string) => ({ id, name, price: 0, isActive: true, outOfStock: false, modifiers: [DIP._id] });
+    openNew(boxOf(SIDE), [SIDE, DIP]);
+    store.dispatch(
+      setEntityMenuObject({ menuEntityObject: { fries: withDip("fries", "Fries"), nachos: withDip("nachos", "Nachos") } })
+    );
+    renderPdp();
+
+    fireEvent.click(screen.getByTestId(`pack-slot-open-${SIDE._id}`));
+    expect(screen.getByTestId("slot-customize-nachos")).toBeInTheDocument();
+    const fries = screen.getByRole("group", { name: "Fries, unavailable" });
+    expect(within(fries).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("slot-customize-fries")).not.toBeInTheDocument();
   });
 
   // Review F10: no in-stock option to preview — the empty slot never shows a
