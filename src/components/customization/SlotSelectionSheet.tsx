@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import useLocalized from "../../hooks/utils/useLocalized";
 import closeIcon from "../../assets/icons/close.svg";
 // ?no-inline: emitted as a precached file. Inlined (<4 KB → data URI) this
@@ -74,8 +75,10 @@ function SheetBody({
         className="tb-press-card relative flex items-center gap-[24px] border-t border-tb-grey-4 pt-[23px]"
       >
         <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
-          {imageUrl && (
+          {imageUrl ? (
             <img alt="" src={imageUrl} className="h-[130px] w-[130px] object-contain" />
+          ) : (
+            <NoImageBell />
           )}
         </span>
 

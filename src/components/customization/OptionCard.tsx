@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { getEffectiveMax, getEffectiveMin } from "@cx-sdk/ordering/customization/selectionRules";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 // ?no-inline: emitted as precached files. Inlined (<4 KB → data URIs) they
 // cost boot-path gzip (SlotSelectionSheet's radio-check precedent, D7).
 import radioCheckIcon from "../../assets/icons/radio-check.svg?no-inline";
@@ -183,12 +184,14 @@ export default function OptionCard({
   const content = (
     <>
       <span className="flex h-[172px] w-full shrink-0 items-center justify-center">
-        {image && (
+        {image ? (
           <img
             alt=""
             src={image}
             className={`h-full w-full object-contain ${dimmed ? "opacity-40" : ""}`}
           />
+        ) : (
+          <NoImageBell className={`h-full w-full ${dimmed ? "opacity-40" : ""}`} />
         )}
       </span>
       {/* The frame's 134 px content box (1:4905 / 1:4907): the name sits
@@ -339,7 +342,7 @@ export function OptionRow({
       className="flex min-h-[176px] items-start gap-[24px] border-t border-tb-grey-4 pt-[23px]"
     >
       <span className="flex h-[152px] w-[152px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-tb-grey-6">
-        {image && <img alt="" src={image} className="h-[130px] w-[130px] object-contain" />}
+        {image ? <img alt="" src={image} className="h-[130px] w-[130px] object-contain" /> : <NoImageBell />}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-[8px]">
         <span className="block text-[28px] font-medium capitalize leading-[32px] tracking-[-0.5px] text-black">

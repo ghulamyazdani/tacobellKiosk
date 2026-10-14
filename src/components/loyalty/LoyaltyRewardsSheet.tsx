@@ -27,6 +27,7 @@ import useLocalized from "../../hooks/utils/useLocalized";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMenuConverters from "../../hooks/menuHooks/useMenuConverters";
 import { resolveEntityImage } from "../../utils/entityImage";
+import NoImageBell from "../common/NoImageBell";
 import KioskNumpad from "../keyboard/KioskNumpad";
 import LoyaltyErrorModal from "./LoyaltyErrorModal";
 import tbBell from "../../assets/brand/tb-bell.svg";
@@ -420,11 +421,7 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
               }`}
             />
           ) : (
-            <span
-              aria-hidden="true"
-              className="h-[64px] w-[72px] bg-tb-purple opacity-25"
-              style={bellMaskStyle}
-            />
+            <NoImageBell />
           )}
         </span>
 

@@ -37,6 +37,7 @@ import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -392,7 +393,9 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
           <span
             className="block min-h-0 w-full"
             style={{ height: CART_UPSELL_IMAGE_HEIGHT_PX }}
-          />
+          >
+            <NoImageBell />
+          </span>
         )}
         <span
           aria-hidden="true"

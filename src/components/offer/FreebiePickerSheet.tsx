@@ -30,6 +30,7 @@ import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import closeIcon from "../../assets/icons/close.svg";
 
 interface FreebiePickerSheetProps {
@@ -543,7 +544,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
             className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
           />
         ) : (
-          <span className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+          <NoImageBell className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
           <span className="text-[24px] font-bold capitalize leading-[28px] text-black">
@@ -673,7 +674,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
               className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6 object-contain"
             />
           ) : (
-            <span className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
+            <NoImageBell className="h-[84px] w-[84px] shrink-0 rounded-[8px] bg-tb-grey-6" />
           )}
           <span className="flex min-w-0 flex-1 flex-col gap-[6px]">
             <span className="text-[24px] font-bold capitalize leading-[28px] text-black">

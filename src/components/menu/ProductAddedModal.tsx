@@ -29,6 +29,7 @@ import { useCartTotal } from "../../hooks/cartHooks/useCartBill";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import useLocalized from "../../hooks/utils/useLocalized";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { formatMenuPriceLine } from "./MenuItemCard";
@@ -267,8 +268,10 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
                     className="tb-press-card relative flex min-h-[235px] w-[204px] flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px]"
                   >
                     <div className="h-[71px] w-[126px] shrink-0">
-                      {imageUrl && (
+                      {imageUrl ? (
                         <img alt="" src={imageUrl} className="h-full w-full object-contain" />
+                      ) : (
+                        <NoImageBell />
                       )}
                     </div>
                     <div className="flex min-h-[72px] w-full flex-col gap-[4px]">

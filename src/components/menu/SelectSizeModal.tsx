@@ -10,6 +10,7 @@ import useLocalized from "../../hooks/utils/useLocalized";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import ScrollIndicator from "../chrome/ScrollIndicator";
+import NoImageBell from "../common/NoImageBell";
 import { ErrorBoundary } from "../../ErrorBoundary";
 import { ADA_MODAL_MAX_HEIGHT } from "../stage/KioskStage";
 import closeIcon from "../../assets/icons/close.svg";
@@ -194,12 +195,14 @@ export default function SelectSizeModal({
             >
               {/* Figma 1:5707: the 326 px image band sits at the hero's foot,
                   the photo at 7.25 % / 20.25 % of it (445 × 232). */}
-              {heroImage && (
+              {heroImage ? (
                 <img
                   alt=""
                   src={heroImage}
                   className="absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain"
                 />
+              ) : (
+                <NoImageBell className="absolute left-[36px] top-[193px] h-[232px] w-[445px]" />
               )}
               <span className="relative flex w-[352px] flex-col items-center gap-[16px] text-center">
                 {isBestValue(hero) && (
@@ -238,8 +241,10 @@ export default function SelectSizeModal({
                     className="tb-select relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
                   >
                     <span className="h-[108px] w-[206px]">
-                      {imageUrl && (
+                      {imageUrl ? (
                         <img alt="" src={imageUrl} className="h-full w-full object-contain" />
+                      ) : (
+                        <NoImageBell />
                       )}
                     </span>
                     <span className="flex w-full flex-col items-start gap-[4px]">

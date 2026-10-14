@@ -320,6 +320,27 @@ describe("FreebiePickerSheet (P7b freebie choice — contract picker recipe)", (
     expect(screen.queryByTestId("freebie-picker")).not.toBeInTheDocument();
   });
 
+  // Walk 2026-10-14: an imageless row's 84 px plate read as a failed load.
+  it("an imageless option carries the faint bell on its 84 px plate; one with a photo shows the photo", () => {
+    const photo = "https://cdn.example.com/kiosk/caesar.png";
+    const caesar = orEntry("caesar-dressing", "Caesar Dressing");
+    renderPicker({
+      ...CHOICE_OFFER,
+      getItems: {
+        items: [
+          orEntry("tortilla-sauce", "Tortilla Sauce"),
+          { ...caesar, entities: { ...caesar.entities, image_url: photo } },
+        ],
+      },
+    });
+
+    const plate = within(screen.getByTestId("freebie-option-tortilla-sauce")).getByTestId("no-image-bell");
+    expect(plate).toHaveClass("h-[84px]", "w-[84px]", "rounded-[8px]", "bg-tb-grey-6");
+    const pictured = screen.getByTestId("freebie-option-caesar-dressing");
+    expect(within(pictured).queryByTestId("no-image-bell")).toBeNull();
+    expect(pictured.querySelector("img")).toHaveAttribute("src", photo);
+  });
+
   it("OR offer: both options render with the Free line and struck full price; CONFIRM is gated on a pick", async () => {
     renderPicker(CHOICE_OFFER);
     expect(screen.getByTestId("freebie-picker")).toBeInTheDocument();

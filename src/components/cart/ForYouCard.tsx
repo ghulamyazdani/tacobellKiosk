@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
+import NoImageBell from "../common/NoImageBell";
 import {
   CART_UPSELL_CARD_HEIGHT_PX,
   CART_UPSELL_CARD_WIDTH_PX,
@@ -157,8 +158,10 @@ function ForYouCardBase({
   ) : (
     // Reserve the band rather than collapsing it: the card height is
     // fixed, so an imageless item must keep its text where its neighbours
-    // keep theirs.
-    <span className={`block min-h-0 ${imageClass}`} style={imageStyle} />
+    // keep theirs. The band carries the bell.
+    <span className={`block min-h-0 ${imageClass}`} style={imageStyle}>
+      <NoImageBell />
+    </span>
   );
 
   return (

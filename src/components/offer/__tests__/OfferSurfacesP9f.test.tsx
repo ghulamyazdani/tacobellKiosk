@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -249,6 +249,12 @@ describe("the rewards rail card", () => {
   it("prints its price as posistKiosk does (moduloCalcaledValue): £5.50, never £5.5", () => {
     renderRewards();
     expect(screen.getByTestId("offer-suggested-item-nachos")).toHaveTextContent(/^Nachos£5\.50$/);
+  });
+
+  it("a card without a photo carries the faint bell in its photo band", () => {
+    renderRewards();
+    const card = screen.getByTestId("offer-suggested-item-nachos");
+    expect(within(card).getByTestId("no-image-bell").parentElement).toHaveClass("block", "min-h-0", "w-full");
   });
 });
 

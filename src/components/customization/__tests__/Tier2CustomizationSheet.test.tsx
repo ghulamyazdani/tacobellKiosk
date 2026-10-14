@@ -384,7 +384,11 @@ describe("Tier2CustomizationSheet — the full-screen CUSTOMIZE page (item 42)",
     const title = within(band).getByText(i18n.t("pack.customize"));
     expect(title.tagName).toBe("P");
     expect(title).toHaveClass("tb-display", "text-[32px]", "leading-[32px]", "text-tb-purple");
-    expect(band.querySelector(".h-\\[202px\\].w-\\[328px\\]")).not.toBeNull();
+    const imageBox = band.querySelector(".h-\\[202px\\].w-\\[328px\\]") as HTMLElement;
+    expect(imageBox).not.toBeNull();
+    // No photo (walk 2026-10-14): the faint bell fills the box, never a bare band.
+    expect(within(imageBox).getByTestId("no-image-bell")).toBeInTheDocument();
+    expect(imageBox.querySelector("img")).toBeNull();
     expect(within(band).getByRole("heading", { level: 2 })).toHaveTextContent("Large Cola");
     expect(band).toContainElement(screen.getByTestId("tier2-price-line"));
 

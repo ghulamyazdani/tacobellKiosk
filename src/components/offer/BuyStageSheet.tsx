@@ -27,6 +27,7 @@ import useCurrencySymbol from "../../hooks/utils/useCurrencySymbol";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatMenuPriceLine } from "../menu/MenuItemCard";
 import VegMark from "../menu/VegMark";
+import NoImageBell from "../common/NoImageBell";
 import closeIcon from "../../assets/icons/close.svg";
 import plusIcon from "../../assets/icons/plus.svg";
 import minusIcon from "../../assets/icons/qty-minus.svg?no-inline";
@@ -317,7 +318,7 @@ export default function BuyStageSheet({
             {formatMenuPriceLine(size ? { ...entity, ...size } : entity, currency, t)}
           </p>
         </div>
-        {imageUrl && (
+        {imageUrl ? (
           <img
             alt=""
             src={imageUrl}
@@ -325,6 +326,8 @@ export default function BuyStageSheet({
               unavailable ? "opacity-40 grayscale" : ""
             }`}
           />
+        ) : (
+          <NoImageBell className={`h-[172px] min-h-0 w-full ${unavailable ? "opacity-40" : ""}`} />
         )}
         {/* Before the overlay, so a tap on the pill still adds. ForYouCard's
             pill at the photo band's corner (design language, no frame): it

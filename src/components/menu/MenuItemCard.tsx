@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
 import useLocalized from "../../hooks/utils/useLocalized";
+import NoImageBell from "../common/NoImageBell";
 import VegMark from "./VegMark";
 import plusIcon from "../../assets/icons/plus.svg";
 
@@ -91,12 +92,14 @@ export default function MenuItemCard({
           {priceLine}
         </p>
       </div>
-      {imageUrl && (
+      {imageUrl ? (
         <img
           alt=""
           src={imageUrl}
           className={`h-[172px] min-h-0 w-full object-cover mix-blend-multiply ${unavailable ? "opacity-40 grayscale" : ""}`}
         />
+      ) : (
+        <NoImageBell className={`h-[172px] min-h-0 w-full ${unavailable ? "opacity-40" : ""}`} />
       )}
       {!unavailable && (
         <button

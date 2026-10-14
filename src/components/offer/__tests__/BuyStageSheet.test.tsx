@@ -641,6 +641,15 @@ describe("BuyStageSheet — Figma's Menu-Item card", () => {
     expect(plus.querySelector("img")).toHaveClass("h-[16px]", "w-[16px]");
   });
 
+  // Walk 2026-10-14: an imageless card's 172 px band read as a failed load.
+  it("an imageless card carries the faint bell in its 172 px band; a card with a photo never does", () => {
+    renderStage(LEAST, viewWith(LEAST, { [SAUCE.id]: { ...SAUCE, image_url: PHOTO } }));
+
+    expect(within(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).queryByTestId("no-image-bell")).toBeNull();
+    const bell = within(screen.getByTestId(`buy-stage-tile-${CAESAR.id}`)).getByTestId("no-image-bell");
+    expect(bell).toHaveClass("h-[172px]", "min-h-0", "w-full");
+  });
+
   it("the WHOLE card adds: an empty overlay (a direct child — the card presses) named 'Quick add <name>', the add target at every quantity; the '+' is its aria-hidden twin that never takes focus", async () => {
     renderStage(BOGO);
     const card = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
