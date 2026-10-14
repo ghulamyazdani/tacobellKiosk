@@ -216,10 +216,20 @@ const BOGO_SAUCE = itemOffer({
   },
 });
 /**
+ * Backoffice (POS) labels the cards do not show — walk w3's 'Veg hakka
+ * noddles quarter' over the card 'Noodles (QUARTER)'.
+ */
+const POS_LABELS: Record<string, string> = {
+  [TORTILLA_SAUCE]: "veg taco party pack 6 pc",
+  [CAESAR_DRESSING]: "Cheesy lava taco NV + shake",
+  [GREEK_SALAD]: "2 VRB NV combo",
+};
+/**
  * Any 2 of 3 (the 70-character bowl among them), the cheapest free: the
- * least-value stage. Each buy entry carries its item's own menu name — the
- * tenant shape of the 2026-10-14 report — so no header repeats a card and
- * the three cards share a row.
+ * least-value stage. Each buy entry carries a backoffice label its card does
+ * not show (walk w3's shape), and still no header: a lone card names its
+ * item, and a least label adds nothing — the three cards share one centred
+ * row.
  */
 const LEAST_SAUCES = itemOffer({
   _id: "offer-least-sauces",
@@ -228,7 +238,7 @@ const LEAST_SAUCES = itemOffer({
   getLeastValueItem: true,
   leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
   applicable: applicableBuy(
-    [TORTILLA_SAUCE, CAESAR_DRESSING, GREEK_SALAD].map((id) => ({ item: { baseItemId: id, name: NAMES[id][0] } }))
+    [TORTILLA_SAUCE, CAESAR_DRESSING, GREEK_SALAD].map((id) => ({ item: { baseItemId: id, name: POS_LABELS[id] } }))
   ),
   getItems: { items: [], categories: [] },
 });
@@ -329,7 +339,8 @@ const PARITY_OFFERS = [PARITY_LONG, PARITY_SCOPED, PARITY_CAT_STAGE, PARITY_MIN,
 /**
  * Any sauce (a category) AND the bowl under its own name (plain-and): a
  * category beside a lone item, so the whole stage is headed — the bowl gets
- * its own header and never reads as a fourth sauce.
+ * its own header and never reads as a fourth sauce, its card centred in its
+ * own row.
  */
 const HEADED_STAGE = itemOffer({
   _id: "offer-headed-stage",
@@ -550,6 +561,33 @@ async function stepClockUntil(page: Page, done: () => Promise<boolean>) {
     )
     .toBe(true);
 }
+
+/** The stage's horizontal centre: the 1080 stage at scale 1 (the kiosk viewport). */
+const STAGE_CENTRE_X = 540;
+
+/** A row of buy-stage cards (`row` = their parent) as laid out: how many, their tops, their centre, their bottom. */
+const cardRow = (row: Locator) =>
+  row.evaluate((el) => {
+    const cards = [...el.children].map((card) => card.getBoundingClientRect());
+    const left = Math.min(...cards.map((rect) => rect.left));
+    const right = Math.max(...cards.map((rect) => rect.right));
+    return {
+      count: cards.length,
+      tops: [...new Set(cards.map((rect) => Math.round(rect.top)))],
+      centre: (left + right) / 2,
+      bottom: Math.max(...cards.map((rect) => rect.bottom)),
+    };
+  });
+
+/** A group header as laid out: its box, and the centre of its TEXT (the box is full width). */
+const headerLayout = (header: Locator) =>
+  header.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const text = range.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom, textCentre: text.left + text.width / 2 };
+  });
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.evaluate(async () => {
@@ -838,11 +876,17 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       // The 70-character bowl's card on screen: its name meets the
       // two-line clamp (the probe would see a sliced third line).
       await page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).scrollIntoViewIfNeeded();
+      // Walk w3: backoffice labels the cards don't show head nothing — the
+      // three cards share ONE row, centred on the stage.
       await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(0);
+      const row = await cardRow(page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).locator(".."));
+      expect(row.count).toBe(3);
+      expect(row.tops).toHaveLength(1);
+      expect(Math.abs(row.centre - STAGE_CENTRE_X)).toBeLessThanOrEqual(1);
       await capture(page, `offers-${mode}-27-buy-stage-least`);
     });
 
-    test(`BUY STAGE HEADED (${mode}): a category beside a lone item — every group headed, each header across the grid over its own cards`, async ({
+    test(`BUY STAGE HEADED (${mode}): a category beside a lone item — every group headed, each header centred over its own centred row`, async ({
       page,
     }) => {
       test.slow();
@@ -854,22 +898,25 @@ test.describe("lane fonts — offers / menu-data captures", () => {
       await page.getByTestId(`offer-row-add-items-${HEADED_STAGE._id}`).click();
       await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
       await expect(page.locator('[data-testid^="buy-stage-group-"]')).toHaveCount(2);
-      // Laid out, not just classed: each header spans the four-card grid
-      // (4 × 240 + 3 × 16); the bowl's header starts below the sauces' row
-      // and its card below that header.
-      const box = async (testId: string) => {
-        const found = await page.getByTestId(testId).boundingBox();
-        if (!found) throw new Error(`${testId} is not laid out`);
-        return found;
-      };
-      const saucesHeader = await box(`buy-stage-group-${SAUCES_SUB}`);
-      const bowlHeader = await box(`buy-stage-group-${GREEK_SALAD}`);
-      const sauce = await box(`buy-stage-tile-${CAESAR_DRESSING}`);
-      const bowl = await box(`buy-stage-tile-${GREEK_SALAD}`);
-      expect(saucesHeader.width).toBeCloseTo(1008, 0);
-      expect(bowlHeader.width).toBeCloseTo(1008, 0);
-      expect(bowlHeader.y).toBeGreaterThanOrEqual(sauce.y + sauce.height);
-      expect(bowl.y).toBeGreaterThanOrEqual(bowlHeader.y + bowlHeader.height);
+      // Laid out, not just classed: each group's cards are its own row,
+      // centred on the stage — the lone bowl never in column 1 (walk w3) —
+      // with its header's text centred over it; the bowl's header starts
+      // below the sauces' row and its card below that header.
+      const saucesHeader = page.getByTestId(`buy-stage-group-${SAUCES_SUB}`);
+      const bowlHeader = page.getByTestId(`buy-stage-group-${GREEK_SALAD}`);
+      const sauces = await cardRow(saucesHeader.locator("xpath=following-sibling::*[1]"));
+      const bowl = await cardRow(bowlHeader.locator("xpath=following-sibling::*[1]"));
+      expect(bowl.count).toBe(1);
+      for (const [header, row] of [
+        [await headerLayout(saucesHeader), sauces],
+        [await headerLayout(bowlHeader), bowl],
+      ] as const) {
+        expect(row.tops).toHaveLength(1);
+        expect(Math.abs(row.centre - STAGE_CENTRE_X)).toBeLessThanOrEqual(1);
+        expect(Math.abs(header.textCentre - STAGE_CENTRE_X)).toBeLessThanOrEqual(1);
+        expect(row.tops[0]).toBeGreaterThanOrEqual(Math.round(header.bottom));
+      }
+      expect((await headerLayout(bowlHeader)).top).toBeGreaterThanOrEqual(sauces.bottom);
       await page.getByTestId(`buy-stage-tile-${GREEK_SALAD}`).scrollIntoViewIfNeeded();
       await capture(page, `offers-${mode}-37-buy-stage-headed`);
     });

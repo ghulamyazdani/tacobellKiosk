@@ -824,6 +824,17 @@ describe("BuyStageSheet — Figma's Menu-Item card", () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * Walk w3 (2026-10-14): on 'Get Variant Free Least Items!!!' (least, three
+ * one-size groups under backoffice labels — 'Veg hakka noddles quarter'
+ * over the card 'Noodles (QUARTER)') every group got a header, and the
+ * headers kept the grid four tracks wide, so each card sat alone in column
+ * 1. The card already names the item and its size, and a least label adds
+ * nothing: a ONE-entity group is headed only when it names a per-group need
+ * above 1 (plain-and / plain-or). A category group (several items) still
+ * heads, and then every group does; a headed group's cards are their own
+ * centred row.
+ * ------------------------------------------------------------------ */
 describe("BuyStageSheet — a header only says what the cards don't", () => {
   /** Plain-and: ANY sauce (a category of two) AND a Cheese Burger. */
   const CAT_AND_BURGER = {
@@ -854,13 +865,34 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
     ]),
   });
   const LARGE = { "fries-l": { baseItem: FRIES_BASE, variant: { id: "fries-l", name: "Large" } } };
-  /** A group's header is followed by its own first card. */
-  const headerOver = (key: string, tileId: string) =>
-    expect(screen.getByTestId(`buy-stage-group-${key}`).nextElementSibling).toBe(
-      screen.getByTestId(`buy-stage-tile-${tileId}`)
-    );
+  /** Walk w3's shape: least, one size per group, each under a label its card does not show. */
+  const LEAST_SIZES = {
+    ...LEAST,
+    _id: "offer-least-sizes",
+    name: "Get Variant Free Least Items!!!",
+    applicable: applicable([
+      { item: { baseItemId: "fries-m", name: "Veg fries medium" }, quantity: 1, relation: "or" },
+      { item: { baseItemId: "fries-l", name: "veg fries LARGE pack" }, quantity: 1, relation: "or" },
+    ]),
+  };
+  const SIZES = { "fries-m": { baseItem: FRIES_BASE, variant: { id: "fries-m", name: "Medium" } }, ...LARGE };
+  /** A headed group: its header, then its OWN row of cards. */
+  const rowUnder = (key: string) =>
+    screen.getByTestId(`buy-stage-group-${key}`).nextElementSibling as HTMLElement;
+  const cardsIn = (row: HTMLElement) => Array.from(row.children).map((card) => card.getAttribute("data-testid"));
+  const CARD_ROW = ["grid", "grid-cols-[repeat(auto-fit,240px)]", "justify-center", "gap-[16px]"];
 
-  it("each group one item under its own name (the reported tenant shape): no headers, and the cards flow together in one row", () => {
+  it("walk w3: one-size groups under labels the cards don't show ('Veg fries medium' over 'Fries (Medium)') — no headers; the cards share one centred row", () => {
+    renderStage(LEAST_SIZES, viewFor(LEAST_SIZES, SIZES));
+    expect(headers()).toEqual([]);
+    const [medium, large] = screen.getAllByTestId("buy-stage-tile-fries");
+    expect(medium).toHaveTextContent("Fries (Medium)");
+    expect(large).toHaveTextContent("Fries (Large)");
+    expect(medium.parentElement).toBe(large.parentElement);
+    expect(medium.parentElement).toHaveClass(...CARD_ROW);
+  });
+
+  it("each group one item under its own name (the tenant's usual shape): no headers, and the cards flow together in one row", () => {
     renderStage(LEAST);
     expect(headers()).toEqual([]);
     const sauce = screen.getByTestId(`buy-stage-tile-${SAUCE.id}`);
@@ -869,39 +901,24 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
     expect(sauce.nextElementSibling).toBe(caesar);
   });
 
-  it("the label matches the card's name trimmed and case-insensitively: no header", () => {
-    const view = viewFor(LEAST);
-    renderStage(LEAST, {
-      ...view,
-      groups: [
-        { ...view.groups[0], label: "  tortilla SAUCE " },
-        { ...view.groups[1], label: "CAESAR dressing\t" },
-      ],
-    });
-    expect(headers()).toEqual([]);
-  });
+  it.each(["and", "or"] as const)(
+    "plain-%s at need 1: a label the card doesn't show ('Party dips' over 'Tortilla Sauce') still earns no header",
+    (relation) => {
+      const offer = SAUCES_AND_ONE(relation, 1);
+      const view = viewFor(offer);
+      renderStage(offer, { ...view, groups: [{ ...view.groups[0], label: "Party dips" }, view.groups[1]] });
+      expect(headers()).toEqual([]);
+    }
+  );
 
-  it("a label the card does not show earns a header — and then every group has one, over its own cards (a heading groups every card below it)", () => {
-    const view = viewFor(LEAST);
-    renderStage(LEAST, { ...view, groups: [view.groups[0], { ...view.groups[1], label: "Dressings" }] });
-    expect(headers().map((header) => header.textContent)).toEqual(["Tortilla Sauce", "Dressings"]);
-    for (const header of headers()) expect(header).toHaveClass("col-span-full");
-    headerOver(SAUCE.id, SAUCE.id);
-    headerOver(CAESAR.id, CAESAR.id);
-  });
-
-  it("a variant-id entry: a label equal to its card's '<name> (<size>)', trimmed, any case, says nothing more (the raw name is only 'Fries'); a label the card does not show heads the stage", () => {
+  it("plain-or: a variant-id entry at need 1 earns no header, under its card's own '<name> (<size>)' or a deal name alike", () => {
     renderStage(FRIES_OR_SAUCE(" fries (LARGE) "), viewFor(FRIES_OR_SAUCE(" fries (LARGE) "), LARGE));
     expect(screen.getByTestId("buy-stage-tile-fries")).toHaveTextContent("Fries (Large)");
     expect(headers()).toEqual([]);
 
     cleanup();
     renderStage(FRIES_OR_SAUCE("Large Fries Deal"), viewFor(FRIES_OR_SAUCE("Large Fries Deal"), LARGE));
-    expect(headers().map((header) => header.textContent)).toEqual([
-      "Any 1 from Large Fries Deal",
-      "Any 1 from Tortilla Sauce",
-    ]);
-    headerOver("fries-l", "fries");
+    expect(headers()).toEqual([]);
   });
 
   it("an empty label on a lone item: no header", () => {
@@ -910,18 +927,28 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
     expect(headers()).toEqual([]);
   });
 
-  it("a category group (several items) heads the stage, and the lone item after it gets its own header — never read as a third sauce", () => {
+  it("a category group (several items) heads the stage, and the lone item after it gets its own header — each header over its OWN row, the burger never read as a third sauce", () => {
     renderStage(CAT_AND_BURGER);
     expect(headers().map((header) => header.textContent)).toEqual([
       "Any 1 from Sauces",
       "Any 1 from Cheese Burger",
     ]);
-    headerOver("sauces", SAUCE.id);
-    expect(screen.getByTestId(`buy-stage-tile-${CAESAR.id}`).nextElementSibling).toBe(
-      screen.getByTestId(`buy-stage-group-${BURGER.id}`)
-    );
-    headerOver(BURGER.id, BURGER.id);
-    for (const header of headers()) expect(header).toHaveClass("col-span-full");
+    expect(cardsIn(rowUnder("sauces"))).toEqual([`buy-stage-tile-${SAUCE.id}`, `buy-stage-tile-${CAESAR.id}`]);
+    expect(cardsIn(rowUnder(BURGER.id))).toEqual([`buy-stage-tile-${BURGER.id}`]);
+    expect(rowUnder("sauces").nextElementSibling).toBe(screen.getByTestId(`buy-stage-group-${BURGER.id}`));
+  });
+
+  it("headed, a group's cards are their own centred row (auto-fit + justify-center), so a lone card never sits in column 1 of a grid its header kept four tracks wide; the header centres over it", () => {
+    renderStage(CAT_AND_BURGER);
+    for (const key of ["sauces", BURGER.id]) {
+      expect(rowUnder(key)).toHaveClass(...CARD_ROW);
+      const header = screen.getByTestId(`buy-stage-group-${key}`);
+      expect(header).toHaveClass("text-center");
+      expect(header).not.toHaveClass("col-span-full");
+    }
+    // The groups stack in a column; no stage-wide card grid holds them.
+    expect(rowUnder("sauces").parentElement).toHaveClass("flex", "flex-col", "gap-[16px]");
+    expect(rowUnder("sauces").parentElement).not.toHaveClass("grid");
   });
 
   it("a category group with an empty label still says 'these items'", () => {
@@ -944,6 +971,7 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
         "Any 2 from Tortilla Sauce",
         "Any 1 from Caesar Dressing",
       ]);
+      expect(cardsIn(rowUnder(SAUCE.id))).toEqual([`buy-stage-tile-${SAUCE.id}`]);
 
       cleanup();
       renderStage(SAUCES_AND_ONE(relation, 1));
@@ -963,7 +991,7 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
     expect(headers()).toEqual([]);
   });
 
-  it("Arabic session: the English label is the item's raw name, so the Arabic cards go without headers; a label the card does not show heads the stage", async () => {
+  it("Arabic session: the cards read their Arabic names, and an English backoffice label never heads a lone item", async () => {
     const AR_SAUCE = "صلصة التورتيلا";
     const view = viewWith(LEAST, {
       [SAUCE.id]: { ...SAUCE, aliases: [{ value: AR_SAUCE, name: "Arabic", code: "ar", dir: "rtl" }] },
@@ -980,9 +1008,6 @@ describe("BuyStageSheet — a header only says what the cards don't", () => {
 
     cleanup();
     renderStage(LEAST, { ...view, groups: [view.groups[0], { ...view.groups[1], label: "Dressings" }] });
-    expect(headers().map((header) => header.getAttribute("data-testid"))).toEqual([
-      `buy-stage-group-${SAUCE.id}`,
-      `buy-stage-group-${CAESAR.id}`,
-    ]);
+    expect(headers()).toEqual([]);
   });
 });
