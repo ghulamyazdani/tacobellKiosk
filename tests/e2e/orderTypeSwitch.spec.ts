@@ -16,6 +16,7 @@ import {
   CHEESE_BURGER,
   GREEK_SALAD,
   TORTILLA_SAUCE,
+  EXTRA_PICKLES,
 } from "./fixtures/backend";
 import {
   bootRegisteredToMenu,
@@ -215,6 +216,8 @@ interface SwitchMockOptions {
   arabic?: boolean;
   /** The ADA reach-zone view on offer (get_kiosk_settings accessibility_mode). */
   ada?: boolean;
+  /** What the take-away tab's get_out_of_stock reports sold out (Kiosk rows). Default: nothing. */
+  oosOnT2?: readonly { item_id: string; type: string }[];
 }
 
 interface SwitchNet {
@@ -244,6 +247,7 @@ async function mockKioskBackend(
     requiredOnT2,
     arabic = false,
     ada = false,
+    oosOnT2 = [],
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
   // Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. Loyalty on
@@ -296,8 +300,12 @@ async function mockKioskBackend(
     return route.fulfill({ json: t2Menu });
   });
   await page.route("**/api/cx/kiosk/get_out_of_stock", (route) => {
-    log("get_out_of_stock", route);
-    return route.fulfill({ json: [] });
+    const body = log("get_out_of_stock", route);
+    // Stock is per tab: the menu fetch and PAY both send tab_id.
+    const soldOut = body.tab_id === TAKE_OUT.tab_id ? oosOnT2 : [];
+    return route.fulfill({
+      json: soldOut.map((row) => ({ ...row, partners: { partner_name: "Kiosk", inStock: false } })),
+    });
   });
   await page.route("**/api/cx/get_cx_valid_offers", (route) => {
     const body = log("offers", route);
@@ -664,6 +672,52 @@ test.describe("bag-pdp item 19: in-bag EAT IN / TAKE OUT switch", () => {
     await expect(page.getByTestId(`bag-unavailable-${burgerId}`)).toHaveCount(0);
     await expect(page.getByTestId(`bag-edit-${burgerId}`)).toBeVisible();
     expect(net.checkout.placeOrderCount).toBe(0);
+  });
+
+  test("OUT OF STOCK ON THE NEW TAB (walk-oos, review F4): Extra Pickles sold out on take-away — the burger stays, its red line names the add-on (no removal); PAY names it and stays; Edit shows it Unavailable and deselected; UPDATE; PAY goes on", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, {
+      removedOnT2: [],
+      oosOnT2: [{ item_id: EXTRA_PICKLES, type: "addon" }],
+    });
+    await bootRegisteredToMenu(page);
+    await addViaPdp(page, CHEESE_BURGER, { addonId: EXTRA_PICKLES, expectedCta: "£9.00" });
+    await openBag(page);
+    const burgerId = ((await bagRows(page).first().getAttribute("data-testid")) ?? "").replace(
+      "bag-row-",
+      ""
+    );
+
+    await confirmTakeOut(page);
+    await expect(takeOutSegment(page)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+    // Kept, never removed unnamed: the row names the sold-out add-on.
+    await expect(page.getByTestId("bag-ordertype-notice")).toHaveCount(0);
+    await expect(bagRows(page)).toHaveCount(1);
+    const outOfStock = en.bag.outOfStock.replace("{{names}}", "Extra Pickles");
+    await expect(page.getByTestId(`bag-changed-${burgerId}`)).toHaveText(outOfStock);
+    await expect(page.getByTestId(`bag-pick-oos-${burgerId}-${EXTRA_PICKLES}`)).toContainText("Extra Pickles");
+
+    // PAY names it and stays on the bag.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByRole("alertdialog", { name: outOfStock })).toBeVisible();
+    await page.getByTestId("global-error-ok").click();
+    await expect(page).toHaveURL(/\/cart$/);
+
+    // Edit: the take-away PDP greys it and has deselected it — the burger at £9.
+    await page.getByTestId(`bag-edit-${burgerId}`).click();
+    await expect(page.getByTestId("customization-screen")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Extra Pickles, unavailable" })).toBeVisible();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText(`${en.bag.update} · £9.00`);
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId(`bag-changed-${burgerId}`)).toHaveCount(0);
+    await expect(bagRows(page).first()).not.toContainText("Extra Pickles");
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
   });
 
   test("SUCCESS → PAY: after the switch every PAY request carries tab t2, and the pushed order is take_away at £9 with the bag fee", async ({

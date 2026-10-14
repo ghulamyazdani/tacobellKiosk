@@ -57,6 +57,7 @@ import {
   setLanguages,
   setSelectedLanguage,
 } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { IdleHoldContext } from "../../utils/useIdleTimeout";
 import useOrderTypeSwitch from "../useOrderTypeSwitch";
 
@@ -536,6 +537,72 @@ describe("repriceCartForMenu — the switch's money (item 19)", () => {
     expect(nested.removed).toEqual([{ row: BAG.pack, reason: "missingCustomization" }]);
   });
 
+  /* ---- walk-oos (review F4 / F5): keepSoldOutPicks, the executor's mode ---- */
+
+  /** The index with one option of `groupId` out of stock (plus `extra`). */
+  const soldOutIn = (groupId: string, id: string, extra: Obj = {}): MenuPriceIndex => {
+    const group = groups()[groupId];
+    const constituentItems = group.constituentItems.map((ci) => (ci.id === id ? { ...ci, outOfStock: true, ...extra } : ci));
+    return { entityMap: entities(), modifiersMap: { ...groups(), [groupId]: { ...group, constituentItems } } };
+  };
+  const picksOf = (row: unknown, groupId: string) => ((row as Obj).customizations as Record<string, Obj[]>)[groupId];
+
+  it("keepSoldOutPicks: an add-on the target tab sells out of stays in its row — flagged, priced by the tab; gone or switched off still removes the row; without it, the row goes as before", () => {
+    const menu = soldOutIn(PICKLES_GROUP, PICKLES, { price: 2 });
+    const plan = repriceCartForMenu([BAG.burger], menu, { keepSoldOutPicks: true });
+
+    expect(plan.removed).toEqual([]);
+    expect(plan.repriced).toBe(1);
+    const [kept] = plan.rows;
+    expect(picksOf(kept, PICKLES_GROUP)).toEqual([expect.objectContaining({ id: PICKLES, price: 2, outOfStock: true })]);
+    // The bag bills what it shows: the flagged pick at the tab's price.
+    const was = Number(picksOf(BAG.burger, PICKLES_GROUP)[0].price);
+    expect((kept as Obj).total_price).toBe(Number((BAG.burger as Obj).total_price) + 2 - was);
+    expect(picksOf(kept, CHEESE_GROUP)).toEqual(picksOf(BAG.burger, CHEESE_GROUP));
+
+    expect(repriceCartForMenu([BAG.burger], menu).removed).toEqual([{ row: BAG.burger, reason: "missingCustomization" }]);
+    for (const flag of [{ isActive: false }, { isAvailable: false }]) {
+      const off = repriceCartForMenu([BAG.burger], soldOutIn(PICKLES_GROUP, PICKLES, flag), { keepSoldOutPicks: true });
+      expect(off.removed, JSON.stringify(flag)).toEqual([{ row: BAG.burger, reason: "missingCustomization" }]);
+    }
+    const pickles = groups()[PICKLES_GROUP];
+    const gone = repriceCartForMenu(
+      [BAG.burger],
+      {
+        entityMap: entities(),
+        modifiersMap: { ...groups(), [PICKLES_GROUP]: { ...pickles, constituentItems: pickles.constituentItems.filter((ci) => ci.id !== PICKLES) } },
+      },
+      { keepSoldOutPicks: true },
+    );
+    expect(gone.removed).toEqual([{ row: BAG.burger, reason: "missingCustomization" }]);
+  });
+
+  it("keepSoldOutPicks: a sold-out tier-2 pick stays flagged in place; a stale PAY flag on a pick the tab sells takes its verdict; a reward is still reversed (no Edit — D1); a bag against its own menu is still the identity", () => {
+    const pack = repriceCartForMenu([BAG.pack], soldOutIn(FRIES_ADDONS, WITHOUT_SALT), { keepSoldOutPicks: true });
+    expect(pack.removed).toEqual([]);
+    const fries = picksOf(pack.rows[0], BOX(2))[0];
+    expect(picksOf(fries, FRIES_ADDONS)).toEqual([expect.objectContaining({ id: WITHOUT_SALT, outOfStock: true })]);
+    expect(fries.outOfStock).not.toBe(true);
+
+    const flaggedPickles = { ...picksOf(BAG.burger, PICKLES_GROUP)[0], outOfStock: true };
+    const stale = {
+      ...(BAG.burger as Obj),
+      customizations: { ...((BAG.burger as Obj).customizations as Obj), [PICKLES_GROUP]: [flaggedPickles] },
+    };
+    const back = repriceCartForMenu([stale], SAME.index, { keepSoldOutPicks: true });
+    expect(picksOf(back.rows[0], PICKLES_GROUP)).toEqual([expect.objectContaining({ id: PICKLES, outOfStock: false })]);
+    expect(back.repriced).toBe(1);
+
+    const reward = { ...(BAG.burger as Obj), isLoyaltyItem: true };
+    expect(
+      repriceCartForMenu([reward], soldOutIn(PICKLES_GROUP, PICKLES), { keepSoldOutPicks: true }).removedLoyalty,
+    ).toEqual([reward]);
+
+    const same = repriceCartForMenu(ROWS, SAME.index, { keepSoldOutPicks: true });
+    expect(same.changed).toBe(false);
+    same.rows.forEach((row, i) => expect(row).toBe(ROWS[i]));
+  });
+
   it("a size row whose variant id is gone from its base item is 'missingVariant'", () => {
     const soda = entities()[SODA];
     const plan = repriceCartForMenu([BAG.size], {
@@ -890,6 +957,7 @@ describe("useOrderTypeSwitch — the executor", () => {
       "cart/setMenuCharges",
       "offer/setFilteredOffers",
       "cart/pushCharges", // the final, deterministic composition
+      "menuSelections/setOutOfStockItems", // walk-oos: the old tab's PAY stock map goes
       "cart/setCartItems",
       "appSettings/setTent", // the old tab's table number never rides along
     ]);
@@ -1345,5 +1413,30 @@ describe("useOrderTypeSwitch — the executor", () => {
     expect(await run(hook)).toEqual({ ok: true, removedRows: [], offerDropped: true });
     expect(net.dropOffer).toHaveBeenCalledTimes(1);
     expect(net.dropOffer).toHaveBeenCalledWith(false);
+  });
+
+  /* ---- walk-oos (review F4 / F5) ---- */
+
+  it("walk-oos: a row whose add-on the new tab sells out of is KEPT — the add-on flagged (the bag names it, Edit drops it, PAY blocks) — and the old tab's PAY stock map is cleared", async () => {
+    store.dispatch(setCartItems([BAG.burger]));
+    // The old tab's PAY found Add Cheese out of stock; stock is per tab.
+    store.dispatch(setOutOfStockItems({ [ADD_CHEESE]: { _id: ADD_CHEESE, type: "addon", inStock: false } }));
+    const takeOut = convert(rawMenu(), [{ item_id: PICKLES, type: "addon", partners: { inStock: false } }]).index;
+    stageMenu(async (_t, _r, _c, _p, opts) => {
+      stageIndex(opts, takeOut);
+      return { categories: [{}] };
+    });
+    const { hook } = mount();
+    expect(await run(hook)).toEqual({ ok: true, removedRows: [], offerDropped: false });
+
+    const [burger] = cartOf() as Obj[];
+    const picks = burger.customizations as Record<string, Obj[]>;
+    expect(picks[PICKLES_GROUP]).toEqual([expect.objectContaining({ id: PICKLES, outOfStock: true })]);
+    expect(picks[CHEESE_GROUP]).toEqual([expect.objectContaining({ id: ADD_CHEESE })]);
+    expect(picks[CHEESE_GROUP][0].outOfStock).not.toBe(true);
+    expect(net.replaceDexie).toHaveBeenCalledWith(cartOf());
+    expect(
+      (store.getState() as unknown as { menuSelections: { outOfStockItems: unknown } }).menuSelections.outOfStockItems,
+    ).toEqual({});
   });
 });
