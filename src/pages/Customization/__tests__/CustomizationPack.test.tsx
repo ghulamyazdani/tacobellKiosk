@@ -246,6 +246,30 @@ describe("Customization page — pack partition (P6c)", () => {
     expect(tier1[DRINK_GROUP._id]).toEqual([]);
   });
 
+  it("multi-punch ON, a raw 1 / 1 slot with multi-punch 1 / 2 and two defaults opens with ONE pick: the slot card shows one, so no hidden second is billed", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    seedSession();
+    const [beef, bean] = BURRITO_GROUP.constituentItems;
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          ...MODIFIERS_MAP,
+          [BURRITO_GROUP._id]: {
+            ...BURRITO_GROUP,
+            multiplePunchMax: 2,
+            constituentItems: [{ ...beef, price: 1 }, { ...bean, price: 2, isDefault: true }],
+          },
+        },
+      })
+    );
+    renderPage();
+
+    expect(picksOf(BURRITO_GROUP._id).map((pick) => pick.id)).toEqual(["b-beef"]);
+    expect(screen.getByTestId("pack-slot-pack1_1_combo")).toHaveTextContent("Beefy Burrito");
+    expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£10.99");
+  });
+
   it("a non-pack entity renders no slot grid at all (zero change)", () => {
     seedSession({
       id: "single1",

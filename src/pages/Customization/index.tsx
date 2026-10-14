@@ -354,23 +354,23 @@ export default function Customization({
 
     // customizableItem / new: seed every active group; defaults pre-selected
     // (fork seeds [] then auto-selects isDefault in the group view — same
-    // outcome, done in one dispatch here) up to the EFFECTIVE max, then the
-    // one-option slots (D5). A group with no positive max takes no pick, so
-    // it opens empty (user decision 2026-10-14, posistKiosk parity).
+    // outcome, done in one dispatch here), then the one-option slots (D5).
     const groups = fetchModifierProperties(SelectedEntity.modifiers) ?? [];
     const seed: Record<string, any[]> = {};
     for (const group of groups) {
       if (group?.isActive === false) continue;
-      const max = Number(getEffectiveMax(group, isAllowMultiplePunch()));
-      if (!(max > 0)) {
-        seed[group._id] = [];
-        continue;
-      }
+      const max = Number(group?.max ?? 0);
       const defaults = (group?.constituentItems ?? [])
         .filter((i: any) => i?.isDefault && i?.isActive !== false)
-        .slice(0, max)
+        .slice(0, max > 0 ? max : undefined)
         .map((i: any) => ({ ...i, quantity: 1 }));
-      seed[group._id] = defaults.length > 0 ? defaults : seedOneOptionSlot(group);
+      // Up to the raw max (a raw 1 / 1 slot is a one-pick card, whatever its
+      // multi-punch max) and the EFFECTIVE max the commit counts. A group with
+      // no positive effective max takes no pick, so it opens empty (user
+      // decision 2026-10-14, posistKiosk parity).
+      const effectiveMax = Number(getEffectiveMax(group, isAllowMultiplePunch()));
+      if (!(effectiveMax > 0)) seed[group._id] = [];
+      else seed[group._id] = defaults.length > 0 ? defaults.slice(0, effectiveMax) : seedOneOptionSlot(group);
     }
     dispatch(setTier1SelectedCustomization(seed));
     setFetchModifierGroups(groups);
