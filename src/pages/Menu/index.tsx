@@ -538,7 +538,10 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                   data-testid={`section-${categoryId}`}
                   className="pt-[48px]"
                 >
-                  <h2 className="tb-display mb-[32px] text-[64px] leading-[0.85] tracking-[-3px] text-tb-purple">
+                  {/* A word wider than the pane breaks inside it, as on the
+                      rail (rail-wrap): never cut at the screen edge, never a
+                      sideways-scrolling pane. Same on the H3. */}
+                  <h2 className="tb-display mb-[32px] text-[64px] leading-[0.85] tracking-[-3px] text-tb-purple [overflow-wrap:anywhere]">
                     {name(category)}
                   </h2>
                   {subCategories.map((subCategory: any, subIndex: number) => {
@@ -549,7 +552,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                     return (
                       <div key={subCategory?.id ?? subIndex} className="mb-[40px]">
                         {subCategories.length > 1 && (
-                          <h3 className="tb-display mb-[24px] text-[28px] leading-[1] tracking-[-1px] text-tb-ink-purple">
+                          <h3 className="tb-display mb-[24px] text-[28px] leading-[1] tracking-[-1px] text-tb-ink-purple [overflow-wrap:anywhere]">
                             {name(subCategory) || subCategory?.categoryName}
                           </h3>
                         )}

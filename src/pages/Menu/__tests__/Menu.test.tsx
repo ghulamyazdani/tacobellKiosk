@@ -509,6 +509,14 @@ describe("Menu — names in the guest's language (post-P9 28)", () => {
     expect(screen.getByTestId("menu-screen").textContent).not.toMatch(ISOLATES);
   });
 
+  it("the H2 and H3 break a word wider than the pane inside it (rail-wrap; railLongNames.spec measures it)", () => {
+    renderMenu();
+
+    const headings = within(pane()).getAllByRole("heading");
+    expect(headings.map((h) => h.tagName)).toEqual(["H2", "H3", "H3"]);
+    for (const h of headings) expect(h).toHaveClass("[overflow-wrap:anywhere]");
+  });
+
   it("Arabic: the rail, the H2 and the H3 show the aliases, isolated; no alias → the English name", async () => {
     await arabicSession();
     renderMenu();
