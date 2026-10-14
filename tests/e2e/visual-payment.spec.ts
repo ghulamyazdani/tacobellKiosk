@@ -585,7 +585,7 @@ test.describe("lane fonts — payment captures", () => {
       // TRY AGAIN with no usable row left: the local refusal (E8b), CLOSE alone.
       await servePayment(page, []);
       await page.getByTestId("paytm-initiate-retry").click();
-      await expect(failed).toContainText(t.paytm.failed.start);
+      await expect(failed).toContainText(t.paytm.failed.startNoRetry);
       await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
       await expect(page.getByTestId("paytm-initiate-close")).toBeVisible();
       await capture(page, `pay-08-initiate-refused-${mode}`);

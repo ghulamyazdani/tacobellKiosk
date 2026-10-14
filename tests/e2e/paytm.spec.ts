@@ -1479,8 +1479,9 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
 
     const modal = page.getByTestId("paytm-initiate-failed");
     await expect(modal).toBeVisible({ timeout: 15_000 });
-    await expect(modal).toContainText(en.paytm.failed.start);
-    // A retry would only be refused again: CLOSE alone, focused.
+    // A retry would only be refused again: CLOSE alone, focused, and copy
+    // that does not ask for one.
+    await expect(modal).toContainText(en.paytm.failed.startNoRetry);
     await expect(modal.getByRole("button")).toHaveCount(1);
     await expect(page.getByTestId("paytm-initiate-close")).toBeFocused();
     await expect(page.getByTestId("paytm-initiate-retry")).toHaveCount(0);
@@ -1922,7 +1923,7 @@ test.describe("P8b Paytm DQR + EDC — exactly once", () => {
     const expectRefusedWithNothingSent = async () => {
       const modal = page.getByTestId("paytm-initiate-failed");
       await expect(modal).toBeVisible({ timeout: 15_000 });
-      await expect(modal).toContainText(en.paytm.failed.start);
+      await expect(modal).toContainText(en.paytm.failed.startNoRetry);
       await expect(modal.getByRole("button")).toHaveCount(1);
       await expect(page.getByTestId("paytm-initiate-close")).toBeVisible();
       await expect(page).toHaveURL(/\/payment$/);

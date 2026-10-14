@@ -493,11 +493,16 @@ export default function PaymentSelection() {
           testId="paytm-initiate-failed"
           title={t("paytm.failed.title")}
           message={t(
-            paytmFailure.reason === "busy" ? "paytm.failed.busy" : "paytm.failed.start"
+            paytmFailure.reason === "busy"
+              ? "paytm.failed.busy"
+              : paytmFailure.retryable
+                ? "paytm.failed.start"
+                : "paytm.failed.startNoRetry"
           )}
           // Focus on CLOSE, the safe choice: TRY AGAIN mints new ids and may
           // arm the card machine. A refusal that would only refuse again
-          // gets CLOSE alone (it autofocuses as the only CTA).
+          // gets CLOSE alone (it autofocuses as the only CTA), and copy that
+          // does not ask for a retry.
           initialFocus="secondary"
           primary={
             paytmFailure.retryable

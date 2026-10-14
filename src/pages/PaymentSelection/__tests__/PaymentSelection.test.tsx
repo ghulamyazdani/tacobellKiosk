@@ -768,8 +768,9 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       advance(3000);
       await flush();
 
-      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
-      // A retry would only be refused again; CLOSE is the one way on.
+      // A retry would only be refused again; CLOSE is the one way on, and the
+      // copy no longer asks for a retry it cannot offer.
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.startNoRetry"));
       expect(ctaIds()).toEqual(["paytm-initiate-close"]);
       expect(screen.getByTestId("paytm-initiate-close")).toHaveTextContent(i18n.t("language.close"));
       expect(screen.getByTestId("paytm-initiate-close")).toHaveFocus();
@@ -793,7 +794,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       tap("payment-card");
       advance(3000);
       await flush();
-      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.startNoRetry"));
       tap("paytm-initiate-close");
       expect(screen.queryByTestId("paytm-initiate-failed")).not.toBeInTheDocument();
 
@@ -801,7 +802,7 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(buffer()).toHaveTextContent(i18n.t("paytm.redirecting"));
       advance(3000);
       await flush();
-      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.startNoRetry"));
       expect(m.loadScreen).toHaveBeenCalledTimes(2);
       expect(m.ids).not.toHaveBeenCalled();
       expect(m.edc).not.toHaveBeenCalled();
@@ -913,7 +914,9 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       tap("payment-card");
       advance(3000);
       await flush();
-      expect(modal()).toHaveTextContent(i18n.t("paytm.failed.start"));
+      expect(modal()).toHaveTextContent(
+        i18n.t(retryable ? "paytm.failed.start" : "paytm.failed.startNoRetry")
+      );
       expect(screen.queryByTestId("paytm-initiate-retry") !== null).toBe(retryable);
       expect(tapGuard()).not.toBeInTheDocument();
 
