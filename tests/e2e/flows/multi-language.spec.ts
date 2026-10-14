@@ -62,6 +62,11 @@ test.describe("Flow 5 — multi-language", () => {
     await startToSecond(page);
     await chooseLanguage(page, "ar");
     await expectArabicScreen(page, "ar-01-second", "second-screen", ar.second.title);
+    // The footer names the language with no flag beside it — none is known for Arabic (it showed Great Britain's,
+    // walk 2026-10-14).
+    const footerFlag = page.getByTestId("footer-language").locator("span.rounded-full img");
+    await expect(page.getByTestId("footer-language")).toContainText("العربية");
+    await expect(footerFlag).toHaveCount(0);
 
     await pickPipelineToMenu(page);
     await expectArabicScreen(page, "ar-02-menu", "cta-view-bag", ar.menu.viewMyBag);
@@ -104,6 +109,9 @@ test.describe("Flow 5 — multi-language", () => {
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await startToSecond(page);
     await expect(page.getByTestId("second-screen")).toContainText(en.second.title);
+    // …and English's Great Britain flag is back.
+    await expect(page.getByTestId("footer-language")).toContainText(en.language.english);
+    await expect(footerFlag).toHaveCount(1);
 
     expect(
       PENDING_APP_FIX.map(({ target }) => target).filter((target) => !pendingMet.has(target)),

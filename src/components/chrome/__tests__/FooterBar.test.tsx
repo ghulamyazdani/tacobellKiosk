@@ -6,6 +6,8 @@ import {
   setEnableAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
+import gbFlag from "../../../assets/flags/gb.svg";
 import FooterBar from "../FooterBar";
 import i18n from "../../../i18n";
 import { KioskEventName } from "@cx-sdk/core";
@@ -159,5 +161,46 @@ describe("FooterBar — CANCEL ORDER analytics (audit-fixes B3)", () => {
     expect(
       mockCapture.mock.calls.filter(([event]) => event === KioskEventName.StartOverClickedFromFooter)
     ).toEqual([]);
+  });
+});
+
+/*
+  Walk 2026-10-14: the language button always showed the GB flag — beside
+  العربية too (it was hardcoded). It shows the flag of the language in use
+  where one is known (English: Figma's Great Britain), and none otherwise.
+*/
+describe("FooterBar — the language button's flag", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  const languageButton = () => screen.getByTestId("footer-language");
+  /** The round flag chip (the chevron is the button's other image). */
+  const flag = () => languageButton().querySelector("span.rounded-full img");
+
+  it("English — chosen, or the default before any choice: the Great Britain flag", () => {
+    renderFooter();
+    expect(flag()).toHaveAttribute("src", gbFlag);
+
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr" }));
+    });
+    expect(flag()).toHaveAttribute("src", gbFlag);
+  });
+
+  it("Arabic: no flag — none is known for it — beside its own name; back to English, the flag returns", () => {
+    renderFooter();
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "العربية", code: "ar", dir: "rtl" }));
+    });
+
+    expect(flag()).toBeNull();
+    expect(languageButton().querySelectorAll("img")).toHaveLength(1); // the chevron only
+    expect(languageButton()).toHaveTextContent("العربية");
+
+    act(() => {
+      store.dispatch(setSelectedLanguage({ name: "English", code: "en", dir: "ltr" }));
+    });
+    expect(flag()).toHaveAttribute("src", gbFlag);
   });
 });

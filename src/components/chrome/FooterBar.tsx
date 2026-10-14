@@ -7,8 +7,17 @@ import {
 import { selectSelectedLanguage } from "../../redux/features/multiLanguage/multiLanguage.slice";
 import useAdaActive from "../../hooks/utils/useAdaActive";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import { DEFAULT_LANGUAGE } from "../../i18n";
 import chevronUp from "../../assets/icons/chevron-up.svg";
 import gbFlag from "../../assets/flags/gb.svg";
+
+/**
+ * The flag beside a language — only where one is known: English's Great
+ * Britain, Figma's (1:2587). Figma's "Flags" set has no Arabic flag, and a
+ * language is not a country, so any other language shows none (it showed the
+ * GB flag beside العربية — walk 2026-10-14).
+ */
+const LANGUAGE_FLAGS: Record<string, string> = { en: gbFlag };
 
 interface FooterBarProps {
   onCancelOrder?: () => void;
@@ -33,6 +42,8 @@ export default function FooterBar({
   const selectedLanguage = useSelector(selectSelectedLanguage);
   const adaEnabled = Boolean(useSelector(selectEnableAccessbilityMode));
   const adaActive = useAdaActive();
+  // "" (no choice yet, or a session reset) is the default language (App.tsx).
+  const flag = LANGUAGE_FLAGS[selectedLanguage?.code || DEFAULT_LANGUAGE];
 
   return (
     <div className="absolute bottom-0 left-0 flex h-[56px] w-[1080px] items-center justify-between bg-tb-purple-vibrant px-[10px]">
@@ -83,9 +94,11 @@ export default function FooterBar({
           onClick={onOpenLanguage}
           className="flex h-[56px] min-w-[44px] items-center gap-[8px] rounded-[8px] px-[12px]"
         >
-          <span className="h-[32px] w-[32px] overflow-hidden rounded-full">
-            <img alt="" src={gbFlag} className="h-full w-full object-cover" />
-          </span>
+          {flag && (
+            <span className="h-[32px] w-[32px] overflow-hidden rounded-full">
+              <img alt="" src={flag} className="h-full w-full object-cover" />
+            </span>
+          )}
           {/* dir="auto": the language's own name (العربية) reads rtl in an ltr layout. */}
           <span dir="auto" className="tb-display text-[16px] leading-[16px] font-medium text-tb-surface">
             {/* || not ??: a session reset stores name "" (a blank label) */}
