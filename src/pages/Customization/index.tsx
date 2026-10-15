@@ -387,11 +387,14 @@ export default function Customization({
     // customizableItem / new: seed every active group; defaults pre-selected
     // (fork seeds [] then auto-selects isDefault in the group view — same
     // outcome, done in one dispatch here), then the one-option slots (D5).
-    // walk-oos: an out-of-stock default is never pre-selected.
+    // walk-oos: an out-of-stock default is never pre-selected. Active = the
+    // groups the page shows (isActive true; convertModifiersAccordingly, the
+    // fork's seeds): one switched off or with no isActive key is never
+    // checked, committed or counted at PAY (user decision 2026-10-15).
     const groups = fetchModifierProperties(SelectedEntity.modifiers) ?? [];
     const seed: Record<string, any[]> = {};
     for (const group of groups) {
-      if (group?.isActive === false) continue;
+      if (!group?.isActive) continue;
       const max = Number(group?.max ?? 0);
       const defaults = (group?.constituentItems ?? [])
         .filter((i: any) => i?.isDefault && i?.isActive !== false && !soldOut(i))
