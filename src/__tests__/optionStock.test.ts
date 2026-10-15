@@ -8,6 +8,9 @@ import {
   stockLast,
 } from "@cx-sdk/catalog/oos/optionStock";
 import { keepSweptPicksFlagged } from "@cx-sdk/catalog/oos/sweptPicks";
+import { checkFinalCheckOutMinMax } from "@cx-sdk/catalog/oos/outOfStockEngine";
+import { validateVariantSelections } from "@cx-sdk/ordering/customization/groupCompletion";
+import { buildEmptySelectionsForModifiers } from "@cx-sdk/ordering/customization/sessionState";
 
 /*
   Lane walk-oos — @cx-sdk/catalog/oos/optionStock (the SDK has no test
@@ -379,5 +382,21 @@ describe("hasDeadRequiredGroup / markUncompletable — a required group with no 
     expect((out as { outOfStock?: unknown }).outOfStock).toBeUndefined();
     // Its only size dead: nothing left to open — the item reads out too.
     expect(markUncompletable({ ...soda, variants: [large] }, MODS, {}, false)).toMatchObject({ outOfStock: true });
+  });
+
+  it("a size whose required group carries no isActive key is dead: the sized commit skips that group, but PAY's re-check refuses the row — Unavailable up front, not a dead end at PAY (review r3 #2)", () => {
+    const { isActive: _isActive, ...noKey } = MODS.zero;
+    const groups = { syrup: { _id: "syrup", name: "Syrup", ...noKey } };
+    const large = { id: "s-l", name: "Large", price: 6, isActive: true, modifiers: ["syrup"] };
+    const soda = { id: "soda", name: "Soda", hasVariant: true, isVariant: false, modifiers: [], variants: [large] };
+    expect(markUncompletable(soda, groups, {}, false)).toMatchObject({ outOfStock: true, variants: [{ outOfStock: true }] });
+
+    // The PDP seeds every size group and its ADD TO BAG skips one whose isActive is falsy …
+    const fetch = (ids: unknown[]) => ids.map((id) => groups[id as "syrup"]).filter(Boolean);
+    const seeded = buildEmptySelectionsForModifiers(large.modifiers);
+    expect(validateVariantSelections({ modifierIds: ["syrup"], mergedCustomizations: seeded, fetchModifierProperties: fetch, allowMultiplePunch: false }).allPassed).toBe(true);
+    // … but PAY's sweep never reads a group's isActive: the bag row is flagged, PAY blocked.
+    const row = { itemId: "row", type: "VARIANT", customizations: seeded };
+    expect(checkFinalCheckOutMinMax([row], undefined, () => false, fetch).minMaxErroredBaseItems).toEqual(["row"]);
   });
 });
