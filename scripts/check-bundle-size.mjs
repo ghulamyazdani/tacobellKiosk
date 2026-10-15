@@ -22,8 +22,9 @@ export const TOTAL_JS_BUDGET_KIB = 2000; // user decision 2026-10-05: kept
 // 1,179.0 KiB) on 2026-10-06, production composition (VITE_POST_HOG_TYPE=production: PostHog a lazy chunk,
 // framer-motion removed; pre-P9f 478.2). Budget = ceil5(M + 10). Raise only with user approval.
 // Raised 355 → 360 by user decision 2026-10-14 (the walk fixes put the production entry at 355.7 KiB;
-// the user chose the raise over the SDK lodash trim).
-export const ENTRY_GZIP_BUDGET_KIB = 360;
+// the user chose the raise over the SDK lodash trim), and 360 → 365 by user decision 2026-10-15 (the
+// sub-category view put it at 360.3 KiB; the raise again chosen over the trim).
+export const ENTRY_GZIP_BUDGET_KIB = 365;
 
 const FLAGS = { "--budget": "total", "--entry-gzip-budget": "entry" };
 const SW_FILE = /^(?:sw\.js|firebase-messaging-sw\.js|workbox-[\w-]+\.js)$/;
