@@ -251,6 +251,14 @@ const MENU_CHARGE = {
   partners: ["Kiosk"],
   value: { isActive: true, type: "Fixed", amount: 10, chargeNature: "FIXED" },
 };
+/**
+ * slim-menu as its tenant serves it: send_categories ON, as the pins below
+ * were taken (the e2e copy turns it off — the category view).
+ */
+const tenantMenu = () => {
+  const menu = fixture("slim-menu.json") as { settings?: object };
+  return { ...menu, settings: { ...menu.settings, send_categories: true }, charges: [MENU_CHARGE] };
+};
 const DEPLOYMENT_CHARGE = { _id: "dc-service", name: "Service", value: 5, type: "fixed" };
 const DP_SESSION = { _id: "dp-lunch", sessionName: "Lunch", _extras: { maxQtyItem: "5" } };
 const DP_ITEMS = [{ baseItemId: CHEESE_BURGER, session: { status: "active", modifiedRate: 7 } }];
@@ -280,7 +288,7 @@ describe("fetchMenu — lane bag-pdp pins (real offer + dynamic-pricing hooks)",
     net.realHooks = true;
     net.serverTime = () => Promise.resolve({ serverTime: "2026-10-07T12:00:00.000Z" });
     net.menu = () =>
-      Promise.resolve({ ...(fixture("slim-menu.json") as object), charges: [MENU_CHARGE] });
+      Promise.resolve(tenantMenu());
     net.outOfStock = () => Promise.resolve([]);
     net.offersBody = () =>
       Promise.resolve([...(fixture("offers.json") as unknown[]), FREE_BURGER_OFFER]);
@@ -566,7 +574,7 @@ describe("fetchMenu — menu charges follow the FETCHED pipeline's tab_type (S3 
     net.realHooks = false;
     net.serverTime = () => Promise.resolve({ serverTime: "2026-10-07T12:00:00.000Z" });
     net.menu = () =>
-      Promise.resolve({ ...(fixture("slim-menu.json") as object), charges: [MENU_CHARGE] });
+      Promise.resolve(tenantMenu());
     net.outOfStock = () => Promise.resolve([]);
     net.mockCapture.mockReset();
   });
