@@ -749,6 +749,33 @@ const MIXED_BUY = itemOffer({
   ]),
   getItems: { items: [getEntry("gi-mixed-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
 });
+/**
+ * Review r1: least-value and group-wise count a UNION of their buy entries,
+ * whatever the relation — two burgers unlock them beside the dead box, so
+ * each keeps its locked row.
+ */
+const BURGER_AND_BOX = applicable([
+  { item: { baseItemId: CHEESE_BURGER, name: "Cheese Burger" }, quantity: 1, relation: "and" },
+  { item: { baseItemId: DREAM_BOX, name: "Dream box 1" }, quantity: 1, relation: "and" },
+]);
+const LEAST_AND = itemOffer({
+  _id: "offer-least-and",
+  name: "Any 2 burgers or boxes, the cheapest free",
+  getItemOnly: false,
+  getLeastValueItem: true,
+  leastItemValueCount: { buyQuantity: 2, getQuantity: 1 },
+  applicable: BURGER_AND_BOX,
+  getItems: { items: [], categories: [] },
+});
+const GROUP_AND = itemOffer({
+  _id: "offer-group-and",
+  name: "Any 2 burgers or boxes, a salad free",
+  getItemOnly: false,
+  buygetGroupWiseOffer: true,
+  buygetGroupWiseOfferValues: { discountType: "percent", value: 100, getQuantity: 1, buyQuantity: 2 },
+  applicable: BURGER_AND_BOX,
+  getItems: { items: [getEntry("gi-group-and-salad", GREEK_SALAD, "Greek Salad", "or")], categories: [] },
+});
 
 const stripIsolates = (s: string | null) => (s ?? "").replace(/[\u2066-\u2069]/g, "").trim();
 
@@ -1113,13 +1140,13 @@ test.describe("Review 2026-10-14 — the menu TOTAL is the bag's Total as the ba
  * ------------------------------------------------------------------ */
 test.describe("Lane dead-offer — a buy side no guest can complete is the struck row", () => {
   for (const lang of ["en", "ar"] as const) {
-    test(`${lang.toUpperCase()}: the dead box's offer is struck with no ADD ITEMS, the sold-out Caesar's is unchanged; box-or-sauce stays locked and its stage sells only the sauce`, async ({
+    test(`${lang.toUpperCase()}: the dead box's offer is struck with no ADD ITEMS, the sold-out Caesar's is unchanged; box-or-sauce stays locked and its stage sells only the sauce; least-value / group-wise burger-and-box stay locked`, async ({
       page,
     }) => {
       test.slow();
       const copy = locale(lang);
       await mockBackend(page, {
-        offers: [DEAD_BUY, SOLD_OUT_BUY, MIXED_BUY, offersFixture[1]],
+        offers: [DEAD_BUY, SOLD_OUT_BUY, MIXED_BUY, LEAST_AND, GROUP_AND, offersFixture[1]],
         outOfStock: [...CAESAR_OUT, DREAM_SANDWICH_OUT],
         arabic: lang === "ar",
       });
@@ -1137,6 +1164,13 @@ test.describe("Lane dead-offer — a buy side no guest can complete is the struc
         await expect(page.getByTestId(`offer-row-desc-${offer._id}`)).toHaveCount(0);
         await expect(page.getByTestId(`offer-row-add-items-${offer._id}`)).toHaveCount(0);
       }
+
+      for (const offer of [LEAST_AND, GROUP_AND]) {
+        const row = page.getByTestId(`offer-row-${offer._id}`);
+        await expect(row).toContainText(copy.offers.lockedBogoBuySide);
+        await expect(row).not.toContainText(copy.offers.unavailable);
+      }
+      await expect(page.getByTestId(`offer-row-add-items-${LEAST_AND._id}`)).toBeVisible();
 
       const mixed = page.getByTestId(`offer-row-${MIXED_BUY._id}`);
       await expect(mixed).toContainText(copy.offers.lockedBogoBuySide);

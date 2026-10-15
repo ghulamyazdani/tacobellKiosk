@@ -619,4 +619,54 @@ describe("lane dead-offer — dead counts like sold out", () => {
     // Without isOut the box is alive: the side can still unlock, so it is listed.
     expect(rankOffersForKiosk([never], ctx, onMenu).map((entry) => entry.offer._id)).toEqual(["never"]);
   });
+
+  /*
+   * Review r1: least-value and group-wise count ONE union of their entries
+   * whatever the relation — the engine (getMatchingBuyQuantity), auto-remove
+   * and the buy stage's union modes. A dead entry beside a live one leaves
+   * the side completable (two burgers unlock it); only every entry dead is
+   * the gone row. The plain "and" rule above stands.
+   */
+  describe("least-value and group-wise: a union, whatever the relation", () => {
+    const TWO_BURGERS: SavingsContext = {
+      cartItems: [{ id: "burger", itemId: "b1", quantity: 2, price: 8, type: "ITEM" }],
+      cartValue: 16,
+      cartQuantity: 2,
+    };
+    const MECHANICS: Array<[string, Partial<SavingsOffer>]> = [
+      ["least-value", { getLeastValueItem: true, leastItemValueCount: { buyQuantity: 2 }, getItems: { items: [], categories: [] } }],
+      [
+        "group-wise",
+        {
+          buygetGroupWiseOffer: true,
+          buygetGroupWiseOfferValues: { buyQuantity: 2, getQuantity: 1, discountType: "percent", value: "100" },
+        },
+      ],
+    ];
+
+    for (const [name, mechanic] of MECHANICS) {
+      it(`${name} "and": a dead entry beside a live one keeps the side — eligible on a bag that qualifies`, () => {
+        const offer = bogo([itemRaw("burger", "and"), itemRaw("nachos", "and")], { ...mechanic, _id: name });
+        expect(getBuySideState(offer, onMenu, isOut)).toBe("ok");
+        const entry = rankOffersForKiosk([offer], TWO_BURGERS, onMenu, false, isOut)[0];
+        expect(entry.eligible).toBe(true);
+        expect(entry.gap).toBeUndefined();
+        // A converter-stamped entry is the same union: neither struck nor hidden.
+        expect(getBuySideState(bogo([itemRaw("burger", "and"), itemRaw("nachos", "and", false)], mechanic), onMenu)).toBe("ok");
+        expect(getBuySideState(bogo([itemRaw("burger", "and"), itemRaw("ghost", "and", false)], mechanic), onMenu)).toBe("ok");
+      });
+
+      it(`${name} "and": every entry dead → the gone row; one of them off the menu → never listed`, () => {
+        const offer = bogo([itemRaw("box", "and"), itemRaw("nachos", "and")], { ...mechanic, _id: name });
+        expect(getBuySideState(offer, onMenu, isOut)).toBe("soldOut");
+        expect(rankOffersForKiosk([offer], TWO_BURGERS, onMenu, false, isOut)[0]).toMatchObject({
+          eligible: false,
+          gap: { reason: "unavailable" },
+        });
+        expect(getBuySideState(bogo([itemRaw("box", "and"), itemRaw("ghost", "and", false)], mechanic), onMenu, isOut)).toBe(
+          "never"
+        );
+      });
+    }
+  });
 });
