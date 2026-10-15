@@ -34,6 +34,7 @@ import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectEntityMap, selectVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import { selectDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
 import { useBillEngine } from "../cartHooks/useCartBill";
+import { selectMenuSellableEntityMap, selectSellableVariantObject } from "../menuHooks/useCartUpsell";
 import useOfferHook from "./useOfferHook";
 import {
   computeRealisedSaving,
@@ -44,6 +45,7 @@ import {
   type SavingsOffer,
 } from "@cx-sdk/ordering/offer/offerSavings";
 import {
+  buildMenuStock,
   rankOffersForKiosk,
   type MenuPresence,
 } from "@cx-sdk/ordering/offer/offerAvailability";
@@ -167,6 +169,16 @@ function useOfferSavings(cart?: KioskCart | null) {
   const isOnMenu = useMemo(
     () => buildMenuPresence(entityMap, variantObject),
     [entityMap, variantObject],
+  );
+  // Lane dead-offer (user 2026-10-15): a buy entry the buy stage's sellable
+  // maps sell out — sold out, or no guest can complete it — is dead, so a buy
+  // side that can never be completed is the struck row. Rebuilt when stock
+  // moves (the maps recompute on PAY's stock map).
+  const sellableEntities = useSelector(selectMenuSellableEntityMap);
+  const sellableSizes = useSelector(selectSellableVariantObject);
+  const isOut = useMemo(
+    () => buildMenuStock(sellableEntities, sellableSizes as Parameters<typeof buildMenuStock>[1]),
+    [sellableEntities, sellableSizes],
   );
   // enable_dis_addon: a get discount covers the add-ons too (redeemGetItem),
   // so a reward the guest builds with add-ons has no "up to" to quote.
@@ -331,12 +343,13 @@ function useOfferSavings(cart?: KioskCart | null) {
     [context],
   );
 
-  // Offers that can never unlock on this menu are not listed; a sold-out buy
-  // side is a gone row (lane offers-parity F4 — posistKiosk's rank filter).
+  // Offers that can never unlock on this menu are not listed; a sold-out (or
+  // dead) buy side is a gone row (lane offers-parity F4 — posistKiosk's rank
+  // filter; lane dead-offer).
   const rank = useCallback(
     (offers: SavingsOffer[] | null | undefined): RankedOffer<SavingsOffer>[] =>
-      rankOffersForKiosk(offers, context, isOnMenu, addonsDiscounted),
-    [context, isOnMenu, addonsDiscounted],
+      rankOffersForKiosk(offers, context, isOnMenu, addonsDiscounted, isOut),
+    [context, isOnMenu, addonsDiscounted, isOut],
   );
 
   const gapFor = useCallback(
@@ -365,7 +378,7 @@ function useOfferSavings(cart?: KioskCart | null) {
       if (!offersToWarm?.length) return;
       const run = () => {
         try {
-          rankOffersForKiosk(offersToWarm, context, isOnMenu, addonsDiscounted);
+          rankOffersForKiosk(offersToWarm, context, isOnMenu, addonsDiscounted, isOut);
           offersToWarm.forEach((o) => netAfter(o));
         } catch {
           /* prewarming must never break anything */
@@ -377,7 +390,7 @@ function useOfferSavings(cart?: KioskCart | null) {
         setTimeout(run, 300);
       }
     },
-    [context, netAfter, isOnMenu, addonsDiscounted],
+    [context, netAfter, isOnMenu, addonsDiscounted, isOut],
   );
 
   return {

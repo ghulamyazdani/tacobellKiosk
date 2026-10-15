@@ -543,7 +543,7 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
     expect(screen.queryByTestId(`offer-row-add-items-${offer._id}`)).not.toBeInTheDocument();
   });
 
-  it("walk-oos 2 ('Show it Unavailable'): a buy item no guest can complete — its required dip all out of stock — reaches the stage out of stock (the tile's Unavailable look, no add)", async () => {
+  it("lane dead-offer (user 2026-10-15): a buy item no guest can complete — its required dip all out of stock — is the sold-out row: struck, 'Not available right now', no ADD ITEMS; beside a live item ('or') the row stays and hands the stage the dead tile out of stock (walk-oos 2's Unavailable look)", async () => {
     store.dispatch(
       setModifiersMap({
         modifiersMap: {
@@ -551,18 +551,44 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
         },
       })
     );
-    store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: { ...SAUCE_ENTITY, modifiers: ["dip"] } } }));
-    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    const NACHOS = { id: "nachos", name: "Nachos", price: 4, subCategoryId: "sides", modifiers: [] as any[], hasVariant: false };
+    store.dispatch(
+      setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: { ...SAUCE_ENTITY, modifiers: ["dip"] }, [NACHOS.id]: NACHOS } })
+    );
+    const MIXED = {
+      ...BOGO_OFFER,
+      _id: "offer-mixed",
+      name: "Buy a sauce or nachos",
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: [
+          { item: { baseItemId: SAUCE_ENTITY.id, name: "Tortilla Sauce" }, quantity: 1, relation: "or" },
+          { item: { baseItemId: NACHOS.id, name: "Nachos" }, quantity: 1, relation: "or" },
+        ],
+      },
+    };
+    store.dispatch(setFilteredOffers([BOGO_OFFER, MIXED]));
     const onAddItems = vi.fn();
     renderWithAddItems(onAddItems);
 
-    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-bogo"));
+    const gone = screen.getByTestId("offer-row-offer-bogo");
+    expect(gone).toHaveAttribute("aria-disabled", "true");
+    expect(gone).toHaveTextContent("Not available right now");
+    expect(within(gone).getByText(BOGO_OFFER.name)).toHaveClass("line-through");
+    expect(screen.queryByTestId("offer-row-desc-offer-bogo")).toBeNull();
+    expect(screen.queryByTestId("offer-row-add-items-offer-bogo")).toBeNull();
 
-    const [, view] = onAddItems.mock.calls[0] as unknown as [any, any];
-    expect(view.groups[0].entities).toEqual([expect.objectContaining({ id: SAUCE_ENTITY.id, outOfStock: true })]);
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-mixed"));
+
+    const [offer, view] = onAddItems.mock.calls[0] as unknown as [any, any];
+    expect(offer._id).toBe("offer-mixed");
+    expect(view.groups.map((group: any) => group.entities)).toEqual([
+      [expect.objectContaining({ id: SAUCE_ENTITY.id, outOfStock: true })],
+      [NACHOS],
+    ]);
   });
 
-  it("walk-oos 2: an offer keyed by ONE size — that size's own required dip all out of stock — hands the stage that size out of stock; one keyed by the live size hands it live", async () => {
+  it("lane dead-offer: an offer keyed by ONE size — that size's own required dip all out of stock — is the struck row with no ADD ITEMS; one keyed by the live size hands the stage it live; an 'or' of both hands it the dead size out of stock", async () => {
     store.dispatch(
       setModifiersMap({
         modifiersMap: {
@@ -581,23 +607,36 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
         },
       })
     );
-    const keyedOn = (sizeId: string) => ({
+    const keyedOn = (id: string, sizeIds: string[]) => ({
       ...BOGO_OFFER,
-      _id: `offer-${sizeId}`,
-      applicable: { ...offerBase.applicable, rawItems: [{ item: { baseItemId: sizeId, name: "Fries" }, quantity: 2, relation: "and" }] },
+      _id: `offer-${id}`,
+      applicable: {
+        ...offerBase.applicable,
+        rawItems: sizeIds.map((sizeId) => ({
+          item: { baseItemId: sizeId, name: "Fries" },
+          quantity: 2,
+          relation: sizeIds.length > 1 ? "or" : "and",
+        })),
+      },
     });
-    store.dispatch(setFilteredOffers([keyedOn("fries-l"), keyedOn("fries-m")]));
+    store.dispatch(
+      setFilteredOffers([keyedOn("fries-l", ["fries-l"]), keyedOn("fries-m", ["fries-m"]), keyedOn("either", ["fries-l", "fries-m"])])
+    );
     const onAddItems = vi.fn();
     renderWithAddItems(onAddItems);
 
-    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-fries-l"));
+    const gone = screen.getByTestId("offer-row-offer-fries-l");
+    expect(gone).toHaveTextContent("Not available right now");
+    expect(screen.queryByTestId("offer-row-add-items-offer-fries-l")).toBeNull();
     await userEvent.click(screen.getByTestId("offer-row-add-items-offer-fries-m"));
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-either"));
 
-    const [[, dead], [, live]] = onAddItems.mock.calls as unknown as [any, any][];
-    expect(dead.groups[0]).toMatchObject({ requiredVariantId: "fries-l" });
-    expect(dead.groups[0].entities[0].variants).toEqual([{ ...LARGE, outOfStock: true }]);
+    const [[, live], [, either]] = onAddItems.mock.calls as unknown as [any, any][];
     expect(live.groups[0]).toMatchObject({ requiredVariantId: "fries-m" });
     expect(live.groups[0].entities[0].variants).toEqual([MEDIUM]);
+    expect(either.groups.map((group: any) => group.requiredVariantId)).toEqual(["fries-l", "fries-m"]);
+    expect(either.groups[0].entities[0].variants).toEqual([{ ...LARGE, outOfStock: true }]);
+    expect(either.groups[1].entities[0].variants).toEqual([MEDIUM]);
   });
 
   it("no onAddItems prop → no ADD ITEMS at all", () => {

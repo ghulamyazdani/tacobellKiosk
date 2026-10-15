@@ -3,6 +3,7 @@ import {
   mockKioskBackend as mockBackend,
   DINE_IN,
   fixtureJson,
+  locale,
   routeOffers,
   clone,
   CHEESE_BURGER,
@@ -10,6 +11,7 @@ import {
   TORTILLA_SAUCE,
   CAESAR_DRESSING,
   LARGE_FRIES,
+  DREAM_BOX,
 } from "./fixtures/backend";
 import {
   bootRegisteredToMenu,
@@ -719,6 +721,34 @@ const SOLD_OUT_BUY = itemOffer({
   getItems: { items: [getEntry("gi-sold-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
 });
 const CAESAR_OUT = [{ item_id: CAESAR_DRESSING, type: "item", partners: { partner_name: "Kiosk", inStock: false } }];
+/**
+ * Lane dead-offer: Dream box 1's Sandwich slot (min 1) holds one option, and
+ * this feed row sells it out — no guest can complete the box (walk-oos 2).
+ */
+const DREAM_SANDWICH_OUT = {
+  item_id: "65d4a2d2003967427ed83616",
+  type: "combo",
+  partners: { partner_name: "Kiosk", inStock: false },
+};
+/** Its only buy item is that box: the struck row a sold-out one is, never staged. */
+const DEAD_BUY = itemOffer({
+  _id: "offer-dead-buy",
+  name: "Buy a Dream box, get a salad",
+  getItemOnly: false,
+  applicable: applicable([{ item: { baseItemId: DREAM_BOX, name: "Dream box 1" }, quantity: 1, relation: "and" }]),
+  getItems: { items: [getEntry("gi-dead-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
+});
+/** The box OR a Tortilla Sauce: one entity alive — the locked row stays, its stage sells the sauce. */
+const MIXED_BUY = itemOffer({
+  _id: "offer-mixed-buy",
+  name: "Buy a Dream box or a sauce, get a salad",
+  getItemOnly: false,
+  applicable: applicable([
+    { item: { baseItemId: DREAM_BOX, name: "Dream box 1" }, quantity: 1, relation: "or" },
+    { item: { baseItemId: TORTILLA_SAUCE, name: "Tortilla Sauce" }, quantity: 1, relation: "or" },
+  ]),
+  getItems: { items: [getEntry("gi-mixed-salad", GREEK_SALAD, "Greek Salad", "and")], categories: [] },
+});
 
 const stripIsolates = (s: string | null) => (s ?? "").replace(/[\u2066-\u2069]/g, "").trim();
 
@@ -1072,4 +1102,51 @@ test.describe("Review 2026-10-14 — the menu TOTAL is the bag's Total as the ba
     await expect(page.getByTestId("bag-discounts")).toHaveCount(0);
     await expect(page.getByTestId("bag-total")).toContainText("£9.00");
   });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane dead-offer (user 2026-10-15, "Struck 'Not available' row"): an
+ * offer whose BUY side can never be completed — every buy entity sold out
+ * or no guest can complete it — shows exactly like a sold-out one: struck,
+ * "Not available right now", no ADD ITEMS, never staged. The box is dead
+ * through the real feed (DREAM_SANDWICH_OUT); the Caesar sold out.
+ * ------------------------------------------------------------------ */
+test.describe("Lane dead-offer — a buy side no guest can complete is the struck row", () => {
+  for (const lang of ["en", "ar"] as const) {
+    test(`${lang.toUpperCase()}: the dead box's offer is struck with no ADD ITEMS, the sold-out Caesar's is unchanged; box-or-sauce stays locked and its stage sells only the sauce`, async ({
+      page,
+    }) => {
+      test.slow();
+      const copy = locale(lang);
+      await mockBackend(page, {
+        offers: [DEAD_BUY, SOLD_OUT_BUY, MIXED_BUY, offersFixture[1]],
+        outOfStock: [...CAESAR_OUT, DREAM_SANDWICH_OUT],
+        arabic: lang === "ar",
+      });
+      if (lang === "ar") await bootArabicToMenu(page);
+      else await bootRegisteredToMenu(page);
+      await addCheeseBurgerViaPdp(page);
+      await openBag(page);
+      await openRewardsSheet(page);
+
+      for (const offer of [DEAD_BUY, SOLD_OUT_BUY]) {
+        const row = page.getByTestId(`offer-row-${offer._id}`);
+        await expect(row).toContainText(copy.offers.unavailable);
+        await expect(row).toHaveAttribute("aria-disabled", "true");
+        await expect(row.locator(".line-through")).toHaveText(offer.name);
+        await expect(page.getByTestId(`offer-row-desc-${offer._id}`)).toHaveCount(0);
+        await expect(page.getByTestId(`offer-row-add-items-${offer._id}`)).toHaveCount(0);
+      }
+
+      const mixed = page.getByTestId(`offer-row-${MIXED_BUY._id}`);
+      await expect(mixed).toContainText(copy.offers.lockedBogoBuySide);
+      await expect(mixed).not.toContainText(copy.offers.unavailable);
+      await page.getByTestId(`offer-row-add-items-${MIXED_BUY._id}`).click();
+      await expect(page.getByTestId("buy-stage-sheet")).toBeVisible();
+      await expect(page.getByTestId(`buy-stage-tile-${DREAM_BOX}`)).toContainText(copy.menu.unavailable);
+      await expect(page.getByTestId(`buy-stage-add-${DREAM_BOX}`)).toHaveCount(0);
+      await expect(page.getByTestId(`buy-stage-add-${TORTILLA_SAUCE}`)).toBeVisible();
+      await expect(page.getByTestId(`buy-stage-tile-${TORTILLA_SAUCE}`)).not.toContainText(copy.menu.unavailable);
+    });
+  }
 });

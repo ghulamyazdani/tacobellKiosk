@@ -7,17 +7,20 @@
  *  - D1: rank() is rankOffersForKiosk wired to the store's menu maps — an
  *    offer whose dead buy entry is absent from the menu is never listed; one
  *    whose dead entry is on the menu (sold out) is a gone row.
+ * Lane dead-offer: a buy entry no guest can complete is dead too, read from
+ * the sellable maps the buy stage reads — and re-read when stock moves.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { createElement, type ReactNode } from "react";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setCurrency, setDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
-import { setEntityMap, setVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap, setVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import type { SavingsOffer } from "@cx-sdk/ordering/offer/offerSavings";
 import { store } from "../../../redux/app/store";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import useOfferSavings from "../useOfferSavings";
 
 const row = (itemId: string, extra: object = {}) => ({
@@ -240,5 +243,77 @@ describe("enable_dis_addon reaches the ranking", () => {
     } finally {
       store.dispatch(setDiscountOnAddon(false));
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane dead-offer (user 2026-10-15, "Struck 'Not available' row"): rank()
+ * reads "out" from the sellable maps the buy stage reads — sold out, or no
+ * guest can complete it (a required group with nothing in stock, or with no
+ * positive max) — so a buy side that can never be completed is the gone row
+ * a sold-out one is, and it moves with PAY's stock map.
+ * ------------------------------------------------------------------ */
+describe("lane dead-offer — rank() counts a dead buy entry like a sold-out one", () => {
+  /** A required dip (min 1, max 1 unless given) whose only option is salsa. */
+  const DIP = (salsaOut: boolean, max = 1) => ({
+    dip: { _id: "dip", isActive: true, min: 1, max, constituentItems: [{ id: "salsa", isActive: true, outOfStock: salsaOut }] },
+  });
+  const NACHOS = { id: "nachos", name: "Nachos", price: 4, modifiers: ["dip"] };
+  const TORTILLA = { id: "tortilla", name: "Tortilla Sauce", price: 2, modifiers: [] };
+  const raw = (baseItemId: string, relation = "and") => ({ item: { baseItemId, name: baseItemId }, quantity: 1, relation });
+  /** Buy side `rawItems`, a fixed £2 grant; no converter stamp anywhere. */
+  const buy = (_id: string, rawItems: object[]) =>
+    ({
+      _id,
+      name: _id,
+      type: { name: "item", value: 0 },
+      applicable: { on: "complete", rawItems },
+      getItems: { items: [{ relation: "and", entities: { price: 2, discounted_total_price: 0 } }], categories: [] },
+    }) as unknown as SavingsOffer;
+  const goneIds = (ranked: ReturnType<ReturnType<typeof savings>["rank"]>) =>
+    ranked.filter((entry) => entry.gap?.reason === "unavailable").map((entry) => entry.offer._id);
+
+  beforeEach(() => {
+    store.dispatch(setCartItems(PAID_FIVE));
+    store.dispatch(setEntityMap({ entityMap: { nachos: NACHOS, tortilla: TORTILLA } }));
+  });
+
+  it.each([
+    ["has nothing in stock", DIP(true)],
+    ["has no positive max", DIP(false, 0)],
+  ])("an item whose required group %s → a gone row; a mixed 'or' side keeps its row", (_label, modifiersMap) => {
+    store.dispatch(setModifiersMap({ modifiersMap }));
+    const ranked = savings().rank([buy("dead", [raw("nachos")]), buy("mixed", [raw("nachos", "or"), raw("tortilla", "or")])]);
+    expect(goneIds(ranked)).toEqual(["dead"]);
+    expect(ranked.find((entry) => entry.offer._id === "dead")).toMatchObject({ eligible: false, gap: { reason: "unavailable" } });
+  });
+
+  it("re-evaluates with stock: PAY's feed puts the dip's only option out → gone; back in stock → not", () => {
+    store.dispatch(setModifiersMap({ modifiersMap: DIP(false) }));
+    const offer = buy("dead", [raw("nachos")]);
+    const { result } = renderHook(() => useOfferSavings(), { wrapper });
+    expect(goneIds(result.current.rank([offer]))).toEqual([]);
+    act(() => {
+      store.dispatch(setOutOfStockItems({ salsa: { _id: "salsa", type: "addon", inStock: false } }));
+    });
+    expect(goneIds(result.current.rank([offer]))).toEqual(["dead"]);
+    act(() => {
+      store.dispatch(setOutOfStockItems({ salsa: { _id: "salsa", type: "addon", inStock: true } }));
+    });
+    expect(goneIds(result.current.rank([offer]))).toEqual([]);
+  });
+
+  it("a size entry is judged by its own size: the dead size's offer is gone, the live size's is not", () => {
+    store.dispatch(setModifiersMap({ modifiersMap: DIP(true) }));
+    const MEDIUM = { id: "fries-m", name: "Medium", price: 3, isActive: true, modifiers: [] };
+    const LARGE = { id: "fries-l", name: "Large", price: 5, isActive: true, modifiers: ["dip"] };
+    const FRIES = { id: "fries", name: "Fries", price: 0, hasVariant: true, isVariant: false, variants: [MEDIUM, LARGE] };
+    store.dispatch(setEntityMap({ entityMap: { fries: FRIES } }));
+    store.dispatch(
+      setVariantObject({
+        variantObject: { "fries-m": { baseItem: FRIES, variant: MEDIUM }, "fries-l": { baseItem: FRIES, variant: LARGE } },
+      })
+    );
+    expect(goneIds(savings().rank([buy("large", [raw("fries-l")]), buy("medium", [raw("fries-m")])]))).toEqual(["large"]);
   });
 });

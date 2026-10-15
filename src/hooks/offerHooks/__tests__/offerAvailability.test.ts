@@ -3,11 +3,13 @@
  * offers-parity, U7). Which offers a guest can ever unlock on this menu
  * (PK offerSavings.ts:269-304 buy side, :349-364 get side), judged at rank
  * time: a dead buy entry is a converter stamp `isRawItemAvailable === false`
- * only (D2), and "sold out" vs "never" is the menu's presence (D1) — the
- * converter path is untouched.
+ * (D2) or — lane dead-offer — one the shell's sellable maps sell out, and
+ * "sold out" vs "never" is the menu's presence (D1) — the converter path is
+ * untouched.
  */
 import { describe, expect, it } from "vitest";
 import {
+  buildMenuStock,
   getBuySideState,
   hasUnresolvableGetSide,
   rankOffersForKiosk,
@@ -508,5 +510,113 @@ describe("rankOffersForKiosk", () => {
 
   it("null offers → []", () => {
     expect(rankOffersForKiosk(null, ctx, isOnMenu)).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Lane dead-offer (user 2026-10-15, "Struck 'Not available' row"): a buy
+ * side no guest can complete reads exactly like a sold-out one. "Out" is
+ * judged from the shell's SELLABLE maps — stock and the no-guest-can-
+ * complete rule (markUncompletable) applied, the buy stage's own tiles — so
+ * it moves with stock. The fixtures are those maps' output.
+ * ------------------------------------------------------------------ */
+describe("lane dead-offer — dead counts like sold out", () => {
+  const SMALL = { id: "fries-s", isActive: true, subCategoryId: "sides" };
+  /** No guest can complete it: markUncompletable marked this size alone. */
+  const LARGE = { id: "fries-l", isActive: true, subCategoryId: "sides", outOfStock: true };
+  const FRIES = { id: "fries", hasVariant: true, variants: [SMALL, LARGE] };
+  const ENTITIES = {
+    burger: { id: "burger", subCategoryId: "sides" },
+    nachos: { id: "nachos", subCategoryId: "sides", outOfStock: true },
+    box: { id: "box", subCategoryId: "boxes", outOfStock: true },
+    fries: FRIES,
+  };
+  const SIZES = { "fries-s": { baseItem: FRIES }, "fries-l": { baseItem: FRIES } };
+  const isOut = buildMenuStock(ENTITIES, SIZES);
+
+  describe("buildMenuStock", () => {
+    it("an item entry is its entity: out (sold out or dead) or live", () => {
+      expect(isOut(itemRaw("box", "and"))).toBe(true);
+      expect(isOut(itemRaw("burger", "and"))).toBe(false);
+    });
+
+    it("a size entry is THAT size — one dead size of a sized item is not the whole item", () => {
+      expect(isOut(itemRaw("fries-l", "and"))).toBe(true);
+      expect(isOut(itemRaw("fries-s", "and"))).toBe(false);
+      // The item reads out (no size left on offer in stock): every size is.
+      const allOut = buildMenuStock({}, { "fries-s": { baseItem: { ...FRIES, outOfStock: true } } });
+      expect(allOut(itemRaw("fries-s", "and"))).toBe(true);
+      // A size the shop does not offer (inactive) has no stock to judge: its item's own flag decides.
+      const offOnly = buildMenuStock({}, { "fries-s": { baseItem: { ...FRIES, variants: [{ ...SMALL, isActive: false }] } } });
+      expect(offOnly(itemRaw("fries-s", "and"))).toBe(false);
+    });
+
+    it("a category entry is out only when EVERY tile the stage lists is: its plain entities, a sized entity's sizes of it", () => {
+      expect(isOut(categoryRaw("boxes", "and"))).toBe(true);
+      // Sides: the dead nachos beside the live burger and fries (its Large dead, its Small live) → live.
+      expect(isOut(categoryRaw("sides", "and"))).toBe(false);
+      const drinks = buildMenuStock(
+        {
+          cola: {
+            id: "cola",
+            hasVariant: true,
+            variants: [
+              { id: "cola-s", subCategoryId: "drinks", outOfStock: true },
+              { id: "cola-xl", subCategoryId: "drinks", isActive: false },
+              { id: "cola-l", subCategoryId: "big-drinks" },
+            ],
+          },
+        },
+        {}
+      );
+      // Only its sizes OF that category count; an inactive one is not on offer.
+      expect(drinks(categoryRaw("drinks", "and"))).toBe(true);
+      expect(drinks(categoryRaw("big-drinks", "and"))).toBe(false);
+    });
+
+    it("an entry the maps do not hold is not judged here (the converter's stamp decides)", () => {
+      expect(isOut(itemRaw("ghost", "and"))).toBe(false);
+      expect(isOut(categoryRaw("desserts", "and"))).toBe(false);
+      expect(isOut({ quantity: 1, relation: "and" } as Raw)).toBe(false);
+      expect(buildMenuStock(null, undefined)(itemRaw("box", "and"))).toBe(false);
+    });
+  });
+
+  const onMenu: MenuPresence = (entry) => entry?.item?.baseItemId !== "ghost";
+
+  it("getBuySideState: an entry isOut flags is dead like a stamped one — 'and' needs one, 'or' every entry", () => {
+    expect(getBuySideState(bogo([itemRaw("burger", "and"), itemRaw("box", "and")]), onMenu, isOut)).toBe("soldOut");
+    expect(getBuySideState(bogo([itemRaw("box", "or"), itemRaw("fries-l", "or")]), onMenu, isOut)).toBe("soldOut");
+    expect(getBuySideState(bogo([itemRaw("burger", "or", false), itemRaw("box", "or")]), onMenu, isOut)).toBe("soldOut");
+    expect(getBuySideState(bogo([itemRaw("box", "or"), itemRaw("fries-s", "or")]), onMenu, isOut)).toBe("ok");
+    // A dead entry beside one the menu lacks: never (as a stamped one).
+    expect(getBuySideState(bogo([itemRaw("box", "and"), itemRaw("ghost", "and", false)]), onMenu, isOut)).toBe("never");
+    // Without isOut: the stamp alone, as before.
+    expect(getBuySideState(bogo([itemRaw("box", "and")]), onMenu)).toBe("ok");
+  });
+
+  it("rankOffersForKiosk: a dead buy side is the gone row a sold-out one is; a mixed 'or' side keeps its row", () => {
+    const ctx: SavingsContext = { cartItems: [], cartValue: 10, cartQuantity: 1 };
+    const dead = { ...bogo([itemRaw("box", "and")]), _id: "dead" };
+    const mixed = { ...bogo([itemRaw("box", "or"), itemRaw("burger", "or")]), _id: "mixed" };
+    const ranked = rankOffersForKiosk([dead, mixed], ctx, onMenu, false, isOut);
+    expect(ranked.find((entry) => entry.offer._id === "dead")).toMatchObject({
+      eligible: false,
+      gap: { reason: "unavailable" },
+      saving: expect.objectContaining({ lockReason: "unavailable" }),
+    });
+    expect(ranked.find((entry) => entry.offer._id === "mixed")?.gap?.reason).not.toBe("unavailable");
+    expect(ranked.map((entry) => entry.offer._id)).toEqual(["mixed", "dead"]);
+    // Without isOut the dead side ranks as before: no gone row.
+    expect(rankOffersForKiosk([dead], ctx, onMenu)[0].gap?.reason).not.toBe("unavailable");
+  });
+
+  it("rankOffersForKiosk: a dead 'or' entry beside one the menu lacks is never listed — as a stamped one", () => {
+    const ctx: SavingsContext = { cartItems: [], cartValue: 10, cartQuantity: 1 };
+    const never = { ...bogo([itemRaw("box", "or"), itemRaw("ghost", "or", false)]), _id: "never" };
+    const stamped = { ...bogo([itemRaw("burger", "or", false), itemRaw("ghost", "or", false)]), _id: "stamped" };
+    expect(rankOffersForKiosk([never, stamped], ctx, onMenu, false, isOut)).toEqual([]);
+    // Without isOut the box is alive: the side can still unlock, so it is listed.
+    expect(rankOffersForKiosk([never], ctx, onMenu).map((entry) => entry.offer._id)).toEqual(["never"]);
   });
 });
