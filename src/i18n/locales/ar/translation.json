@@ -249,6 +249,8 @@
     "confirm": "تأكيد",
     "free": "مجانًا",
     "percentOff": "خصم {{value}}٪",
+    "unitsFree": "{{units}} مجانًا",
+    "percentOffUnits": "خصم {{value}}٪ ×{{units}}",
     "amountOff": "خصم {{amount}}",
     "customizableSoon": "التخصيص متاح قريبًا",
     "removedTitle": "تمت إزالة المكافأة",

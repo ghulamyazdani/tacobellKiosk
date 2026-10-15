@@ -16,6 +16,11 @@ import useLocalized from "../../hooks/utils/useLocalized";
 import VegMark from "../menu/VegMark";
 import NoImageBell from "../common/NoImageBell";
 import plusIcon from "../../assets/icons/plus.svg";
+import type { LeastValueGrant } from "./leastValueGrants";
+
+/** The bag's offer chip: freebie, reward and least-value rows wear the same pill. */
+const CHIP =
+  "rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface";
 
 /** The stock / schedule flags PAY writes onto a cart row. */
 interface StockFlags {
@@ -89,6 +94,11 @@ interface BagItemRowProps {
    * the row stays renderable on its own.
    */
   onRemoveLoyalty?: (row: any) => void;
+  /**
+   * Lane bag-ribbon: the applied least-value offer's grant on this paid row
+   * (BagSheet reads it off the bill) — the chip and the struck line price.
+   */
+  leastValue?: LeastValueGrant;
 }
 
 /**
@@ -117,6 +127,7 @@ export default function BagItemRow({
   onEdit,
   onRequestRemove,
   onRemoveLoyalty,
+  leastValue,
 }: BagItemRowProps) {
   const { t, i18n } = useTranslation();
   const { name } = useLocalized();
@@ -178,6 +189,25 @@ export default function BagItemRow({
     row?.discount_type === "percentage" && Number(row?.discount_value) < 100
       ? t("loyalty.percentOff", { value: row?.discount_value })
       : t("loyalty.free");
+
+  // posistKiosk's least-value ribbon wording (CartItem.tsx:319-337, and
+  // QuickAccessItem): the whole row "Free", some units "{n} Free"; below
+  // 100 % "{v}% off", some units "{v}% off ×{n}". ONE chip per row — the
+  // quantity never splits.
+  const leastChipLabel = ({ units, percent }: LeastValueGrant): string => {
+    const wholeRow = units >= quantity;
+    if (percent === 100) return wholeRow ? t("offers.free") : t("offers.unitsFree", { units });
+    return wholeRow
+      ? t("offers.percentOff", { value: percent })
+      : t("offers.percentOffUnits", { value: percent, units });
+  };
+  // The struck pair: a freebie / reward row's own undiscounted → discounted
+  // line; a paid row's line → that line less what the least-value offer
+  // saves on it (the bill's figure — its add-ons stay charged), never below
+  // £0 (posistKiosk's floor: an offer over 100 % saves more than the line).
+  const leastSaving = leastValue?.saving ?? 0;
+  const struckLine = isPaidRow ? lineTotal : undiscountedLine;
+  const liveLine = isPaidRow ? Math.max(0, lineTotal - leastSaving) : discountedLine;
 
   // A1 looks (design language, sign-off): unavailable = loyalty-visual's
   // 1:3858 ineligible look (art 50 % + "Unavailable"); a row PAY found with
@@ -285,19 +315,18 @@ export default function BagItemRow({
             </p>
           </div>
           {isGetItemRow && (
-            <span
-              data-testid={`bag-free-chip-${row?.itemId}`}
-              className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface"
-            >
+            <span data-testid={`bag-free-chip-${row?.itemId}`} className={CHIP}>
               {freebieChipLabel()}
             </span>
           )}
           {isLoyaltyRow && (
-            <span
-              data-testid={`bag-loyalty-chip-${row?.itemId}`}
-              className="rounded-full bg-tb-purple px-[12px] py-[4px] text-[14px] font-bold uppercase leading-[16px] text-tb-surface"
-            >
+            <span data-testid={`bag-loyalty-chip-${row?.itemId}`} className={CHIP}>
               {loyaltyChipLabel()}
+            </span>
+          )}
+          {leastValue && (
+            <span data-testid={`bag-least-chip-${row?.itemId}`} className={CHIP}>
+              {leastChipLabel(leastValue)}
             </span>
           )}
         </div>
@@ -359,30 +388,29 @@ export default function BagItemRow({
       </div>
 
       <div className="flex shrink-0 flex-col items-end justify-center gap-[24px]">
-        {/* Discounted-price column, shared by freebie and reward rows: the
-            struck undiscounted line above the live one. A reward carries no
-            `discounted_total_price`, so `discountedLine` falls back to the
-            already-discounted `total_price` — exactly the fork's pair
-            (undiscounted_total_price struck, total_price live). */}
-        {isGetItemRow || isLoyaltyRow ? (
-          <div className="flex flex-col items-end gap-[8px]">
-            {undiscountedLine > discountedLine && (
-              <p className="text-[24px] leading-[28px] text-tb-ink-purple/60 line-through">
-                {currency}
-                {undiscountedLine.toFixed(2)}
-              </p>
-            )}
-            <p className="text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
+        {/* The price column: the struck line above the live one whenever
+            the row is discounted (freebie, reward and least-value rows). A
+            reward carries no `discounted_total_price`, so `discountedLine`
+            falls back to the already-discounted `total_price` — exactly the
+            fork's pair (undiscounted_total_price struck, total_price live). */}
+        <div className="flex flex-col items-end gap-[8px]">
+          {struckLine > liveLine && (
+            <p
+              data-testid={`bag-was-${row?.itemId}`}
+              className="text-[24px] leading-[28px] text-tb-ink-purple/60 line-through"
+            >
               {currency}
-              {discountedLine.toFixed(2)}
+              {struckLine.toFixed(2)}
             </p>
-          </div>
-        ) : (
-          <p className="text-[32px] font-medium leading-[36px] tracking-[-1px] text-black">
+          )}
+          <p
+            data-testid={`bag-price-${row?.itemId}`}
+            className="text-[32px] font-medium leading-[36px] tracking-[-1px] text-black"
+          >
             {currency}
-            {lineTotal.toFixed(2)}
+            {liveLine.toFixed(2)}
           </p>
-        )}
+        </div>
         {isPaidRow && (
           <div className="flex h-[68px] w-[188px] items-center justify-between rounded-full border-[1.72px] border-tb-grey-3 bg-tb-surface px-[10px]">
             <button

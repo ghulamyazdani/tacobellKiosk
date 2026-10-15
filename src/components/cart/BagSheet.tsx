@@ -85,6 +85,7 @@ import {
 } from "../../utils/offerCelebration";
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
 import BagItemRow, { joinNames, soldOutNames } from "./BagItemRow";
+import { leastValueGrants } from "./leastValueGrants";
 import RemoveItemModal from "./RemoveItemModal";
 import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
@@ -1081,6 +1082,8 @@ export default function BagSheet({
   // F1: the applied offer row and its celebration show the OFFER's own
   // saving — a XENO reward's item discount is in the total, not the offer's.
   const offerDiscount = getBillOfferDiscount(bill);
+  // Lane bag-ribbon: the least-value offer's share of each row, off the SAME bill.
+  const leastGrants = leastValueGrants(cartRdx, bill);
   // Never a "Not available right now" offer (lane offers-parity: a sold-out
   // buy side ranks as the gone row).
   const bestRankedName: string =
@@ -1262,6 +1265,7 @@ export default function BagSheet({
                   onEdit={handleEditTap}
                   onRequestRemove={setRemoveCandidate}
                   onRemoveLoyalty={handleRemoveLoyaltyRow}
+                  leastValue={leastGrants.get(row?.itemId)}
                 />
               ))}
             </div>

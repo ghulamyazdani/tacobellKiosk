@@ -245,6 +245,8 @@
     "confirm": "CONFIRM",
     "free": "Free",
     "percentOff": "{{value}}% off",
+    "unitsFree": "{{units}} Free",
+    "percentOffUnits": "{{value}}% off ×{{units}}",
     "amountOff": "{{amount}} off",
     "customizableSoon": "Customization coming soon",
     "removedTitle": "Reward Removed",
