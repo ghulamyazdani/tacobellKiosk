@@ -767,6 +767,7 @@ An order-level reward:
 - **Today:**
   - Since 2026-10-07 the bag's EAT IN / TAKE OUT switch fetches the other tab's menu (getMenu by `tab_id`), charges (`get_data`), offers (by `tab_type`), stock and dynamic prices, then re-prices every bag row against that menu by id: the entity id, the size (VARIANT) id (a Make-it-a-meal row is keyed by its meal size's id), and the modifier group and pick ids (`sdk/ordering/src/cart/orderTypeSwitch.ts`). Loyalty rewards are checked the same way.
   - A row whose id is missing from the target tab, or unavailable there, is removed and named to the guest; a reward is reversed (points refunded, claim revoked).
+  - Since 2026-10-15, a pick that the target tab lists and switches on, but has out of stock, stays in its row. It is priced by that tab and flagged out of stock; the bag names it, and PAY waits until the guest edits it out. A pick the tab no longer lists, or switches off, still removes the row.
   - Taxes come from the target menu, except for a tier-2 pick nested in a pack, which keeps the taxes of the tab it was added under.
 - **Please confirm:**
   - Is an item's entity id, each size id, and each modifier group and pick id identical in every tab menu of one deployment?
