@@ -1685,3 +1685,68 @@ describe("Menu — walk-oos 2: an item no guest can complete reads Unavailable",
     ]);
   });
 });
+
+/*
+  User decision 2026-10-15 ("Show it Unavailable"): a REQUIRED group with no
+  positive max takes no pick ("0 of 0"), so no guest can complete the item —
+  it reads Unavailable like a sold-out one, every option in stock. A sized
+  item is judged size by size. A min-0 group never kills.
+*/
+describe("Menu — a required group with no max: the item reads Unavailable (user 2026-10-15)", () => {
+  const opt = (id: string) => ({ id, name: id, isActive: true, outOfStock: false });
+  const MODS = {
+    no_max: { _id: "no_max", isActive: true, min: 1, max: 0, constituentItems: [opt("cola"), opt("lime")] },
+    toggle: { _id: "toggle", isActive: true, min: 0, max: 0, constituentItems: [opt("hot")] },
+  };
+  const MEAL = { id: "e-meal", name: "Taco Meal", price: 9, modifiers: ["no_max"], outOfStock: false };
+  const TACO = { id: "e-taco", name: "Taco", price: 3, modifiers: ["toggle"], outOfStock: false };
+  const SODA = {
+    id: "e-soda",
+    name: "Soda",
+    price: 2,
+    hasVariant: true,
+    isVariant: false,
+    outOfStock: false,
+    variants: [
+      { id: "soda-l", name: "Large", price: 3, isActive: true, modifiers: ["no_max"] },
+      { id: "soda-r", name: "Regular", price: 2, isActive: true, modifiers: [] },
+    ],
+  };
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: MODS }));
+    store.dispatch(
+      setMenuData({
+        menu: { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [MEAL, TACO, SODA] }] }] },
+      })
+    );
+  });
+
+  it("the meal (its required group has no max, every option in stock) is the sold-out card — aria-disabled, Unavailable, nothing to tap; the taco (a min-0 group with no max) is live", () => {
+    renderMenu();
+
+    const meal = screen.getByTestId("item-e-meal");
+    expect(meal).toHaveAttribute("aria-disabled", "true");
+    expect(meal).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(within(meal).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByTestId("item-e-taco")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("quick-add-e-taco")).toBeInTheDocument();
+  });
+
+  it("one dead size only: the soda's card stays live; '+' opens Select a Size with the Large greyed — disabled, named unavailable, last — and the Regular pickable", () => {
+    renderMenu();
+
+    expect(screen.getByTestId("item-e-soda")).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(screen.getByTestId("quick-add-e-soda"));
+
+    const large = screen.getByTestId("size-soda-l");
+    expect(large).toBeDisabled();
+    expect(large).toHaveAccessibleName(i18n.t("pdp.optionUnavailable", { name: "Large" }));
+    expect(screen.getByTestId("size-soda-r")).toBeEnabled();
+    expect(screen.getAllByTestId(/^size-soda-/).map((node) => node.dataset.testid)).toEqual(["size-soda-r", "size-soda-l"]);
+  });
+});

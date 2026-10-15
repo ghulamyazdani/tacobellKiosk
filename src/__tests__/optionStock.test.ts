@@ -211,8 +211,10 @@ describe("keepSweptPicksFlagged", () => {
 */
 describe("hasDeadRequiredGroup / markUncompletable", () => {
   const opt = (id: string, extra: Record<string, unknown> = {}) => ({ id, isActive: true, outOfStock: false, ...extra });
+  // A positive max on both scales, so only stock decides here (a required
+  // group with no max is dead by itself — user 2026-10-15, below).
   const group = (min: number, constituentItems: object[], extra: Record<string, unknown> = {}) => ({
-    isActive: true, min, max: 1, multiplePunchMin: 0, constituentItems, ...extra,
+    isActive: true, min, max: 1, multiplePunchMin: 0, multiplePunchMax: 2, constituentItems, ...extra,
   });
   const MODS = {
     // Every option on offer out: c is switched off, so it is not on offer.
@@ -319,5 +321,63 @@ describe("hasDeadRequiredGroup / markUncompletable", () => {
     // A dead size whose siblings are none on offer: no size to judge, the item stays.
     const phantom = { ...nachos, variants: [{ ...regular, isActive: false }] };
     expect((markUncompletable(phantom, MODS, {}, false) as { outOfStock?: unknown }).outOfStock).toBeUndefined();
+  });
+});
+
+/*
+  User decision 2026-10-15 ("Show it Unavailable"): a REQUIRED group (effective
+  min > 0) with NO positive effective max takes no pick (group-limits, "0 of
+  0"), so its min is never met — the item is dead exactly like one whose
+  required group has nothing in stock, everything in stock or not. A min-0
+  group never is; a missing min reads 0 (decision 2), so it is not required.
+*/
+describe("hasDeadRequiredGroup / markUncompletable — a required group with no max (user 2026-10-15)", () => {
+  const live = [{ id: "a", isActive: true, outOfStock: false }];
+  const group = (bounds: Record<string, unknown>) => ({ isActive: true, constituentItems: live, ...bounds });
+  const MODS = {
+    zero: group({ min: 1, max: 0 }),
+    nul: group({ min: 1, max: null }),
+    missing: group({ min: 1 }),
+    text: group({ min: 1, max: "x" }),
+    two: group({ min: 1, max: "2" }),
+    toggle: group({ min: 0, max: 0 }),
+    no_min: group({ max: 0 }),
+    null_min: group({ min: null, max: 0 }),
+    off: group({ min: 1, max: 0, isActive: false }),
+    no_options: group({ min: 1, max: 0, constituentItems: [{ id: "g", isActive: false }] }),
+    punch: group({ min: 1, max: 3, multiplePunchMin: 1, multiplePunchMax: 0 }),
+    punch_live: group({ min: 1, max: 0, multiplePunchMin: 1, multiplePunchMax: 2 }),
+  };
+  const dead = (ids: unknown, multiPunch = false) => hasDeadRequiredGroup(ids, MODS, {}, multiPunch);
+
+  it("required with no positive max — 0, null, missing or not a number — is dead, every option in stock; a positive max (a numeric string too) keeps it alive", () => {
+    for (const id of ["zero", "nul", "missing", "text"]) expect(dead([id]), id).toBe(true);
+    expect(dead(["two"])).toBe(false);
+  });
+
+  it("a min-0 group never is — 0, a missing or a null min — nor one the PDP never shows (switched off); a required one with no option on offer still takes no pick", () => {
+    for (const id of ["toggle", "no_min", "null_min", "off"]) expect(dead([id]), id).toBe(false);
+    expect(dead(["no_options"])).toBe(true);
+  });
+
+  it("multi-punch on: the multi-punch bounds decide, both ways", () => {
+    expect(dead(["punch"], true)).toBe(true);
+    expect(dead(["punch"], false)).toBe(false);
+    expect(dead(["punch_live"], true)).toBe(false);
+    expect(dead(["punch_live"], false)).toBe(true);
+  });
+
+  it("markUncompletable: the item reads out of stock; a sized item size by size — only the dead size, the item stays while a size is left", () => {
+    const burrito = { id: "burrito", name: "Burrito", price: 5, modifiers: ["toggle", "zero"] };
+    expect(markUncompletable(burrito, MODS, {}, false)).toEqual({ ...burrito, outOfStock: true });
+
+    const regular = { id: "s-r", name: "Regular", price: 4, isActive: true, modifiers: ["two"] };
+    const large = { id: "s-l", name: "Large", price: 6, isActive: true, modifiers: ["missing"] };
+    const soda = { id: "soda", name: "Soda", hasVariant: true, isVariant: false, modifiers: [], variants: [regular, large] };
+    const out = markUncompletable(soda, MODS, {}, false);
+    expect(out).toEqual({ ...soda, variants: [regular, { ...large, outOfStock: true }] });
+    expect((out as { outOfStock?: unknown }).outOfStock).toBeUndefined();
+    // Its only size dead: nothing left to open — the item reads out too.
+    expect(markUncompletable({ ...soda, variants: [large] }, MODS, {}, false)).toMatchObject({ outOfStock: true });
   });
 });
