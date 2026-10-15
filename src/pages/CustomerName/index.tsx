@@ -26,6 +26,7 @@ import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
+import tbBell from "../../assets/brand/tb-bell.svg";
 import inputClear from "../../assets/icons/input-clear.svg";
 import bgTexture from "../../assets/splash/bg-texture.png";
 import plasticOverlay from "../../assets/splash/plastic-overlay.webp";
@@ -90,13 +91,24 @@ const CRM_LOOKUP_TIMEOUT_MS = 10000;
  * No Figma frame exists for this screen — TB design language (KioskStage
  * absolute px, tb-* tokens, FooterBar); flagged for client sign-off.
  *
- * ADA (P9c, design-language, flagged): same controls, same sizes, re-stacked
- * into the 1122px reach zone (1066 above the footer): BACK 40–104 · title
- * 120–260 (2 lines) · subtitle 270–306 · input 330–430 · continue 454–558 ·
- * keyboard 598–1027 · footer 1066. Nothing scrolls. The full-cover overlays
- * (CRM loading, order-error) are `inset-0`, so they follow the page height.
- * ponytail: tops are tuned to the Figma zone — the keyboard clears the footer
- * only while ADA_BRAND_ZONE_HEIGHT ≤ 837; past that, re-derive them.
+ * LAYOUT (user 2026-10-15: "whatever you did for phone number screen do same
+ * for customer name screen" — /phone's LAYOUT). CONTINUE and BACK are /tent's
+ * CONFIRM / NO THANKS pair — white filled and outline, 1032×84, 24px apart —
+ * 24px above the footer, as on /phone: CONTINUE 1648–1732 · BACK 1756–1840 ·
+ * footer 1864. Bottom-anchored, so the ADA zone (bottom-aligned with the
+ * stage) keeps the same stage px. The bell sits at /tent's 135 (normal only).
+ * Title, subtitle, name field and keyboard are one flex column centred
+ * between the bell and CONTINUE, 24px off each (248–1624): the 849px block
+ * sits as far under the bell as above CONTINUE (288px each).
+ *
+ * ADA (P9c, design-language, flagged): the same controls at the same sizes in
+ * the 1122px reach zone. The bell is dropped (the brand zone carries the
+ * brand) and the field's and keyboard's gaps shrink to 20px (755px tall) to
+ * centre in 0–826 above CONTINUE (850–934) · BACK 958–1042 · footer 1066.
+ * Nothing scrolls. The full-cover overlays (CRM loading, order-error) are
+ * `inset-0`, so they follow the page height.
+ * ponytail: the ADA block fits only while ADA_BRAND_ZONE_HEIGHT ≤ 869
+ * (826 − 755 spare); past that, close the block's gaps (50px in all).
  */
 export default function CustomerName() {
   const enter = usePageEnter();
@@ -324,8 +336,8 @@ export default function CustomerName() {
   }, [checkAndRevokeLoyaltyReward, navigate, resetSession]);
 
   return (
-    // Motion §2.7: the copy, the field, CONTINUE and the keyboard arrive
-    // (.tb-enter); BACK, the footer and the overlays stay.
+    // Motion §2.7: the copy, the field and the keyboard arrive (.tb-enter);
+    // the bell, CONTINUE / BACK, the footer and the overlays stay.
     <div
       data-testid="customer-name-screen"
       data-enter={enter}
@@ -354,69 +366,80 @@ export default function CustomerName() {
         src={plasticOverlay}
         className="pointer-events-none absolute bottom-0 left-0 h-[1920px] w-[1080px] opacity-50"
       />
-      <button
-        type="button"
-        data-testid="customer-name-back"
-        onClick={handleBack}
-        className="tb-display absolute left-[40px] top-[40px] min-h-[64px] min-w-[120px] rounded-[8px] border-2 border-tb-surface px-[32px] py-[18px] text-[20px] leading-[20px] text-tb-surface"
-      >
-        {t("customerName.back")}
-      </button>
+      {!ada && (
+        <img
+          alt="Taco Bell"
+          src={tbBell}
+          className="absolute left-1/2 top-[135px] h-[89px] w-[100px] -translate-x-1/2"
+        />
+      )}
 
-      <h1
-        className={`tb-enter [--i:0] tb-display absolute left-1/2 ${ada ? "top-[120px]" : "top-[220px]"} w-[880px] -translate-x-1/2 text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface`}
-      >
-        {t("customerName.title")}
-      </h1>
-      <p
-        className={`tb-enter [--i:1] absolute left-1/2 ${ada ? "top-[270px]" : "top-[370px]"} w-[760px] -translate-x-1/2 text-center text-[28px] leading-[36px] text-tb-cream`}
-      >
-        {t("customerName.subtitle")}
-      </p>
-
+      {/* The content block, centred between the bell and CONTINUE (see LAYOUT). */}
       <div
-        className={`tb-enter [--i:2] absolute left-1/2 ${ada ? "top-[330px]" : "top-[480px]"} flex h-[100px] w-[844px] -translate-x-1/2 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
+        data-testid="customer-name-content"
+        className={`absolute inset-x-0 ${ada ? "top-0" : "top-[248px]"} bottom-[296px] flex flex-col items-center justify-center`}
       >
-        <span
-          data-testid="customer-name-input"
-          className="text-[32px] font-medium text-black"
+        {/* Two lines tall at least, then 10px: the subtitle keeps its place
+            150px under the title's top, clear of a one-line (Arabic) title's
+            descenders. */}
+        <h1 className="tb-enter [--i:0] tb-display min-h-[140px] w-[880px] text-center text-[76px] leading-[70px] tracking-[-2.5px] text-tb-surface">
+          {t("customerName.title")}
+        </h1>
+        <p className="tb-enter [--i:1] mt-[10px] w-[760px] text-center text-[28px] leading-[36px] text-tb-cream">
+          {t("customerName.subtitle")}
+        </p>
+
+        <div
+          className={`tb-enter [--i:2] ${ada ? "mt-[20px]" : "mt-[74px]"} relative flex h-[100px] w-[844px] items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
         >
-          {inputValue || (
-            <span className="text-black/55">{t("customerName.placeholder")}</span>
-          )}
-        </span>
-        {inputValue.length > 0 && (
-          <button
-            type="button"
-            data-testid="customer-name-clear"
-            aria-label={t("customerName.clear")}
-            onClick={() => setInputValue("")}
-            className="absolute right-[24px] h-[44px] w-[44px] p-[10px]"
+          <span
+            data-testid="customer-name-input"
+            className="text-[32px] font-medium text-black"
           >
-            <img alt="" src={inputClear} className="h-full w-full" />
-          </button>
-        )}
+            {inputValue || (
+              <span className="text-black/55">{t("customerName.placeholder")}</span>
+            )}
+          </span>
+          {inputValue.length > 0 && (
+            <button
+              type="button"
+              data-testid="customer-name-clear"
+              aria-label={t("customerName.clear")}
+              onClick={() => setInputValue("")}
+              className="absolute right-[24px] h-[44px] w-[44px] p-[10px]"
+            >
+              <img alt="" src={inputClear} className="h-full w-full" />
+            </button>
+          )}
+        </div>
+
+        <div className={`tb-enter [--i:3] ${ada ? "mt-[20px]" : "mt-[60px]"} w-[1000px]`}>
+          <KioskKeyboard
+            value={inputValue}
+            onChange={setInputValue}
+            maxLength={NAME_MAX_LENGTH}
+          />
+        </div>
       </div>
 
+      {/* /tent's CONFIRM / NO THANKS pair, on the footer (see LAYOUT). */}
       <button
         type="button"
         data-testid="customer-name-continue"
         onClick={handleContinue}
         disabled={loadingCRM || placingOrder}
-        className={`tb-enter [--i:3] tb-display absolute left-1/2 ${ada ? "top-[454px]" : "top-[640px]"} min-h-[104px] w-[600px] -translate-x-1/2 rounded-[8px] bg-tb-pink py-[32px] text-center text-[28px] leading-[24px] text-tb-ink-purple disabled:opacity-60`}
+        className="tb-display absolute bottom-[188px] left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)] disabled:opacity-60"
       >
         {placingOrder ? t("payment.placingOrder") : t("customerName.continue")}
       </button>
-
-      <div
-        className={`tb-enter [--i:4] absolute left-1/2 ${ada ? "top-[598px]" : "top-[820px]"} w-[1000px] -translate-x-1/2`}
+      <button
+        type="button"
+        data-testid="customer-name-back"
+        onClick={handleBack}
+        className="tb-display absolute bottom-[80px] left-[24px] h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface"
       >
-        <KioskKeyboard
-          value={inputValue}
-          onChange={setInputValue}
-          maxLength={NAME_MAX_LENGTH}
-        />
-      </div>
+        {t("customerName.back")}
+      </button>
 
       {loadingCRM && (
         <div

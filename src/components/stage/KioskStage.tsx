@@ -17,7 +17,7 @@ export const STAGE_HEIGHT = 1920;
  * flex pages (Menu, PDP) follow it. LOWERING it is always safe.
  * RAISING it past 820 is not: the frameless pages' ADA layouts are tuned to
  * the 1122 zone (CustomerPhone's centred block outgrows the space above
- * CONTINUE past 820, Tent 822, CustomerName 837 — see their `ponytail:`
+ * CONTINUE past 820, Tent 822, CustomerName 869 — see their `ponytail:`
  * notes) and must be re-derived.
  */
 export const ADA_BRAND_ZONE_HEIGHT = 798;
