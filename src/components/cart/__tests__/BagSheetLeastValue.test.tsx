@@ -81,6 +81,10 @@ const rowSavings = (ids: string[]) =>
     ids.reduce((sum, id) => sum + figure(was(id)?.textContent ?? price(id)) - figure(price(id)), 0) * 100,
   ) / 100;
 const discounts = () => figure(screen.getByTestId("bag-discounts").textContent);
+const total = () => figure(screen.getByTestId("bag-total").textContent);
+/** Σ the rows' live line prices, to the penny. */
+const livePrices = (ids: string[]) =>
+  Math.round(ids.reduce((sum, id) => sum + figure(price(id)), 0) * 100) / 100;
 
 const reset = () => {
   store.dispatch({ type: "RESET_STATE" });
@@ -149,6 +153,29 @@ describe("BagSheet — the least-value offer on the rows it covers (posistKiosk'
     expect(discounts()).toBe(1.5);
   });
 
+  it("half-pennies on several rows: the bill rounds them ONCE, so the rows' savings are the Discounts line and their prices the Total", () => {
+    // The bill books 0.995 + 1.495 and rounds the sum: −£2.49, not £1.00 + £1.50.
+    openBag([row("sauce", 1.99, 1), row("taco", 2.99, 1)], leastValue({ buyQuantity: 2, getQuantity: 2, getDiscount: 50 }));
+
+    expect(chip("sauce")).toHaveTextContent(/^50% off$/);
+    expect(chip("taco")).toHaveTextContent(/^50% off$/);
+    expect(discounts()).toBe(2.49);
+    expect(total()).toBe(2.49);
+    expect(price("sauce")).toBe("£0.99");
+    expect(price("taco")).toBe("£1.50");
+    expect(rowSavings(["sauce", "taco"])).toBe(discounts());
+    expect(livePrices(["sauce", "taco"])).toBe(total());
+  });
+
+  it("over 100 % off never shows a negative price: the row stops at £0.00 (posistKiosk's floor)", () => {
+    openBag([row("taco", 4, 1), row("burrito", 8, 1)], leastValue({ buyQuantity: 2, getQuantity: 1, getDiscount: 150 }));
+
+    expect(chip("taco")).toHaveTextContent(/^150% off$/);
+    expect(was("taco")).toHaveTextContent(/^£4\.00$/);
+    expect(price("taco")).toBe("£0.00");
+    expect(chip("burrito")).not.toBeInTheDocument();
+  });
+
   it("several covered rows add up to the Discounts line — an add-on is never the offer's", () => {
     openBag(
       [row("sauce", 2, 2), burger(1), row("taco", 9, 2)],
@@ -180,15 +207,22 @@ describe("BagSheet — the least-value offer on the rows it covers (posistKiosk'
     expect(screen.queryByTestId("bag-discounts")).not.toBeInTheDocument();
   });
 
-  it("Arabic: the chips read the Arabic copy", async () => {
+  it("Arabic: all four chips read Arabic copy, never the English", async () => {
     await act(() => i18n.changeLanguage("ar"));
+    // i18n.t alone would pass an English value left in ar/translation.json.
+    const arabic = (id: string, key: string, values?: Record<string, number>) => {
+      const text = chip(id)?.textContent ?? "";
+      expect(text).toBe(i18n.t(key, values));
+      expect(text).toMatch(/[؀-ۿ]/);
+      expect(text).not.toMatch(/Free|off/i);
+    };
 
     const { unmount } = openBag(
       [row("sauce", 2, 1), row("taco", 5, 3), row("burrito", 8, 1)],
       leastValue({ buyQuantity: 2, getQuantity: 3 }),
     );
-    expect(chip("sauce")?.textContent).toBe(i18n.t("offers.free"));
-    expect(chip("taco")?.textContent).toBe(i18n.t("offers.unitsFree", { units: 2 }));
+    arabic("sauce", "offers.free");
+    arabic("taco", "offers.unitsFree", { units: 2 });
     unmount();
 
     reset();
@@ -196,9 +230,8 @@ describe("BagSheet — the least-value offer on the rows it covers (posistKiosk'
       [row("sauce", 2, 2), row("taco", 5, 2), row("burrito", 8, 1)],
       leastValue({ buyQuantity: 2, getQuantity: 3, getDiscount: 50 }),
     );
-    expect(chip("sauce")?.textContent).toBe(i18n.t("offers.percentOff", { value: 50 }));
-    expect(chip("taco")?.textContent).toBe(i18n.t("offers.percentOffUnits", { value: 50, units: 1 }));
-    expect(chip("sauce")?.textContent).not.toMatch(/Free|off/);
+    arabic("sauce", "offers.percentOff", { value: 50 });
+    arabic("taco", "offers.percentOffUnits", { value: 50, units: 1 });
   });
 });
 
@@ -250,6 +283,25 @@ describe("leastValueGrants — the allocation and the money the bill applies", (
     const total = [...grants.values()].reduce((sum, grant) => sum + grant.saving, 0);
     expect(total).toBe(13);
     expect(total).toBe(Number(priced.getTotalDiscount()));
+  });
+
+  it.each([
+    { prices: [1.99, 2.99], getDiscount: 50 },
+    { prices: [2.99, 3.49], getDiscount: 50 },
+    { prices: [1.99, 2.49, 3.29], getDiscount: 33 },
+    { prices: Array.from({ length: 10 }, (_, i) => i + 0.99), getDiscount: 50 },
+  ])("$prices at $getDiscount % off: the grants add up to the bill's Discounts, to the penny", ({ prices, getDiscount }) => {
+    const cart = {
+      cartItems: prices.map((unit, i) => row(`r${i}`, unit, 1)),
+      cartOffer: leastValue({ buyQuantity: prices.length, getQuantity: prices.length, getDiscount }),
+      lockedFreebieAllocation: {},
+    };
+    const priced = bill(cart);
+    const grants = [...leastValueGrants(cart, priced).values()];
+
+    expect(grants).toHaveLength(prices.length);
+    const saved = Math.round(grants.reduce((sum, grant) => sum + grant.saving, 0) * 100) / 100;
+    expect(saved).toBe(Number(priced.getTotalDiscount()));
   });
 
   it("nothing without a bill", () => {

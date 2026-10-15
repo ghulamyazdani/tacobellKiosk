@@ -174,10 +174,11 @@ export default function BagItemRow({
   };
   // The struck pair: a freebie / reward row's own undiscounted → discounted
   // line; a paid row's line → that line less what the least-value offer
-  // saves on it (the bill's figure — its add-ons stay charged).
+  // saves on it (the bill's figure — its add-ons stay charged), never below
+  // £0 (posistKiosk's floor: an offer over 100 % saves more than the line).
   const leastSaving = leastValue?.saving ?? 0;
   const struckLine = isPaidRow ? lineTotal : undiscountedLine;
-  const liveLine = isPaidRow ? lineTotal - leastSaving : discountedLine;
+  const liveLine = isPaidRow ? Math.max(0, lineTotal - leastSaving) : discountedLine;
 
   // A1 looks (design language, sign-off): unavailable = loyalty-visual's
   // 1:3858 ineligible look (art 50 % + "Unavailable"); a row PAY found with
