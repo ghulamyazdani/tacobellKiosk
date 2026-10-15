@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import CategoryRail from "../CategoryRail";
 
 /*
@@ -114,6 +114,51 @@ describe("CategoryRail (Menu-Categories)", () => {
     rerender(<CategoryRail categories={rows} selectedId="r11" onSelect={vi.fn()} />);
     expect(list.scrollTop).toBe(0);
     vi.restoreAllMocks();
+  });
+
+  /*
+    The list's box can change with no remount: the ADA toggle shrinks it to
+    the reach zone's ~12 rows (ReachZone keeps the tree). A selected row the
+    new box hides comes to its middle; a box that shows it moves nothing.
+    jsdom has no ResizeObserver: the callback is captured (setupTests'
+    global is writable, not configurable — assigned and restored by hand).
+  */
+  it("a resize that hides the selected row (ADA's shorter list) brings it to the middle; one that shows it moves nothing", () => {
+    const rows = Array.from({ length: 18 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
+    let height = 1088; // the standard list: 17 rows
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
+      return index === undefined ? 0 : 64 * Number(index);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(() => height);
+    const resized: (() => void)[] = [];
+    const globals = window as unknown as { ResizeObserver: unknown };
+    const original = globals.ResizeObserver;
+    globals.ResizeObserver = class {
+      constructor(callback: () => void) {
+        resized.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    };
+    onTestFinished(() => {
+      globals.ResizeObserver = original;
+      vi.restoreAllMocks();
+    });
+
+    render(<CategoryRail categories={rows} selectedId="r15" onSelect={vi.fn()} />);
+    const list = screen.getByTestId("rail-r15").parentElement as HTMLElement;
+    // The standard view: row 15 tapped in a list at its top.
+    list.scrollTop = 0;
+
+    height = 320; // ADA
+    act(() => resized.forEach((callback) => callback()));
+    expect(list.scrollTop).toBe(64 * 15 - (320 - 64) / 2);
+
+    height = 1088; // back to the standard view: the row is still in the box
+    act(() => resized.forEach((callback) => callback()));
+    expect(list.scrollTop).toBe(64 * 15 - (320 - 64) / 2);
   });
 });
 

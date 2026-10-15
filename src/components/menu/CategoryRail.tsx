@@ -28,10 +28,11 @@ interface CategoryRailProps {
  * Only the category list scrolls; the bell and the slot above it stay put.
  * The selected fill swaps instantly (Figma); `aria-current` drives the
  * tb-select bump (motion lane, design language).
- * A selection the rail mounts with (one at a time keeps it through the PDP)
- * starts centred in the list, by the list's own scrollTop — scrollIntoView
- * would scroll the clipped ancestors too. A tap needs none: its row is on
- * screen.
+ * A selected row the list's box hides comes to its middle, by the list's own
+ * scrollTop (scrollIntoView would scroll the clipped ancestors too): at mount
+ * (one at a time keeps the selection through the PDP) and whenever the box
+ * changes — the ADA toggle shrinks it with no remount. A tap needs none: its
+ * row is on screen.
  */
 export default function CategoryRail({
   categories,
@@ -42,8 +43,18 @@ export default function CategoryRail({
   const listRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const list = listRef.current;
-    const row = list?.querySelector<HTMLElement>('[aria-current="true"]');
-    if (list && row) list.scrollTop = row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
+    if (!list) return;
+    const reveal = () => {
+      const row = list.querySelector<HTMLElement>('[aria-current="true"]');
+      if (!row) return;
+      const { offsetTop: top, offsetHeight: height } = row;
+      if (top >= list.scrollTop && top + height <= list.scrollTop + list.clientHeight) return;
+      list.scrollTop = top - (list.clientHeight - height) / 2;
+    };
+    reveal();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(reveal);
+    observer?.observe(list);
+    return () => observer?.disconnect();
   }, []);
   return (
     <nav

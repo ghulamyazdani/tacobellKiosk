@@ -2,7 +2,7 @@
  * The converted menu tree flows through untyped from the legacy converters;
  * typed with the SDK menu types in the P6 pass. Do not add NEW anys.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -133,8 +133,17 @@ interface MenuProps {
 /** The raw fields B3's item events read (primary-language, never localized). */
 type TrackedEntity = { id?: unknown; name?: unknown } | null | undefined;
 
+/** A converted category or sub-category, as far as the rail and the sections read it (untrusted). */
+interface MenuNode {
+  id?: unknown;
+  categoryId?: unknown;
+  name?: unknown;
+  entities?: unknown;
+  subCategories?: unknown;
+}
+
 /** A rail row's id = its pane section's id. */
-const entryId = (entry: any) => String(entry?.id ?? entry?.categoryId ?? "");
+const entryId = (entry: MenuNode | null | undefined) => String(entry?.id ?? entry?.categoryId ?? "");
 
 export default function Menu({ bagOpen = false }: MenuProps) {
   // Motion §2.4: Menu mounting under the product-added modal (Figma 1:5502:
@@ -191,11 +200,14 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * every category, one scroll.
    */
   const oneAtATime = Boolean(useSelector(selectOneCategoryAtATime));
-  const flatSubCategories: unknown = menu?.subcategories;
-  const subMode =
+  /** The converter's flat list in sub-category mode, else null. */
+  const flatSubCategories: MenuNode[] | null =
     useSelector(selectEntpShowCategory) === true &&
     !getSuperCategoryOnlySetting() &&
-    Array.isArray(flatSubCategories);
+    Array.isArray(menu?.subcategories)
+      ? menu.subcategories
+      : null;
+  const subMode = flatSubCategories !== null;
   const inViewSubCategoryId = useSelector(selectInViewSubCategoryId);
   const inViewSupCategoryId = useSelector(selectInViewSupCategoryId);
 
@@ -223,24 +235,24 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * filtered — as a one-sub-category entry: its name is the H2, no H3
    * (Figma 1:2595). Gone, empty or repeated ids are no row.
    */
-  const entries: any[] = useMemo(() => {
-    if (!subMode) return categories;
-    const byId = new Map<string, any>();
+  const entries: MenuNode[] = useMemo(() => {
+    if (!flatSubCategories) return categories;
+    const byId = new Map<string, MenuNode>();
     for (const category of categories) {
       for (const sub of Array.isArray(category?.subCategories) ? category.subCategories : []) {
         byId.set(entryId(sub), sub);
       }
     }
-    const rows: any[] = [];
-    for (const flat of flatSubCategories as any[]) {
+    const rows: MenuNode[] = [];
+    for (const flat of flatSubCategories) {
       const sub = byId.get(entryId(flat));
       byId.delete(entryId(flat));
-      if (Array.isArray(sub?.entities) && sub.entities.length > 0) {
+      if (sub && Array.isArray(sub.entities) && sub.entities.length > 0) {
         rows.push({ ...sub, subCategories: [sub] });
       }
     }
     return rows;
-  }, [subMode, categories, flatSubCategories]);
+  }, [categories, flatSubCategories]);
   const railCategories = useMemo(
     () =>
       entries.map((c: any) => ({
@@ -269,6 +281,18 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const sections = oneAtATime
     ? entries.filter((entry) => entryId(entry) === activeCategoryId)
     : entries;
+  /**
+   * One at a time, a different section starts at its top: a tap, or the
+   * selected row leaving the menu (an order-type switch, a refetch: the first
+   * row stands in) — posistKiosk's useMenuPaneScrollReset. The mount and a
+   * commit that keeps the section leave the guest's scroll.
+   */
+  const shownIdRef = useRef(activeCategoryId);
+  useLayoutEffect(() => {
+    if (shownIdRef.current === activeCategoryId) return;
+    shownIdRef.current = activeCategoryId;
+    if (oneAtATime && paneRef.current) paneRef.current.scrollTop = 0;
+  }, [activeCategoryId, oneAtATime]);
   // The UNFILTERED menu: emptiness drives the P9b refetch and the menu-error
   // dialog below — a filter that empties the grid is neither.
   const isEmpty = allCategories.length === 0;
@@ -338,8 +362,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     const pane = paneRef.current;
     const el = sectionRefs.current[id];
     if (oneAtATime) {
-      // The pane swaps to the tapped section, from its top (posistKiosk's
-      // useMenuPaneScrollReset).
+      // A tap on the shown row goes back to its top too (a change: above).
       if (pane) pane.scrollTop = 0;
     } else if (el && pane) {
       // Instant under reduced motion (motion §3.9).

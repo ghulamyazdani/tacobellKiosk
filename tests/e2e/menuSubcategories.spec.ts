@@ -50,6 +50,25 @@ function tenantMenu() {
   return menu;
 }
 
+/**
+ * The mode's slim-menu. One at a time, every sub-category runs long (six more copies of its cards, new
+ * ids), so the first section AND the tapped one overflow the pane: a swap that kept the old offset
+ * would land mid-grid instead of being clamped to the top by a short section.
+ */
+function modeMenu(mode: Mode) {
+  const menu = fixtureJson("slim-menu.json");
+  menu.settings.send_categories = mode.sendCategories;
+  if (mode.oneAtATime) {
+    for (const category of menu.categories) {
+      for (const sub of category.subCategories) {
+        const own: { id: string }[] = sub.entities;
+        sub.entities = [...own, ...[1, 2, 3, 4, 5, 6].flatMap((n) => own.map((e) => ({ ...structuredClone(e), id: `${e.id}-${n}` })))];
+      }
+    }
+  }
+  return menu;
+}
+
 interface Row {
   id: string;
   en: string;
@@ -141,6 +160,7 @@ const current = (page: Page) => page.locator('[data-testid^="rail-"][aria-curren
 /** The menu's scroll pane: the sections' parent. */
 const menuPane = (page: Page) => sections(page).first().locator("xpath=..");
 const scrollTopOf = (scroller: Locator) => scroller.evaluate((el) => el.scrollTop);
+const overflows = (scroller: Locator) => scroller.evaluate((el) => el.scrollHeight > el.clientHeight);
 
 /** The selected row reads as selected AND shows whole inside the rail's own scroll box. */
 async function expectRowShown(page: Page, id: string) {
@@ -154,10 +174,7 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
     for (const lang of ["en", "ar", "ada"] as const) {
       test(`${lang.toUpperCase()} · ${mode.name}`, async ({ page }) => {
         test.slow();
-        await openMenu(page, lang, {
-          menu: mode.sendCategories ? tenantMenu() : undefined,
-          settings: mode.settings,
-        });
+        await openMenu(page, lang, { menu: modeMenu(mode), settings: mode.settings });
         const { rows } = mode;
         const sub = rows === SUB_ROWS;
         const label = (row: Row) => (lang === "ar" ? row.ar : row.en);
@@ -188,12 +205,15 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
         // A tap on the last row.
         const pane = menuPane(page);
         if (mode.oneAtATime) {
-          // The pane swaps to that section alone, from its top.
+          // The pane swaps to that section alone, from its top — from the bottom of the long first one.
+          expect(await overflows(pane), "the first section overflows the pane").toBe(true);
           await pane.evaluate((el) => {
             el.scrollTop = el.scrollHeight;
           });
+          expect(await scrollTopOf(pane)).toBeGreaterThan(0);
           await page.getByTestId(`rail-${last.id}`).click();
           await expect.poll(() => testIds(sections(page))).toEqual([`section-${last.id}`]);
+          expect(await overflows(pane), "the tapped section overflows the pane too").toBe(true);
           expect(await scrollTopOf(pane)).toBe(0);
         } else {
           // One scroll: the pane jumps (reduced motion, the suite's default) to the section; all stay.
@@ -260,9 +280,10 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
 
   /**
    * A long rail in the ADA reach zone (~12 rows): every slim item in each of 16 sub-categories, so the
-   * rail AND each section overflow. A row picked far down, a PDP and BACK: the remounted rail shows it.
+   * rail AND each section overflow. A row picked low in the standard view, then ADA (no remount: the
+   * list just shrinks), shows; a row picked far down, a PDP and BACK: the remounted rail shows it.
    */
-  test("ADA · a long rail: a row far down is still in view after the PDP round trip; a tap shows the next section from its top", async ({
+  test("ADA · a long rail: a row picked low before ADA stays in view; a row far down is still in view after the PDP round trip; a tap shows the next section from its top", async ({
     page,
   }) => {
     test.slow();
@@ -280,10 +301,17 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
       entities: everyItem,
     }));
     menu.categories = [meals];
-    await openMenu(page, "ada", { menu, settings: { one_category_at_a_time: true } });
+    await openMenu(page, "en", { menu, settings: { one_category_at_a_time: true } });
 
+    // The standard rail holds all 16; the guest picks the last. ADA shrinks the list to ~12 rows: the
+    // rail brings row 16 back into its box.
     const list = page.getByTestId("category-rail").locator("> div").last();
-    const overflows = (scroller: Locator) => scroller.evaluate((el) => el.scrollHeight > el.clientHeight);
+    expect(await overflows(list), "the standard rail shows every row").toBe(false);
+    await page.getByTestId("rail-long-16").click();
+    await expect.poll(() => testIds(sections(page))).toEqual(["section-long-16"]);
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+    await expectRowShown(page, "long-16");
     expect(await overflows(list), "the ADA rail overflows").toBe(true);
     expect(await overflows(menuPane(page)), "a section overflows the ADA pane").toBe(true);
 

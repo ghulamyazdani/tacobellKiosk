@@ -1897,6 +1897,33 @@ describe("Menu — the layout settings: send_categories / one_category_at_a_time
     expect(mockCapture.mock.calls.filter(([event]) => event === "sup_category_clicked")).toEqual([]);
   });
 
+  it("one at a time: a section change with no tap — the selected row left the menu (an order-type switch, a refetch) — starts at its top; one that keeps the section keeps the scroll", () => {
+    setup();
+    renderMenu();
+    fireEvent.click(screen.getByTestId("rail-s-kids"));
+    pane().scrollTop = 480;
+
+    // The new menu has no Kiddie Meal: the first row stands in.
+    const withoutKids = {
+      categories: [{ ...MENU.categories[0], subCategories: [BOXES] }, MENU.categories[1]],
+      subcategories: [BOXES, SIDES, SAUCES],
+    };
+    act(() => {
+      store.dispatch(setMenuData({ menu: withoutKids }));
+    });
+    expect(current()).toBe("rail-s-boxes");
+    expect(sectionIds()).toEqual(["section-s-boxes"]);
+    expect(pane().scrollTop).toBe(0);
+
+    // The same section again (a fresh copy of the menu): the guest's scroll stays.
+    pane().scrollTop = 300;
+    act(() => {
+      store.dispatch(setMenuData({ menu: { ...withoutKids } }));
+    });
+    expect(sectionIds()).toEqual(["section-s-boxes"]);
+    expect(pane().scrollTop).toBe(300);
+  });
+
   it("one at a time: the choice outlives the PDP round trip (Menu remounts); the order-type pick clears it", () => {
     setup();
     const first = renderMenu();
