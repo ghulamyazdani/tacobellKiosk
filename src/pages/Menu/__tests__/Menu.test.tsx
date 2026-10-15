@@ -4,7 +4,9 @@ import { Provider } from "react-redux";
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import {
   emptyMenuData,
+  resetCategorySelection,
   setEntityMap,
+  setEntpShowCategory,
   setMenuData,
   setModifiersMap,
   setTags,
@@ -21,6 +23,7 @@ import {
   setEnableAccessibilityMode,
   setHideFilter,
   setKioskSettings,
+  setOneCategoryAtATime,
   setShowRepeatCustomization,
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
@@ -72,6 +75,16 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/analytics")>()),
   captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
 }));
+
+/**
+ * A fresh store as a boot leaves it for a tenant with the menu-layout
+ * settings off — every category in one scroll. The boot stages
+ * one_category_at_a_time:false (useLoaders); the SDK slice defaults it ON.
+ */
+const resetStore = () => {
+  store.dispatch({ type: "RESET_STATE" });
+  store.dispatch(setOneCategoryAtATime(false));
+};
 
 /** Converted-shape fixture (mirrors legacyMenuConverters output fields the UI reads). */
 const CONVERTED_MENU = {
@@ -128,7 +141,7 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     // setMenuData expects { menu } (SDK reducer destructures the payload)
     store.dispatch(setMenuData({ menu: CONVERTED_MENU }));
   });
@@ -165,7 +178,7 @@ describe("Menu (Figma 1:2595 — rail + grid + CTA)", () => {
   });
 
   it("empty menu shows the loading state (while it refetches) instead of a blank pane", () => {
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     renderMenu();
     expect(screen.getByText(/menu is loading/i)).toBeInTheDocument();
   });
@@ -246,7 +259,7 @@ describe("Menu — refetch on a menu-less mount (P9b R8)", () => {
     (store.getState() as { cart: { cartItems: unknown[] } }).cart.cartItems;
 
   beforeEach(() => {
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     mockFetchMenu.mockReset();
     mockNavigate.mockReset();
     seedReloadedSession();
@@ -396,7 +409,7 @@ describe("Menu — scroll indicator (post-P9 26)", () => {
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setMenuData({ menu: CONVERTED_MENU }));
   });
 
@@ -491,7 +504,7 @@ describe("Menu — names in the guest's language (post-P9 28)", () => {
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setMenuData({ menu: MENU }));
   });
 
@@ -655,7 +668,7 @@ describe("Menu — the diet filter and the card marks (U1)", () => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
     mockCapture.mockReset();
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setMenuData({ menu: TAGGED_MENU }));
     store.dispatch(setTags({ tags: ["veg", "non-veg"] }));
@@ -864,7 +877,7 @@ describe("Menu — the funnel events (B3)", () => {
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
     mockNavigate.mockReset();
     mockCapture.mockReset();
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setMenuData({ menu: EVENT_MENU }));
   });
@@ -882,7 +895,7 @@ describe("Menu — the funnel events (B3)", () => {
   });
 
   it("MenuViewed waits for the menu: nothing while it refetches, once when it arrives", () => {
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     renderMenu();
     expect(eventCalls("menu_viewed")).toHaveLength(0);
 
@@ -1106,7 +1119,7 @@ describe("Menu — motion (lane motion)", () => {
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setMenuData({ menu: CONVERTED_MENU }));
     notePath("/start");
     notePath("/second");
@@ -1237,7 +1250,7 @@ describe("Menu — product-added suggestions are staged (posistKiosk parity)", (
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
     mockNavigate.mockReset();
     mockCapture.mockReset();
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setMenuData({ menu: MENU }));
     // Live, or toMenuSellableEntity sells OPTIONS as a one-tap item.
@@ -1606,7 +1619,7 @@ describe("Menu — walk-oos 2: an item no guest can complete reads Unavailable",
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: MODS }));
     store.dispatch(
@@ -1716,7 +1729,7 @@ describe("Menu — a required group with no max: the item reads Unavailable (use
   beforeEach(() => {
     mockFetchMenu.mockReset();
     mockFetchMenu.mockReturnValue(new Promise(() => {}));
-    store.dispatch({ type: "RESET_STATE" });
+    resetStore();
     store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
     store.dispatch(setModifiersMap({ modifiersMap: MODS }));
     store.dispatch(
@@ -1748,5 +1761,227 @@ describe("Menu — a required group with no max: the item reads Unavailable (use
     expect(large).toHaveAccessibleName(i18n.t("pdp.optionUnavailable", { name: "Large" }));
     expect(screen.getByTestId("size-soda-r")).toBeEnabled();
     expect(screen.getAllByTestId(/^size-soda-/).map((node) => node.dataset.testid)).toEqual(["size-soda-r", "size-soda-l"]);
+  });
+});
+
+/*
+  User 2026-10-15 ("in posistkiosk the view is subcategory on the basis of the
+  settings which are on please integrate those"): posistKiosk's menu layout
+  settings in the TB look. The menu's send_categories (entpShowCategory) puts
+  the SUB-categories on the rail, in the converter's flat `menu.subcategories`
+  order (by `order` across categories) — unless the kiosk's
+  show_only_supercategories keeps it on categories, or the menu has no flat
+  list; one_category_at_a_time shows only the selected row's section, from
+  its top, and keeps the choice through the PDP (the SDK's in-view ids).
+*/
+describe("Menu — the layout settings: send_categories / one_category_at_a_time (user 2026-10-15)", () => {
+  const FSI = "\u2068";
+  const PDI = "\u2069";
+  const iso = (s: string) => `${FSI}${s}${PDI}`;
+  const AR = (value: string) => [{ value, name: "Arabic", code: "ar", dir: "rtl" }];
+  const AR_BOXES = "صناديق";
+  const AR_SAUCES = "الصلصات";
+  const item = (id: string, name: string) => ({ id, name, price: 3, outOfStock: false });
+  /** Its required drink has every option out of stock: no guest can complete it (walk-oos 2). */
+  const MEAL = { id: "e-meal", name: "Kids Meal", price: 6, modifiers: ["drink"], outOfStock: false };
+  const DRINK = {
+    _id: "drink",
+    isActive: true,
+    min: 1,
+    max: 1,
+    constituentItems: [{ id: "cola", name: "Cola", isActive: true, outOfStock: true }],
+  };
+  const KIDS = { id: "s-kids", name: "Kiddie Meal", order: 11, entities: [item("e-kids", "Kids Taco"), MEAL] };
+  const BOXES = { id: "s-boxes", name: "Boxes", order: 4, aliases: AR(AR_BOXES), entities: [item("e-box", "Taco Box")] };
+  const EMPTY = { id: "s-empty", name: "Empty", order: 1, entities: [] };
+  const SIDES = { id: "s-sides", name: "Side Orders", order: 7, entities: [item("e-fries", "Large Fries")] };
+  const SAUCES = { id: "s-sauces", name: "Sauces", order: 10, aliases: AR(AR_SAUCES), entities: [item("e-salsa", "Salsa")] };
+  const MENU = {
+    categories: [
+      { id: "c-meals", name: "Meals / Combos", subCategories: [KIDS, BOXES, EMPTY] },
+      { id: "c-sides", name: "Side Orders", subCategories: [SIDES, SAUCES] },
+    ],
+    // The converter's flat list — selectSellableMenu never re-marks it (its
+    // MEAL stays live). Plus what the page must survive: a repeated id, and
+    // one the (filtered) tree no longer has.
+    subcategories: [EMPTY, BOXES, SIDES, SIDES, SAUCES, KIDS, { id: "s-gone", name: "Gone", order: 12, entities: [item("e-gone", "Gone")] }],
+  };
+  const SUB_ROWS = ["rail-s-boxes", "rail-s-sides", "rail-s-sauces", "rail-s-kids"];
+  const CATEGORY_ROWS = ["rail-c-meals", "rail-c-sides"];
+
+  interface Settings {
+    sendCategories?: boolean;
+    oneAtATime?: boolean;
+    superOnly?: boolean;
+    menu?: unknown;
+  }
+  /** Default: the tenant in the posistKiosk screenshot — both on. */
+  const setup = ({ sendCategories = true, oneAtATime = true, superOnly = false, menu = MENU }: Settings = {}) => {
+    store.dispatch(setMenuData({ menu }));
+    store.dispatch(setEntpShowCategory({ entpShowCategory: sendCategories }));
+    store.dispatch(setOneCategoryAtATime(oneAtATime));
+    if (superOnly) store.dispatch(setKioskSettings({ show_only_supercategories: true }));
+  };
+  const railIds = () =>
+    Array.from(screen.getByTestId("category-rail").querySelectorAll('[data-testid^="rail-"]')).map((row) =>
+      row.getAttribute("data-testid")
+    );
+  const sectionIds = () => screen.queryAllByTestId(/^section-/).map((section) => section.getAttribute("data-testid"));
+  const current = () =>
+    screen.getByTestId("category-rail").querySelector('[aria-current="true"]')?.getAttribute("data-testid");
+  const pane = () => screen.getAllByTestId(/^section-/)[0].parentElement as HTMLElement;
+  const headings = () => within(pane()).getAllByRole("heading").map((h) => `${h.tagName} ${h.textContent}`);
+  const itemIds = () => screen.queryAllByTestId(/^item-/).map((card) => card.getAttribute("data-testid"));
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    mockCapture.mockReset();
+    resetStore();
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: { drink: DRINK } }));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  });
+
+  it.each<[string, Settings, string[], string[]]>([
+    ["both off — today's view: the categories, every one in the pane", { sendCategories: false, oneAtATime: false }, CATEGORY_ROWS, ["section-c-meals", "section-c-sides"]],
+    ["one_category_at_a_time — the categories, the first one alone", { sendCategories: false }, CATEGORY_ROWS, ["section-c-meals"]],
+    ["send_categories — the sub-categories by `order` across categories (no empty, gone or repeated row), every one in the pane", { oneAtATime: false }, SUB_ROWS, ["section-s-boxes", "section-s-sides", "section-s-sauces", "section-s-kids"]],
+    ["both on (the posistKiosk tenant) — the sub-categories, the first one alone", {}, SUB_ROWS, ["section-s-boxes"]],
+    ["both on + show_only_supercategories — the categories again", { superOnly: true }, CATEGORY_ROWS, ["section-c-meals"]],
+    ["send_categories + show_only_supercategories — the categories, every one", { oneAtATime: false, superOnly: true }, CATEGORY_ROWS, ["section-c-meals", "section-c-sides"]],
+    ["both on, but a menu with no flat list (posistKiosk falls back) — the categories", { menu: { categories: MENU.categories } }, CATEGORY_ROWS, ["section-c-meals"]],
+  ])("%s", (_mode, settings, rows, sections) => {
+    setup(settings);
+    renderMenu();
+
+    expect(railIds()).toEqual(rows);
+    expect(sectionIds()).toEqual(sections);
+    expect(current()).toBe(rows[0]);
+  });
+
+  it("a sub-category section: its own name is the H2, no H3, its cards only (one at a time, and one scroll)", () => {
+    setup();
+    const { unmount } = renderMenu();
+    expect(headings()).toEqual(["H2 Boxes"]);
+    expect(itemIds()).toEqual(["item-e-box"]);
+    unmount();
+
+    setup({ oneAtATime: false });
+    renderMenu();
+    expect(headings()).toEqual(["H2 Boxes", "H2 Side Orders", "H2 Sauces", "H2 Kiddie Meal"]);
+    expect(itemIds()).toEqual(["item-e-box", "item-e-fries", "item-e-salsa", "item-e-kids", "item-e-meal"]);
+  });
+
+  it("one at a time: a tap swaps the pane to that sub-category alone, from its top, and moves the mark; SubCategoryClicked {id, name}", () => {
+    setup();
+    renderMenu();
+    pane().scrollTop = 480;
+
+    fireEvent.click(screen.getByTestId("rail-s-sauces"));
+
+    expect(sectionIds()).toEqual(["section-s-sauces"]);
+    expect(itemIds()).toEqual(["item-e-salsa"]);
+    expect(current()).toBe("rail-s-sauces");
+    expect(pane().scrollTop).toBe(0);
+    expect(mockCapture).toHaveBeenCalledWith("sub_category_clicked", {
+      sub_category_id: "s-sauces",
+      sub_category_name: "Sauces",
+    });
+    expect(mockCapture.mock.calls.filter(([event]) => event === "sup_category_clicked")).toEqual([]);
+  });
+
+  it("one at a time: the choice outlives the PDP round trip (Menu remounts); the order-type pick clears it", () => {
+    setup();
+    const first = renderMenu();
+    fireEvent.click(screen.getByTestId("rail-s-kids"));
+    first.unmount();
+
+    renderMenu();
+    expect(current()).toBe("rail-s-kids");
+    expect(sectionIds()).toEqual(["section-s-kids"]);
+
+    act(() => {
+      store.dispatch(resetCategorySelection());
+    });
+    expect(current()).toBe("rail-s-boxes");
+    expect(sectionIds()).toEqual(["section-s-boxes"]);
+  });
+
+  it("the pane is the sellable tree: an item no guest can complete is the sold-out card (the flat list would sell it)", () => {
+    setup();
+    renderMenu();
+    fireEvent.click(screen.getByTestId("rail-s-kids"));
+
+    const meal = screen.getByTestId("item-e-meal");
+    expect(meal).toHaveAttribute("aria-disabled", "true");
+    expect(meal).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(screen.queryByTestId("quick-add-e-meal")).toBeNull();
+    expect(screen.getByTestId("quick-add-e-kids")).toBeInTheDocument();
+  });
+
+  it("Arabic: the rail and the H2 read the sub-category aliases, isolated (no alias → the English name); the event keeps the raw name", async () => {
+    store.dispatch(setSelectedLanguage({ name: "Arabic", code: "ar", dir: "rtl", type: "secondary_language" }));
+    await act(async () => {
+      await i18n.changeLanguage("ar");
+    });
+    setup();
+    renderMenu();
+
+    expect(screen.getByTestId("rail-s-boxes").textContent).toBe(iso(AR_BOXES));
+    expect(screen.getByTestId("rail-s-sides").textContent).toBe(iso("Side Orders"));
+    expect(headings()).toEqual([`H2 ${iso(AR_BOXES)}`]);
+
+    fireEvent.click(screen.getByTestId("rail-s-sauces"));
+    expect(headings()).toEqual([`H2 ${iso(AR_SAUCES)}`]);
+    expect(mockCapture).toHaveBeenCalledWith("sub_category_clicked", {
+      sub_category_id: "s-sauces",
+      sub_category_name: "Sauces",
+    });
+  });
+
+  it("one scroll (send_categories only): a tap scrolls the pane to the sub-category (smooth) and moves the mark — every section stays; the mark is local (a remount starts at the top row)", () => {
+    const scrollTo = vi.spyOn(Element.prototype, "scrollTo").mockImplementation(() => {});
+    setup({ oneAtATime: false });
+    const first = renderMenu();
+
+    fireEvent.click(screen.getByTestId("rail-s-kids"));
+
+    expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "smooth" }));
+    expect(current()).toBe("rail-s-kids");
+    expect(sectionIds()).toHaveLength(4);
+    expect(mockCapture).toHaveBeenCalledWith("sub_category_clicked", {
+      sub_category_id: "s-kids",
+      sub_category_name: "Kiddie Meal",
+    });
+    first.unmount();
+
+    renderMenu();
+    expect(current()).toBe("rail-s-boxes");
+  });
+
+  it("one at a time with send_categories off: a category tap shows it alone (its sub-categories as H3s), from its top; SupCategoryClicked; the choice outlives a remount", () => {
+    setup({ sendCategories: false });
+    const first = renderMenu();
+    expect(headings()).toEqual(["H2 Meals / Combos", "H3 Kiddie Meal", "H3 Boxes"]);
+    pane().scrollTop = 480;
+
+    fireEvent.click(screen.getByTestId("rail-c-sides"));
+
+    expect(sectionIds()).toEqual(["section-c-sides"]);
+    expect(headings()).toEqual(["H2 Side Orders", "H3 Side Orders", "H3 Sauces"]);
+    expect(pane().scrollTop).toBe(0);
+    expect(mockCapture).toHaveBeenCalledWith("sup_category_clicked", { category_id: "c-sides" });
+    first.unmount();
+
+    renderMenu();
+    expect(current()).toBe("rail-c-sides");
+    expect(sectionIds()).toEqual(["section-c-sides"]);
   });
 });

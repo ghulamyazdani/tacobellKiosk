@@ -13,8 +13,16 @@ import { buildVariantTierPayload } from "@cx-sdk/ordering/cart/addIntent";
 import { selectTabId } from "@cx-sdk/core/auth/authentication.slice";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import {
+  selectOneCategoryAtATime,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  selectEntpShowCategory,
+  selectInViewSubCategoryId,
+  selectInViewSupCategoryId,
+  setInViewSubCategoryId,
+  setInViewSupCategoryId,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import {
   closeLoyaltyItemsModal,
   openLoyaltyItemsModal,
@@ -125,6 +133,9 @@ interface MenuProps {
 /** The raw fields B3's item events read (primary-language, never localized). */
 type TrackedEntity = { id?: unknown; name?: unknown } | null | undefined;
 
+/** A rail row's id = its pane section's id. */
+const entryId = (entry: any) => String(entry?.id ?? entry?.categoryId ?? "");
+
 export default function Menu({ bagOpen = false }: MenuProps) {
   // Motion §2.4: Menu mounting under the product-added modal (Figma 1:5502:
   // the menu stays still), the bag or the rewards sheet is quiet. Read from
@@ -161,7 +172,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const { addItemToCart, isAnyLoyaltyItemPresentInCart } = useCartHook();
   const { openDoubleTierModal } = useMakeItAMeal();
   const { resetSession } = useSessionReset();
-  const { getIsLoyaltyOn, getSelectedPipeline } = useAppSettings();
+  const { getIsLoyaltyOn, getSelectedPipeline, getSuperCategoryOnlySetting } = useAppSettings();
   const { checkAndRevokeLoyaltyReward } = useLoyalty();
   const { fetchMenu } = useMenuConverters();
   const tabId = useSelector(selectTabId);
@@ -171,6 +182,22 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const filters = useSelector(selectFilters) as string[] | undefined;
+  /**
+   * posistKiosk's menu layout settings (Menu.tsx, CategoryList,
+   * MenuContainerKiosk): the menu's `send_categories` (per order type) puts
+   * SUB-categories on the rail — unless the kiosk's
+   * show_only_supercategories keeps it on categories — and
+   * one_category_at_a_time shows only the selected row's section. Both off:
+   * every category, one scroll.
+   */
+  const oneAtATime = Boolean(useSelector(selectOneCategoryAtATime));
+  const flatSubCategories: unknown = menu?.subcategories;
+  const subMode =
+    useSelector(selectEntpShowCategory) === true &&
+    !getSuperCategoryOnlySetting() &&
+    Array.isArray(flatSubCategories);
+  const inViewSubCategoryId = useSelector(selectInViewSubCategoryId);
+  const inViewSupCategoryId = useSelector(selectInViewSupCategoryId);
 
   const allCategories: any[] = useMemo(
     () => (Array.isArray(menu?.categories) ? menu.categories : []),
@@ -188,18 +215,60 @@ export default function Menu({ bagOpen = false }: MenuProps) {
         : allCategories,
     [allCategories, filters]
   );
+  /**
+   * The rail rows = the pane sections. Sub-category mode takes only ORDER
+   * and membership from the converter's flat `menu.subcategories` (sorted by
+   * `order` across the menu); each row is that sub-category out of
+   * `categories` — sellable (selectSellableMenu re-marks only this tree) and
+   * filtered — as a one-sub-category entry: its name is the H2, no H3
+   * (Figma 1:2595). Gone, empty or repeated ids are no row.
+   */
+  const entries: any[] = useMemo(() => {
+    if (!subMode) return categories;
+    const byId = new Map<string, any>();
+    for (const category of categories) {
+      for (const sub of Array.isArray(category?.subCategories) ? category.subCategories : []) {
+        byId.set(entryId(sub), sub);
+      }
+    }
+    const rows: any[] = [];
+    for (const flat of flatSubCategories as any[]) {
+      const sub = byId.get(entryId(flat));
+      byId.delete(entryId(flat));
+      if (Array.isArray(sub?.entities) && sub.entities.length > 0) {
+        rows.push({ ...sub, subCategories: [sub] });
+      }
+    }
+    return rows;
+  }, [subMode, categories, flatSubCategories]);
   const railCategories = useMemo(
     () =>
-      categories.map((c: any) => ({
-        id: String(c?.id ?? c?.categoryId ?? ""),
+      entries.map((c: any) => ({
+        id: entryId(c),
         name: name(c) || String(c?.categoryName ?? ""),
       })),
-    [categories, name]
+    [entries, name]
   );
+  /**
+   * One at a time, the selection is the SDK's in-view id, so it outlives the
+   * PDP (Menu remounts; posistKiosk's syncCategoryToRedux) — the order-type
+   * pick clears it (SecondLayout). One scroll keeps it local: the pane comes
+   * back at its top, so the first row is right.
+   */
+  const selectedId = oneAtATime
+    ? String((subMode ? inViewSubCategoryId : inViewSupCategoryId) ?? "")
+    : selectedCategoryId;
+  const select = (id: string) => {
+    if (!oneAtATime) setSelectedCategoryId(id);
+    else dispatch(subMode ? setInViewSubCategoryId(id) : setInViewSupCategoryId(id));
+  };
   // A filter can take the selected category away: the first row stands in.
-  const activeCategoryId = railCategories.some((c) => c.id === selectedCategoryId)
-    ? selectedCategoryId
+  const activeCategoryId = railCategories.some((c) => c.id === selectedId)
+    ? selectedId
     : (railCategories[0]?.id ?? "");
+  const sections = oneAtATime
+    ? entries.filter((entry) => entryId(entry) === activeCategoryId)
+    : entries;
   // The UNFILTERED menu: emptiness drives the P9b refetch and the menu-error
   // dialog below — a filter that empties the grid is neither.
   const isEmpty = allCategories.length === 0;
@@ -265,18 +334,30 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   }, []);
 
   const handleRailSelect = (id: string) => {
-    setSelectedCategoryId(id);
+    select(id);
+    const pane = paneRef.current;
     const el = sectionRefs.current[id];
-    if (el && paneRef.current) {
+    if (oneAtATime) {
+      // The pane swaps to the tapped section, from its top (posistKiosk's
+      // useMenuPaneScrollReset).
+      if (pane) pane.scrollTop = 0;
+    } else if (el && pane) {
       // Instant under reduced motion (motion §3.9).
-      paneRef.current.scrollTo({ top: el.offsetTop - 24, behavior: scrollBehavior() });
+      pane.scrollTo({ top: el.offsetTop - 24, behavior: scrollBehavior() });
     }
-    captureKioskEvent(KioskEventName.SupCategoryClicked, { category_id: id });
+    if (subMode) {
+      captureKioskEvent(KioskEventName.SubCategoryClicked, {
+        sub_category_id: id,
+        sub_category_name: entries.find((entry) => entryId(entry) === id)?.name,
+      });
+    } else {
+      captureKioskEvent(KioskEventName.SupCategoryClicked, { category_id: id });
+    }
   };
 
   /** A filter chip changed the sections: back to the top, first rail row. */
   const handleFilterChange = () => {
-    setSelectedCategoryId("");
+    select("");
     if (paneRef.current) paneRef.current.scrollTop = 0;
   };
 
@@ -526,8 +607,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
               </h1>
             </div>
           ) : (
-            categories.map((category: any) => {
-              const categoryId = String(category?.id ?? "");
+            sections.map((category: any) => {
+              const categoryId = entryId(category);
               const subCategories: any[] = Array.isArray(category?.subCategories)
                 ? category.subCategories
                 : [];

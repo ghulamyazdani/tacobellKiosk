@@ -87,5 +87,33 @@ describe("CategoryRail (Menu-Categories)", () => {
     const list = screen.getByTestId("category-rail").children[1];
     expect(list).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
   });
+
+  /*
+    User 2026-10-15 (the layout settings): one at a time, the menu keeps the
+    selection through the PDP, so the rail can mount with a row far down a
+    long list (an ADA rail holds ~12). jsdom has no layout: the geometry is
+    stubbed — 64 px rows in a 320 px list (offsetTop is measured from the
+    list, which is `relative`).
+  */
+  it("mounts with the selected row centred in the list (its own scrollTop); a later selection never moves the list", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
+      return index === undefined ? 0 : 64 * Number(index);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
+
+    const { rerender } = render(<CategoryRail categories={rows} selectedId="r9" onSelect={vi.fn()} />);
+    const list = screen.getByTestId("rail-r9").parentElement as HTMLElement;
+
+    expect(list).toHaveClass("relative");
+    expect(list.scrollTop).toBe(64 * 9 - (320 - 64) / 2);
+
+    list.scrollTop = 0;
+    rerender(<CategoryRail categories={rows} selectedId="r11" onSelect={vi.fn()} />);
+    expect(list.scrollTop).toBe(0);
+    vi.restoreAllMocks();
+  });
 });
 
