@@ -50,7 +50,11 @@ import {
   getEffectiveMax,
   getEffectiveMin,
 } from "@cx-sdk/ordering/customization/selectionRules";
-import { closeBottomSheet } from "../../redux/features/menuSelections/menuSelections.slice";
+import { isOptionOutOfStock, stockLast } from "@cx-sdk/catalog/oos/optionStock";
+import {
+  closeBottomSheet,
+  selectOutOfStockItems,
+} from "../../redux/features/menuSelections/menuSelections.slice";
 import useCustomization from "../../hooks/customization/useCustomization";
 import useGlobalTriggerServices from "../../hooks/globals/useGlobalTriggerServices";
 import { resolveEntityImage } from "../../utils/entityImage";
@@ -89,8 +93,9 @@ const generateUniqueId = (id: any) => `${Date.now()}_${id}`;
  * parent's truthy applyAddonsPrice (computeShowAddonPrices). Its own cards
  * never carry CUSTOMIZE (no tier 3).
  * BLOCKED, never faked: NONE / REGULAR / EXTRA levels, REMOVED / ADD,
- * RECOMMENDED, UNAVAILABLE and an upgrade card's CUSTOMIZE (no data; no
- * tier-3).
+ * RECOMMENDED and an upgrade card's CUSTOMIZE (no data; no tier-3).
+ * UNAVAILABLE has its data now (the stock feed, lane walk-oos): the PDP's
+ * out-of-stock look.
  *
  * Binds the ported useCustomization EXACTLY like the fork's
  * CustomizationTier2: args {cartRef, isOpenBottomSheet (tier-2 bottomSheet),
@@ -129,6 +134,9 @@ export default function Tier2CustomizationSheet() {
   );
   const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
   const currency = useCurrencySymbol();
+  // walk-oos: the PDP's stock rule (menu stamp, PAY's feed map wins).
+  const outOfStockMap = useSelector(selectOutOfStockItems);
+  const soldOut = (item: unknown) => isOptionOutOfStock(item, outOfStockMap);
   const pageScrollRef = useRef<HTMLDivElement>(null);
   const ada = useAdaActive();
 
@@ -520,10 +528,16 @@ export default function Tier2CustomizationSheet() {
   // #scrollCustomizableItem2.
   const renderGroup = (group: any, index: number) => {
     if (group?.isActive === false) return null;
-    const items: any[] = (group?.constituentItems ?? []).filter(
-      (i: any) => i?.isActive !== false,
+    // walk-oos: out-of-stock options stay, last, unavailable (the PDP's look).
+    const items: any[] = stockLast(
+      (group?.constituentItems ?? []).filter((i: any) => i?.isActive !== false),
+      soldOut,
     );
     if (items.length === 0) return null;
+    const unavailableOf = (item: any) =>
+      soldOut(item)
+        ? { label: t("menu.unavailable"), name: t("pdp.optionUnavailable", { name: name(item) }) }
+        : undefined;
     const nextGroup = sortedModifiers?.[index + 1] ?? {};
     // UB2: the EFFECTIVE bounds decide the presentation (the PDP's rule): an
     // effective 1/1 group is radio cards, never steppers; "Required" follows
@@ -579,6 +593,7 @@ export default function Tier2CustomizationSheet() {
                   }
                   decreaseLabel={`${t("pdp.decrease")} ${name(item)}`}
                   increaseLabel={`${t("pdp.increase")} ${name(item)}`}
+                  unavailable={unavailableOf(item)}
                 />
               );
             })}
@@ -586,6 +601,19 @@ export default function Tier2CustomizationSheet() {
         ) : (
           <div className="grid grid-cols-[repeat(3,minmax(0,328px))] gap-[16px]">
             {items.map((item: any) => {
+              const unavailable = unavailableOf(item);
+              if (unavailable) {
+                return (
+                  <OptionCard
+                    key={item.id}
+                    testId={`tier2-option-${item.id}`}
+                    image={resolveEntityImage(item)}
+                    name={name(item)}
+                    meta={formatOptionMeta(showPrices ? item : { ...item, price: 0 }, currency, t)}
+                    unavailable={unavailable}
+                  />
+                );
+              }
               const selected = isSelected(group, item);
               return (
                 <OptionCard

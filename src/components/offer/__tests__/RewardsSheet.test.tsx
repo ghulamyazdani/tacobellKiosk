@@ -10,7 +10,7 @@ import { MemoryRouter } from "react-router-dom";
 import { setCartItems, applyOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { setFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
 import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
-import { setEntityMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { setEntityMap, setModifiersMap, setVariantObject } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
 import { selectAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
 import RewardsSheet from "../RewardsSheet";
@@ -541,6 +541,63 @@ describe("RewardsSheet — lane offers (ADD ITEMS, sameOrLess verdicts)", () => 
       "Add the qualifying items to unlock this reward"
     );
     expect(screen.queryByTestId(`offer-row-add-items-${offer._id}`)).not.toBeInTheDocument();
+  });
+
+  it("walk-oos 2 ('Show it Unavailable'): a buy item no guest can complete — its required dip all out of stock — reaches the stage out of stock (the tile's Unavailable look, no add)", async () => {
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          dip: { _id: "dip", isActive: true, min: 1, max: 1, constituentItems: [{ id: "salsa", isActive: true, outOfStock: true }] },
+        },
+      })
+    );
+    store.dispatch(setEntityMap({ entityMap: { [SAUCE_ENTITY.id]: { ...SAUCE_ENTITY, modifiers: ["dip"] } } }));
+    store.dispatch(setFilteredOffers([BOGO_OFFER]));
+    const onAddItems = vi.fn();
+    renderWithAddItems(onAddItems);
+
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-bogo"));
+
+    const [, view] = onAddItems.mock.calls[0] as unknown as [any, any];
+    expect(view.groups[0].entities).toEqual([expect.objectContaining({ id: SAUCE_ENTITY.id, outOfStock: true })]);
+  });
+
+  it("walk-oos 2: an offer keyed by ONE size — that size's own required dip all out of stock — hands the stage that size out of stock; one keyed by the live size hands it live", async () => {
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          dip: { _id: "dip", isActive: true, min: 1, max: 1, constituentItems: [{ id: "salsa", isActive: true, outOfStock: true }] },
+        },
+      })
+    );
+    const MEDIUM = { id: "fries-m", name: "Medium", price: 3, isActive: true, modifiers: [] };
+    const LARGE = { id: "fries-l", name: "Large", price: 5, isActive: true, modifiers: ["dip"] };
+    const FRIES = { id: "fries", name: "Fries", price: 0, hasVariant: true, isVariant: false, variants: [MEDIUM, LARGE] };
+    store.dispatch(
+      setVariantObject({
+        variantObject: {
+          "fries-m": { baseItem: FRIES, variant: MEDIUM },
+          "fries-l": { baseItem: FRIES, variant: LARGE },
+        },
+      })
+    );
+    const keyedOn = (sizeId: string) => ({
+      ...BOGO_OFFER,
+      _id: `offer-${sizeId}`,
+      applicable: { ...offerBase.applicable, rawItems: [{ item: { baseItemId: sizeId, name: "Fries" }, quantity: 2, relation: "and" }] },
+    });
+    store.dispatch(setFilteredOffers([keyedOn("fries-l"), keyedOn("fries-m")]));
+    const onAddItems = vi.fn();
+    renderWithAddItems(onAddItems);
+
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-fries-l"));
+    await userEvent.click(screen.getByTestId("offer-row-add-items-offer-fries-m"));
+
+    const [[, dead], [, live]] = onAddItems.mock.calls as unknown as [any, any][];
+    expect(dead.groups[0]).toMatchObject({ requiredVariantId: "fries-l" });
+    expect(dead.groups[0].entities[0].variants).toEqual([{ ...LARGE, outOfStock: true }]);
+    expect(live.groups[0]).toMatchObject({ requiredVariantId: "fries-m" });
+    expect(live.groups[0].entities[0].variants).toEqual([MEDIUM]);
   });
 
   it("no onAddItems prop → no ADD ITEMS at all", () => {

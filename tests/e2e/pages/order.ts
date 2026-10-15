@@ -82,3 +82,35 @@ export async function selectCategory(page: Page, id: string) {
   await page.getByTestId(`rail-${id}`).click();
   await expect(page.getByTestId(`section-${id}`)).toBeInViewport();
 }
+
+type CartStore = {
+  getState: () => { cart: { cartItems: Record<string, unknown>[] } };
+  dispatch: (action: unknown) => void;
+};
+const setCartRows = (page: Page, rows: unknown) =>
+  page.evaluate(
+    (payload) =>
+      (window as unknown as { __kioskStore: CartStore }).__kioskStore.dispatch({
+        type: "cart/setCartItems",
+        payload,
+      }),
+    rows,
+  );
+
+/**
+ * A PAY whose preflight FAILS — the global error's real trigger: through the
+ * DEV store seam every bag row claims customizations it does not carry, so
+ * the preflight's scheduler cannot read it. (The lever was a failed server
+ * clock until walk w4 #1 made that non-fatal: the device clock stands in.)
+ * Resolves to the restore: the bag as it was.
+ */
+export async function breakPayPreflight(page: Page): Promise<() => Promise<void>> {
+  const rows = await page.evaluate(
+    () => (window as unknown as { __kioskStore: CartStore }).__kioskStore.getState().cart.cartItems,
+  );
+  await setCartRows(
+    page,
+    rows.map((row) => ({ ...row, type: "CUSTOMIZABLE", customizations: undefined })),
+  );
+  return () => setCartRows(page, rows);
+}

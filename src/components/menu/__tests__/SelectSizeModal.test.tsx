@@ -455,3 +455,95 @@ describe("SelectSizeModal — the ADA size list's scroll bar (residual R3)", () 
     expect(screen.queryByTestId("size-scrollbar-hit")).toBeNull();
   });
 });
+
+/*
+  Lane walk-oos: an out-of-stock size stays in Select a Size — last, greyed,
+  a disabled tile named unavailable, the "Unavailable" chip in its radio's
+  place (posistKiosk VariantSelectionSection) — and CONTINUE can never
+  return it.
+*/
+describe("SelectSizeModal — out-of-stock sizes (walk-oos)", () => {
+  const SOLD_OUT = {
+    ...ENTITY,
+    variants: [{ ...ENTITY.variants[0], outOfStock: true }, ENTITY.variants[1], ENTITY.variants[2]],
+  };
+
+  it("the out-of-stock size is last, disabled and named unavailable; a tap leaves CONTINUE disabled", async () => {
+    const onContinue = vi.fn();
+    render(
+      <Provider store={store}>
+        <SelectSizeModal entity={SOLD_OUT} onClose={vi.fn()} onContinue={onContinue} />
+      </Provider>
+    );
+    const order = Array.from(document.querySelectorAll('[data-testid^="size-v-"]')).map((node) =>
+      node.getAttribute("data-testid")
+    );
+    expect(order).toEqual(["size-v-medium", "size-v-regular", "size-v-large"]);
+    // The first size in stock takes the dialog's focus.
+    expect(screen.getByTestId("size-v-medium")).toHaveFocus();
+    const large = screen.getByRole("button", { name: "Large, unavailable" });
+    expect(large).toBeDisabled();
+    expect(large).toHaveTextContent("Unavailable");
+    expect(screen.getByText("Large").parentElement).toHaveClass("opacity-40");
+
+    await userEvent.click(large);
+    expect(screen.getByTestId("size-continue")).toBeDisabled();
+    await userEvent.click(screen.getByTestId("size-v-regular"));
+    await userEvent.click(screen.getByTestId("size-continue"));
+    expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ id: "v-regular" }));
+  });
+
+  // Review F6: a disabled hero takes no focus — the X does, so a keypad or
+  // screen-reader guest is never left on the menu behind the dialog.
+  it("every size out of stock: the hero too is disabled — nothing can be chosen, and focus lands on the X", () => {
+    render(
+      <Provider store={store}>
+        <SelectSizeModal
+          entity={{ ...ENTITY, variants: ENTITY.variants.map((v) => ({ ...v, outOfStock: true })) }}
+          onClose={vi.fn()}
+          onContinue={vi.fn()}
+        />
+      </Provider>
+    );
+    for (const id of ["v-large", "v-medium", "v-regular"]) {
+      expect(screen.getByTestId(`size-${id}`)).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "Large, unavailable" })).toBeInTheDocument();
+    expect(screen.getByTestId("size-continue")).toBeDisabled();
+    // None in stock: the differences are from the cheapest of them all, as before.
+    expect(screen.getByTestId("size-v-large")).toHaveTextContent("+");
+    expect(screen.getByTestId("size-v-regular")).not.toHaveTextContent("+");
+    const x = screen
+      .getAllByRole("button", { name: i18n.t("language.close") })
+      .find((button) => button.querySelector("img"));
+    expect(x).toHaveFocus();
+  });
+
+  // Review F8: the differences are from the cheapest size IN STOCK — a sold-out
+  // cheapest size never turns every live size into "+£…".
+  it("the cheapest size out of stock: the cheapest in stock reads its own price, the rest a difference from it", () => {
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    try {
+      render(
+        <Provider store={store}>
+          <SelectSizeModal
+            entity={{
+              ...ENTITY,
+              variants: ENTITY.variants.map((v) => (v.id === "v-regular" ? { ...v, outOfStock: true } : v)),
+            }}
+            onClose={vi.fn()}
+            onContinue={vi.fn()}
+          />
+        </Provider>
+      );
+      expect(screen.getByTestId("size-v-medium")).toHaveTextContent("£7.09");
+      expect(screen.getByTestId("size-v-medium")).not.toHaveTextContent("+");
+      // A whole delta prints whole (posistKiosk's moduloCalcaledValue).
+      expect(screen.getByTestId("size-v-large")).toHaveTextContent(/\+£1 \|/);
+      expect(screen.getByTestId("size-v-regular")).toHaveTextContent("£5.59");
+      expect(screen.getByTestId("size-v-regular")).not.toHaveTextContent("+");
+    } finally {
+      store.dispatch({ type: "RESET_STATE" });
+    }
+  });
+});

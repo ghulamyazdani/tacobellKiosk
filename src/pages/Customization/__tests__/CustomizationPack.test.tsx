@@ -501,13 +501,17 @@ describe("Customization page — D5: one-option slots are pre-selected (item 42)
     for (const group of [D5_DRINK, D5_SHAKE, D5_DIP, D5_DESSERT]) {
       expect(picksOf(group._id), group._id).toEqual([]);
     }
-    // The tier-2-required and the out-of-stock one-option slots stay CHOICE slots (SELECT).
-    for (const group of [D5_SHAKE, D5_DIP]) {
-      const card = screen.getByTestId(`pack-slot-${group._id}`);
-      expect(radioOf(card)).not.toBeNull();
-      expect(screen.getByTestId(`pack-slot-cta-${group._id}`)).toHaveTextContent(`Select ${group.name}`);
-      expect(screen.getByTestId(`pack-slot-open-${group._id}`)).toBeInTheDocument();
-    }
+    // The tier-2-required one-option slot stays a CHOICE slot (SELECT).
+    const shake = screen.getByTestId(`pack-slot-${D5_SHAKE._id}`);
+    expect(radioOf(shake)).not.toBeNull();
+    expect(screen.getByTestId(`pack-slot-cta-${D5_SHAKE._id}`)).toHaveTextContent(`Select ${D5_SHAKE.name}`);
+    expect(screen.getByTestId(`pack-slot-open-${D5_SHAKE._id}`)).toBeInTheDocument();
+    // The out-of-stock one has nothing to pick (its sheet greys it — lane
+    // walk-oos): the unavailable look, no radio, nothing to open (review F10).
+    const dip = screen.getByRole("group", { name: `${D5_DIP.name}, unavailable` });
+    expect(dip).toHaveAttribute("data-testid", `pack-slot-${D5_DIP._id}`);
+    expect(radioOf(dip)).toBeNull();
+    expect(screen.queryByTestId(`pack-slot-open-${D5_DIP._id}`)).not.toBeInTheDocument();
     // No active option at all: no card.
     expect(screen.queryByTestId(`pack-slot-${D5_DESSERT._id}`)).not.toBeInTheDocument();
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£9.50");

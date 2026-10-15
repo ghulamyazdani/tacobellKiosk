@@ -84,7 +84,7 @@ import {
   setCelebratedBarKey,
 } from "../../utils/offerCelebration";
 import { ADA_SHEET_HEIGHT } from "../stage/KioskStage";
-import BagItemRow, { isRowUnavailable } from "./BagItemRow";
+import BagItemRow, { joinNames, soldOutNames } from "./BagItemRow";
 import RemoveItemModal from "./RemoveItemModal";
 import OfferTierHost from "../offer/OfferTierHost";
 import OfferRemovalNotice from "../offer/OfferRemovalNotice";
@@ -160,6 +160,15 @@ const CTA_TAP_GUARD_MS = 500;
 /** A bill figure at the cent (U4: the column must add up on screen). */
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+/** ErrorOccurred's cause fields (useMenuConverters' menu_fetch shape: RTK's status / error, else the JS error). */
+const errorFields = (error: unknown) => {
+  const e = error as { status?: unknown; name?: unknown; error?: unknown; message?: unknown } | null;
+  return {
+    error_status: String(e?.status ?? e?.name ?? "unknown"),
+    error_detail: String(e?.error ?? e?.message ?? ""),
+  };
+};
+
 interface BagSheetProps {
   open: boolean;
   onClose: () => void;
@@ -188,24 +197,6 @@ interface BagSheetProps {
  */
 const getLoyaltyPointsValue = (row: any) =>
   row?.extra_fields?.find((field: any) => field?.name === "Points Value")?.value;
-
-/**
- * A PAY whose stock check flagged nothing: every row is in stock and on
- * schedule, so a stale flag from an earlier PAY clears — on the LIVE row,
- * everything else as the bill priced it.
- */
-const clearStockFlags = (row: unknown): unknown => {
-  if (!isRowUnavailable(row)) return row;
-  const flagged = row as { selectedVariant?: Record<string, unknown> | null };
-  return {
-    ...flagged,
-    outOfStock: false,
-    isAvailable: true,
-    ...(flagged.selectedVariant
-      ? { selectedVariant: { ...flagged.selectedVariant, outOfStock: false } }
-      : {}),
-  };
-};
 
 /**
  * Offer photos are DEFERRED in P7b (resolveLivePhotoUrl not wired) — the
@@ -301,7 +292,7 @@ export default function BagSheet({
   onOpenLoyaltyLogin,
   onOpenLoyaltyRewards,
 }: BagSheetProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const store = useStore();
@@ -328,7 +319,7 @@ export default function BagSheet({
     | (PipelineLabel & { _id?: string })
     | null;
   const orderTypeSwitchNotice = useSelector(selectOrderTypeSwitchNotice);
-  const { pipelineName } = useLocalized();
+  const { name, pipelineName } = useLocalized();
   const adaActive = useAdaActive();
   const cartRehydrated = useCartRehydrated();
 
@@ -742,19 +733,17 @@ export default function BagSheet({
    * because /phone reads it to enter checkout mode.
    */
   const handlePay = async () => {
-    const entryGuard = evaluateCheckoutEntryGuards({
-      bill,
-      isLoyaltyOn: getIsLoyaltyOn(),
-      isCheckoutInProgress: checkoutInProgress,
-      cartItems: cartRdx?.cartItems,
-    });
-    if (
-      !entryGuard.allowed &&
-      (entryGuard.reason === "invalidBill" || entryGuard.reason === "zeroNetAmount")
-    ) {
-      return;
-    }
+    // w4 #1: the step the catch reports (ErrorOccurred — Rule 4: no console).
+    let step = "entry";
     try {
+      // Inside the try: a bill that throws here is reported and answered,
+      // never a silent dead PAY (an unhandled rejection).
+      const entryGuard = evaluateCheckoutEntryGuards({
+        bill,
+        isLoyaltyOn: getIsLoyaltyOn(),
+        isCheckoutInProgress: checkoutInProgress,
+        cartItems: cartRdx?.cartItems,
+      });
       if (!entryGuard.allowed) {
         if (entryGuard.reason === "emptyCart") {
           dispatch(
@@ -764,7 +753,7 @@ export default function BagSheet({
             }),
           );
         }
-        // "checkoutInProgress" returns silently, as in the fork.
+        // The other reasons return silently, as in the fork.
         return;
       }
       setCheckoutInProgress(true);
@@ -772,14 +761,31 @@ export default function BagSheet({
       // Revalidation ladder — the parts TB has ported (contract C1):
       // fetchMenu early-returns the redux menu when fresh (fork-identical
       // arguments, including the historical stray 4th `true`).
+      step = "menu";
       const menuData = await fetchMenu(tabId, true, false, true);
       let currentServerDateWithTime = moment();
-      const serverTimeData = await getServerTimeApi({}).unwrap();
+      // w4 #1: the server clock was the one step here that could throw on
+      // the network (a 10 s timeout, a 5xx) — the walk's intermittent first
+      // PAY that waited, then failed. It no longer fails PAY: the device
+      // clock stands in, as for an answer without serverTime (DIVERGENCE:
+      // the fork's PAY dies on it), and the miss is reported.
+      step = "server_time";
+      const serverTimeData = await getServerTimeApi({})
+        .unwrap()
+        .catch((error: unknown) => {
+          captureKioskEvent(KioskEventName.ErrorOccurred, {
+            error_source: "checkout",
+            stage: "server_time",
+            ...errorFields(error),
+          });
+          return null;
+        });
       if (serverTimeData?.serverTime) {
         currentServerDateWithTime = moment(new Date(serverTimeData.serverTime));
       }
       // The scheduler's rows are structuredClone'd (mutable) — the stock
       // sweep below runs on THEM, never on the frozen redux rows.
+      step = "scheduler";
       const preSweepRows = cartRdx?.cartItems;
       const { updatedCart, invalidSchedulerItemIds } = await updateCartItemsByMenu(
         preSweepRows,
@@ -807,14 +813,15 @@ export default function BagSheet({
       // SDK sweep, lazy with the bag's chunk (the 838-line engine stays off
       // the boot path). FAIL-OPEN (D-A1-1, fork parity): a failed chunk, a
       // failed / timed-out feed (10 s transport bound), a non-array feed or
-      // any throw lets PAY through on today's path. No second check before
-      // the Paytm initiate (D-A1-4).
+      // any throw lets PAY through on today's path — past nothing a row
+      // still flags (review F1, below). No second check before the Paytm
+      // initiate (D-A1-4). Its own report (checkout_stock_sweep), never the
+      // catch's: this try swallows every throw.
       let sweep: CheckoutStockSweep | null = null;
-      let sameRows: ((a: unknown, b: unknown) => boolean) | null = null;
+      let parts: typeof import("./bagLazyParts") | null = null;
       try {
-        const parts = await import("./bagLazyParts");
+        parts = await import("./bagLazyParts");
         if (!mountedRef.current) return;
-        sameRows = parts.sameCartRows;
         sweep = await parts.runCheckoutStockSweep(
           updatedCart,
           (ids) =>
@@ -834,16 +841,32 @@ export default function BagSheet({
       }
       if (!mountedRef.current) return;
 
-      if (!sweep || !sameRows) {
+      step = "write_back";
+      // The rows the notice names from: those PAY just wrote — or, when its
+      // check could not run, the live ones.
+      let stockRows: unknown[] = [];
+      // No check: what the last one flagged in the rows (review F1).
+      let held: { updatedBaseItems: unknown[]; minMaxErroredBaseItems: unknown[] } | undefined;
+      if (!sweep || !parts) {
         captureKioskEvent(KioskEventName.ErrorOccurred, {
           error_source: "checkout_stock_sweep",
         });
+        // walk-oos: fail OPEN only past what no check has flagged. An item, a
+        // size or a pick the last PAY found out of stock — the row still
+        // names it — blocks as that PAY did: TB keeps a flagged pick in its
+        // row (the fork dropped it), so letting it through orders and bills it.
+        const live = (store.getState() as { cart?: { cartItems?: unknown } })?.cart?.cartItems;
+        stockRows = Array.isArray(live) ? live : [];
+        const flagged = stockRows
+          .filter((row) => soldOutNames([row], name).length > 0)
+          .map((row) => (row as { itemId?: unknown } | null)?.itemId);
+        if (flagged.length > 0) held = { updatedBaseItems: flagged, minMaxErroredBaseItems: [] };
       } else {
         // CAS (D-A1-5): the guest changed the bag while the check ran — no
         // write; the next PAY checks the bag as it is now.
         const liveRows = (store.getState() as { cart?: { cartItems?: unknown } })
           ?.cart?.cartItems;
-        if (!sameRows(liveRows, preSweepRows)) {
+        if (!parts.sameCartRows(liveRows, preSweepRows)) {
           setCheckoutInProgress(false);
           return;
         }
@@ -854,27 +877,27 @@ export default function BagSheet({
             minMaxErroredBaseItems: sweep.minMaxErroredBaseItems,
           }),
         );
-        // ONE write (one dispatch + one Dexie replace), only when something
-        // is flagged or a live row carries a stale flag (D-A1-3). Flagged =
-        // a blocked PAY: the swept rows land and the guest sees the bag.
-        // Stale flags alone: this PAY proceeds on the bill it rendered, so
-        // only the flags clear — the swept rows would also land the
-        // scheduler's silent drops (an add-on out of its window) under an
-        // order priced and charged with them.
-        if (
-          sweep.updatedBaseItems.length > 0 ||
-          sweep.minMaxErroredBaseItems.length > 0 ||
-          isAnyItemUnavailable
-        ) {
-          replaceCartItems(sweep.updatedCart);
-        } else if (Array.isArray(liveRows) && liveRows.some(isRowUnavailable)) {
-          replaceCartItems(liveRows.map(clearStockFlags));
+        // ONE write, only when something is flagged or a live row carries a
+        // stale flag (D-A1-3; payStock.planStockWrite says which).
+        const write = parts.planStockWrite({
+          flagged:
+            sweep.updatedBaseItems.length > 0 ||
+            sweep.minMaxErroredBaseItems.length > 0 ||
+            isAnyItemUnavailable,
+          swept: sweep.updatedCart,
+          given: updatedCart,
+          live: liveRows,
+        });
+        if (write) {
+          stockRows = write;
+          replaceCartItems(write);
         }
       }
 
+      step = "decision";
       const decision = resolveCheckoutStockDecision({
         cartItems: preSweepRows,
-        outOfStockData: sweep ?? undefined,
+        outOfStockData: sweep ?? held,
         isAnyItemUnavailable,
         tabType,
         skipCRM: shouldSkipCRM(),
@@ -888,12 +911,18 @@ export default function BagSheet({
           if (decision.removeOffer) {
             handleCartDrivenRemoval(decision.removeOffer.silent);
           }
-          // The existing notice (decision 2026-10-08: no new key).
+          // walk-oos (user 2026-10-14, superseding 2026-10-08's "no new
+          // key"): the notice names what is out of stock — the item, its
+          // size, or the picks the rows now flag.
           if (decision.showOutOfStockError) {
+            const blockedOn = stockRows.filter((row) =>
+              decision.remainingOutOfStockIds.includes((row as { itemId?: unknown } | null)?.itemId),
+            );
+            const names = joinNames(soldOutNames(blockedOn, name), i18n.language);
             dispatch(
               setShowErrorModalGlobal({
                 showErrorModal: true,
-                errorMessage: t("bag.itemUnavailable"),
+                errorMessage: names ? t("bag.outOfStock", { names }) : t("bag.itemUnavailable"),
               }),
             );
           }
@@ -911,6 +940,7 @@ export default function BagSheet({
         return;
       }
 
+      step = "route";
       dispatch(setAmount(getCheckoutNetAmount(bill)));
       captureKioskEvent(KioskEventName.CheckoutStarted, {
         item_count: totalQuantity,
@@ -921,13 +951,19 @@ export default function BagSheet({
       dispatch(setAppliedCharges(structuredClone(bill?.charges?.detail)));
       setCheckoutInProgress(false);
       navigate(`/${decision.route}`, { state: { checkoutRoute: decision.route } });
-    } catch {
+    } catch (error) {
       // Same late-result rule: the global error is redux, so it would greet
       // the next customer.
       if (!mountedRef.current) return;
       // Never a frozen sheet (Rule 2): release the latch and surface the
-      // failure through the global error modal.
+      // failure through the global error modal — and say WHICH step failed
+      // (w4 #1: the walk could not tell).
       setCheckoutInProgress(false);
+      captureKioskEvent(KioskEventName.ErrorOccurred, {
+        error_source: "checkout",
+        stage: step,
+        ...errorFields(error),
+      });
       dispatch(
         setShowErrorModalGlobal({
           showErrorModal: true,
@@ -1470,11 +1506,17 @@ export default function BagSheet({
               {showComingSoon ? t("bag.comingSoon") : t("bag.loginRewards")}
             </button>
           )}
+          {/* w4 #1: busy while PAY's checks run (the server clock, the
+              stock re-check) — the house busy CTA (RewardsSheet SAVE). */}
           <button
             type="button"
             data-testid="bag-pay"
             onClick={handlePay}
-            className={`tb-display min-h-[84px] ${loyaltyOn ? "w-[400px]" : "flex-1"} rounded-[8px] bg-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)]`}
+            disabled={checkoutInProgress}
+            aria-busy={checkoutInProgress}
+            className={`tb-display min-h-[84px] ${loyaltyOn ? "w-[400px]" : "flex-1"} rounded-[8px] bg-tb-purple py-[32px] text-center text-[24px] leading-[20px] text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)] ${
+              checkoutInProgress ? "opacity-40" : ""
+            }`}
           >
             {/* Figma 1:3137: "ORDER & PAY £33.39" once a reward discounts
                 the order (tb-display uppercases the label). */}

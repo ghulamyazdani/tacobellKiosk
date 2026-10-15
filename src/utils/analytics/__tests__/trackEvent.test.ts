@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KioskEventName } from "@cx-sdk/core";
 
 /*
@@ -276,5 +276,33 @@ describe("resetAnalyticsSession — a new session per guest (audit-fixes B3)", (
     a.captureKioskEvent(KioskEventName.HomeLoaded);
 
     expect(calls).toEqual([["reset"], ["capture", KioskEventName.HomeLoaded, undefined]]);
+  });
+});
+
+/*
+  Review F9 (walk w4 #1): analytics only exist in production analytics
+  builds, so a walk on the dev server could not tell which PAY step failed
+  (ErrorOccurred went nowhere) — and Rule 4 / C5 keep console out of src.
+  DEV only (dead code in builds — store.ts's __kioskStore precedent): every
+  event is kept on window.__kioskEvents, the last 50, for the walk to read.
+*/
+describe("DEV: the events a walk can read (window.__kioskEvents)", () => {
+  // The suites above log there too.
+  beforeEach(() => {
+    delete (window as unknown as { __kioskEvents?: unknown }).__kioskEvents;
+  });
+
+  it("keeps each event as analytics would send it — the kill switch off — capped at the last 50", async () => {
+    const a = await loadAdapter(false);
+    a.captureKioskEvent(KioskEventName.ErrorOccurred, { error_source: "checkout", stage: "scheduler" });
+    const events = () => (window as unknown as { __kioskEvents?: unknown[] }).__kioskEvents;
+    expect(events()).toEqual([
+      { event: KioskEventName.ErrorOccurred, properties: { error_source: "checkout", stage: "scheduler" } },
+    ]);
+    expect(calls).toEqual([]);
+
+    for (let i = 0; i < 60; i += 1) a.captureKioskEvent(KioskEventName.HomeLoaded, { i });
+    expect(events()).toHaveLength(50);
+    expect(events()?.[0]).toEqual({ event: KioskEventName.HomeLoaded, properties: { i: 10 } });
   });
 });

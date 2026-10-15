@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useStore } from "react-redux";
 import type { UnknownAction } from "@reduxjs/toolkit";
-import { setEntityMap, setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import {
+  setEntityMap,
+  setMinMaxErroredBaseItems,
+  setModifiersMap,
+  setUpdatedBaseItems,
+} from "@cx-sdk/catalog/state/Menu.slice";
 import { setTent } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   selectCurrentSession,
@@ -28,6 +33,7 @@ import {
   selectSecondaryLanguage,
   selectSelectedLanguage,
 } from "../../redux/features/multiLanguage/multiLanguage.slice";
+import { setOutOfStockItems } from "../../redux/features/menuSelections/menuSelections.slice";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 
 /*
@@ -180,6 +186,10 @@ export default function useOrderTypeSwitch(opts: {
           ? offers.map((offer: { _id?: unknown } | null) => offer?._id)
           : [],
         currentSession: session ? session.payload : selectCurrentSession(state),
+        // walk-oos (review F4): an add-on this tab sells out of stays in its
+        // row, flagged — the bag names it, Edit drops it, PAY blocks on it —
+        // never the whole item gone unnamed.
+        keepSoldOutPicks: true,
       });
       // D6: never commit a bag over the new session's DP cap — the add,
       // "+" and edit paths all refuse one. Nothing is written.
@@ -193,6 +203,13 @@ export default function useOrderTypeSwitch(opts: {
         dispatch(action),
       );
       dispatch(pushCharges(allCharges));
+      // walk-oos (review F5): stock is per tab — the old tab's PAY feed map
+      // must not grey what this one sells; its menu's stamps take over. Its
+      // PAY lists go too (review F4): no red line on a row this tab serves —
+      // the re-price already cleared the rows' own old-tab flags.
+      dispatch(setOutOfStockItems({}));
+      dispatch(setUpdatedBaseItems({ updatedBaseItems: [] }));
+      dispatch(setMinMaxErroredBaseItems({ minMaxErroredBaseItems: [] }));
       if (plan.reprice.changed) dispatch(setCartItems(plan.reprice.rows));
       // A tent number typed on the old tab (/tent BACK keeps it) belongs to
       // that tab's table; the order builder sends it whatever the tab type.

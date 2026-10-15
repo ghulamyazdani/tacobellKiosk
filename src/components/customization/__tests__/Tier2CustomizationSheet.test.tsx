@@ -22,6 +22,7 @@ import {
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import Tier2CustomizationSheet from "../Tier2CustomizationSheet";
 import i18n from "../../../i18n";
 
@@ -720,5 +721,96 @@ describe("Tier2CustomizationSheet — the CTA on every grid card (user report 20
 
     await userEvent.click(cta("ice"));
     expect(picks()).toEqual([]);
+  });
+});
+
+/*
+  Lane walk-oos: the tier-2 page is a chooser too (posistKiosk parity) — an
+  out-of-stock nested option (the menu's stamp, or PAY's fresher feed map)
+  sits last in the PDP's unavailable look and cannot be picked.
+*/
+describe("Tier2CustomizationSheet — out-of-stock options (walk-oos)", () => {
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  const SOLD_OUT_ICE = {
+    ...ICE_GROUP,
+    constituentItems: [
+      { id: "ice", name: "Regular Ice", price: 0, isActive: true, entityType: "Addon", outOfStock: true },
+      { id: "no-ice", name: "No Ice", price: 0, isActive: true, entityType: "Addon", outOfStock: false },
+    ],
+  };
+
+  it("the menu's stamp: last, named unavailable, nothing to tap — a tap picks nothing", () => {
+    seedOpenTier2(ENTITY, SOLD_OUT_ICE);
+    renderSheet();
+
+    const ice = screen.getByRole("group", { name: "Regular Ice, unavailable" });
+    expect(ice).toHaveAttribute("data-testid", "tier2-option-ice");
+    expect(ice).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(within(ice).queryByRole("button")).not.toBeInTheDocument();
+    const order = Array.from(
+      screen.getByTestId("tier2-group-dl_addons").querySelectorAll('[data-testid^="tier2-option-"]')
+    )
+      .map((node) => node.getAttribute("data-testid"))
+      .filter((id) => !String(id).includes("-cta-"));
+    expect(order).toEqual(["tier2-option-no-ice", "tier2-option-ice"]);
+    fireEvent.click(ice);
+    expect(tier2SelectedCustomization(store.getState())).toEqual({ dl_addons: [] });
+  });
+
+  it("PAY's feed map greys an option the stamp still sells", () => {
+    seedOpenTier2();
+    store.dispatch(
+      setOutOfStockItems({ "no-ice": { _id: "no-ice", type: "addon", inStock: false } })
+    );
+    renderSheet();
+
+    expect(screen.getByRole("group", { name: "No Ice, unavailable" })).toBeInTheDocument();
+    expect(screen.getByTestId("tier2-option-ice").tagName).toBe("BUTTON");
+  });
+
+  // Review: the stepper rows' guard — a pack-slot session's multi-punch group.
+  // Without it a sold-out option gets − / +, and "+" orders it.
+  it("stepper rows: an option sold out by the menu's stamp or by PAY's feed map is named unavailable, last, has no − / +, and the picks never change", () => {
+    const SAUCES = {
+      ...ICE_GROUP,
+      name: "Sauces",
+      min: 0,
+      max: 3,
+      multiplePunchMin: 0,
+      multiplePunchMax: 3,
+      multiplePunchMaxItem: 2,
+      constituentItems: [
+        { id: "salsa", name: "Salsa", price: 0, isActive: true, entityType: "Addon", outOfStock: true },
+        { id: "ranch", name: "Ranch", price: 0, isActive: true, entityType: "Addon", outOfStock: false },
+        { id: "mayo", name: "Mayo", price: 0, isActive: true, entityType: "Addon", outOfStock: false },
+      ],
+    };
+    seedOpenTier2(ENTITY, SAUCES);
+    store.dispatch(setOutOfStockItems({ ranch: { _id: "ranch", type: "addon", inStock: false } }));
+    renderSheet();
+
+    for (const item of ["Salsa", "Ranch"]) {
+      const row = screen.getByRole("group", { name: `${item}, unavailable` });
+      expect(row).toHaveAttribute("aria-disabled", "true");
+      expect(row).toHaveTextContent(i18n.t("menu.unavailable"));
+      expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: `${i18n.t("pdp.increase")} ${item}` })).toBeNull();
+      expect(screen.queryByRole("button", { name: `${i18n.t("pdp.decrease")} ${item}` })).toBeNull();
+      fireEvent.click(row);
+    }
+    expect(tier2SelectedCustomization(store.getState())).toEqual({ dl_addons: [] });
+    const order = Array.from(
+      screen.getByTestId("tier2-group-dl_addons").querySelectorAll('[data-testid^="tier2-option-"]')
+    ).map((node) => node.getAttribute("data-testid"));
+    expect(order).toEqual(["tier2-option-mayo", "tier2-option-salsa", "tier2-option-ranch"]);
+    // The row in stock keeps its stepper.
+    expect(screen.getByRole("button", { name: `${i18n.t("pdp.increase")} Mayo` })).toBeInTheDocument();
   });
 });

@@ -472,6 +472,58 @@ describe("BuyStageSheet — tiles and modes", () => {
     expect(tile).not.toHaveTextContent("£0");
   });
 
+  it("walk-oos 2: a size tile is that size — out of stock (sold out, or no guest can complete it), it reads Unavailable with no add target", async () => {
+    const view = viewFor(LARGE_FRIES_BOGO, {
+      "fries-l": {
+        baseItem: { ...FRIES_BASE, variants: [FRIES_BASE.variants[0], { ...FRIES_BASE.variants[1], outOfStock: true }] },
+        variant: { id: "fries-l", name: "Large" },
+      },
+    });
+    renderStage(LARGE_FRIES_BOGO, view);
+
+    const tile = screen.getByTestId("buy-stage-tile-fries");
+    expect(tile).toHaveTextContent("Fries (Large)");
+    expect(within(tile).getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("buy-stage-add-fries")).toBeNull();
+    expect(screen.queryByTestId("buy-stage-inc-fries")).toBeNull();
+    await userEvent.click(tile);
+    expect(state().cart.cartItems).toEqual([BURGER_ROW]);
+  });
+
+  it("walk-oos 2: a category tile narrowed to sizes that are all out (sold out, or no guest can complete them) reads Unavailable with no add target; one with a size left is live", async () => {
+    const LARGE_DRINKS_BOGO = {
+      ...BOGO,
+      _id: "offer-large-drinks",
+      name: "Buy a large drink",
+      applicable: applicable([{ category: { _id: "large-drinks", categoryName: "Large drinks" }, quantity: 1, relation: "or" }]),
+    };
+    const size = (id: string, subCategoryId: string, extra: object = {}) => ({ id, name: id, price: 3, subCategoryId, ...extra });
+    const sized = (id: string, variants: object[]) => ({ id, name: id, price: 0, hasVariant: true, variants });
+    const OUT = { outOfStock: true };
+    renderStage(
+      LARGE_DRINKS_BOGO,
+      viewWith(LARGE_DRINKS_BOGO, {
+        // The Regular is another category's: the tile is its Large alone, out.
+        soda: sized("soda", [size("soda-r", "small-drinks"), size("soda-l", "large-drinks", OUT)]),
+        // Its XL is not on offer: nothing left to pick.
+        tea: sized("tea", [size("tea-l", "large-drinks", OUT), size("tea-xl", "large-drinks", { isActive: false })]),
+        // One Large-drinks size out, the other in: live.
+        juice: sized("juice", [size("juice-l", "large-drinks", OUT), size("juice-xl", "large-drinks")]),
+      })
+    );
+
+    for (const id of ["soda", "tea"]) {
+      const tile = screen.getByTestId(`buy-stage-tile-${id}`);
+      expect(within(tile).getByText("Unavailable")).toBeInTheDocument();
+      expect(screen.queryByTestId(`buy-stage-add-${id}`)).toBeNull();
+      expect(screen.queryByTestId(`buy-stage-inc-${id}`)).toBeNull();
+      await userEvent.click(tile);
+    }
+    expect(state().cart.cartItems).toEqual([BURGER_ROW]);
+    expect(within(screen.getByTestId("buy-stage-tile-juice")).queryByText("Unavailable")).toBeNull();
+    expect(screen.getByTestId("buy-stage-add-juice")).toBeInTheDocument();
+  });
+
   it("a tile's price line carries the deployment's symbol (UB1 — never a bare amount)", () => {
     renderStage(BOGO);
     expect(screen.getByTestId(`buy-stage-tile-${SAUCE.id}`)).toHaveTextContent("£2 | 50 Cal");

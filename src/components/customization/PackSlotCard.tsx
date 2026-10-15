@@ -10,7 +10,7 @@ import OptionCard, { formatOptionMeta } from "./OptionCard";
 interface PackSlotCardProps {
   group: any; // modifier group (name, _id, min, max)
   selection: any[]; // selectedCustomizations[group._id] ?? []
-  previewItem?: any; // first option (the empty slot's photo)
+  previewItem?: any; // first option, in-stock ones first (the empty slot's photo; out of stock = none is)
   currency: string;
   errored?: boolean; // min/max errored ring
   /** The slot has ONE option: once picked it is an included item (FIXED). */
@@ -64,6 +64,9 @@ export default function PackSlotCard({
   }
 
   const label = pick ? t("pack.swap") : t("pack.selectGroup", { name: name(group) });
+  // walk-oos (review F10): the options come in-stock first, so an empty slot
+  // previewing a sold-out one has none in stock — the unavailable look.
+  const soldOut = !pick && previewItem?.outOfStock === true;
   return (
     <OptionCard
       testId={`pack-slot-${id}`}
@@ -71,6 +74,11 @@ export default function PackSlotCard({
       name={pick ? name(pick) : name(group)}
       meta={pick ? formatOptionMeta(pick, currency, t) : undefined}
       radio={pick ? "on" : "off"}
+      unavailable={
+        soldOut
+          ? { label: t("menu.unavailable"), name: t("pdp.optionUnavailable", { name: name(group) }) }
+          : undefined
+      }
       errored={errored}
       cta={{ label, onClick: onOpen, testId: `pack-slot-cta-${id}` }}
       onSelect={onOpen}

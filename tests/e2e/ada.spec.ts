@@ -3,7 +3,6 @@ import {
   expect,
   type Locator,
   type Page,
-  type Route,
   PROMPT_AFTER_MS,
   PROMPT_WINDOW_MS,
 } from "./fixtures/kiosk";
@@ -15,7 +14,7 @@ import {
   CHEESE_BURGER,
 } from "./fixtures/backend";
 import { registerToStart, startToSecond, pickPipelineToMenu } from "./pages/boot";
-import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { addOneTap, openBag, typeDigits, breakPayPreflight } from "./pages/order";
 import { stageBox, type StageBox } from "./fixtures/a11y";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import {
@@ -868,8 +867,8 @@ test.describe("P9c ADA reach-zone view", () => {
     await addGreekSaladOneTap(page, "(1)");
     await openBag(page);
 
-    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
-    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    // A real preflight failure (pages/order breakPayPreflight).
+    const restoreBag = await breakPayPreflight(page);
     await page.getByTestId("bag-pay").click();
     const dialog = page.getByTestId("global-error");
     await expect(dialog).toBeVisible();
@@ -878,7 +877,7 @@ test.describe("P9c ADA reach-zone view", () => {
     await expectReachable(page, dialog);
     await expectAdaLayout(page);
 
-    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
+    await restoreBag();
     await page.getByTestId("global-error-ok").click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("bag-sheet")).toBeVisible();

@@ -660,3 +660,82 @@ describe("Counter (1:615) and CtaBar (1:589)", () => {
     expect(screen.getByTestId("go")).toBeDisabled();
   });
 });
+
+/*
+  Lane walk-oos: an out-of-stock option — the menu card's look (content at
+  40 %, the photo grey, the "Unavailable" chip) — names itself unavailable
+  and offers nothing to tap: no radio, CTA, CUSTOMIZE or stepper.
+*/
+describe("OptionCard / OptionRow — out of stock (walk-oos)", () => {
+  const UNAVAILABLE = { label: "Unavailable", name: "Maharaja MAC, unavailable" };
+
+  it("the card: a disabled group named unavailable, the chip in the CTA's place, the photo grey at 40 %, the name and meta at 40 % — never a button, radio or CTA", () => {
+    const onSelect = vi.fn();
+    render(
+      <OptionCard
+        testId="opt"
+        image="https://e2e.test/mac.png"
+        name="Maharaja MAC"
+        meta="+£15.00"
+        radio="on"
+        onSelect={onSelect}
+        cta={{ label: "Choose", testId: "opt-cta" }}
+        customize={{ label: "Customize", ariaLabel: "Customize Maharaja MAC", testId: "opt-customize", description: "Selected", onClick: vi.fn() }}
+        unavailable={UNAVAILABLE}
+      />
+    );
+    const card = screen.getByRole("group", { name: "Maharaja MAC, unavailable" });
+    expect(card).toHaveAttribute("data-testid", "opt");
+    expect(card).toHaveAttribute("aria-disabled", "true");
+    expect(card).toHaveTextContent("Unavailable");
+    expect(card.querySelector("img")).toHaveClass("opacity-40", "grayscale");
+    expect(screen.getByText("Maharaja MAC").parentElement).toHaveClass("opacity-40");
+    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("opt-cta")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("opt-customize")).not.toBeInTheDocument();
+    expect(card.querySelector('[aria-hidden="true"]')).toBeNull(); // no radio
+    fireEvent.click(card);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("the stepper row: the chip in the stepper's place, no − / +, named unavailable", () => {
+    const onIncrease = vi.fn();
+    render(
+      <OptionRow
+        testId="row"
+        image="https://e2e.test/ranch.png"
+        name="Ranch"
+        meta="+£1.00"
+        qty={0}
+        onDecrease={vi.fn()}
+        onIncrease={onIncrease}
+        decreaseLabel="Decrease Ranch"
+        increaseLabel="Increase Ranch"
+        unavailable={{ label: "Unavailable", name: "Ranch, unavailable" }}
+      />
+    );
+    const row = screen.getByRole("group", { name: "Ranch, unavailable" });
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveTextContent("Unavailable");
+    expect(row.querySelector("img")).toHaveClass("opacity-40", "grayscale");
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("in stock, the row is unchanged: no group role, the − / + stepper", () => {
+    render(
+      <OptionRow
+        testId="row"
+        image={null}
+        name="Mayo"
+        qty={1}
+        onDecrease={vi.fn()}
+        onIncrease={vi.fn()}
+        decreaseLabel="Decrease Mayo"
+        increaseLabel="Increase Mayo"
+      />
+    );
+    expect(screen.getByTestId("row")).not.toHaveAttribute("role");
+    expect(screen.getByTestId("row")).not.toHaveAttribute("aria-disabled");
+    expect(within(screen.getByTestId("row")).getAllByRole("button")).toHaveLength(2);
+  });
+});

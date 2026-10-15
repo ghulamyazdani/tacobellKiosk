@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { clippedText } from "./fixtures/clippedText";
+import { breakPayPreflight } from "./pages/order";
 
 /**
  * Capture-only screenshots of the ORDERING screens (user decision 2026-10-05:
@@ -657,7 +658,7 @@ test.describe("visual capture — ordering screens", () => {
 
       // G1: a PAY whose preflight fails raises the global error over the bag.
       await openBag(page);
-      await page.route("**/api/tenants/getServerTime", (r) => r.fulfill({ status: 500, json: {} }));
+      await breakPayPreflight(page);
       await page.getByTestId("bag-pay").click();
       await expect(page.getByTestId("global-error")).toBeVisible();
       await capture(page, `order-30-global-error-${mode}`);

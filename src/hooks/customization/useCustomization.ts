@@ -381,6 +381,24 @@ const useCustomization = ({
     });
     return true;
   };
+  /*
+    An edit-from-bag commit fixed its row: PAY's verdicts on it (Menu.slice's
+    lists) go — the next PAY checks again. Both commit branches (lane
+    walk-oos: the VARIANT one never did, so a sized row the guest had just
+    fixed kept its red line until the next PAY).
+  */
+  const releasePayVerdicts = (itemId: unknown) => {
+    dispatch(
+      setMinMaxErroredBaseItems({
+        minMaxErroredBaseItems: minMaxErroredBaseItemRdx.filter((id: any) => id !== itemId),
+      }),
+    );
+    dispatch(
+      setUpdatedBaseItems({
+        updatedBaseItems: updatedBaseItemListRdx.filter((id: any) => id !== itemId),
+      }),
+    );
+  };
   // const SelectedEntity = useSelector(selectMenuSelections);
 
   const [isScrollingDown, setIsScrollingDown] = useState(false);
@@ -1159,6 +1177,7 @@ const useCustomization = ({
       // EDIT vs ADD flows preserved exactly
       if (isOpenBottomSheet?.openType === "edit") {
         if (!commitEdit(returnableFinalObject, "VARIANT")) return false;
+        releasePayVerdicts(returnableFinalObject?.itemId);
         setIsFlippedToShowSubTotal(true);
         setIsFlippedModalData({
           mainHeading: "Item Updated SuccessFully",
@@ -1243,24 +1262,7 @@ const useCustomization = ({
 
       if (isOpenBottomSheet?.openType === "edit") {
         if (!commitEdit(returnableFinalObject, "CUSTOMIZABLE")) return false;
-
-        const newUpdatedItem = updatedBaseItemListRdx.filter(
-          (id: any) => id !== returnableFinalObject?.itemId,
-        );
-        const newMinMaxIds = minMaxErroredBaseItemRdx.filter(
-          (id: any) => id !== returnableFinalObject?.itemId,
-        );
-        dispatch(
-          setMinMaxErroredBaseItems({
-            minMaxErroredBaseItems: newMinMaxIds,
-          }),
-        );
-        dispatch(
-          setUpdatedBaseItems({
-            updatedBaseItems: newUpdatedItem,
-          }),
-        );
-
+        releasePayVerdicts(returnableFinalObject?.itemId);
         closeModalStates();
       } else {
         // See the VARIANT branch above — a DP refusal answers undefined.

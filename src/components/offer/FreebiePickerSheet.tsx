@@ -7,6 +7,9 @@ import { useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectGetItems } from "@cx-sdk/ordering/state/cart.slice";
+import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectAllowMultiplePunch } from "@cx-sdk/catalog/state/appSettings.slice";
+import { markUncompletable } from "@cx-sdk/catalog/oos/optionStock";
 import { isGroupWiseItemOffer } from "@cx-sdk/ordering/offer/groupWiseOfferUtils";
 import {
   canAddGroupWiseUnit,
@@ -23,6 +26,7 @@ import {
   type CategoryCommitLine,
   type CategoryPick,
 } from "@cx-sdk/ordering/offer/offerCategoryFreebies";
+import { selectOutOfStockItems } from "../../redux/features/menuSelections/menuSelections.slice";
 import useOfferApply from "../../hooks/offerHooks/useOfferApply";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import useMakeItAMeal from "../../hooks/makeItAMeal/useMakeItAMeal";
@@ -143,11 +147,21 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   const { name } = useLocalized();
   const stagedRows: StagedRow[] = useSelector(selectGetItems) ?? [];
   const currency = useCurrencySymbol();
+  const modifierMap = useSelector(selectModifierMap);
+  const stock = useSelector(selectOutOfStockItems);
+  const multiPunch = Boolean(useSelector(selectAllowMultiplePunch));
+  // walk-oos 2: a freebie no guest can complete (a required group with
+  // nothing in stock, SDK markUncompletable) is dropped, as the converter
+  // drops a sold-out one — re-judged whenever the stock data moves.
+  const completable = (entity: unknown): boolean =>
+    (markUncompletable(entity, modifierMap, stock, multiPunch) as { outOfStock?: unknown } | null)
+      ?.outOfStock !== true;
 
   // Only entries the converter resolved to a live entity are offerable
   // (contract trap 1: unresolvable baseItemIds silently vanish).
   const entries: any[] = (offer?.getItems?.items ?? []).filter(
-    (entry: any) => entry?.entities && Object.keys(entry.entities).length > 0,
+    (entry: any) =>
+      entry?.entities && Object.keys(entry.entities).length > 0 && completable(entry.entities),
   );
   // Plain = a fixed grant committed as-is (SDK isFixedGetEntry): an ITEM
   // entity, or a variant-id entity (converter isVariantSelected — the offer
@@ -180,9 +194,9 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   // their own picker). A group grants EXACTLY its need (D7).
   const groups: CategoryGroup[] = groupWise
     ? []
-    : ((offer?.getItems?.categories ?? []) as CategoryGroup[]).filter(
-        (group) => (group?.entities?.length ?? 0) > 0,
-      );
+    : ((offer?.getItems?.categories ?? []) as CategoryGroup[])
+        .map((group) => ({ ...group, entities: (group?.entities ?? []).filter(completable) }))
+        .filter((group) => group.entities.length > 0);
 
   // "or" relation → the customer picks ONE option (an item, or a whole
   // group at its need); pure-"and" list → every entry and every group is

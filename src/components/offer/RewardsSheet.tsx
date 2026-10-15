@@ -4,10 +4,7 @@ import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCartOffer } from "@cx-sdk/ordering/state/cart.slice";
 import { selectFilteredOffers } from "@cx-sdk/ordering/state/offer.slice";
-import {
-  selectSubCategoryMap,
-  selectVariantObject,
-} from "@cx-sdk/catalog/state/Menu.slice";
+import { selectSubCategoryMap } from "@cx-sdk/catalog/state/Menu.slice";
 import {
   hasOffer,
   lockedGapPresentation,
@@ -31,6 +28,7 @@ import useOfferDescription, {
 } from "../../hooks/offerHooks/useOfferDescription";
 import useCartUpsell, {
   selectMenuSellableEntityMap,
+  selectSellableVariantObject,
 } from "../../hooks/menuHooks/useCartUpsell";
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -149,7 +147,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   const currency = useCurrencySymbol();
   const entityMap = useSelector(selectMenuSellableEntityMap) as EntityMapIn;
   const subCategoryMap = useSelector(selectSubCategoryMap) as SubCategoryMapIn;
-  const variantObject = useSelector(selectVariantObject) as VariantObjectIn;
+  const variantObject = useSelector(selectSellableVariantObject) as VariantObjectIn;
 
   const { rank } = useOfferSavings();
   // Each row's description (lane offers-parity F3) — never throws (D10).

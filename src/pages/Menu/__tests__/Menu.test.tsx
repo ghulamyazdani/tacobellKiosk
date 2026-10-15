@@ -35,6 +35,7 @@ import { store } from "../../../redux/app/store";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import {
   mutateAddToCartModal,
+  setOutOfStockItems,
   setRecommendationDetour,
 } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { notePath } from "../../../hooks/utils/usePageEnter";
@@ -824,8 +825,10 @@ describe("Menu — the funnel events (B3)", () => {
     name: "Greek Salad",
     price: 17,
     subCategoryId: SIDES,
-    // Converted combos are entities (filterEntitiesByTags drops bare ids).
-    upsellItems: [{ id: "combo-1", name: "Salad Meal", tags: ["veg"] }],
+    // Converted combos are entities (filterEntitiesByTags drops bare ids),
+    // active ones (addUpSellEntities resolves no other) — the meal prompt
+    // offers only those, and an item with none is no upsell (walk-oos 2).
+    upsellItems: [{ id: "combo-1", name: "Salad Meal", tags: ["veg"], isActive: true }],
     recommendedItems: [],
     outOfStock: false,
   };
@@ -1558,5 +1561,127 @@ describe("Menu — product-added suggestions are staged (posistKiosk parity)", (
 
     expect(selections().recommendationDetour).toBe(false);
     expect(cartRows()).toEqual([expect.objectContaining({ id: PLAIN.id, quantity: 1 })]);
+  });
+});
+
+/*
+  walk-oos 2 (user 2026-10-14, "Show it Unavailable"): an item with a
+  REQUIRED group whose every option is out of stock can never be completed —
+  its card is the sold-out card (nothing to open, no "+"), and a size with
+  its own such group is a greyed size in Select a Size. Re-evaluated live:
+  PAY's fresher stock map moves the cards.
+*/
+describe("Menu — walk-oos 2: an item no guest can complete reads Unavailable", () => {
+  const opt = (id: string, outOfStock = false) => ({ id, name: id, isActive: true, outOfStock });
+  const MODS = {
+    drink: { _id: "drink", isActive: true, min: 1, max: 1, constituentItems: [opt("cola", true), opt("lime", true)] },
+    sauce: { _id: "sauce", isActive: true, min: 1, max: 1, constituentItems: [opt("hot", true), opt("mild")] },
+  };
+  const MEAL = { id: "e-meal", name: "Taco Meal", price: 9, modifiers: ["drink"], outOfStock: false };
+  const BURRITO = { id: "e-burrito", name: "Burrito", price: 5, modifiers: ["sauce"], outOfStock: false };
+  // The dead Large first: Select a Size moves it last.
+  const SODA = {
+    id: "e-soda",
+    name: "Soda",
+    price: 2,
+    hasVariant: true,
+    isVariant: false,
+    outOfStock: false,
+    variants: [
+      { id: "soda-l", name: "Large", price: 3, isActive: true, modifiers: ["drink"] },
+      { id: "soda-r", name: "Regular", price: 2, isActive: true, modifiers: [] },
+    ],
+  };
+  // One size, and its own required drink is out: no size left to complete.
+  const NACHOS = {
+    id: "e-nachos",
+    name: "Nachos",
+    price: 4,
+    hasVariant: true,
+    isVariant: false,
+    outOfStock: false,
+    variants: [{ id: "nachos-r", name: "Regular", price: 4, isActive: true, modifiers: ["drink"] }],
+  };
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: MODS }));
+    store.dispatch(
+      setMenuData({
+        menu: { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [MEAL, BURRITO, SODA, NACHOS] }] }] },
+      })
+    );
+  });
+
+  it("a sized item with no size left to complete is the sold-out card — no '+', nothing to tap; PAY's map brings a drink back and it is live", () => {
+    renderMenu();
+
+    const nachos = screen.getByTestId("item-e-nachos");
+    expect(nachos).toHaveAttribute("aria-disabled", "true");
+    expect(nachos).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(within(nachos).queryAllByRole("button")).toHaveLength(0);
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({ cola: { type: "combo", inStock: true } }));
+    });
+    expect(screen.getByTestId("item-e-nachos")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("quick-add-e-nachos")).toBeInTheDocument();
+  });
+
+  it("the meal (its required drink: every option out) is the sold-out card — aria-disabled, Unavailable, nothing to tap; the burrito (one sauce left) is live", () => {
+    renderMenu();
+
+    const meal = screen.getByTestId("item-e-meal");
+    expect(meal).toHaveAttribute("aria-disabled", "true");
+    expect(meal).toHaveTextContent(i18n.t("menu.unavailable"));
+    expect(within(meal).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByTestId("item-e-burrito")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("quick-add-e-burrito")).toBeInTheDocument();
+  });
+
+  it("re-evaluated live: PAY's map takes the burrito's last sauce — its card goes Unavailable; the map clears — it is back", () => {
+    renderMenu();
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({ mild: { type: "addon", inStock: false } }));
+    });
+    expect(screen.getByTestId("item-e-burrito")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByTestId("quick-add-e-burrito")).not.toBeInTheDocument();
+
+    act(() => {
+      store.dispatch(setOutOfStockItems({}));
+    });
+    expect(screen.getByTestId("item-e-burrito")).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByTestId("quick-add-e-burrito")).toBeInTheDocument();
+  });
+
+  it("a sized item: '+' opens Select a Size with the Large (its own required drink out) greyed — disabled, named unavailable, last — and the Regular pickable", () => {
+    renderMenu();
+
+    fireEvent.click(screen.getByTestId("quick-add-e-soda"));
+
+    expect(screen.getByTestId("select-size-modal")).toBeInTheDocument();
+    const large = screen.getByTestId("size-soda-l");
+    expect(large).toBeDisabled();
+    expect(large).toHaveAccessibleName(i18n.t("pdp.optionUnavailable", { name: "Large" }));
+    expect(screen.getByTestId("size-soda-r")).toBeEnabled();
+    expect(screen.getAllByTestId(/^size-soda-/).map((node) => node.dataset.testid)).toEqual(["size-soda-r", "size-soda-l"]);
+  });
+
+  it("a sized item's card tap: the PDP's session carries the Large out of stock (its size grid greys it), the Regular in", () => {
+    renderMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Soda" }));
+
+    const session = tier1CustomizationSelectedEntity(store.getState()) as {
+      variants?: { id: string; outOfStock?: boolean }[];
+    };
+    expect(session?.variants?.map((size) => [size.id, size.outOfStock === true])).toEqual([
+      ["soda-l", true],
+      ["soda-r", false],
+    ]);
   });
 });

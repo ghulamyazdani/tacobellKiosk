@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -120,6 +120,14 @@ const payWithRevalidationInFlight = () => {
     fail: () => flush(() => settle.fail(new Error("getMenu 504"))),
   };
 };
+
+// PAY's stock re-check loads the ONE lazy chunk: warm it once (a warm kiosk
+// — the rewards sheet loads it at /menu entry), so no test races a cold
+// transform past waitFor's 1 s (BagSheetStock's precedent; the cold chunk
+// is BagSheetChunkFail's).
+beforeAll(async () => {
+  await import("../bagLazyParts");
+}, 60_000);
 
 describe("BagSheet PAY — a late checkout result is dropped (P9a)", () => {
   beforeEach(() => {

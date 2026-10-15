@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { stockLast } from "@cx-sdk/catalog/oos/optionStock";
 import { resolveEntityImage } from "../../utils/entityImage";
 import { formatPrice } from "../../utils/price";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -60,7 +61,7 @@ const isBestValue = (variant: { badges?: unknown } | null | undefined): boolean 
  * 1:5628 incomplete). Arch hero for the first variant, 247 px tiles for the
  * rest, 36 px radios (hero bottom-right, tiles top-right), CONTINUE disabled
  * (Grey 3) until a size is chosen. Price shown as a delta vs the cheapest
- * variant (Figma: "+£2.50" / base shows absolute).
+ * variant in stock (Figma: "+£2.50" / base shows absolute).
  */
 export default function SelectSizeModal({
   entity,
@@ -73,31 +74,41 @@ export default function SelectSizeModal({
   const currency = useCurrencySymbol();
   const [selectedId, setSelectedId] = useState<string>("");
   const firstSize = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const sizeList = useRef<HTMLDivElement>(null);
 
   // The app's modal focus (ErrorModal / EditHowManyModal): focus moves in on
   // open — CONTINUE is `disabled` until a size is picked, so the first size
-  // takes it — and back to the opener when a close leaves no modal dialog
-  // open (Menu mounts this only while open). A CONTINUE that opens the added
-  // modal or the DP-cap error leaves focus to it: this cleanup runs after
-  // GOT IT's autoFocus. The opener is read at first render, before focus
-  // moves in, because StrictMode's dev re-run of the effect finds this dialog
-  // still mounted and skips the restore. No scroll, so nothing under moves.
+  // takes it (sizes in stock come first; with none, the hero is disabled and
+  // the X takes it — review F6) — and back to the opener when a close leaves
+  // no modal dialog open (Menu mounts this only while open). A CONTINUE that
+  // opens the added modal or the DP-cap error leaves focus to it: this
+  // cleanup runs after GOT IT's autoFocus. The opener is read at first
+  // render, before focus moves in, because StrictMode's dev re-run of the
+  // effect finds this dialog still mounted and skips the restore. No scroll,
+  // so nothing under moves.
   const [opener] = useState(() => document.activeElement);
   useEffect(() => {
-    firstSize.current?.focus({ preventScroll: true });
+    const first = firstSize.current;
+    (first && !first.disabled ? first : closeButton.current)?.focus({ preventScroll: true });
     return () => restoreFocus(opener);
   }, [opener]);
 
+  // walk-oos: an out-of-stock size stays, last and greyed, a disabled tile
+  // (posistKiosk VariantSelectionSection) — never chosen.
   const variants: any[] = useMemo(() => {
     const list = Array.isArray(entity?.variants) ? [...entity.variants] : [];
-    return list.filter((v: any) => v && v.isActive !== false);
+    return stockLast(
+      list.filter((v: any) => v && v.isActive !== false),
+      (v: any) => v.outOfStock === true
+    );
   }, [entity]);
 
-  const minPrice = useMemo(
-    () => Math.min(...variants.map((v: any) => Number(v?.price ?? 0))),
-    [variants]
-  );
+  // walk-oos (review F8): the cheapest size in stock — all of them when none is.
+  const minPrice = useMemo(() => {
+    const inStock = variants.filter((v: any) => v.outOfStock !== true);
+    return Math.min(...(inStock.length > 0 ? inStock : variants).map((v: any) => Number(v?.price ?? 0)));
+  }, [variants]);
 
   if (!entity) return null;
 
@@ -105,6 +116,7 @@ export default function SelectSizeModal({
   const heroImage = resolveEntityImage(hero);
   const rest = variants.slice(1);
   const selected = variants.find((v: any) => v.id === selectedId) ?? null;
+  const soldOut = (v: any) => v?.outOfStock === true;
 
   const priceLabel = (v: any) => {
     const p = Number(v?.price ?? 0);
@@ -122,18 +134,26 @@ export default function SelectSizeModal({
   // Render helper, NOT a component (react-hooks/static-components).
   // Figma Status 1:5708 / 1:5722: 36 px; a 1 px purple ring, or a purple
   // fill with the check at inset 16.67 % (24 px).
-  const renderRadio = (v: any, corner: string) => (
-    <span
-      aria-hidden
-      className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
-        selectedId === v.id ? "bg-tb-purple" : "border border-tb-purple"
-      }`}
-    >
-      {selectedId === v.id && (
-        <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
-      )}
-    </span>
-  );
+  const renderRadio = (v: any, corner: string) =>
+    soldOut(v) ? (
+      // The menu card's chip (MenuItemCard) where the radio sits.
+      <span
+        className={`tb-display absolute ${corner} whitespace-nowrap rounded-[4px] bg-tb-ink-purple/80 px-3 py-1.5 text-[14px] text-tb-surface`}
+      >
+        {t("menu.unavailable")}
+      </span>
+    ) : (
+      <span
+        aria-hidden
+        className={`absolute ${corner} flex h-[36px] w-[36px] items-center justify-center rounded-full ${
+          selectedId === v.id ? "bg-tb-purple" : "border border-tb-purple"
+        }`}
+      >
+        {selectedId === v.id && (
+          <img alt="" src={radioCheckIcon} className="tb-pop-in h-[24px] w-[24px]" />
+        )}
+      </span>
+    );
 
   return (
     <div
@@ -173,6 +193,7 @@ export default function SelectSizeModal({
           </p>
         </div>
         <button
+          ref={closeButton}
           type="button"
           aria-label={t("language.close")}
           onClick={onClose}
@@ -191,6 +212,8 @@ export default function SelectSizeModal({
               type="button"
               data-testid={`size-${hero.id}`}
               aria-pressed={selectedId === hero.id}
+              disabled={soldOut(hero)}
+              aria-label={soldOut(hero) ? t("pdp.optionUnavailable", { name: name(hero) }) : undefined}
               onClick={() => setSelectedId(hero.id)}
               className="tb-select relative flex h-[453px] w-[504px] shrink-0 flex-col items-center rounded-b-[8px] rounded-t-[500px] bg-tb-grey-6 pt-[48px]"
             >
@@ -200,12 +223,14 @@ export default function SelectSizeModal({
                 <img
                   alt=""
                   src={heroImage}
-                  className="absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain"
+                  className={`absolute left-[36px] top-[193px] h-[232px] w-[445px] object-contain ${soldOut(hero) ? "opacity-40 grayscale" : ""}`}
                 />
               ) : (
-                <NoImageBell className="absolute left-[36px] top-[193px] h-[232px] w-[445px]" />
+                <NoImageBell
+                  className={`absolute left-[36px] top-[193px] h-[232px] w-[445px] ${soldOut(hero) ? "opacity-40" : ""}`}
+                />
               )}
-              <span className="relative flex w-[352px] flex-col items-center gap-[16px] text-center">
+              <span className={`relative flex w-[352px] flex-col items-center gap-[16px] text-center ${soldOut(hero) ? "opacity-40" : ""}`}>
                 {isBestValue(hero) && (
                   <span
                     data-testid="size-best-value"
@@ -238,17 +263,23 @@ export default function SelectSizeModal({
                     type="button"
                     data-testid={`size-${v.id}`}
                     aria-pressed={selectedId === v.id}
+                    disabled={soldOut(v)}
+                    aria-label={soldOut(v) ? t("pdp.optionUnavailable", { name: name(v) }) : undefined}
                     onClick={() => setSelectedId(v.id)}
                     className="tb-select relative flex flex-col items-center justify-center gap-[20px] rounded-[8px] bg-tb-grey-6 px-[24px] pb-[24px] pt-[48px] text-left"
                   >
                     <span className="h-[108px] w-[206px]">
                       {imageUrl ? (
-                        <img alt="" src={imageUrl} className="h-full w-full object-contain" />
+                        <img
+                          alt=""
+                          src={imageUrl}
+                          className={`h-full w-full object-contain ${soldOut(v) ? "opacity-40 grayscale" : ""}`}
+                        />
                       ) : (
-                        <NoImageBell />
+                        <NoImageBell className={`h-full w-full ${soldOut(v) ? "opacity-40" : ""}`} />
                       )}
                     </span>
-                    <span className="flex w-full flex-col items-start gap-[4px]">
+                    <span className={`flex w-full flex-col items-start gap-[4px] ${soldOut(v) ? "opacity-40" : ""}`}>
                       <span className="w-full text-[20px] font-medium capitalize leading-[24px] tracking-[-0.5px] text-black">
                         {name(v)}
                       </span>

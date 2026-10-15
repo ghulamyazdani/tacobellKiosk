@@ -2,7 +2,6 @@ import {
   test,
   expect,
   type Page,
-  type Route,
   PROMPT_AFTER_MS,
   PROMPT_WINDOW_MS,
   REQUEST_BUDGET_MS,
@@ -28,7 +27,7 @@ import {
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
 import { registerToStart, startOrderTo, bootRegisteredToMenu } from "./pages/boot";
-import { addOneTap, dismissAddedModal, openBag, typeDigits } from "./pages/order";
+import { addOneTap, dismissAddedModal, openBag, typeDigits, breakPayPreflight } from "./pages/order";
 
 /**
  * P9a — idle timeout + session integrity, end to end.
@@ -318,15 +317,13 @@ test.describe("P9a idle timeout + session integrity", () => {
     await addGreekSaladOneTap(page, "(1)");
     await openBag(page);
 
-    // A real one: PAY's preflight fails (bag.spec PAY FAILURE IS VISIBLE).
-    const serverTimeDown = (route: Route) => route.fulfill({ status: 500, json: {} });
-    await page.route("**/api/tenants/getServerTime", serverTimeDown);
+    // A real one: PAY's preflight fails (bag.spec PAY FAILURE IS VISIBLE;
+    // pages/order breakPayPreflight). The error stays open.
+    await breakPayPreflight(page);
     await page.getByTestId("bag-pay").click();
     const error = page.getByTestId("global-error");
     await expect(error).toBeVisible();
     await expect(error).toContainText(en.bag.checkoutFailed);
-    // Back up for the next session's menu fetch; the error stays open.
-    await page.unroute("**/api/tenants/getServerTime", serverTimeDown);
 
     // No auto-dismiss, no idle hold: the prompt comes at 100 s, over it.
     await idleToPrompt(page);

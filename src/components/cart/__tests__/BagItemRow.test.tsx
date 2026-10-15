@@ -14,7 +14,7 @@ import {
   setUpdatedBaseItems,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { store } from "../../../redux/app/store";
-import BagItemRow, { isRowUnavailable } from "../BagItemRow";
+import BagItemRow, { isRowUnavailable, joinNames } from "../BagItemRow";
 import "../../../i18n";
 
 /** Plain ITEM row — no customizations, no variant, no Edit link (contract B1). */
@@ -426,6 +426,39 @@ describe("BagItemRow (Figma 1:3193 — bag row card)", () => {
       unmount();
       renderRow(DRINK_ROW);
       expect(screen.queryByTestId("bag-changed-pep-1")).not.toBeInTheDocument();
+    });
+
+    /*
+      Lane walk-oos (user 2026-10-14: "indication of which item is out of
+      stock"): PAY keeps a pick it found out of stock in the row, flagged —
+      the red line NAMES it (every flagged pick, nested ones too, each once),
+      its own line reads red, and Edit stays to fix it. The flag rides the
+      row, so a reload keeps it (no PAY list needed).
+    */
+    it("a pick PAY flagged out of stock: the red line names it, its line reads red, Edit kept", () => {
+      const row = structuredClone(BURGER_ROW) as any;
+      row.customizations.sauce_group[0].customizations.nest_group[0].outOfStock = true;
+      row.customizations.sauce_group[1].outOfStock = true;
+      renderRow(row);
+
+      const line = screen.getByTestId("bag-changed-cb-1");
+      expect(line).toHaveTextContent("Out of stock: Extra Crispy and Extra Cheese");
+      expect(line).toHaveClass("text-tb-red");
+      expect(screen.getByTestId("bag-pick-oos-cb-1-cheese")).toHaveTextContent("2 x Extra Cheese +£1.20");
+      expect(screen.getByTestId("bag-pick-oos-cb-1-cheese")).toHaveClass("text-tb-red");
+      expect(screen.getByTestId("bag-pick-oos-cb-1-crispy")).toHaveClass("pl-[24px]", "text-tb-red");
+      expect(screen.queryByTestId("bag-pick-oos-cb-1-onions")).not.toBeInTheDocument();
+      expect(screen.getByTestId("bag-edit-cb-1")).toBeInTheDocument();
+      expect(screen.queryByTestId("bag-unavailable-cb-1")).not.toBeInTheDocument();
+      // The money is what the bag showed: the flagged pick still prices in.
+      expect(screen.getByTestId("bag-row-cb-1")).toHaveTextContent("£8.60");
+    });
+
+    it("joinNames: the guest's language, each name once; a bad locale tag falls back to commas", () => {
+      expect(joinNames(["A", "B", "A", ""], "en")).toBe("A and B");
+      expect(joinNames(["A"], "en")).toBe("A");
+      expect(joinNames(["A", "B", "C"], "ar")).toBe(new Intl.ListFormat("ar", { type: "conjunction" }).format(["A", "B", "C"]));
+      expect(joinNames(["A", "B"], "not a tag!")).toBe("A, B");
     });
 
     it("the lines never share the row counters' bag-row- prefix", () => {

@@ -9,6 +9,7 @@ import {
   selectUpdatedBaseItems,
 } from "@cx-sdk/catalog/state/Menu.slice";
 import { computeShowAddonPrices } from "@cx-sdk/ordering/customization/nestedCardLogic";
+import { flaggedPicks } from "@cx-sdk/catalog/oos/optionStock";
 import useCartHook from "../../hooks/menuHooks/useCartHook";
 import { resolveEntityImage } from "../../utils/entityImage";
 import useLocalized from "../../hooks/utils/useLocalized";
@@ -40,6 +41,34 @@ export const isRowUnavailable = (row: unknown): boolean => {
 
 /** Menu.slice's PAY lists (never persisted; the next PAY rewrites them). */
 const asIdList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+/**
+ * "A, B and C" in the guest's language (Intl.ListFormat), each name once; an
+ * unknown locale tag falls back to commas. Shared with BagSheet's PAY notice.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared with BagSheet's PAY notice; HMR falls back to a reload for this file
+export const joinNames = (names: readonly string[], language: string): string => {
+  const unique = [...new Set(names.filter(Boolean))];
+  try {
+    return new Intl.ListFormat(language, { type: "conjunction" }).format(unique);
+  } catch {
+    return unique.join(", ");
+  }
+};
+
+/**
+ * What rows flag out of stock, by name: the item, the item (its size), or
+ * each pick PAY kept, flagged (walk-oos). BagSheet's PAY notice — and PAY's
+ * verdict when its check cannot run: those flags still stand (review F1).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared with BagSheet's PAY; HMR falls back to a reload for this file
+export const soldOutNames = (rows: readonly unknown[], name: (entity: unknown) => string): string[] =>
+  rows.flatMap((entry) => {
+    const row = (entry ?? {}) as StockFlags & { customizations?: unknown };
+    if (row.outOfStock) return [name(row)];
+    if (row.selectedVariant?.outOfStock) return [`${name(row)} (${name(row.selectedVariant)})`];
+    return flaggedPicks(row.customizations).map((pick) => name(pick));
+  });
 
 interface BagItemRowProps {
   row: any;
@@ -89,7 +118,7 @@ export default function BagItemRow({
   onRequestRemove,
   onRemoveLoyalty,
 }: BagItemRowProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { name } = useLocalized();
   const { IncreaseItemQuantityById, decreaseItemQuantityById, getAllCustomizationList } =
     useCartHook();
@@ -155,9 +184,14 @@ export default function BagItemRow({
   // a lost or invalid pick gets one red line and keeps Edit to fix it. Their
   // testids never start "bag-row-": the specs count rows by that prefix.
   const unavailable = isRowUnavailable(row);
+  // walk-oos: the picks PAY found out of stock stay in the row, flagged
+  // (persisted with it, so a reload keeps them), and the red line names them.
+  const soldOutPicks = flaggedPicks(row?.customizations);
+  const soldOutIds = new Set(soldOutPicks.map((pick) => pick.id));
   const flaggedByPay =
     updatedBaseItems.includes(row?.itemId) ||
-    minMaxErroredBaseItems.includes(row?.itemId);
+    minMaxErroredBaseItems.includes(row?.itemId) ||
+    soldOutPicks.length > 0;
   const needsChanges = !unavailable && flaggedByPay;
 
   // Branch table: the reward is removable ONLY once the kitchen can no longer
@@ -199,10 +233,13 @@ export default function BagItemRow({
       line?.quantity !== 1 ? `${t("bag.lineQty", { qty: line?.quantity })} ` : "";
     const suffix =
       price > 0 && (!nested || nestedPriced) ? ` +${currency}${price.toFixed(2)}` : "";
+    // walk-oos: a pick PAY found out of stock reads red (the line above names it).
+    const soldOut = soldOutIds.has(line?.id);
     return (
       <p
         key={`${nested ? "sub-" : ""}${line?.id ?? line?.name}`}
-        className={nested ? "pl-[24px]" : ""}
+        data-testid={soldOut ? `bag-pick-oos-${row?.itemId}-${line?.id}` : undefined}
+        className={[nested && "pl-[24px]", soldOut && "text-tb-red"].filter(Boolean).join(" ")}
       >
         {prefix}
         {name(line)}
@@ -277,7 +314,11 @@ export default function BagItemRow({
             data-testid={`bag-changed-${row?.itemId}`}
             className="text-[24px] leading-[24px] tracking-[-0.12px] text-tb-red"
           >
-            {t("bag.choicesUnavailable")}
+            {soldOutPicks.length > 0
+              ? t("bag.outOfStock", {
+                  names: joinNames(soldOutPicks.map((pick) => name(pick)), i18n.language),
+                })
+              : t("bag.choicesUnavailable")}
           </p>
         )}
         {(row?.type === "VARIANT" || lines.length > 0) && (
