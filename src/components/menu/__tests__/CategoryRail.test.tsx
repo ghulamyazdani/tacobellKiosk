@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import CategoryRail from "../CategoryRail";
 
 /*
@@ -86,6 +86,79 @@ describe("CategoryRail (Menu-Categories)", () => {
 
     const list = screen.getByTestId("category-rail").children[1];
     expect(list).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+  });
+
+  /*
+    User 2026-10-15 (the layout settings): one at a time, the menu keeps the
+    selection through the PDP, so the rail can mount with a row far down a
+    long list (an ADA rail holds ~12). jsdom has no layout: the geometry is
+    stubbed — 64 px rows in a 320 px list (offsetTop is measured from the
+    list, which is `relative`).
+  */
+  it("mounts with the selected row centred in the list (its own scrollTop); a later selection never moves the list", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
+      return index === undefined ? 0 : 64 * Number(index);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
+
+    const { rerender } = render(<CategoryRail categories={rows} selectedId="r9" onSelect={vi.fn()} />);
+    const list = screen.getByTestId("rail-r9").parentElement as HTMLElement;
+
+    expect(list).toHaveClass("relative");
+    expect(list.scrollTop).toBe(64 * 9 - (320 - 64) / 2);
+
+    list.scrollTop = 0;
+    rerender(<CategoryRail categories={rows} selectedId="r11" onSelect={vi.fn()} />);
+    expect(list.scrollTop).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  /*
+    The list's box can change with no remount: the ADA toggle shrinks it to
+    the reach zone's ~12 rows (ReachZone keeps the tree). A selected row the
+    new box hides comes to its middle; a box that shows it moves nothing.
+    jsdom has no ResizeObserver: the callback is captured (setupTests'
+    global is writable, not configurable — assigned and restored by hand).
+  */
+  it("a resize that hides the selected row (ADA's shorter list) brings it to the middle; one that shows it moves nothing", () => {
+    const rows = Array.from({ length: 18 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
+    let height = 1088; // the standard list: 17 rows
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
+      return index === undefined ? 0 : 64 * Number(index);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(() => height);
+    const resized: (() => void)[] = [];
+    const globals = window as unknown as { ResizeObserver: unknown };
+    const original = globals.ResizeObserver;
+    globals.ResizeObserver = class {
+      constructor(callback: () => void) {
+        resized.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    };
+    onTestFinished(() => {
+      globals.ResizeObserver = original;
+      vi.restoreAllMocks();
+    });
+
+    render(<CategoryRail categories={rows} selectedId="r15" onSelect={vi.fn()} />);
+    const list = screen.getByTestId("rail-r15").parentElement as HTMLElement;
+    // The standard view: row 15 tapped in a list at its top.
+    list.scrollTop = 0;
+
+    height = 320; // ADA
+    act(() => resized.forEach((callback) => callback()));
+    expect(list.scrollTop).toBe(64 * 15 - (320 - 64) / 2);
+
+    height = 1088; // back to the standard view: the row is still in the box
+    act(() => resized.forEach((callback) => callback()));
+    expect(list.scrollTop).toBe(64 * 15 - (320 - 64) / 2);
   });
 });
 

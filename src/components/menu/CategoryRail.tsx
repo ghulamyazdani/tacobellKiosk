@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 // Figma's rail bell (Menu-Categories "Bell", 1:24 — Dark Purple with the Grey 6
 // cut-out), exported as is (user 2026-10-13: the rail showed the white bell
 // filtered to black). ?no-inline: a precached file, never boot-path bytes.
@@ -28,6 +28,11 @@ interface CategoryRailProps {
  * Only the category list scrolls; the bell and the slot above it stay put.
  * The selected fill swaps instantly (Figma); `aria-current` drives the
  * tb-select bump (motion lane, design language).
+ * A selected row the list's box hides comes to its middle, by the list's own
+ * scrollTop (scrollIntoView would scroll the clipped ancestors too): at mount
+ * (one at a time keeps the selection through the PDP) and whenever the box
+ * changes — the ADA toggle shrinks it with no remount. A tap needs none: its
+ * row is on screen.
  */
 export default function CategoryRail({
   categories,
@@ -35,6 +40,22 @@ export default function CategoryRail({
   onSelect,
   children,
 }: CategoryRailProps) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const reveal = () => {
+      const row = list.querySelector<HTMLElement>('[aria-current="true"]');
+      if (!row) return;
+      const { offsetTop: top, offsetHeight: height } = row;
+      if (top >= list.scrollTop && top + height <= list.scrollTop + list.clientHeight) return;
+      list.scrollTop = top - (list.clientHeight - height) / 2;
+    };
+    reveal();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(reveal);
+    observer?.observe(list);
+    return () => observer?.disconnect();
+  }, []);
   return (
     <nav
       data-testid="category-rail"
@@ -44,7 +65,11 @@ export default function CategoryRail({
       {children}
       {/* The list scrolls by touch with no native scrollbar (user 2026-10-14:
           "there is a scrollbar in the sidebar"), like the menu pane. */}
-      <div className="flex w-full flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        ref={listRef}
+        // relative: the rows' offsetTop is measured from this list.
+        className="relative flex w-full flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {categories.map((category) => {
           const selected = category.id === selectedId;
           return (
