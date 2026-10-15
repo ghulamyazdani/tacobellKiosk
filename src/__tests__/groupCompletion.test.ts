@@ -10,6 +10,7 @@ import {
   listVariantSelectionViolations,
 } from "@cx-sdk/ordering/customization/incompleteGroups";
 import { findTier2MinMaxViolation } from "@cx-sdk/ordering/customization/tier2Logic";
+import { checkFinalCheckOutMinMax } from "@cx-sdk/catalog/oos/outOfStockEngine";
 
 /*
   User decision 2026-10-14 ("Fix it now"): every commit and re-check counts
@@ -180,8 +181,10 @@ describe("commits and re-checks count units, never rows (user decision 2026-10-1
   leaves out entirely (undefined) reads 0 in every commit and re-check,
   exactly as null already did — an EMPTY such group commits, and a pick is
   still refused ("0 of 0", the group-limits rule). Pinned on every scan: the
-  customizable and the sized commit, tier-2's SAVE and group check, and the
-  completion warning's lists (incompleteGroups loops the commit scans).
+  customizable and the sized commit, tier-2's SAVE and group check, the
+  completion warning's lists (incompleteGroups loops the commit scans) and
+  PAY's re-check (review r3 #1: checkoutStockSweep's min / max sweep read a
+  missing max as no cap, so a pick the PDP refuses was ordered).
 */
 describe("a missing min / max reads 0, as null does (user decision 2026-10-15)", () => {
   beforeEach(() => {
@@ -191,6 +194,16 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
   afterEach(() => {
     vi.restoreAllMocks();
   });
+
+  /** PAY's re-check (checkFinalCheckOutMinMax): G on a bag row, or inside a slot pick (tier-2). It counts live picks. */
+  const pay = (group: object, rows: unknown[], amp: boolean, nested: boolean) => {
+    const slot = { _id: "slot", name: "Slot", isActive: true, min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1 };
+    const fetch: FetchModifierProperties = (ids) => ids.map((id) => (id === "g" ? { ...group } : id === "slot" ? { ...slot } : undefined));
+    const live = rows.map((row) => ({ ...(row as object), isActive: true }));
+    const customizations = nested ? { slot: [{ id: "s", isActive: true, quantity: 1, customizations: { g: live } }] } : { g: live };
+    const row = { itemId: "row", type: "CUSTOMIZABLE", customizations };
+    return checkFinalCheckOutMinMax([row], undefined, () => amp, fetch).minMaxErroredBaseItems.length === 0;
+  };
 
   /** Does each scan pass ONE group with these bounds holding these rows? */
   const verdicts = (bounds: Record<string, unknown>, rows: unknown[], amp: boolean) => {
@@ -207,6 +220,8 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
       tier2Group: tier(false),
       warning: listMinMaxViolations({ g: rows }, fetch, amp).length === 0,
       warningSized: listVariantSelectionViolations(sized).length === 0,
+      pay: pay(group, rows, amp, false),
+      payTier2: pay(group, rows, amp, true),
     };
   };
   const every = (pass: boolean) => ({
@@ -217,6 +232,8 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
     tier2Group: pass,
     warning: pass,
     warningSized: pass,
+    pay: pass,
+    payTier2: pass,
   });
 
   it.each([
@@ -250,5 +267,13 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
         }
       }
     }
+  });
+
+  it("PAY's tier-2 re-check still skips a group the menu does not have, as its tier-1 loop does — only a known group's bound reads 0", () => {
+    const slot = { _id: "slot", name: "Slot", isActive: true, min: 0, max: 1 };
+    const fetch: FetchModifierProperties = (ids) => ids.map((id) => (id === "slot" ? { ...slot } : undefined));
+    const gone = { gone: [{ ...pick("a"), isActive: true }] };
+    const row = { itemId: "row", type: "CUSTOMIZABLE", customizations: { slot: [{ id: "s", isActive: true, quantity: 1, customizations: gone }] } };
+    expect(checkFinalCheckOutMinMax([row], undefined, () => false, fetch).minMaxErroredBaseItems).toEqual([]);
   });
 });
