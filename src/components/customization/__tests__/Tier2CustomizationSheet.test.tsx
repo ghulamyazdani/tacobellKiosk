@@ -670,6 +670,22 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 1, max: 1 }));
   });
 
+  it("a 0 / 1 card group with ONE option left in stock (No Ice sold out) reads no counter, as the PDP — nothing can be refused", async () => {
+    seedOpenTier2(ENTITY, {
+      ...ICE_GROUP,
+      min: 0,
+      multiplePunchMin: 0,
+      constituentItems: ICE_GROUP.constituentItems.map((o) => (o.id === "no-ice" ? { ...o, outOfStock: true } : o)),
+    });
+    renderSheet();
+    const group = screen.getByTestId("tier2-group-dl_addons");
+    expect(group).not.toHaveTextContent(/\bof\b/);
+
+    await userEvent.click(screen.getByTestId("tier2-option-ice"));
+    expect(picks()).toEqual([["ice", 1]]);
+    expect(group).not.toHaveTextContent(/\bof\b/);
+  });
+
   it("a stepper with no group max (0 / 0) takes no pick, as on the PDP (user decision 2026-10-14): '0 of 0', every '+' refused up front, and SAVE takes the empty group", async () => {
     seedOpenTier2(ENTITY, { ...SAUCES, max: 0, multiplePunchMax: 0 });
     renderSheet();

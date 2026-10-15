@@ -567,7 +567,7 @@ export default function Tier2CustomizationSheet() {
           // "0 of 0" where it refuses every pick (no positive max).
           max={maxPicks}
           noMax={!(maxPicks > 0)}
-          atOne={stepper || (!oneOfOne && items.length > 1)}
+          atOne={stepper || (!oneOfOne && items.filter((i: any) => !soldOut(i)).length > 1)}
           required={minPicks > 0}
           errored={errored}
         />

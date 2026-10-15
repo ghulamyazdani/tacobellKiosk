@@ -750,7 +750,7 @@ export default function Customization({
           count={pickedCount(selectionFor(group))}
           max={maxPicks}
           noMax={!(maxPicks > 0)}
-          atOne={stepper || (!oneOfOne && items.length > 1)}
+          atOne={stepper || (!oneOfOne && items.filter((i: any) => !soldOut(i)).length > 1)}
           required={minPicks > 0}
           errored={errored}
         />

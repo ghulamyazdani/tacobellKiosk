@@ -11,6 +11,7 @@ import {
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
 import { setAllowMultiplePunch, setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
+import { setOutOfStockItems } from "../../../redux/features/menuSelections/menuSelections.slice";
 import GlobalErrorHost from "../../../components/common/GlobalErrorHost";
 import Customization from "../index";
 import i18n from "../../../i18n";
@@ -167,6 +168,19 @@ describe("PDP group header — 'count of max' on every group shape (user report 
 
   it("a pick-one card group of ONE option (0 / 1): no counter — nothing can be refused", async () => {
     seed({ min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 1 }, ROWS.slice(0, 1));
+
+    expectNoCounter();
+    await tap(screen.getByTestId("pdp-option-missi"));
+    expect(picks()).toEqual([["missi", 1]]);
+    expectNoCounter();
+  });
+
+  it("a pick-one card group with ONE option left in stock (0 / 1; one sold out by the menu, one by PAY's feed): no counter — the sold-out cards take no tap, so nothing can be refused", async () => {
+    store.dispatch(setOutOfStockItems({ tandoori: { type: "addon", inStock: false } }));
+    seed(
+      { min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 1 },
+      ROWS.map((row) => (row.id === "garlic" ? { ...row, outOfStock: true } : row)),
+    );
 
     expectNoCounter();
     await tap(screen.getByTestId("pdp-option-missi"));
