@@ -384,19 +384,34 @@ describe("hasDeadRequiredGroup / markUncompletable — a required group with no 
     expect(markUncompletable({ ...soda, variants: [large] }, MODS, {}, false)).toMatchObject({ outOfStock: true });
   });
 
-  it("a size whose required group carries no isActive key is dead: the sized commit skips that group, but PAY's re-check refuses the row — Unavailable up front, not a dead end at PAY (review r3 #2)", () => {
-    const { isActive: _isActive, ...noKey } = MODS.zero;
-    const groups = { syrup: { _id: "syrup", name: "Syrup", ...noKey } };
+  /*
+    User decision 2026-10-15 ("PAY skips inactive groups") — ONE rule for which
+    groups count: isActive true. False or no key at all is inactive, as the
+    PDP shows groups (convertModifiersAccordingly) and as the sized commit
+    (validateVariantSelections) and now PAY's re-check skip them. Review r3
+    #2's size (a required group with no isActive key) was pinned Unavailable
+    while PAY refused what its commit took; PAY now takes it too, so it is
+    completable and never dead.
+  */
+  it.each([
+    ["isActive false", { isActive: false }, false],
+    ["no isActive key", {}, false],
+    ["isActive true", { isActive: true }, true],
+  ])("a size whose required no-max group has %s: the dead rule, the sized commit and PAY's re-check agree — dead only when the group counts (user 2026-10-15)", (_label, flag, counts) => {
+    const { isActive: _isActive, ...bounds } = MODS.zero;
+    const groups = { syrup: { _id: "syrup", name: "Syrup", ...bounds, ...flag } };
     const large = { id: "s-l", name: "Large", price: 6, isActive: true, modifiers: ["syrup"] };
     const soda = { id: "soda", name: "Soda", hasVariant: true, isVariant: false, modifiers: [], variants: [large] };
-    expect(markUncompletable(soda, groups, {}, false)).toMatchObject({ outOfStock: true, variants: [{ outOfStock: true }] });
+    const out = markUncompletable(soda, groups, {}, false);
+    // Dead: a copy reading out of stock, its only size too. Alive: the same object.
+    expect(out).toEqual(counts ? { ...soda, outOfStock: true, variants: [{ ...large, outOfStock: true }] } : soda);
+    expect(out === soda).toBe(!counts);
 
-    // The PDP seeds every size group and its ADD TO BAG skips one whose isActive is falsy …
+    // The PDP seeds every size group (empty); ADD TO BAG and PAY skip the same ones.
     const fetch = (ids: unknown[]) => ids.map((id) => groups[id as "syrup"]).filter(Boolean);
     const seeded = buildEmptySelectionsForModifiers(large.modifiers);
-    expect(validateVariantSelections({ modifierIds: ["syrup"], mergedCustomizations: seeded, fetchModifierProperties: fetch, allowMultiplePunch: false }).allPassed).toBe(true);
-    // … but PAY's sweep never reads a group's isActive: the bag row is flagged, PAY blocked.
+    expect(validateVariantSelections({ modifierIds: ["syrup"], mergedCustomizations: seeded, fetchModifierProperties: fetch, allowMultiplePunch: false }).allPassed).toBe(!counts);
     const row = { itemId: "row", type: "VARIANT", customizations: seeded };
-    expect(checkFinalCheckOutMinMax([row], undefined, () => false, fetch).minMaxErroredBaseItems).toEqual(["row"]);
+    expect(checkFinalCheckOutMinMax([row], undefined, () => false, fetch).minMaxErroredBaseItems).toEqual(counts ? ["row"] : []);
   });
 });

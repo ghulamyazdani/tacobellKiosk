@@ -298,3 +298,44 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
     expect(checkFinalCheckOutMinMax([row], undefined, () => false, fetch).minMaxErroredBaseItems).toEqual([]);
   });
 });
+
+/*
+  User decision 2026-10-15 ("PAY skips inactive groups"): PAY's re-check
+  counts a group only when its isActive is true — false, or no key at all, is
+  inactive, as at every commit (the sized commit's validateVariantSelections
+  skips it; the PDP shows and seeds active groups only). A size whose inactive
+  required group the PDP seeds empty was added fine, then refused at PAY for
+  good: Edit cannot fill a group it never shows.
+*/
+describe("PAY's re-check skips inactive groups, at either tier (user decision 2026-10-15)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Does PAY pass one row whose required group G (1 / 1) is left empty — on the row, or inside a slot pick (tier-2)? */
+  const payPasses = (flag: Record<string, unknown>, type: string, nested: boolean) => {
+    const g = { _id: "g", name: "G", min: 1, max: 1, multiplePunchMin: 1, multiplePunchMax: 1, ...flag };
+    const slot = { _id: "slot", name: "Slot", isActive: true, min: 0, max: 1 };
+    const fetch: FetchModifierProperties = (ids) => ids.map((id) => (id === "g" ? { ...g } : id === "slot" ? { ...slot } : undefined));
+    const customizations = nested ? { slot: [{ id: "s", isActive: true, quantity: 1, customizations: { g: [] } }] } : { g: [] };
+    return checkFinalCheckOutMinMax([{ itemId: "row", type, customizations }], undefined, () => false, fetch)
+      .minMaxErroredBaseItems.length === 0;
+  };
+
+  it.each(["VARIANT", "CUSTOMIZABLE"])("a %s row: the empty required group passes when its isActive is false or missing, and is still refused when it is true — on the row and inside a slot pick", (type) => {
+    for (const nested of [false, true]) {
+      expect(payPasses({ isActive: false }, type, nested), `isActive false, tier-2 ${nested}`).toBe(true);
+      expect(payPasses({}, type, nested), `no isActive key, tier-2 ${nested}`).toBe(true);
+      expect(payPasses({ isActive: true }, type, nested), `isActive true, tier-2 ${nested}`).toBe(false);
+    }
+  });
+
+  it("a row group the menu does not have is skipped too — the fork's resolver answers [undefined] for it, and the sweep never throws (a throw fails PAY's whole check open)", () => {
+    const row = { itemId: "row", type: "VARIANT", customizations: { gone: [] } };
+    expect(checkFinalCheckOutMinMax([row], undefined, () => false, (ids) => ids.map(() => undefined)).minMaxErroredBaseItems).toEqual([]);
+  });
+});
