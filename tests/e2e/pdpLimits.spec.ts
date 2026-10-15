@@ -6,8 +6,12 @@ import {
   LARGE_FRIES,
   CHEESE_BURGER,
   EXTRA_PICKLES,
+  SKIP_CRM,
 } from "./fixtures/backend";
+import { mockCheckoutBackend } from "./fixtures/checkout";
 import { bootRegisteredToMenu } from "./pages/boot";
+import { payAtCounter } from "./pages/checkout";
+import { dismissAddedModal, openBag } from "./pages/order";
 import { stageBox } from "./fixtures/a11y";
 
 /**
@@ -35,6 +39,11 @@ import { stageBox } from "./fixtures/a11y";
  * - SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required
  *   stepper group on a size is met by one option ×2 — the sized item's
  *   commit counts units, as the counter does (it counted rows and refused).
+ * - INACTIVE REQUIRED GROUP (user decision 2026-10-15, "PAY skips inactive
+ *   groups"): a size whose required group is switched off is paid for, to
+ *   the receipt — PAY's re-check skips the group, as the PDP and its commit
+ *   do (it refused the row for good); an active required group left empty
+ *   is still refused at commit.
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
  * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
@@ -59,6 +68,7 @@ const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
 const WITHOUT_GROUP = `${CHEESE_BURGER}_1573980470_addons`;
 // The last of Cheese Burger's three groups (order 3, one option, 0 / 1).
 const EXTRA_CHEESE_GROUP = `${CHEESE_BURGER}_1686482941_addons`;
+const ADD_CHEESE = "5dd1093f188e72ce1b3eb36f"; // its one option, +£1
 
 type MenuJson = {
   settings: Record<string, unknown>;
@@ -95,6 +105,21 @@ function sizedRequiredGroupMenu(): MenuJson {
   const menu = sizedMenu([EXTRA_GROUP, `${CHEESE_BURGER}_1573980470_addons`, EXTRA_CHEESE_GROUP]);
   const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
   if (!cheese) throw new Error("fixture: no Extra Cheese group");
+  cheese.min = 1;
+  return menu;
+}
+
+/**
+ * User decision 2026-10-15 ("PAY skips inactive groups"): Large carries
+ * Cheese Burger's "Extra" group SWITCHED OFF yet required (isActive false,
+ * 1 / 3) and its "Extra Cheese" group made required (1 / 1, active).
+ */
+function sizedInactiveRequiredGroupMenu(): MenuJson {
+  const menu = sizedMenu([EXTRA_GROUP, EXTRA_CHEESE_GROUP]);
+  const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
+  const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
+  if (!extra || !cheese) throw new Error("fixture: no Extra / Extra Cheese group");
+  Object.assign(extra, { isActive: false, min: 1, multiplePunchMin: 1 });
   cheese.min = 1;
   return menu;
 }
@@ -479,5 +504,53 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
       WITHOUT_GROUP,
     );
     expect(committed).toEqual([["VARIANT", [2]]]);
+  });
+
+  test("INACTIVE REQUIRED GROUP (user decision 2026-10-15, 'PAY skips inactive groups'): a size whose required group is switched off goes through PAY to the receipt; an active required group left empty is still refused at commit", async ({
+    page,
+  }) => {
+    test.slow();
+    await page.clock.install(); // the payment step's 3 s cancel window is stepped, never slept through
+    await mockKioskBackend(page, { menu: sizedInactiveRequiredGroupMenu(), kioskSettings: SKIP_CRM });
+    // MUST come second (newest route wins): the pay-at-counter surface.
+    const checkout = await mockCheckoutBackend(page);
+    await bootRegisteredToMenu(page);
+    await openPdp(page, SIZED_ITEM);
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+
+    // The switched-off group is not on the page; the active required one is.
+    const cheese = page.getByTestId(`pdp-group-${EXTRA_CHEESE_GROUP}`);
+    await expect(cheese).toContainText(en.pdp.required);
+    await expect(page.getByTestId(`pdp-group-${EXTRA_GROUP}`)).toHaveCount(0);
+
+    // The ACTIVE required group left empty: refused at commit, and named alone.
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByRole("alertdialog", { name: enLazy.pdp.incomplete.titleItem })).toHaveAccessibleDescription(
+      (enLazy.pdp.incomplete.body as string).replace("{{groups}}", "choose from extra cheese for cheese burger"),
+    );
+    await page.getByTestId("pdp-incomplete-gotit").click();
+    expect(await cartRowCount(page)).toBe(0);
+
+    // Filled: ADD TO BAG commits; the switched-off group rides along empty.
+    await page.getByTestId(`pdp-option-${ADD_CHEESE}`).click();
+    await expect(page.getByTestId("pdp-add-to-bag")).toContainText("£8.00");
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await dismissAddedModal(page);
+    await openBag(page);
+
+    // PAY's re-check skips it too: on to /payment — never "Some items in your
+    // bag need changes" — and the order is placed with the size and its pick.
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await payAtCounter(page);
+    await page.getByTestId("receipt-none").click();
+    await expect(page.getByTestId("order-success")).toBeVisible({ timeout: 20_000 });
+    expect(checkout.placeOrderCount).toBe(1);
+    expect(checkout.lastPlaceOrderBody).toMatchObject({
+      items: [{ id: SIZE_LARGE, name: "Large", quantity: 1, addOns: [{ _id: ADD_CHEESE, name: "Add Cheese" }] }],
+    });
+    expect(checkout.forbiddenUrls).toEqual([]);
   });
 });

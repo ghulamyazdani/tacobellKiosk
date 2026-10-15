@@ -36,9 +36,9 @@ const SAUCES = {
 };
 const GONE = "gone_1234567890_addons";
 
-const openPdp = (modifiers: string[]) => {
+const openPdp = (modifiers: string[], groups: Record<string, unknown> = {}) => {
   store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
-  store.dispatch(setModifiersMap({ modifiersMap: { [SAUCES._id]: SAUCES } }));
+  store.dispatch(setModifiersMap({ modifiersMap: { [SAUCES._id]: SAUCES, ...groups } }));
   store.dispatch(openMakeItAMealSession());
   store.dispatch(
     setTier1BottomSheetAndSelectedEntity({
@@ -61,7 +61,8 @@ const openPdp = (modifiers: string[]) => {
 };
 
 const cartRows = () =>
-  (store.getState() as unknown as { cart: { cartItems: Array<{ id: string }> } }).cart.cartItems;
+  (store.getState() as unknown as { cart: { cartItems: Array<{ id: string; customizations?: unknown }> } }).cart
+    .cartItems;
 
 describe("PDP with a modifier-group id the menu does not have (UB6 Fix A)", () => {
   beforeAll(() => {
@@ -96,5 +97,47 @@ describe("PDP with a modifier-group id the menu does not have (UB6 Fix A)", () =
     fireEvent.click(screen.getByTestId("pdp-add-to-bag"));
 
     expect(cartRows().map((row) => row.id)).toEqual(["fries"]);
+  });
+});
+
+/*
+  User decision 2026-10-15 ("PAY skips inactive groups") — ONE rule for which
+  groups count: isActive true. The PDP shows only those
+  (convertModifiersAccordingly), so it seeds only those: a group switched off,
+  or with no isActive key, is never seeded — never checked at ADD TO BAG (a
+  required one was a dead end, refused under a group the guest cannot see)
+  and never in the row (a default in it was ordered unseen).
+*/
+describe("PDP: a group it does not show is never seeded (user decision 2026-10-15)", () => {
+  beforeAll(() => {
+    Element.prototype.scrollTo = () => {};
+  });
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+  });
+
+  const hidden = (id: string, bounds: Record<string, unknown>, option: Record<string, unknown>) => {
+    const { isActive: _isActive, ...group } = { ...SAUCES, _id: id, name: id, ...bounds, constituentItems: [option] };
+    return group;
+  };
+  const REQUIRED = hidden("pdp_required", { min: 1, max: 1, multiplePunchMin: 1, multiplePunchMax: 1 }, { id: "must", name: "Must", price: 0, isActive: true });
+  const WITH_DEFAULT = hidden("pdp_default", {}, { id: "extra", name: "Extra", price: 2, isActive: true, isDefault: true });
+
+  it.each([
+    ["switched off", { isActive: false }],
+    ["with no isActive key", {}],
+  ])("a required group and a group with a default, %s: neither shown nor seeded; ADD TO BAG commits the row without them", (_label, flag) => {
+    openPdp([SAUCES._id, REQUIRED._id, WITH_DEFAULT._id], {
+      [REQUIRED._id]: { ...REQUIRED, ...flag },
+      [WITH_DEFAULT._id]: { ...WITH_DEFAULT, ...flag },
+    });
+
+    expect(screen.queryAllByTestId(/^pdp-group-/).map((node) => node.dataset.testid)).toEqual([`pdp-group-${SAUCES._id}`]);
+    expect(tier1SelectedCustomization(store.getState())).toEqual({ [SAUCES._id]: [] });
+
+    fireEvent.click(screen.getByTestId("pdp-add-to-bag"));
+
+    expect(cartRows().map((row) => row.id)).toEqual(["fries"]);
+    expect(cartRows()[0].customizations).toEqual({ [SAUCES._id]: [] });
   });
 });

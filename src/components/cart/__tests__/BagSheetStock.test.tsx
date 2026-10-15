@@ -55,12 +55,16 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   captureKioskEvent: mocks.capture,
 }));
 
-/** The min / max groups the tests use: exactly one pick required… */
-const BOX_GROUP = { _id: "box_g", name: "Sides", min: 1, max: 1, order: 1 };
+/**
+ * The min / max groups the tests use, active as on a real menu (PAY's
+ * re-check skips a group whose isActive is false or missing — user decision
+ * 2026-10-15): exactly one pick required…
+ */
+const BOX_GROUP = { _id: "box_g", name: "Sides", min: 1, max: 1, order: 1, isActive: true };
 /** …a reward's one-option required group (the rewards sheet auto-picks it)… */
-const BUN_GROUP = { _id: "bun_g", name: "Tortilla", min: 1, max: 1, order: 1 };
+const BUN_GROUP = { _id: "bun_g", name: "Tortilla", min: 1, max: 1, order: 1, isActive: true };
 /** …and optional paid add-ons. */
-const EXTRAS_GROUP = { _id: "extras_g", name: "Extras", min: 0, max: 2, order: 1 };
+const EXTRAS_GROUP = { _id: "extras_g", name: "Extras", min: 0, max: 2, order: 1, isActive: true };
 const GROUPS: Record<string, object> = {
   [BOX_GROUP._id]: BOX_GROUP,
   [BUN_GROUP._id]: BUN_GROUP,
