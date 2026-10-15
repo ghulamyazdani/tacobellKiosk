@@ -5,7 +5,11 @@ import {
   validateVariantSelections,
   type FetchModifierProperties,
 } from "@cx-sdk/ordering/customization/groupCompletion";
-import { listVariantSelectionViolations } from "@cx-sdk/ordering/customization/incompleteGroups";
+import {
+  listMinMaxViolations,
+  listVariantSelectionViolations,
+} from "@cx-sdk/ordering/customization/incompleteGroups";
+import { findTier2MinMaxViolation } from "@cx-sdk/ordering/customization/tier2Logic";
 
 /*
   User decision 2026-10-14 ("Fix it now"): every commit and re-check counts
@@ -168,5 +172,83 @@ describe("commits and re-checks count units, never rows (user decision 2026-10-1
       expect(closed(STEPPER)).toBe(false);
       expect(closed({ ...PLAIN, min: 0 })).toBe(true);
     });
+  });
+});
+
+/*
+  User decision 2026-10-15 ("Treat missing as 0"): a min or max the menu
+  leaves out entirely (undefined) reads 0 in every commit and re-check,
+  exactly as null already did — an EMPTY such group commits, and a pick is
+  still refused ("0 of 0", the group-limits rule). Pinned on every scan: the
+  customizable and the sized commit, tier-2's SAVE and group check, and the
+  completion warning's lists (incompleteGroups loops the commit scans).
+*/
+describe("a missing min / max reads 0, as null does (user decision 2026-10-15)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Does each scan pass ONE group with these bounds holding these rows? */
+  const verdicts = (bounds: Record<string, unknown>, rows: unknown[], amp: boolean) => {
+    const group = { _id: "g", name: "G", isActive: true, ...bounds };
+    const fetch: FetchModifierProperties = (ids) => ids.map((id) => (id === "g" ? { ...group } : undefined));
+    const sized = { modifierIds: ["g"], mergedCustomizations: { g: rows }, fetchModifierProperties: fetch, allowMultiplePunch: amp };
+    const tier = (tier1CustOpen: boolean) =>
+      isGroupMinMaxSatisfied({ modifierGroup: group, selectedItems: rows, allowMultiplePunch: amp, tier1CustOpen, tier2CustOpen: !tier1CustOpen });
+    return {
+      customizable: findFirstMinMaxViolation({ g: rows }, fetch, amp) === null,
+      sized: validateVariantSelections(sized).allPassed,
+      tier2Save: findTier2MinMaxViolation({ g: rows }, fetch, amp) === null,
+      tier1Group: tier(true),
+      tier2Group: tier(false),
+      warning: listMinMaxViolations({ g: rows }, fetch, amp).length === 0,
+      warningSized: listVariantSelectionViolations(sized).length === 0,
+    };
+  };
+  const every = (pass: boolean) => ({
+    customizable: pass,
+    sized: pass,
+    tier2Save: pass,
+    tier1Group: pass,
+    tier2Group: pass,
+    warning: pass,
+    warningSized: pass,
+  });
+
+  it.each([
+    ["left out", {}, {}],
+    ["null", { min: null, max: null }, { multiplePunchMin: null, multiplePunchMax: null }],
+  ])("both bounds %s, multi-punch off and on: the EMPTY group passes every scan; a pick fails every scan", (_label, raw, punch) => {
+    for (const [bounds, amp] of [[raw, false], [punch, true]] as const) {
+      expect(verdicts(bounds, [], amp)).toEqual(every(true));
+      expect(verdicts(bounds, [pick("a")], amp)).toEqual(every(false));
+    }
+  });
+
+  it("one bound left out reads 0 beside the other: min 0 with no max takes nothing; max 2 with no min takes 0 to 2 units", () => {
+    expect(verdicts({ min: 0 }, [], false)).toEqual(every(true));
+    expect(verdicts({ min: 0 }, [pick("a")], false)).toEqual(every(false));
+    expect(verdicts({ max: 2 }, [], false)).toEqual(every(true));
+    expect(verdicts({ max: 2 }, [pick("a", 2)], false)).toEqual(every(true));
+    expect(verdicts({ max: 2 }, [pick("a", 2), pick("b")], false)).toEqual(every(false));
+  });
+
+  it("left out reads exactly as null on every scan — each bound, beside any other, for any rows, multi-punch off and on", () => {
+    const shapes = [[], [pick("a")], [pick("a", 2)], [pick("a"), pick("b", 3)]];
+    for (const amp of [false, true]) {
+      const [minKey, maxKey] = amp ? ["multiplePunchMin", "multiplePunchMax"] : ["min", "max"];
+      for (const other of [undefined, 0, 1, 3]) {
+        const max = other === undefined ? {} : { [maxKey]: other };
+        const min = other === undefined ? {} : { [minKey]: other };
+        for (const rows of shapes) {
+          expect(verdicts(max, rows, amp), `no ${minKey} / ${maxKey} ${other}`).toEqual(verdicts({ [minKey]: null, ...max }, rows, amp));
+          expect(verdicts(min, rows, amp), `${minKey} ${other} / no ${maxKey}`).toEqual(verdicts({ ...min, [maxKey]: null }, rows, amp));
+        }
+      }
+    }
   });
 });

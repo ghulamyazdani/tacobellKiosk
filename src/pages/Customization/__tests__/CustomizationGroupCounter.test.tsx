@@ -303,6 +303,37 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     expectCounter(0, 0);
   });
 
+  /*
+    User decision 2026-10-15 ("Treat missing as 0"): a min or max the menu
+    leaves out reads 0 in every commit and re-check, as null already did. The
+    EMPTY group commits — the customizable and the sized commit alike — and a
+    pick is still refused ("0 of 0"), at ADD TO BAG too.
+  */
+  it.each([
+    ["min and max missing", { multiplePunchMaxItem: 3 }, false],
+    ["a missing max (min 0)", { min: 0, multiplePunchMin: 0, multiplePunchMaxItem: 3 }, false],
+    ["a missing min (max 0)", { max: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, false],
+    ["min and max missing, a SIZED item", { multiplePunchMaxItem: 3 }, true],
+    ["a missing max (min 0), a SIZED item", { min: 0, multiplePunchMin: 0, multiplePunchMaxItem: 3 }, true],
+  ])("missing bounds read 0 (user 2026-10-15), %s: a pick it holds anyway is refused at ADD TO BAG; the EMPTY group commits", async (_label, bounds, sized) => {
+    seed(bounds, ROWS, sized);
+    expectCounter(0, 0);
+    expect(within(header()).queryByText(i18n.t("pdp.required"))).not.toBeInTheDocument();
+
+    // A pick it holds anyway (a bag row, a menu change): the commit's max is 0.
+    await act(async () => {
+      store.dispatch(setTier1SelectedCustomization({ [GROUP_ID]: [{ ...ROWS[0], quantity: 1 }] }));
+    });
+    expect(await addToBag()).toBe(false);
+    expect(section()).toHaveClass("ring-red-500");
+    await tap(screen.getByTestId("pdp-incomplete-gotit"));
+
+    await act(async () => {
+      store.dispatch(setTier1SelectedCustomization({ [GROUP_ID]: [] }));
+    });
+    expect(await addToBag()).toBe(true);
+  });
+
   it("0 / 0 cards (the toggle group, item cap 1): '0 of 0', as the stepper; CHOOSE is refused up front", async () => {
     seed({ min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 1 });
 

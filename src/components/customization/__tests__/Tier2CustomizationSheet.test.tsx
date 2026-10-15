@@ -9,6 +9,7 @@ import {
   setTeir2SelectedEntity,
   setTier1SelectedCustomization,
   setTier2BottomSheet,
+  setTier2SelectedCustomization,
   tier1SelectedCustomization,
   tier2SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
@@ -714,6 +715,27 @@ describe("Tier2CustomizationSheet — limits (audit-fixes UB2)", () => {
     expect(selectErrorMessageGlobal(store.getState())).toBe(i18n.t("pdp.groupNoMax", { group: "Ice Level" }));
     expect(picks()).toEqual([]);
     expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+  });
+
+  it("missing bounds read 0, as null does (user 2026-10-15): a pick the group holds anyway is refused at SAVE; the EMPTY group saves", async () => {
+    const { min: _min, max: _max, multiplePunchMin: _mpMin, multiplePunchMax: _mpMax, ...missing } = ICE_GROUP;
+    seedOpenTier2(ENTITY, missing);
+    renderSheet();
+
+    act(() => {
+      store.dispatch(setTier2SelectedCustomization({ dl_addons: [{ ...ICE_GROUP.constituentItems[0], quantity: 1 }] }));
+    });
+    await userEvent.click(screen.getByTestId("tier2-sheet-save"));
+    expect(MIAMTier2Open(store.getState())).toBe(true);
+    expect(selectErrorMessageGlobal(store.getState())).toBe("Please check the customization errors");
+    expect(tier1SelectedCustomization(store.getState())).toEqual(TIER1_SELECTIONS);
+
+    act(() => {
+      store.dispatch(setTier2SelectedCustomization({ dl_addons: [] }));
+    });
+    await userEvent.click(screen.getByTestId("tier2-sheet-save"));
+    expect(tier1SelectedCustomization(store.getState())[SLOT_GROUP._id]).toHaveLength(1);
+    expect(MIAMTier2Open(store.getState())).toBe(false);
   });
 });
 
