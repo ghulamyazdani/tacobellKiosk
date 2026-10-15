@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setKioskSettings,
+  toggleAccessibilityMode,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
@@ -160,7 +163,8 @@ describe("/customerName order-error panel (P9b R4)", () => {
   Lane motion (§2.3 / §2.7). The root's data-enter is latched at mount: none
   on a page load (POP), fwd on a PUSH, back on a PUSH to a screen already on
   the session trail (AppRoutes' notePath; seeded here). Only the content
-  blocks carry tb-enter [--i]; BACK, the footer and the overlays never move.
+  blocks carry tb-enter [--i]; CONTINUE / BACK, the footer and the overlays
+  never move.
 */
 describe("/customerName — the route entrance (lane motion)", () => {
   /** A PUSH from another route: <Navigate> fires after the first commit. */
@@ -199,14 +203,15 @@ describe("/customerName — the route entrance (lane motion)", () => {
     expect(root()).toHaveAttribute("data-enter", "back");
   });
 
-  it("tb-enter [--i] on the title, copy, field, CONTINUE and keyboard (0–4) — never BACK, the footer or the error panel", () => {
+  it("tb-enter [--i] on the title, copy, field and keyboard (0–3) — never CONTINUE / BACK (chrome, as /tent's pair), the footer or the error panel", () => {
     pay.failed = true;
     mountPushed();
     const blocks = [...root().querySelectorAll(".tb-enter")];
-    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3", "4"]);
+    expect(blocks.map((block) => block.className.match(/\[--i:(\d+)\]/)?.[1])).toEqual(["0", "1", "2", "3"]);
+    expect(blocks[0]).toBe(screen.getByRole("heading", { level: 1 }));
     expect(blocks[2]).toContainElement(screen.getByTestId("customer-name-input"));
-    expect(blocks[3]).toBe(screen.getByTestId("customer-name-continue"));
-    for (const id of ["customer-name-back", "footer-cancel", "order-error"]) {
+    expect(blocks[3]).toContainElement(screen.getByTestId("kiosk-keyboard"));
+    for (const id of ["customer-name-continue", "customer-name-back", "footer-cancel", "order-error"]) {
       expect(screen.getByTestId(id).closest(".tb-enter")).toBeNull();
     }
   });
@@ -427,5 +432,106 @@ describe("/customerName — the way back from /payment", () => {
 
     expect(screen.getByTestId("landed")).toHaveTextContent("/payment");
     expect(selectCustomerName(store.getState())).toBe("");
+  });
+});
+
+/*
+  Layout (user 2026-10-15: "whatever you did for phone number screen do same
+  for customer name screen" — CustomerPhone.test's twin). CONTINUE / BACK are
+  /tent's CONFIRM / NO THANKS classes, bottom-anchored 24px above the footer
+  as on /phone: CONTINUE 1648, BACK 1756, footer 1864 — the same stage px in
+  the ADA zone, which is bottom-aligned with the stage. Title, subtitle, field
+  and keyboard are one flex column centred between the bell and CONTINUE,
+  24px off each (248–1624; ADA, no bell: 0–826 of the zone). Geometry is
+  measured in tests/e2e/nameLayout.spec.ts.
+*/
+describe("/customerName — the bottom pair and the centred block (user 2026-10-15)", () => {
+  /** tent-confirm / tent-skip's classes, minus their slot. */
+  const CONFIRM_LOOK = "tb-display absolute left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)]";
+  const SKIP_LOOK = "tb-display absolute left-[24px] h-[84px] w-[1032px] rounded-[8px] border border-tb-surface text-center text-[24px] leading-[20px] text-tb-surface";
+  const classes = (id: string) => screen.getByTestId(id).className.split(/\s+/);
+  const bell = () => screen.queryByRole("img", { name: "Taco Bell" });
+  const block = () => screen.getByTestId("customer-name-content");
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    pay.failed = false;
+    pay.onTimeout = false;
+    pay.pushing = false;
+  });
+
+  afterEach(() => {
+    pay.pushing = false;
+  });
+
+  for (const ada of [false, true]) {
+    const mode = ada ? "ADA" : "normal";
+
+    it(`${mode}: CONTINUE is the table screen's white CONFIRM and BACK its outline NO THANKS, bottom-anchored on the footer — one BACK, none at the top`, () => {
+      if (ada) store.dispatch(toggleAccessibilityMode());
+      mount();
+
+      expect(classes("customer-name-continue")).toEqual(
+        expect.arrayContaining([...CONFIRM_LOOK.split(" "), "bottom-[188px]", "disabled:opacity-60"])
+      );
+      expect(classes("customer-name-back")).toEqual(expect.arrayContaining([...SKIP_LOOK.split(" "), "bottom-[80px]"]));
+      for (const id of ["customer-name-continue", "customer-name-back"]) {
+        expect(classes(id).filter((c) => /^(top|bottom)-/.test(c)), id).toHaveLength(1);
+        expect(screen.getByTestId(id).className, id).not.toMatch(/bg-tb-pink|w-\[600px\]|top-\[40px\]|left-\[40px\]/);
+      }
+      expect(screen.getAllByRole("button", { name: i18n.t("customerName.back") })).toHaveLength(1);
+      // Paint order: the block, then CONTINUE, then BACK.
+      const order = [...screen.getByTestId("customer-name-screen").children];
+      expect(order.indexOf(screen.getByTestId("customer-name-continue"))).toBe(order.indexOf(block()) + 1);
+      expect(order.indexOf(screen.getByTestId("customer-name-back"))).toBe(order.indexOf(block()) + 2);
+    });
+
+    it(`${mode}: title, subtitle, name field and keyboard are one flex column centred ${ada ? "above CONTINUE" : "between the bell and CONTINUE"}; the bell ${ada ? "is dropped" : "sits at /tent's 135, outside it"}`, () => {
+      if (ada) store.dispatch(toggleAccessibilityMode());
+      mount();
+
+      expect(classes("customer-name-content")).toEqual(
+        expect.arrayContaining(["absolute", "inset-x-0", "bottom-[296px]", "flex", "flex-col", "items-center", "justify-center"])
+      );
+      // Normal: the room starts 24px under the bell (135 + 89 + 24), as it ends 24px above CONTINUE.
+      expect(classes("customer-name-content").filter((c) => /^top-/.test(c))).toEqual([ada ? "top-0" : "top-[248px]"]);
+      const parts = [...block().children];
+      expect(parts).toHaveLength(4);
+      expect(parts[0]).toBe(screen.getByRole("heading", { level: 1 }));
+      expect(parts[0]).toHaveClass("min-h-[140px]");
+      expect(parts[1]).toHaveTextContent(i18n.t("customerName.subtitle"));
+      expect(parts[2]).toContainElement(screen.getByTestId("customer-name-input"));
+      // The field still anchors its clear button; its fixed height never shrinks to fit (past the ADA
+      // ceiling the block overflows, which nameLayout.spec catches).
+      expect(parts[2]).toHaveClass("relative", "shrink-0");
+      expect(parts[3]).toContainElement(screen.getByTestId("kiosk-keyboard"));
+      expect(parts[3]).toHaveClass("w-[1000px]");
+      // In the flow: no part is positioned on its own any more.
+      for (const part of parts) {
+        expect(part.className).not.toMatch(/\babsolute\b|\btop-\[|-translate-x-1\/2/);
+      }
+      // The gaps: the subtitle 150px under the title's top (140 + 10), then the old 74 / 60 (ADA: 20 / 20).
+      const gaps = parts.slice(1).map((part) => part.className.match(/\bmt-\[(\d+)px\]/)?.[1]);
+      expect(gaps).toEqual(ada ? ["10", "20", "20"] : ["10", "74", "60"]);
+      for (const id of ["customer-name-continue", "customer-name-back"]) {
+        expect(block()).not.toContainElement(screen.getByTestId(id));
+      }
+      if (ada) {
+        expect(bell()).toBeNull();
+      } else {
+        expect(bell()).toHaveClass("top-[135px]");
+        expect(block()).not.toContainElement(bell());
+      }
+    });
+  }
+
+  it("an order being placed: CONTINUE is disabled, says so, and wears the house dim on white", () => {
+    pay.pushing = true;
+    mount();
+
+    const button = screen.getByTestId("customer-name-continue");
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent(i18n.t("payment.placingOrder"));
+    expect(button).toHaveClass("bg-tb-surface", "disabled:opacity-60");
   });
 });

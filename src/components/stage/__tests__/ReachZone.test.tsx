@@ -131,7 +131,7 @@ describe("ReachZone — the ADA reach-zone view (P9c, Figma 1:5392)", () => {
     it("splits the stage at the calibration knob, inside the range the frameless pages were derived for", () => {
       expect(ADA_BRAND_ZONE_HEIGHT + ADA_REACH_ZONE_HEIGHT).toBe(STAGE_HEIGHT);
       // KioskStage: raising the knob past 820 outgrows CustomerPhone's
-      // centred block (Tent 822, CustomerName 837) — re-derive those first.
+      // centred block (Tent 822, CustomerName 869) — re-derive those first.
       expect(ADA_BRAND_ZONE_HEIGHT).toBeLessThanOrEqual(820);
       // The bag sheet leaves a scrim band to tap-to-close; centred modals
       // keep 24px top and bottom.
