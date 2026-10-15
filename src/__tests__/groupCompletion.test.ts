@@ -184,7 +184,8 @@ describe("commits and re-checks count units, never rows (user decision 2026-10-1
   customizable and the sized commit, tier-2's SAVE and group check, the
   completion warning's lists (incompleteGroups loops the commit scans) and
   PAY's re-check (review r3 #1: checkoutStockSweep's min / max sweep read a
-  missing max as no cap, so a pick the PDP refuses was ordered).
+  missing max as no cap, so a pick the PDP refuses was ordered). A bound that
+  is not a positive number reads 0 the same way (review r3 #3).
 */
 describe("a missing min / max reads 0, as null does (user decision 2026-10-15)", () => {
   beforeEach(() => {
@@ -267,6 +268,26 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
         }
       }
     }
+  });
+
+  it("a bound that is not a positive number — text or negative — reads 0 like a missing one on every scan, as the PDP reads it ('0 of 0', no Required; review r3 #3)", () => {
+    const shapes = [[], [pick("a")], [pick("a", 2)], [pick("a"), pick("b", 3)]];
+    for (const amp of [false, true]) {
+      const [minKey, maxKey] = amp ? ["multiplePunchMin", "multiplePunchMax"] : ["min", "max"];
+      for (const bad of ["x", -1]) {
+        for (const other of [undefined, 0, 1, 3]) {
+          const max = other === undefined ? {} : { [maxKey]: other };
+          const min = other === undefined ? {} : { [minKey]: other };
+          for (const rows of shapes) {
+            expect(verdicts({ [minKey]: bad, ...max }, rows, amp), `${minKey} ${bad} / ${maxKey} ${other}`).toEqual(verdicts(max, rows, amp));
+            expect(verdicts({ ...min, [maxKey]: bad }, rows, amp), `${minKey} ${other} / ${maxKey} ${bad}`).toEqual(verdicts(min, rows, amp));
+          }
+        }
+      }
+    }
+    // The review's dead end: min 0 beside a text max — the EMPTY group commits; a pick is refused.
+    expect(verdicts({ min: 0, max: "x" }, [], false)).toEqual(every(true));
+    expect(verdicts({ min: 0, max: "x" }, [pick("a")], false)).toEqual(every(false));
   });
 
   it("PAY's tier-2 re-check still skips a group the menu does not have, as its tier-1 loop does — only a known group's bound reads 0", () => {

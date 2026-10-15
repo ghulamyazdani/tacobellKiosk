@@ -315,6 +315,9 @@ describe("PDP group header — 'count of max' on every group shape (user report 
     ["a missing min (max 0)", { max: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 }, false],
     ["min and max missing, a SIZED item", { multiplePunchMaxItem: 3 }, true],
     ["a missing max (min 0), a SIZED item", { min: 0, multiplePunchMin: 0, multiplePunchMaxItem: 3 }, true],
+    // Review r3 #3: a max that is not a positive number reads 0 the same way.
+    ["a text max (min 0)", { min: 0, max: "x", multiplePunchMin: 0, multiplePunchMax: "x", multiplePunchMaxItem: 3 }, false],
+    ["a negative max (min 0), a SIZED item", { min: 0, max: -1, multiplePunchMin: 0, multiplePunchMax: -1, multiplePunchMaxItem: 3 }, true],
   ])("missing bounds read 0 (user 2026-10-15), %s: a pick it holds anyway is refused at ADD TO BAG; the EMPTY group commits", async (_label, bounds, sized) => {
     seed(bounds, ROWS, sized);
     expectCounter(0, 0);
