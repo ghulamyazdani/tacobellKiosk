@@ -30,8 +30,9 @@ const ADA_EXEMPT_PATHS = new Set(["/", "/LoadingResources", "/start"]);
  * How long the vacated panel area swallows taps after a tap-to-exit. The
  * switch is instant (no tap delay either: user-scalable=no), so the second
  * tap of a double tap would land on whatever the full-height page now paints
- * there — a Menu card adds to the bag, /customerName's CONTINUE
- * submits. The fork's 0.5 s height transition absorbed it by accident.
+ * there — a Menu card adds to the bag, the PDP's quantity + adds one
+ * (ada.spec pins it under the panel). The fork's 0.5 s height transition
+ * absorbed it by accident.
  */
 const EXIT_TAP_GUARD_MS = 500;
 

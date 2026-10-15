@@ -501,8 +501,9 @@ describe("/customerName — the bottom pair and the centred block (user 2026-10-
       expect(parts[0]).toHaveClass("min-h-[140px]");
       expect(parts[1]).toHaveTextContent(i18n.t("customerName.subtitle"));
       expect(parts[2]).toContainElement(screen.getByTestId("customer-name-input"));
-      // The field still anchors its clear button.
-      expect(parts[2]).toHaveClass("relative");
+      // The field still anchors its clear button; its fixed height never shrinks to fit (past the ADA
+      // ceiling the block overflows, which nameLayout.spec catches).
+      expect(parts[2]).toHaveClass("relative", "shrink-0");
       expect(parts[3]).toContainElement(screen.getByTestId("kiosk-keyboard"));
       expect(parts[3]).toHaveClass("w-[1000px]");
       // In the flow: no part is positioned on its own any more.

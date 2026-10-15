@@ -108,7 +108,10 @@ const CRM_LOOKUP_TIMEOUT_MS = 10000;
  * Nothing scrolls. The full-cover overlays (CRM loading, order-error) are
  * `inset-0`, so they follow the page height.
  * ponytail: the ADA block fits only while ADA_BRAND_ZONE_HEIGHT ≤ 869
- * (826 − 755 spare); past that, close the block's gaps (50px in all).
+ * (826 − 755 spare). Past that it overflows its column, the title cropped at
+ * the zone's top: no part shrinks to fit (the field, the one fixed height, is
+ * shrink-0), so nameLayout.spec fails. Then close the block's gaps (50px in
+ * all).
  */
 export default function CustomerName() {
   const enter = usePageEnter();
@@ -390,7 +393,7 @@ export default function CustomerName() {
         </p>
 
         <div
-          className={`tb-enter [--i:2] ${ada ? "mt-[20px]" : "mt-[74px]"} relative flex h-[100px] w-[844px] items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
+          className={`tb-enter [--i:2] ${ada ? "mt-[20px]" : "mt-[74px]"} relative flex h-[100px] w-[844px] shrink-0 items-center rounded-[10px] border-2 border-tb-purple-vibrant bg-tb-surface px-[28px]`}
         >
           <span
             data-testid="customer-name-input"

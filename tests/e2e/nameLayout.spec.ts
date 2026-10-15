@@ -39,6 +39,8 @@ const BELL_BOTTOM = 135 + 89;
 const CENTRE_TOLERANCE = 8;
 /** KioskKeyboard as it always was: 1000 wide, four rows of 90 px keys 23 px apart. */
 const KEYBOARD = { width: 1000, height: 4 * 90 + 3 * 23 };
+/** The name field: a fixed 100 px in the flex column, which flex must never shrink. */
+const FIELD = { width: 844, height: 100 };
 
 /**
  * PAY with CRM shown and loyalty off: the bag → /phone (checkout mode) → SKIP → here. No number, so no
@@ -114,6 +116,7 @@ async function expectLayout(page: Page, label: string, { ada, lang }: { ada: boo
     keyboard && { width: keyboard.width, height: keyboard.height },
     `${label}: the keyboard keeps its size`
   ).toEqual(KEYBOARD);
+  soft(field && { width: field.width, height: field.height }, `${label}: the field keeps its size`).toEqual(FIELD);
   // The field's clear button stays inside the field.
   const clear = await stageBox(page.getByTestId("customer-name-clear"));
   soft(Boolean(field) && inside(clear, field), `${label}: the clear button inside the field`).toBe(true);
@@ -162,6 +165,21 @@ test.describe("/customerName layout (user 2026-10-15)", () => {
     await page.getByTestId("footer-ada").click();
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
     await expectLayout(page, "en-ada", { ada: true, lang: "en" });
+    // Past the ADA ceiling (869, CustomerName's ponytail note) the block overflows, so expectLayout's
+    // free-area and clippedText checks fail; it never squashes the field to fit them. A 900 brand zone,
+    // emulated on the reach zone:
+    const zone = page.getByTestId("reach-zone");
+    const zoneHeight = await zone.evaluate((el) => el.style.height);
+    await zone.evaluate((el, height) => {
+      el.style.height = height;
+    }, `${STAGE_HEIGHT - 900}px`);
+    const squeezed = await stageBox(page.getByTestId("customer-name-content").locator(":scope > *").nth(2));
+    expect
+      .soft({ width: squeezed.width, height: squeezed.height }, "en-ada at a 900 brand zone: the field keeps its size")
+      .toEqual(FIELD);
+    await zone.evaluate((el, height) => {
+      el.style.height = height;
+    }, zoneHeight);
     await chooseLanguage(page, "ar");
     await expectLayout(page, "ar-ada", { ada: true, lang: "ar" });
     await page.getByTestId("footer-ada").click();
