@@ -302,10 +302,13 @@ describe("a missing min / max reads 0, as null does (user decision 2026-10-15)",
 /*
   User decision 2026-10-15 ("PAY skips inactive groups"): PAY's re-check
   counts a group only when its isActive is true — false, or no key at all, is
-  inactive, as at every commit (the sized commit's validateVariantSelections
-  skips it; the PDP shows and seeds active groups only). A size whose inactive
-  required group the PDP seeds empty was added fine, then refused at PAY for
-  good: Edit cannot fill a group it never shows.
+  inactive, as the PDP shows groups and the sized commit's
+  validateVariantSelections skips them. A size whose inactive required group
+  the PDP seeds empty was added fine, then refused at PAY for good: Edit
+  cannot fill a group it never shows. Known gap: the customizable commit and
+  tier-2 SAVE (findFirstMinMaxViolation, findTier2MinMaxViolation) count every
+  key they are handed. Fresh seeds hold active groups only, but an Edit session
+  restores the row's keys, so a group switched off after the add counts there.
 */
 describe("PAY's re-check skips inactive groups, at either tier (user decision 2026-10-15)", () => {
   beforeEach(() => {
