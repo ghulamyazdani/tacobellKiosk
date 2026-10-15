@@ -146,6 +146,7 @@
     "discardConfirm": "Discard",
     "groupCount": "{{count}} of {{max}}",
     "groupMaxReached": "You can choose up to {{max}} {{group}}",
+    "groupNoMax": "You've reached the maximum for {{group}}",
     "keepItem": "No, keep it",
     "removeThisItem": "Remove this item",
     "replaceTitle": "Replace {{name}} in your meal?",

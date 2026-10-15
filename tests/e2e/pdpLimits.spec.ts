@@ -8,6 +8,7 @@ import {
   EXTRA_PICKLES,
 } from "./fixtures/backend";
 import { bootRegisteredToMenu } from "./pages/boot";
+import { stageBox } from "./fixtures/a11y";
 
 /**
  * audit-fixes UB2 + U1 on the PDP, end to end over the REAL converters and
@@ -26,6 +27,14 @@ import { bootRegisteredToMenu } from "./pages/boot";
  *   "0 of 6", several picks, and an empty group is accepted. (On a device
  *   this is a Posist menu-setting question, Q1 — the PDP now shows what the
  *   engine enforces.)
+ * - STEPPER COUNTER (user report 2026-10-14): stepper rows carry "N of M"
+ *   against the group max the "+" refuses at, a max of 1 included, at the
+ *   header's right edge (the ADA view too); ADD TO BAG takes what they
+ *   show. A 0 / 0 stepper takes no pick (user decision 2026-10-14,
+ *   posistKiosk parity): "0 of 0", its "+" refused up front.
+ * - SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required
+ *   stepper group on a size is met by one option ×2 — the sized item's
+ *   commit counts units, as the counter does (it counted rows and refused).
  *
  * Fixture facts (tests/e2e/fixtures/slim-menu.json): Kiddie Meal Beef Burger
  * (tagged veg) is re-shaped into a sized item with no groups (or, for CHANGE,
@@ -46,6 +55,8 @@ const SIZED_ITEM = "5dd1093a188e72ce1b3eb358";
 const SIZE_REGULAR = "e2e-size-regular"; // £5
 const SIZE_LARGE = "e2e-size-large"; // £7
 const EXTRA_GROUP = `${CHEESE_BURGER}_1573980469_addons`;
+// Cheese Burger's "Choose From Without" group (order 2, four options, 0 / 4).
+const WITHOUT_GROUP = `${CHEESE_BURGER}_1573980470_addons`;
 // The last of Cheese Burger's three groups (order 3, one option, 0 / 1).
 const EXTRA_CHEESE_GROUP = `${CHEESE_BURGER}_1686482941_addons`;
 
@@ -88,6 +99,15 @@ function sizedRequiredGroupMenu(): MenuJson {
   return menu;
 }
 
+/** Large carries Cheese Burger's "Without" group as a REQUIRED stepper: 2 / 4, item cap 2. */
+function sizedStepperMinMenu(): MenuJson {
+  const menu = sizedMenu([WITHOUT_GROUP]);
+  const without = menu.modifiers.find((group) => group._id === WITHOUT_GROUP);
+  if (!without) throw new Error("fixture: no Without group");
+  Object.assign(without, { min: 2, max: 4, multiplePunchMin: 2, multiplePunchMax: 4, multiplePunchMaxItem: 2 });
+  return menu;
+}
+
 /** Multi-punch ON, and Cheese Burger's "Extra" group made a raw 1/1 with multi-punch bounds 0 / 6. */
 function multiPunchMenu(): MenuJson {
   const menu = structuredClone(slimMenu) as MenuJson;
@@ -95,6 +115,23 @@ function multiPunchMenu(): MenuJson {
   const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
   if (!extra) throw new Error("fixture: no Extra group");
   Object.assign(extra, { min: 1, max: 1, multiplePunchMin: 0, multiplePunchMax: 6, multiplePunchMaxItem: 1 });
+  return menu;
+}
+
+/**
+ * User report 2026-10-14 (Honey BBQ Wings' "Test 1"): Cheese Burger's three
+ * groups as stepper rows — "Extra" a 0 / 1 (item cap 3), "Without" a 0 / 4
+ * (item cap 2), "Extra Cheese" on 0 / 0 (item cap 3, no group max).
+ */
+function stepperCounterMenu(): MenuJson {
+  const menu = structuredClone(slimMenu) as MenuJson;
+  const extra = menu.modifiers.find((group) => group._id === EXTRA_GROUP);
+  const without = menu.modifiers.find((group) => group._id === WITHOUT_GROUP);
+  const cheese = menu.modifiers.find((group) => group._id === EXTRA_CHEESE_GROUP);
+  if (!extra || !without || !cheese) throw new Error("fixture: no Extra / Without / Extra Cheese group");
+  Object.assign(extra, { min: 0, max: 1, multiplePunchMin: 0, multiplePunchMax: 1, multiplePunchMaxItem: 3 });
+  Object.assign(without, { multiplePunchMaxItem: 2 });
+  Object.assign(cheese, { min: 0, max: 0, multiplePunchMin: 0, multiplePunchMax: 0, multiplePunchMaxItem: 3 });
   return menu;
 }
 
@@ -307,5 +344,140 @@ test.describe("PDP limits (audit-fixes UB2)", () => {
     await page.getByTestId("added-continue").click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page.getByTestId("cta-total")).toHaveText(/: £9$/);
+  });
+
+  test("STEPPER COUNTER (user report 2026-10-14): a stepper group counts against the max its '+' refuses at, 1 included — 'N of M' follows every + and −, at the header's right edge in the normal and the ADA view; ADD TO BAG takes what the counters show; a 0 / 0 stepper reads '0 of 0' and refuses its '+'", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { menu: stepperCounterMenu(), kioskSettings: { accessibility_mode: true } });
+    await bootRegisteredToMenu(page);
+    await openPdp(page, CHEESE_BURGER);
+
+    const counter = (groupId: string, picked: number, max: number) =>
+      page
+        .getByTestId(`pdp-group-${groupId}`)
+        .getByText(
+          (en.pdp.groupCount as string).replace("{{count}}", String(picked)).replace("{{max}}", String(max)),
+          { exact: true },
+        );
+    const plus = (option: string) => page.getByRole("button", { name: `${en.pdp.increase} ${option}` });
+    const minus = (option: string) => page.getByRole("button", { name: `${en.pdp.decrease} ${option}` });
+    /** The extreme right of the 1032 px contents (x 24): stage x 1056 in both views. */
+    const expectAtRightEdge = async (groupId: string, picked: number, max: number) =>
+      expect.poll(async () => {
+        const box = await stageBox(counter(groupId, picked, max));
+        return box.x + box.width;
+      }).toBe(1056);
+    /** The guard's "You can choose up to {max} …" refusal, then GOT IT. */
+    const expectRefusedAt = async (max: number) => {
+      await expect(page.getByTestId("global-error")).toContainText(
+        (en.pdp.groupMaxReached as string).replace("{{max}}", String(max)).replace(" {{group}}", ""),
+      );
+      await page.getByTestId("global-error-ok").click();
+      await expect(page.getByTestId("global-error")).toHaveCount(0);
+    };
+
+    // A group max of 1 (item cap 3): "0 of 1"; the second unit is refused at it.
+    await expect(counter(EXTRA_GROUP, 0, 1)).toBeVisible();
+    await expect(page.getByTestId(`pdp-group-${EXTRA_GROUP}`)).not.toContainText(en.pdp.required);
+    await expectAtRightEdge(EXTRA_GROUP, 0, 1);
+    await plus("Extra Pickles").click();
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeVisible();
+    await plus("Extra Pickles").click();
+    await expectRefusedAt(1);
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeVisible();
+
+    // A group max of 4 (item cap 2): + and − move it; the 5th unit is refused at it.
+    const without = page.getByTestId(`pdp-group-${WITHOUT_GROUP}`);
+    await without.scrollIntoViewIfNeeded();
+    await expect(counter(WITHOUT_GROUP, 0, 4)).toBeVisible();
+    await plus("Without Ketchup").click();
+    await plus("Without Ketchup").click();
+    await expect(counter(WITHOUT_GROUP, 2, 4)).toBeVisible();
+    await plus("Without Cheese").click();
+    await plus("Without Cheese").click();
+    await expect(counter(WITHOUT_GROUP, 4, 4)).toBeVisible();
+    await plus("Without Pickles").click();
+    await expectRefusedAt(4);
+    await minus("Without Ketchup").click();
+    await expect(counter(WITHOUT_GROUP, 3, 4)).toBeVisible();
+    await expectAtRightEdge(WITHOUT_GROUP, 3, 4);
+
+    // 0 / 0 (no group max): stepper rows that take no pick (user decision
+    // 2026-10-14, posistKiosk parity) — "0 of 0" at the right edge, and the
+    // "+" is refused up front with the fork's group limit; nothing lands.
+    const cheese = page.getByTestId(`pdp-group-${EXTRA_CHEESE_GROUP}`);
+    await cheese.scrollIntoViewIfNeeded();
+    await expect(plus("Add Cheese")).toBeVisible();
+    await expect(counter(EXTRA_CHEESE_GROUP, 0, 0)).toBeVisible();
+    await expectAtRightEdge(EXTRA_CHEESE_GROUP, 0, 0);
+    await test.info().attach("pdp-stepper-counter", { body: await page.screenshot(), contentType: "image/png" });
+    await plus("Add Cheese").click();
+    await expect(page.getByTestId("global-error")).toContainText(
+      (en.pdp.groupNoMax as string).replace("{{group}}", "Choose From Extra Cheese for Cheese Burger"),
+    );
+    await page.getByTestId("global-error-ok").click();
+    await expect(page.getByTestId("global-error")).toHaveCount(0);
+    await expect(counter(EXTRA_CHEESE_GROUP, 0, 0)).toBeVisible();
+    await expect(cheese.getByText("0", { exact: true })).toBeVisible();
+
+    // The ADA reach-zone view: the same counters, still at the right edge.
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+    await expect(counter(EXTRA_GROUP, 1, 1)).toBeAttached();
+    await expectAtRightEdge(EXTRA_GROUP, 1, 1);
+    await expectAtRightEdge(WITHOUT_GROUP, 3, 4);
+    await without.scrollIntoViewIfNeeded();
+    await plus("Without Pickles").click();
+    await expect(counter(WITHOUT_GROUP, 4, 4)).toBeVisible();
+    await test.info().attach("pdp-stepper-counter-ada", { body: await page.screenshot(), contentType: "image/png" });
+
+    // The commit agrees with the counters: "1 of 1" and "4 of 4" go to the bag.
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect.poll(() => cartRowCount(page)).toBe(1);
+  });
+
+  test("SIZED STEPPER AT ITS MINIMUM (user decision 2026-10-14): a required 2 / 4 stepper on a size, met by Without Ketchup ×2 — '2 of 4', and ADD TO BAG commits it (the sized commit counts units, like the counter)", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { menu: sizedStepperMinMenu() });
+    await bootRegisteredToMenu(page);
+    await openPdp(page, SIZED_ITEM);
+    await page.getByTestId(`pdp-variant-${SIZE_LARGE}`).click();
+
+    const without = page.getByTestId(`pdp-group-${WITHOUT_GROUP}`);
+    const count = (picked: number) =>
+      (en.pdp.groupCount as string).replace("{{count}}", String(picked)).replace("{{max}}", "4");
+    await expect(without).toContainText(en.pdp.required);
+    await expect(without).toContainText(count(0));
+    const plus = page.getByRole("button", { name: `${en.pdp.increase} Without Ketchup` });
+    await plus.click();
+    await plus.click();
+    await expect(without).toContainText(count(2));
+    await test.info().attach("pdp-sized-stepper-min", { body: await page.screenshot(), contentType: "image/png" });
+
+    await page.getByTestId("pdp-add-to-bag").click();
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    await expect.poll(() => cartRowCount(page)).toBe(1);
+    const committed = await page.evaluate(
+      (groupId) =>
+        (
+          window as unknown as {
+            __kioskStore: {
+              getState: () => {
+                cart: { cartItems: { type: string; customizations: Record<string, { quantity: number }[]> }[] };
+              };
+            };
+          }
+        ).__kioskStore
+          .getState()
+          .cart.cartItems.map((row) => [row.type, row.customizations[groupId]?.map((pick) => pick.quantity)]),
+      WITHOUT_GROUP,
+    );
+    expect(committed).toEqual([["VARIANT", [2]]]);
   });
 });

@@ -369,6 +369,22 @@ describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork's fl
     expect(total()).toContain("£17.00");
   });
 
+  it("7b · CHOOSE a REQUIRED add-on when tier-1 holds no key for its group (a row restored without it): the plan's key lands with the page, so UPDATE commits the pick", async () => {
+    seed();
+    renderPdp();
+    await act(async () => {
+      const { [SNACKS._id]: _gone, ...rest } = tier1SelectedCustomization(store.getState()) as Record<string, unknown[]>;
+      store.dispatch(setTier1SelectedCustomization(rest));
+    });
+    expect(Object.keys(tier1SelectedCustomization(store.getState()) as object)).not.toContain(SNACKS._id);
+
+    await tap(cta(SNACKS, "bbq"));
+    await tap(await tier2Card("plain"));
+    await save();
+    expect(tier2Open()).toBe(false);
+    expect(idsOf(SNACKS)).toEqual(["bbq"]);
+  });
+
   it("8 · an `_addons` group gets the same flow (C1): CUSTOMIZE → No Salt → UPDATE lands the own pick (PDP £19.50 — the bill side is e2e E4); a REQUIRED CHOOSE opens NEW", async () => {
     seed();
     renderPdp();
@@ -422,6 +438,26 @@ describe("PDP add-on CUSTOMIZE — Figma 1:5332's two-button card, the fork's fl
 
     await tap(cta(TOGGLE, "fries"));
     expect(screen.getByTestId("global-error")).toBeInTheDocument();
+    expect(idsOf(TOGGLE)).toEqual([]);
+  });
+
+  it("9d · a group with NO max at all (missing) refuses them up front too (user decision 2026-10-14): '0 of 0', the fork's group limit, the customize page never opens", async () => {
+    const NO_MAX = { ...TOGGLE, max: undefined, multiplePunchMax: undefined };
+    seed(
+      { ...PACK, modifiers: [...PACK.modifiers, TOGGLE._id] },
+      ALL_GROUPS.map((g) => (g._id === TOGGLE._id ? NO_MAX : g)),
+    );
+    renderPdp();
+    const refusal = i18n.t("pdp.groupNoMax", { group: "Toggle" });
+    expect(groupEl(TOGGLE)).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+
+    await tap(cta(TOGGLE, "bbq")); // REQUIRED own options: the page NEW
+    expect(screen.getByTestId("global-error")).toHaveTextContent(refusal);
+    expect(tier2Open()).toBe(false);
+    await gotIt();
+
+    await tap(cta(TOGGLE, "fries")); // all-optional: the pre-shaped pick
+    expect(screen.getByTestId("global-error")).toHaveTextContent(refusal);
     expect(idsOf(TOGGLE)).toEqual([]);
   });
 

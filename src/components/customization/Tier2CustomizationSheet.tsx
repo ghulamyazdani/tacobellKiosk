@@ -563,7 +563,11 @@ export default function Tier2CustomizationSheet() {
               sum + Number(s?.quantity ?? 0),
             0,
           )}
+          // The PDP's counter: the guard's max, at 1 where it refuses at 1;
+          // "0 of 0" where it refuses every pick (no positive max).
           max={maxPicks}
+          noMax={!(maxPicks > 0)}
+          atOne={stepper || (!oneOfOne && items.length > 1)}
           required={minPicks > 0}
           errored={errored}
         />

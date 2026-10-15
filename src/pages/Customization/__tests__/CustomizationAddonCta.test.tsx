@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import {
   openMakeItAMealSession,
   setTier1BottomSheetAndSelectedEntity,
+  setTier1SelectedCustomization,
   tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
@@ -66,7 +67,7 @@ const DRINK = {
     { id: "lemonade", name: "Lemonade", price: 0, isActive: true },
   ],
 };
-/** Toggle: min 0 / max 0 (no cap). */
+/** Toggle: min 0 / max 0 — no positive max, so it takes no pick (posistKiosk). */
 const WITHOUT = {
   _id: "burger_without_addons",
   name: "Without",
@@ -214,16 +215,32 @@ describe("PDP option cards — the CTA on every grid card (user report 2026-10-0
     expect(cta("mustard").textContent).toBe(i18n.t("pack.choose"));
   });
 
-  it("a toggle group (min 0 / max 0): CHOOSE adds, REMOVE takes it back", async () => {
+  it("a toggle group (min 0 / max 0) takes no pick (user decision 2026-10-14, posistKiosk): '0 of 0', CHOOSE is refused up front; a pick it holds anyway, REMOVE takes back", async () => {
     renderPdp();
+    const group = screen.getByTestId(`pdp-group-${WITHOUT._id}`);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
 
     await tap(cta("no-onions"));
-    expect(picksIn(WITHOUT._id)).toEqual([["no-onions", 1]]);
-    expect(cta("no-onions").textContent).toBe(i18n.t("pack.remove"));
+    expect(screen.getByTestId("global-error")).toHaveTextContent(i18n.t("pdp.groupNoMax", { group: "Without" }));
+    expect(picksIn(WITHOUT._id)).toEqual([]);
+    expect(cta("no-onions").textContent).toBe(i18n.t("pack.choose"));
+    await tap(screen.getByTestId("global-error-ok"));
 
+    // A pick from before the rule (a bag row, a menu change): taking it back is never refused.
+    await act(async () => {
+      store.dispatch(
+        setTier1SelectedCustomization({
+          ...tier1SelectedCustomization(store.getState()),
+          [WITHOUT._id]: [{ ...WITHOUT.constituentItems[0], quantity: 1 }],
+        }),
+      );
+    });
+    expect(cta("no-onions").textContent).toBe(i18n.t("pack.remove"));
     await tap(cta("no-onions"));
     expect(picksIn(WITHOUT._id)).toEqual([]);
     expect(cta("no-onions").textContent).toBe(i18n.t("pack.choose"));
+    expect(screen.queryByTestId("global-error")).toBeNull();
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
   });
 
   it("multi-punch ON: the CTA reads the EFFECTIVE bounds the engine taps with — Extras (raw 0/2, multi-punch 1/1) is a swap: its pick has no CTA, CHOOSE swaps", async () => {

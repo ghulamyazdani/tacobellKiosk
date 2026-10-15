@@ -15,13 +15,15 @@ import {
   setTier1BottomSheet,
   setTier1SelectedCustomization,
   setIsForceOpenMakeItAMealModal,
+  tier1SelectedCustomization,
 } from "@cx-sdk/ordering/state/makeItAMeal.slice";
 import { setModifiersMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectErrorMessageGlobal } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setSelectedEntity } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { store } from "../../../redux/app/store";
 import Customization from "../index";
-import "../../../i18n";
+import i18n from "../../../i18n";
 
 /** Optional addon group (min 0 / max 2) — the edit must NOT reseed defaults. */
 const SAUCE_GROUP = {
@@ -193,5 +195,28 @@ describe("Customization edit-from-bag branch (contract B1)", () => {
     const items = cartState().cartItems;
     expect(items).toHaveLength(1);
     expect(items[0].quantity).toBe(2);
+  });
+
+  it("a group with no max on the bag's EDIT (user decision 2026-10-14): '0 of 0', CHOOSE is refused up front, and UPDATE keeps the row", async () => {
+    seedEditSession({ ...BURGER_ROW, total_price: 8, customizations: { sauce_group: [] } });
+    store.dispatch(
+      setModifiersMap({ modifiersMap: { sauce_group: { ...SAUCE_GROUP, max: 0, multiplePunchMax: 0 } } })
+    );
+    renderEditPdp();
+    const group = screen.getByTestId("pdp-group-sauce_group");
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+
+    await userEvent.click(screen.getByTestId("pdp-option-onions"));
+    expect(selectErrorMessageGlobal(store.getState())).toBe(
+      i18n.t("pdp.groupNoMax", { group: "Sauces" })
+    );
+    expect(tier1SelectedCustomization(store.getState()).sauce_group).toEqual([]);
+    expect(group).toHaveTextContent(i18n.t("pdp.groupCount", { count: 0, max: 0 }));
+
+    await userEvent.click(screen.getByTestId("pdp-add-to-bag"));
+    const items = cartState().cartItems;
+    expect(items).toHaveLength(1);
+    expect(items[0].itemId).toBe("cb-1");
+    expect(items[0].customizations.sauce_group).toEqual([]);
   });
 });

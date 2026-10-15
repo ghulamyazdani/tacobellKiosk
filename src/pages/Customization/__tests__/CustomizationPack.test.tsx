@@ -246,6 +246,30 @@ describe("Customization page — pack partition (P6c)", () => {
     expect(tier1[DRINK_GROUP._id]).toEqual([]);
   });
 
+  it("multi-punch ON, a raw 1 / 1 slot with multi-punch 1 / 2 and two defaults opens with ONE pick: the slot card shows one, so no hidden second is billed", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    seedSession();
+    const [beef, bean] = BURRITO_GROUP.constituentItems;
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: {
+          ...MODIFIERS_MAP,
+          [BURRITO_GROUP._id]: {
+            ...BURRITO_GROUP,
+            multiplePunchMax: 2,
+            constituentItems: [{ ...beef, price: 1 }, { ...bean, price: 2, isDefault: true }],
+          },
+        },
+      })
+    );
+    renderPage();
+
+    expect(picksOf(BURRITO_GROUP._id).map((pick) => pick.id)).toEqual(["b-beef"]);
+    expect(screen.getByTestId("pack-slot-pack1_1_combo")).toHaveTextContent("Beefy Burrito");
+    expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£10.99");
+  });
+
   it("a non-pack entity renders no slot grid at all (zero change)", () => {
     seedSession({
       id: "single1",
@@ -492,6 +516,21 @@ describe("Customization page — D5: one-option slots are pre-selected (item 42)
     expect(screen.queryByTestId(`pack-slot-open-${D5_SIDES._id}`)).not.toBeInTheDocument();
     expect(within(card).queryAllByRole("button")).toEqual([]); // not customizable: no CUSTOMIZE either
     expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£9.50");
+  });
+
+  it("not seeded when the slot has no max (multi-punch ON, multi-punch 0 / 0): a group with no positive max takes no pick (user decision 2026-10-14)", () => {
+    store.dispatch(setAllowMultiplePunch(true));
+    seedD5();
+    store.dispatch(
+      setModifiersMap({
+        modifiersMap: { ...D5_MODIFIERS, [D5_SIDES._id]: { ...D5_SIDES, multiplePunchMin: 0, multiplePunchMax: 0 } },
+      })
+    );
+    renderPage();
+
+    expect(picksOf(D5_SIDES._id)).toEqual([]);
+    expect(screen.getByTestId("pdp-add-to-bag")).toHaveTextContent("£9.00");
+    store.dispatch(setAllowMultiplePunch(false));
   });
 
   it("not seeded: a two-option slot, an option that needs tier-2, an out-of-stock and an inactive option", () => {
