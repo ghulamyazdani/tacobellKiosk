@@ -25,6 +25,7 @@ import KioskKeyboard from "../../components/keyboard/KioskKeyboard";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
+import PlacingOrderLayer from "../../components/payment/PlacingOrderLayer";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import inputClear from "../../assets/icons/input-clear.svg";
@@ -138,6 +139,7 @@ export default function CustomerName() {
   // POST /api/onlineOrders/partner/kiosk/placeOrder — no gateway, no terminal.
   const {
     start: startOrderPush,
+    status,
     isBuffering,
     isPushing,
     hasFailed,
@@ -457,6 +459,16 @@ export default function CustomerName() {
             {t("customerName.loading")}
           </p>
         </div>
+      )}
+
+      {/* UX-16: the push shows /receipt's PLACING dialog over the keyboard,
+          BACK and the footer (BACK and CANCEL ORDER refuse while it runs —
+          they were dead taps). Up until the screen leaves: "placed" commits
+          before the route change does (BrowserRouter navigates in a
+          transition), so the screen would flash back with a live CONTINUE
+          for the whole Order Complete render. */}
+      {(placingOrder || status === "placed") && (
+        <PlacingOrderLayer testId="customer-name-placing" titleId="customer-name-placing-title" />
       )}
 
       {/* TERMINAL PUSH FAILURE (Rule 2). The fork's equivalent path only
