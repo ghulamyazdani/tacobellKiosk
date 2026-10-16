@@ -64,11 +64,14 @@ export default function CategoryRail({
       <img alt="Taco Bell" src={tbBellRail} className="mb-[40px] h-[64px] w-[72px]" />
       {children}
       {/* The list scrolls by touch with no native scrollbar (user 2026-10-14:
-          "there is a scrollbar in the sidebar"), like the menu pane. */}
+          "there is a scrollbar in the sidebar"), like the menu pane.
+          bg-transparent: un-composited like the pane (pages/Menu, perf
+          PAINT-1 opt-out) — painted before the menu photos' blend, a
+          composited list would split them into their own layers too. */}
       <div
         ref={listRef}
         // relative: the rows' offsetTop is measured from this list.
-        className="relative flex w-full flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="relative flex w-full flex-col overflow-y-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {categories.map((category) => {
           const selected = category.id === selectedId;

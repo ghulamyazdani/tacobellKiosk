@@ -493,7 +493,10 @@ export default function BuyStageSheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* bg-transparent (perf PAINT-1 opt-out): the tiles' photos
+            multiply-blend, so a composited list would split each into its own
+            layer and re-sample it (as the menu pane, pages/Menu). */}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-transparent">
           {/* Header-less groups share one card row. Headed, each group is
               its header over its OWN card row (a header spanning a shared
               grid kept all four tracks, so a lone card sat in column 1 —

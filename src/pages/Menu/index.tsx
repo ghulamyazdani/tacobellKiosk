@@ -633,7 +633,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
             <MenuFilterChips onChange={handleFilterChange} />
           </ErrorBoundary>
         </CategoryRail>
-        <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* bg-transparent (perf PAINT-1 opt-out): the cards' photos
+            multiply-blend against the whole reach zone, so a composited pane
+            would split every photo into its own layer and re-sample it. The
+            pane and the rail stay un-composited, as before. */}
+        <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto bg-transparent px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center gap-6">
               <h1 className="tb-display text-center text-5xl text-tb-purple">

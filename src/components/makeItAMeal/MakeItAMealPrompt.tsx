@@ -303,8 +303,10 @@ export default function MakeItAMealPrompt() {
           absorbs the cut; the CTA panel never shrinks. */}
       <div className="tb-modal-enter absolute left-1/2 top-1/2 flex max-h-[calc(100%_-_48px)] w-[680px] flex-col overflow-hidden rounded-[16px] bg-tb-surface">
         {/* Meal panel(s). One combo renders the frame verbatim; several stack
-            in this scroller with the identical card treatment. */}
-        <div className="flex max-h-[1100px] min-h-0 flex-col gap-[8px] overflow-y-auto">
+            in this scroller with the identical card treatment. bg-transparent:
+            the scroller's box meets the card's anti-aliased top edge (see
+            EditHowManyModal; index.css perf PAINT-1). */}
+        <div className="flex max-h-[1100px] min-h-0 flex-col gap-[8px] overflow-y-auto bg-transparent">
           {combos.map((combo: any) => {
             const imageUrl = resolveEntityImage(combo);
             const saving = savingsFor(combo);

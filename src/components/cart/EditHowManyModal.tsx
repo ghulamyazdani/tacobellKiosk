@@ -70,9 +70,12 @@ export default function EditHowManyModal({
         className="absolute inset-0 h-full w-full bg-tb-purple/80"
       />
       {/* Capped by the bag (the 1122 reach zone in ADA): only the copy +
-          picker region scrolls, so EDIT never leaves reach. */}
+          picker region scrolls, so EDIT never leaves reach. bg-transparent:
+          the scroller's box meets the card's anti-aliased top edge, so the
+          white every other scroller paints (index.css, perf PAINT-1) would
+          double that edge. */}
       <div className="tb-modal-enter absolute left-1/2 top-1/2 flex max-h-[calc(100%_-_96px)] w-[680px] flex-col overflow-hidden rounded-[16px] bg-tb-surface">
-        <div className="flex min-h-0 flex-col items-center gap-[54px] overflow-y-auto px-[24px] pt-[97px]">
+        <div className="flex min-h-0 flex-col items-center gap-[54px] overflow-y-auto bg-transparent px-[24px] pt-[97px]">
           <div className="flex w-[504px] flex-col items-center gap-[16px] text-center">
             <h2
               id="edit-how-many-title"
