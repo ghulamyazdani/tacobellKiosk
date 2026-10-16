@@ -574,6 +574,18 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
             {t("offers.saveSelection")}
           </button>
         </div>
+        {/* Busy SAVE (UX-04, design language): the house sweep 6 px above it.
+            Absolute against the panel, never in the footer (its 64 px
+            drop-shadow would re-filter every frame) or a button (the loop
+            rule); late, so a fast commit never flashes it. */}
+        {committing && (
+          <div
+            aria-hidden="true"
+            className="tb-reveal-late pointer-events-none absolute inset-x-0 bottom-[114px] mx-auto h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac"
+          >
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+          </div>
+        )}
       </div>
     </div>
   );
