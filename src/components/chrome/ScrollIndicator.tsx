@@ -68,6 +68,14 @@ const OVERFLOW_EPSILON = 2;
  * Content changes (late menu load, PDP groups, a size pick, show more): a
  * ResizeObserver on the pane AND each direct child, plus a childList-only
  * MutationObserver on the pane that observes children as they come and go.
+ *
+ * HELD (user request 2026-10-16; design language, client sign-off): while a
+ * drag owns the bar the thumb carries [data-held] and eases 1.5× wider; the
+ * drag's end (up, cancel or a lost capture, wherever the finger lifts:
+ * capture routes it here) removes it and the thumb eases back. Pure CSS: the
+ * `scale` property, X only. It composes with the inline translateY without
+ * moving the thumb (a Y scale would scale that offset too, and the height
+ * the drag reads). Reduced motion: the global block makes it instant.
  */
 export default function ScrollIndicator({
   target,
@@ -193,6 +201,7 @@ export default function ScrollIndicator({
       at: g.el.scrollTop,
       overflow: g.overflow,
     };
+    thumb.current?.setAttribute("data-held", "");
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -208,7 +217,9 @@ export default function ScrollIndicator({
 
   // Up, cancel or a lost capture: the browser releases the capture itself.
   const onPointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current?.id === e.pointerId) drag.current = null;
+    if (drag.current?.id !== e.pointerId) return;
+    drag.current = null;
+    thumb.current?.removeAttribute("data-held");
   };
 
   return (
@@ -221,8 +232,13 @@ export default function ScrollIndicator({
         style={{ top, height }}
       >
         {/* Inline transform only — never a Tailwind translate-* here: those use
-            the CSS `translate` property and STACK with it (PROGRESS notes). */}
-        <div ref={thumb} data-testid={`${testId}-thumb`} className="w-full rounded-[2px] bg-tb-purple" />
+            the CSS `translate` property and STACK with it (PROGRESS notes).
+            The held widening stacks on purpose: `scale`, X only (header). */}
+        <div
+          ref={thumb}
+          data-testid={`${testId}-thumb`}
+          className="w-full rounded-[2px] bg-tb-purple transition-[scale] duration-(--tb-dur-pop) ease-(--tb-ease-out) data-held:scale-x-150"
+        />
       </div>
       {/* The hit strip: transparent, the pane's whole 24 px right gutter over
           the bar's y-range (header). touch-none lets a finger drag it;

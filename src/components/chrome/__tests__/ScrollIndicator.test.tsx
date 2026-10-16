@@ -448,17 +448,20 @@ describe("ScrollIndicator drag strip (user request 2026-10-08, reverses D3)", ()
     expect(metrics.scrollTop).toBe(790);
   });
 
-  it.each(["pointerUp", "pointerCancel", "lostPointerCapture"] as const)("%s ends the drag", (end) => {
+  it.each(["pointerUp", "pointerCancel", "lostPointerCapture"] as const)("%s ends the drag and lets the held thumb go", (end) => {
     render(<Harness init={LONG} />);
     layout();
+    expect(thumbEl()).not.toHaveAttribute("data-held");
     press(702.5);
     moveTo(900);
     expect(metrics.scrollTop).toBe(395);
+    expect(thumbEl()).toHaveAttribute("data-held");
 
     fireEvent[end](stripEl(), { clientY: 900, pointerId: 1 });
     moveTo(1097.5);
 
     expect(metrics.scrollTop).toBe(395);
+    expect(thumbEl()).not.toHaveAttribute("data-held");
   });
 
   it("ignores moves without a press, moves from another pointer, and a second press mid-drag", () => {
@@ -478,6 +481,7 @@ describe("ScrollIndicator drag strip (user request 2026-10-08, reverses D3)", ()
     expect(metrics.scrollTop).toBe(0);
     expect(capture).toHaveBeenCalledTimes(1);
     release(1290, 2); // not the owner: the drag goes on
+    expect(thumbEl()).toHaveAttribute("data-held");
 
     moveTo(900, 1);
     expect(metrics.scrollTop).toBe(395); // pointer 1's grab, not pointer 2's
@@ -512,6 +516,7 @@ describe("ScrollIndicator drag strip (user request 2026-10-08, reverses D3)", ()
 
     expect(capture).not.toHaveBeenCalled();
     expect(metrics.scrollTop).toBe(0);
+    expect(thumbEl()).not.toHaveAttribute("data-held");
   });
 
   it("content that grows mid-drag: no jump, the drag carries on from where the pane is over the live overflow and thumb", () => {
