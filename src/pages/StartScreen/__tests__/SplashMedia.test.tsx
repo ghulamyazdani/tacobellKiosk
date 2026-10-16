@@ -856,15 +856,15 @@ describe("swipe", () => {
    * — `rest` ms later — lifted where it is. A rest past 100 ms reads 0 px/ms
    * (no flick).
    */
-  function drag(dx: number, { dy = 0, every = 60, rest = 120, lift = "pointerUp" as Lift, type = "touch" } = {}) {
-    fireEvent.pointerDown(surface(), pointer(700, 900, { type }));
+  function drag(dx: number, { dy = 0, every = 60, rest = 120, lift = "pointerUp" as Lift, type = "touch", id = 1 } = {}) {
+    fireEvent.pointerDown(surface(), pointer(700, 900, { type, id }));
     tick(every);
-    fireEvent.pointerMove(surface(), pointer(700 + dx / 2, 900 + dy / 2, { type }));
+    fireEvent.pointerMove(surface(), pointer(700 + dx / 2, 900 + dy / 2, { type, id }));
     tick(every);
-    fireEvent.pointerMove(surface(), pointer(700 + dx, 900 + dy, { type }));
+    fireEvent.pointerMove(surface(), pointer(700 + dx, 900 + dy, { type, id }));
     if (!lift) return;
     tick(rest);
-    fireEvent[lift](surface(), pointer(700 + dx, 900 + dy, { type }));
+    fireEvent[lift](surface(), pointer(700 + dx, 900 + dy, { type, id }));
   }
   const settle = () => track()?.style.getPropertyValue("--tb-settle");
 
@@ -1054,6 +1054,26 @@ describe("swipe", () => {
     expect(track()).not.toHaveAttribute("data-held");
     fireEvent.click(surface());
     expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("every slide failing under a held finger (WELCOME) lets the hold go: the retry's carousel rotates again, and the next press drags it", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: 5 },
+      { url: u("b.jpg"), iteration_time: 5 },
+    ]);
+    renderButton();
+    drag(-40, { lift: null });
+    fireEvent.error(media("next")); // b → a alone (the single card)
+    fireEvent.error(single() as HTMLImageElement); // a → WELCOME: the layer (and its capture) is gone
+    expect(layout()).toBe("welcome");
+
+    tick(SPLASH_RETRY_MS);
+    expect(layout()).toBe("carousel");
+    expect(cards()[1]).toBe(u("a.jpg"));
+    tick(5_000); // not held: the dwell runs
+    expect(cards()[1]).toBe(u("b.jpg"));
+    drag(-300, { id: 2 }); // a new touch (a new pointer id): the lost gesture's record never blocks it
+    expect(cards()[1]).toBe(u("a.jpg"));
   });
 
   it("a centre failure after a back swipe skips FORWARD, in place (no data-dir)", () => {
