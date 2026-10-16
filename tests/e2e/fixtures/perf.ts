@@ -480,11 +480,15 @@ export async function load(perf: Perf, label: string, url: string | null, ready:
   return { ...summarize(label, 0, t1, raw, fresh ? null : before, after, visibleAt, 0, false, quiet), detail: { ...detail, freshCounters: fresh } };
 }
 
-/** A measured touch tap on `target` (header): actionable first, then settled, then its centre. */
-export async function tap(perf: Perf, label: string, target: Locator, outcome: Outcome): Promise<Sample> {
+/**
+ * A measured touch tap on `target` (header): actionable first, then settled, then its centre. `settle:
+ * false` taps without waiting for the screen to settle — a tap INTO running motion (the splash carousel's
+ * settle, 2026-10-16).
+ */
+export async function tap(perf: Perf, label: string, target: Locator, outcome: Outcome, { settle = true } = {}): Promise<Sample> {
   const { page } = perf;
   await target.click({ trial: true, timeout: 60_000 });
-  await settled(page);
+  if (settle) await settled(page);
   const box = await target.boundingBox();
   if (!box) throw new Error(`perf: ${label} has no box`);
   return observed(
