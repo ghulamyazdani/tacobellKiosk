@@ -731,7 +731,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(language.locator("style")).toHaveCount(0);
   });
 
-  test("M6 SELECTION + COUNTS (menu): a rail tap bumps the item it selects (tb-select, aria-current) and scrolls smoothly; a quick add swaps in a NEW bag mark that bumps", async ({
+  test("M6 SELECTION + COUNTS (menu): a rail tap bumps the item it selects (tb-select, aria-current) and scrolls smoothly; a quick add's modal, once closed, swaps in a NEW bag mark that bumps (UX-02: never under its scrim)", async ({
     page,
   }) => {
     await mockBackend(page);
@@ -756,12 +756,16 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await settle(page);
 
     const mark = page.locator('[data-testid="cta-view-bag"] img');
+    await page.getByTestId(`quick-add-${GREEK_SALAD}`).click();
+    await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+    await expect(page.getByTestId("product-added-modal")).toBeVisible();
+    expect(named(await animations(page, '[data-testid="cta-view-bag"]'), "tb-bump"), "under the modal's scrim the mark holds still").toEqual([]);
+    await settle(page);
     const fresh = await replaced(page, mark, async () => {
       await rate(0.1);
-      await page.getByTestId(`quick-add-${GREEK_SALAD}`).click();
-      await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
+      await dismissAddedModal(page);
     });
-    expect(fresh, "the bag mark is re-keyed: a NEW node").toBe(true);
+    expect(fresh, "the modal's close re-keys the bag mark: a NEW node").toBe(true);
     const bump = named(await animations(page, '[data-testid="cta-view-bag"]'), "tb-bump");
     expect(bump).toHaveLength(1);
     expect(bump[0]).toMatchObject({ duration: 250, iterations: 1, tag: "IMG" });

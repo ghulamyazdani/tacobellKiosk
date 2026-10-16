@@ -128,11 +128,11 @@ describe("selection (§3.2)", () => {
 });
 
 describe("counts re-key a small leaf (§3.3)", () => {
-  it("the bag mark is a NEW node after an add AND after an increment of an existing row — the SAME node otherwise", () => {
+  it("the bag mark is a NEW node after an add AND after an increment of an existing row — the SAME node otherwise; the mark it mounts with stays still (UX-02)", () => {
     render(<MenuCtaBar currency="£" onViewBag={vi.fn()} />, { wrapper });
     const bag = () => screen.getByTestId("cta-view-bag").querySelector("img") as HTMLImageElement;
     const empty = bag();
-    expect(empty).toHaveClass("tb-bump");
+    expect(empty).not.toHaveClass("tb-bump");
 
     act(() => {
       store.dispatch(setCartItems([ROW])); // an add
@@ -163,10 +163,11 @@ describe("counts re-key a small leaf (§3.3)", () => {
     render(<MenuCtaBar currency="£" onViewBag={vi.fn()} onOpenRewards={vi.fn()} />, { wrapper });
     const badge = () =>
       screen.getByRole("button", { name: i18n.t("menu.viewMyBag") }).querySelector("span.tb-pop-in") as HTMLElement | null;
-    const bag = () => screen.getByRole("button", { name: i18n.t("menu.viewMyBag") }).querySelector("img.tb-bump");
+    const bag = () => screen.getByRole("button", { name: i18n.t("menu.viewMyBag") }).querySelector("img");
     expect(badge()).toBeNull(); // an empty bag has no badge
     const empty = bag();
     expect(empty).not.toBeNull();
+    expect(empty).not.toHaveClass("tb-bump"); // UX-02: still at mount
 
     act(() => {
       store.dispatch(setCartItems([ROW]));
@@ -175,6 +176,7 @@ describe("counts re-key a small leaf (§3.3)", () => {
     expect(one).toHaveTextContent(/^1$/);
     const added = bag();
     expect(added).not.toBe(empty); // this layout's bag mark re-keys too
+    expect(added).toHaveClass("tb-bump");
 
     act(() => {
       store.dispatch(setCartItems([{ ...ROW, quantity: 2 }])); // + on the same row: a unit more
