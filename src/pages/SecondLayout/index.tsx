@@ -119,6 +119,15 @@ export default function SecondLayout() {
   const [fetching, setFetching] = useState<"late" | "now" | null>(null);
   // The pipeline whose menu failed to load — drives the error dialog.
   const [failedPipeline, setFailedPipeline] = useState<Pipeline | null>(null);
+  // UX-03 (design language, sign-off): the tapped card stays selected — the
+  // Figma pressed lilac plus one tb-select bump — until the screen leaves. A
+  // latch cleared ONLY where the fetch fails (failedPipeline), never derived
+  // from `fetching`: BrowserRouter navigates in a transition, so the finally's
+  // setFetching(null) commits before the route changes and the card would
+  // flash white for the whole /menu render.
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  // UX-15: taps refused per closed pipeline — each one re-keys its CLOSED pill.
+  const [refusals, setRefusals] = useState<Record<string, number>>({});
   const isProcessing = useRef(false);
   const mountedRef = useRef(true);
 
@@ -158,6 +167,7 @@ export default function SecondLayout() {
       // that still holds the PREVIOUS pipeline's items and prices.
       if (!menu?.categories?.length) {
         setFailedPipeline(pipeline);
+        setPickedId(null); // neutral behind the dialog and after BACK
         return;
       }
       navigate(getIsLoyaltyOn() ? "/phone" : "/menu");
@@ -186,7 +196,11 @@ export default function SecondLayout() {
     isProcessing.current = true;
     try {
       const openState = checkPipelineClosedFromRedux(pipeline._id);
-      if (openState.status === false) return;
+      if (openState.status === false) {
+        setRefusals((r) => ({ ...r, [pipeline._id]: (r[pipeline._id] ?? 0) + 1 }));
+        return;
+      }
+      setPickedId(pipeline._id);
 
       captureKioskEvent(KioskEventName.PipelineSelected, {
         pipeline_id: pipeline._id,
@@ -290,20 +304,28 @@ export default function SecondLayout() {
             {pipelines.map((pipeline, index) => {
               const openState = checkPipelineClosedFromRedux(pipeline._id);
               const closed = openState.status === false;
+              const refused = refusals[pipeline._id] ?? 0;
               return (
                 // Staggered after the title (--i = index + 1, capped at 7 in
                 // CSS); the backwards fill keeps a closed card's opacity-50.
                 // The house .97 press (off under reduced motion); the 416 px
                 // card squeezes itself, so tb-press-hit keeps its hit area
                 // whole (motion-v2 MV8a).
+                // UX-03: a taken tap keeps the card selected (data-selected:
+                // the lilac, and .tb-select's one bump, which takes over the
+                // finished tb-enter's `animation`). UX-15: a closed card is
+                // aria-disabled, not disabled — still announced dimmed, and
+                // pressFeedback, the squeeze and the fills skip it — so its
+                // tap reaches handleSelectPipeline's closed branch.
                 <button
                   key={pipeline._id}
                   type="button"
                   data-testid={`pipeline-${pipeline._id}`}
-                  disabled={closed}
+                  aria-disabled={closed || undefined}
+                  data-selected={pickedId === pipeline._id ? "true" : undefined}
                   onClick={() => handleSelectPipeline(pipeline)}
                   style={{ "--i": index + 1 } as CSSProperties}
-                  className={`tb-enter tb-press-hit relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface px-[40px] py-[80px] ${
+                  className={`tb-enter tb-select tb-press-hit relative flex h-[416px] w-[416px] min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-[58px] rounded-[8px] border-2 border-tb-surface bg-tb-surface data-[selected=true]:bg-tb-lilac px-[40px] py-[80px] ${
                     closed ? "opacity-50" : ""
                   }${scrollRow ? " shrink-0" : ""}`}
                 >
@@ -318,8 +340,16 @@ export default function SecondLayout() {
                   <span className="tb-compressed text-center text-[48px] leading-[44px] text-tb-purple [&:lang(ar)]:leading-[64px]">
                     {pipelineName(pipeline)}
                   </span>
+                  {/* UX-15: each refused tap re-keys the pill, which shakes
+                      once — an EXCEPTION to R20 / MV8b ("never the control
+                      just tapped"), for sign-off: the pill sits inside the
+                      tapped card, and nothing else carries the reason. Only
+                      the pill: re-keying the card would replay tb-enter. */}
                   {closed && (
-                    <span className="tb-display absolute bottom-[24px] rounded-full bg-tb-ink-purple px-6 py-2 text-[18px] text-tb-surface">
+                    <span
+                      key={refused}
+                      className={`${refused ? "tb-shake " : ""}tb-display absolute bottom-[24px] rounded-full bg-tb-ink-purple px-6 py-2 text-[18px] text-tb-surface`}
+                    >
                       {t("second.closed")}
                     </span>
                   )}
