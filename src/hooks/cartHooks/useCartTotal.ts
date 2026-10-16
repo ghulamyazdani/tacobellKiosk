@@ -25,7 +25,7 @@ import { billTotal, hasRows, useBillEngine } from "./useCartBill";
  * bag itself would fail on that row too).
  */
 export default function useCartTotal(cart: any): number {
-  const { getCalculatedBill: calculate } = useBillEngine();
+  const { getCalculatedBill: calculate, ctx } = useBillEngine();
   const autoApply = useAutoApplyPreview(cart);
   return useMemo(() => {
     if (!hasRows(cart)) return 0;
@@ -38,6 +38,20 @@ export default function useCartTotal(cart: any): number {
     } catch {
       return Number(cart?.subTotal) || 0;
     }
+    // Keyed on useCartBill's bill inputs — a NEW one joins both keys — plus
+    // the catch's subTotal and the offer the bag applies by itself; never the
+    // cart object, so a cart write that moves no money prices nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, autoApply]);
+  }, [
+    cart?.cartItems,
+    cart?.cartOffer,
+    cart?.lockedFreebieAllocation,
+    cart?.charges,
+    ctx.tabId,
+    ctx.deploymentInfo,
+    ctx.discountOnAddon,
+    ctx.cartRdx?.cartOffer,
+    cart?.subTotal,
+    autoApply,
+  ]);
 }
