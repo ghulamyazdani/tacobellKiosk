@@ -291,6 +291,12 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * commit that keeps the section leave the guest's scroll.
    */
   const shownIdRef = useRef(activeCategoryId);
+  /**
+   * UX-08: one at a time, the section a rail tap swaps in rises (tb-rise; its
+   * own key makes it a new node per swap). Never at mount or on a POP (the
+   * row's tb-enter is the arrival), never for the row already shown.
+   */
+  const [risenId, setRisenId] = useState("");
   useLayoutEffect(() => {
     if (shownIdRef.current === activeCategoryId) return;
     shownIdRef.current = activeCategoryId;
@@ -416,12 +422,21 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     const pane = paneRef.current;
     const el = sectionRefs.current[id];
     if (oneAtATime) {
+      if (id !== activeCategoryId) setRisenId(id);
       // A tap on the shown row goes back to its top too (a change: above).
       if (pane) pane.scrollTop = 0;
     } else if (el && pane) {
       spyLockRef.current = true;
+      const top = Math.max(0, Math.min(el.offsetTop - SECTION_LANDING_PX, pane.scrollHeight - pane.clientHeight));
+      const behavior = scrollBehavior();
+      // UX-09: a section over a screen away jumps to half a screen short,
+      // then glides: the direction cue stays, at half the repaint frames of
+      // this un-composited pane. Both scrolls run under the spy's lock.
+      if (behavior === "smooth" && Math.abs(top - pane.scrollTop) > pane.clientHeight) {
+        pane.scrollTop = top - Math.sign(top - pane.scrollTop) * 0.5 * pane.clientHeight;
+      }
       // Instant under reduced motion (motion §3.9).
-      pane.scrollTo({ top: el.offsetTop - SECTION_LANDING_PX, behavior: scrollBehavior() });
+      pane.scrollTo({ top, behavior });
     }
     if (subMode) {
       captureKioskEvent(KioskEventName.SubCategoryClicked, {
@@ -720,7 +735,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                     sectionRefs.current[categoryId] = el;
                   }}
                   data-testid={`section-${categoryId}`}
-                  className="pt-[48px]"
+                  className={categoryId === risenId ? "tb-rise pt-[48px]" : "pt-[48px]"}
                 >
                   {/* A word wider than the pane breaks inside it, as on the
                       rail (rail-wrap): never cut at the screen edge, never a
