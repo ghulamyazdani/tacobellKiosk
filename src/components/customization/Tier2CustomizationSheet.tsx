@@ -2,7 +2,7 @@
  * Entities/groups flow untyped from the legacy converters + makeItAMeal
  * slice; typed in later domain passes. Do not add NEW anys.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import {
@@ -33,6 +33,7 @@ import { isPackSlotGroup } from "@cx-sdk/ordering/customization/addonCustomize";
 import { computeShowAddonPrices } from "@cx-sdk/ordering/customization/nestedCardLogic";
 import {
   selectHidePlusIconFromItem,
+  selectShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   appendTier2SelectionToTier1,
@@ -133,6 +134,9 @@ export default function Tier2CustomizationSheet() {
     selectTier2CustomizationModalForConfirmation,
   );
   const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
+  // UX-01: UPDATE's refusal is the global error (z-95): the errored group's
+  // shake waits for its GOT IT, where the guest looks (off while it is up).
+  const errorUp = Boolean(useSelector(selectShowErrorModalGlobal));
   const currency = useCurrencySymbol();
   // walk-oos: the PDP's stock rule (menu stamp, PAY's feed map wins).
   const outOfStockMap = useSelector(selectOutOfStockItems);
@@ -298,6 +302,13 @@ export default function Tier2CustomizationSheet() {
     setSelectedCustomizations: setTier2SelectedCustomization,
     addTier2CustomizationToMIAMCart,
   });
+  // UX-01: only the error raised WITH the refusal (a NEW erroredSection) holds
+  // the shake — another group's error (a group max) never re-shakes the ring;
+  // a pick's reset to {} is skipped while nothing is up (no extra render pass).
+  const [errorHold, setErrorHold] = useState({ section: erroredSection, on: false });
+  const refusal = (erroredSection as { id?: unknown } | undefined)?.id !== undefined;
+  if (errorHold.section !== erroredSection && (refusal || errorUp)) setErrorHold({ section: erroredSection, on: errorUp });
+  else if (errorHold.on && !errorUp) setErrorHold({ section: erroredSection, on: false });
 
   const initialisedFor = useRef<string | null>(null);
   const hasInitializedContradictoryItems = useRef(false);
@@ -554,7 +565,7 @@ export default function Tier2CustomizationSheet() {
         key={group._id}
         id={group._id}
         data-testid={`tier2-group-${group._id}`}
-        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""} ${errored && !errorHold.on ? "tb-shake" : ""}`}
       >
         <GroupHeader
           name={name(group)}
