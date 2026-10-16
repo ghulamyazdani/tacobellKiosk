@@ -15,6 +15,12 @@ export default function ActivityCenter(props: ActivityModalProps) {
   const { t } = useTranslation();
   const { isOpen, onClose } = props;
   const [Modal, setModal] = useState(() => loadedActivityModal());
+  // Perf ENTRY-2: the modal and its store subscriptions mount at this
+  // visit's first open, not with the screen. From then on it stays mounted
+  // while closed, as before, so its own state (the passcode prompt, a typed
+  // passcode, the logout confirm) still survives a close and reopen.
+  const [opened, setOpened] = useState(isOpen);
+  if (isOpen && !opened) setOpened(true);
 
   useEffect(() => {
     if (!isOpen || Modal) return;
@@ -27,6 +33,7 @@ export default function ActivityCenter(props: ActivityModalProps) {
     return () => { live = false; };
   }, [isOpen, Modal]);
 
+  if (!opened) return null;
   if (Modal) return <Modal {...props} />;
   if (!isOpen) return null;
   return (

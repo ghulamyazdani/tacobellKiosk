@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { selectCart } from "@cx-sdk/ordering/state/cart.slice";
@@ -76,8 +76,6 @@ export default function CompleteYourMealRail({
     return items.filter((entity) => !inCart.has(entity?.id));
   }, [tenantItems, shouldShowUpsell, items, cartItems]);
 
-  if (railItems.length === 0) return null;
-
   const handleTap = (entity: RecommendedEntity) => {
     addEntity(entity, {
       onBeforeLeave: () => onDetour?.(),
@@ -85,6 +83,15 @@ export default function CompleteYourMealRail({
       suppressAddedModal: true,
     });
   };
+  // A stable onAdd (perf BAG-8), so memo(ForYouCard) skips every card whose
+  // props a cart write left alone. A tap runs the LATEST handleTap: the ref
+  // is written after every commit, before any tap can land. Above the early
+  // return (rules of hooks).
+  const tapRef = useRef(handleTap);
+  useLayoutEffect(() => { tapRef.current = handleTap; });
+  const onAdd = useCallback((entity: RecommendedEntity) => tapRef.current(entity), []);
+
+  if (railItems.length === 0) return null;
 
   return (
     <section
@@ -130,7 +137,7 @@ export default function CompleteYourMealRail({
             */
             addLabel={t("menu.quickAdd")}
             customizeLabel={t(getAddIntent(entity) === "add" ? "menu.quickAdd" : "pack.customize")}
-            onAdd={handleTap}
+            onAdd={onAdd}
           />
         ))}
       </div>

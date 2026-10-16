@@ -2,7 +2,7 @@
  * Entity-map fixtures mirror the untyped converted-menu entities the engine
  * consumes; typed in the P7+ domain passes. Do not add NEW anys.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -16,8 +16,16 @@ import { setReccomendationCategoryMap } from "@cx-sdk/catalog/state/recommendati
 import { store } from "../../../redux/app/store";
 import { setSelectedLanguage } from "../../../redux/features/multiLanguage/multiLanguage.slice";
 import { selectAddToCartModal } from "../../../redux/features/menuSelections/menuSelections.slice";
+import { resolveEntityImage } from "../../../utils/entityImage";
 import CompleteYourMealRail from "../CompleteYourMealRail";
 import i18n from "../../../i18n";
+
+// The real lookup, watched: a rail card resolves its photo once per render
+// (perf BAG-8 counts card renders by it).
+vi.mock("../../../utils/entityImage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../utils/entityImage")>();
+  return { ...actual, resolveEntityImage: vi.fn(actual.resolveEntityImage) };
+});
 
 /** Converted-menu entityMap — only `isCartRecommended: true` entities count. */
 const ENTITY_MAP = {
@@ -374,5 +382,63 @@ describe("CompleteYourMealRail — a plain add confirms by its row, never the ad
       (store.getState() as unknown as { cart: { cartItems: unknown[] } }).cart.cartItems
     ).toEqual([expect.objectContaining({ id: "pepsi", quantity: 1 })]);
     expect(selectAddToCartModal(store.getState())).toBe(false);
+  });
+});
+
+/*
+  Perf BAG-8 — the rail re-renders on every cart write (selectCart), and the
+  memoized ForYouCard can skip only with a stable onAdd. A write or a new
+  onDetour that leaves a card's props alone renders no card; the currency
+  moving renders each; a tap runs the LATEST handler (today's onDetour).
+*/
+describe("CompleteYourMealRail — a cart write re-renders no card (perf BAG-8)", () => {
+  const BURGER_ROW = { id: "burger", itemId: "b-1", name: "Cheese Burger", quantity: 1, type: "ITEM", price: 8, total_price: 8 };
+  const cardRenders = (id: string) =>
+    vi.mocked(resolveEntityImage).mock.calls.filter(([entity]) => (entity as { id?: string } | null)?.id === id)
+      .length;
+  const ui = (onDetour: () => void) => (
+    <Provider store={store}>
+      <MemoryRouter initialEntries={["/cart"]}>
+        <CompleteYourMealRail onDetour={onDetour} />
+      </MemoryRouter>
+    </Provider>
+  );
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    // Fries opens a chooser (a live group), so its tap leaves through onDetour.
+    store.dispatch(setModifiersMap({ modifiersMap: { fries_addons: { _id: "fries_addons", isActive: true } } }));
+    store.dispatch(
+      setEntityMap({
+        entityMap: { fries: { ...ENTITY_MAP.fries, modifiers: ["fries_addons"] }, pepsi: ENTITY_MAP.pepsi },
+      })
+    );
+  });
+
+  it("a cart write or a parent re-render renders no card; the currency renders each; a tap calls the latest onDetour", () => {
+    const first = vi.fn();
+    const latest = vi.fn();
+    const view = render(ui(first));
+    expect(cardRenders("fries")).toBeGreaterThan(0);
+    vi.mocked(resolveEntityImage).mockClear();
+
+    act(() => {
+      store.dispatch(setCartItems([BURGER_ROW]));
+    });
+    view.rerender(ui(latest));
+    expect(cardRenders("fries")).toBe(0);
+    expect(cardRenders("pepsi")).toBe(0);
+
+    act(() => {
+      store.dispatch(setCurrency({ currency: "USD", text: "$" }));
+    });
+    expect(screen.getByTestId("bag-rail-item-fries")).toHaveTextContent("$2.50");
+    expect(cardRenders("fries")).toBe(1);
+    expect(cardRenders("pepsi")).toBe(1);
+
+    fireEvent.click(screen.getByTestId("bag-rail-item-fries"));
+    expect(latest).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
   });
 });
