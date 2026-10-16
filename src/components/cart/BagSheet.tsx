@@ -265,7 +265,8 @@ function PickerFailed({ offer, onSettle }: { offer: unknown; onSettle: () => voi
  *
  * Route-driven (locked decision 1): /cart renders the Menu page with this
  * sheet open; onClose navigates back to /menu. Reads redux directly; the
- * bill is LOCAL state recomputed per cart change (contract A3, fork parity)
+ * bill is LOCAL state recomputed when a bill input changes (useCartBill's
+ * key; contract A3, fork parity)
  * with setAmount(getCheckoutNetAmount(bill)) mirrored to the slice.
  *
  * P7b adds the Offers vertical: Rewards section (entry row → RewardsSheet;
@@ -413,7 +414,8 @@ export default function BagSheet({
   );
 
   // Bill — contract A3: computed here (never read the slice's netAmount for
-  // display — trap 8), recomputed per cart change, on the engine and with
+  // display — trap 8), recomputed when a bill input changes (useCartBill's
+  // key: rows, offer, lock, charges, tab, settings, add-on rule), on the engine and with
   // the billTotal the menu bar and the product-added Total use too.
   const bill = useCartBill(open ? cartRdx : null);
 
