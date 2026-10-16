@@ -68,6 +68,8 @@ const readJson = (relative: string) =>
 const slimMenu = readJson("./fixtures/slim-menu.json");
 const en = readJson("../../src/i18n/locales/en/translation.json");
 const ar = readJson("../../src/i18n/locales/ar/translation.json");
+/** The splash's one line (2026-10-16): this file's mock start_order_text_primary. */
+const SPLASH_LINE = "START ORDER";
 /** The WELCOME photo doubles as operator media on the fake CDN. */
 const PHOTO = readFixture("../../src/assets/splash/fullbleed-halfmoon.jpg");
 const PNG = Buffer.from(
@@ -238,7 +240,7 @@ async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
   await page.route("**/api/cx/get_kiosk_settings", (r) =>
     r.fulfill({
       json: {
-        start_order_text_primary: "START ORDER",
+        start_order_text_primary: SPLASH_LINE,
         // A secondary language without its splash text fails the boot.
         ...(opts.arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
         ideal_time: "180",
@@ -509,7 +511,7 @@ const bellMasks = (page: Page, testId: string) =>
   });
 
 test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
-  test("SPLASH WELCOME + SYSTEM: registration, the boot, WELCOME (1:5617), the Activity Center and the update countdown", async ({
+  test("SPLASH WELCOME + SYSTEM: registration, the boot, WELCOME (1:5617) under the one line, the Activity Center and the update countdown", async ({
     page,
   }) => {
     test.slow();
@@ -540,7 +542,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
 
     const splash = page.getByTestId("start-screen");
     await expect(splash).toBeVisible({ timeout: 10_000 });
-    await expect(splash).toContainText(en.splash.welcome);
+    await expect(splash).toHaveText(SPLASH_LINE);
     await capture(page, "entry-03-splash-welcome");
     // UB3: WELCOME (1:5617) is the photo alone — no sheen.
     await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(0);
@@ -570,7 +572,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await capture(page, "entry-05-update-countdown");
   });
 
-  test("SPLASH ONE IMAGE: a single home_screen image alone in the centre card over ORDER HERE / START ORDER (1:2203; 2026-10-13)", async ({
+  test("SPLASH ONE IMAGE: a single home_screen image alone in the centre card over the one line (1:2203; 2026-10-13, 2026-10-16)", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -579,15 +581,13 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
 
     const splash = page.getByTestId("start-screen");
     await expect(splash.locator(`img[src="${SLIDE_A}"]`)).toHaveCount(1);
-    await expect(splash).toContainText(en.splash.orderHere);
-    await expect(splash).toContainText(en.splash.startOrder);
-    await expect(splash).not.toContainText(en.splash.welcome);
+    await expect(splash).toHaveText(SPLASH_LINE);
     await capture(page, "entry-06-splash-single-card");
     // The single card sits on the carousel's ground, its sheen included (UB3).
     await expect.soft(splash.locator('img[src*="plastic-overlay"]')).toHaveCount(1);
   });
 
-  test("SPLASH CAROUSEL: two images in the peek carousel under ORDER HERE (1:2203)", async ({
+  test("SPLASH CAROUSEL: two images in the peek carousel over the one line (1:2203; 2026-10-16)", async ({
     page,
   }) => {
     await mockKioskBackend(page);
@@ -595,8 +595,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await registerToStart(page);
 
     const splash = page.getByTestId("start-screen");
-    await expect(splash).toContainText(en.splash.orderHere);
-    await expect(splash).toContainText(en.splash.startOrder);
+    await expect(splash).toHaveText(SPLASH_LINE);
     // Centre card plus both peeks.
     await expect(splash.locator(`img[src^="${MEDIA_ORIGIN}"]`)).toHaveCount(3);
     await capture(page, "entry-07-splash-carousel");

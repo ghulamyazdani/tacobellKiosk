@@ -285,13 +285,14 @@ describe("useLoaders — categorised boot failures (P9b R7)", () => {
 });
 
 /*
-  audit-fixes B6 (PAR-08): start_order_text_* no longer stop a boot — nothing
-  in TB reads them (the fork's only reader is not on its live splash). Their
-  throws were also the ONLY guard against a body that is not a settings
-  object, so that guard is explicit now: null / an array / a scalar is a
-  fault ("unavailable": the retry ladder, nothing committed — B2), while an
-  EMPTY {} is a real answer that boots on defaults AND is reported (user
-  decision 2026-10-07: never a silent degrade).
+  audit-fixes B6 (PAR-08): start_order_text_* no longer stop a boot — the
+  primary is the splash's one line (SplashText, 2026-10-16; a missing one
+  shows ORDER HERE), the secondary is unread. Their throws were also the
+  ONLY guard against a body that is not a settings object, so that guard
+  is explicit now: null / an array / a scalar is a fault ("unavailable":
+  the retry ladder, nothing committed — B2), while an EMPTY {} is a real
+  answer that boots on defaults AND is reported (user decision 2026-10-07:
+  never a silent degrade).
 */
 describe("useLoaders — the start-screen text no longer blocks boot (B6)", () => {
   const lastBootAt = () =>

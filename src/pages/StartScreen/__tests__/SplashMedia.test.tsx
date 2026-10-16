@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setKioskSettings, setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import SplashMedia, { SPLASH_RETRY_MS } from "../SplashMedia";
 import "../../../i18n";
 
 /*
   P9d — the splash media layer. Layout by PLAYABLE slide count (0 → WELCOME
-  1:5617, 1 → the 1:2203 centre card alone (2026-10-13), ≥2 → the 1:2203 peek carousel), the image
-  rotation, skipping a failed slide (load_error / stalled come back after
+  1:5617, 1 → the 1:2203 centre card alone (2026-10-13), ≥2 → the 1:2203 peek carousel), the one
+  line on every layout (2026-10-16), the image rotation, skipping a failed slide (load_error / stalled come back after
   SPLASH_RETRY_MS, post-P9 44; no_video stays out for the visit), the video lifecycle
   (watchdog, plays, teardown, hidden page, StrictMode) and the rate-limited
   failure report. jsdom decodes nothing: the media methods are stubbed and
@@ -68,7 +68,7 @@ const single = () =>
     : ((card("centre")?.querySelector("img, video") ?? null) as HTMLImageElement | HTMLVideoElement | null);
 const layout = () => {
   if (card("centre")) return card("prev") || card("next") ? "carousel" : "single";
-  if (/touch anywhere to start/i.test(text() ?? "")) return "welcome";
+  if (host().querySelector('img[src*="fullbleed-halfmoon"]')) return "welcome";
   return "blank";
 };
 
@@ -109,12 +109,12 @@ afterEach(() => {
 });
 
 describe("layout by PLAYABLE slide count", () => {
-  it("0 playable → WELCOME (1:5617): photo, six stars, bell, 'welcome' + 'touch anywhere to start'", () => {
+  it("0 playable → WELCOME (1:5617): photo, six stars, bell and the one line — a fresh store: 'order here'", () => {
     seed([{ url: "   " }, { media_type: "mp4" }, null]);
     renderSplash();
 
     expect(layout()).toBe("welcome");
-    expect(text()).toMatch(/^welcome\s*touch anywhere to start$/i);
+    expect(text()).toBe("order here");
     expect(host().querySelector('img[src*="fullbleed-halfmoon"]')).toBeInTheDocument();
     expect(host().querySelectorAll('img[src*="star-"]')).toHaveLength(6);
     expect(host().querySelector('img[class*="left-[490px]"]')).toBeInTheDocument();
@@ -122,22 +122,22 @@ describe("layout by PLAYABLE slide count", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("1 playable → the carousel's centre card alone (no peeks) + 'order here' + 'start order'", () => {
+  it("1 playable → the carousel's centre card alone (no peeks) + the one line ('order here')", () => {
     seed([{ url: "" }, { url: u("a.jpg") }]);
     renderSplash();
 
     expect(layout()).toBe("single");
     expect(cards()).toEqual([null, u("a.jpg"), null]);
-    expect(text()).toMatch(/^order here\s*start order$/i);
+    expect(text()).toBe("order here");
     expect(host().querySelector('img[class*="left-[490px]"]')).toBeInTheDocument();
   });
 
-  it("≥2 playable → the carousel: prev / centre / next cards + 'order here' + 'start order'", () => {
+  it("≥2 playable → the carousel: prev / centre / next cards + the one line ('order here')", () => {
     seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
     renderSplash();
 
     expect(layout()).toBe("carousel");
-    expect(text()).toMatch(/^order here\s*start order$/i);
+    expect(text()).toBe("order here");
     expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
   });
 
@@ -239,11 +239,11 @@ describe("a failed slide is skipped (until the in-visit retry) — never blank, 
     fireEvent.error(media("centre")); // b
     expect(layout()).toBe("single");
     expect(srcOf(single())).toBe(u("c.jpg"));
-    expect(text()).toMatch(/^order here\s*start order$/i);
+    expect(text()).toBe("order here");
 
     fireEvent.error(single() as HTMLImageElement); // c — everything failed
     expect(layout()).toBe("welcome");
-    expect(text()).toMatch(/^welcome\s*touch anywhere to start$/i);
+    expect(text()).toBe("order here");
     expect(splashEvents()).toEqual([
       failure("load_error", 0),
       failure("load_error", 1),
@@ -742,8 +742,8 @@ describe("lifecycle", () => {
   Lane motion §3.6. The idle return lands on a STILL splash: no card shifts
   and nothing fades at mount. An advance remounts all three cards, which
   shift in together by one card pitch (tb-carousel-in) on their own slots; a
-  skipped (failed) slide is not an advance. The CTA pulses (tb-attract,
-  opacity only) on every layout.
+  skipped (failed) slide is not an advance. Nothing pulses: tb-attract went
+  with the START ORDER CTA (2026-10-16).
 */
 describe("motion (lane motion §3.6)", () => {
   const shifted = () =>
@@ -775,13 +775,84 @@ describe("motion (lane motion §3.6)", () => {
   });
 
   it.each([
-    ["WELCOME", [{ url: "   " }], /touch anywhere to start/i],
-    ["the single slide", [{ url: "https://cdn.test/one.jpg" }], /start order/i],
-    ["the carousel", [{ url: "https://cdn.test/one.jpg" }, { url: "https://cdn.test/two.jpg" }], /start order/i],
-  ])("the CTA pulses (tb-attract) — %s", (_layout, slides, cta) => {
+    ["welcome", [{ url: "   " }]],
+    ["single", [{ url: "https://cdn.test/one.jpg" }]],
+    ["carousel", [{ url: "https://cdn.test/one.jpg" }, { url: "https://cdn.test/two.jpg" }]],
+  ])("nothing on the splash pulses (no tb-attract) — %s", (name, slides) => {
     seed(slides);
     renderSplash();
-    expect(screen.getByText(cta)).toHaveClass("tb-attract");
-    expect(host().querySelectorAll(".tb-attract")).toHaveLength(1);
+    expect(layout()).toBe(name);
+    expect(host().querySelector('[class*="tb-attract"]')).toBeNull();
+  });
+});
+
+/*
+  The one line (user decision 2026-10-16): the backend's
+  start_order_text_primary (kiosk_settings), trimmed, on EVERY layout — never
+  start_order_text_secondary; anything but a non-blank string shows the i18n
+  "order here". ORDER HERE's place: Title/H1 in its 756 px column, bottom edge
+  at y 1712 (bottom 208), so a longer text grows upward.
+*/
+describe("the one line — start_order_text_primary, else 'order here' (2026-10-16)", () => {
+  const LAYOUTS = [
+    ["welcome", []],
+    ["single", [{ url: "https://cdn.test/one.jpg" }]],
+    ["carousel", [{ url: "https://cdn.test/one.jpg" }, { url: "https://cdn.test/two.jpg" }]],
+  ] as const;
+  const settings = (kioskSettings: unknown) => store.dispatch(setKioskSettings(kioskSettings));
+  /** Every element that carries text of its own (no element children). */
+  const texts = () =>
+    [...host().querySelectorAll("*")].filter((el) => el.childElementCount === 0 && el.textContent?.trim());
+
+  it.each(LAYOUTS)("%s: exactly ONE text — the backend's primary, trimmed", (name, slides) => {
+    settings({ start_order_text_primary: "  Tap to order  " });
+    seed([...slides]);
+    renderSplash();
+
+    expect(layout()).toBe(name);
+    expect(text()).toBe("Tap to order");
+    expect(texts().map((el) => el.textContent)).toEqual(["Tap to order"]);
+  });
+
+  it.each(LAYOUTS)("%s: start_order_text_secondary set too — still only the primary", (name, slides) => {
+    settings({ start_order_text_primary: "START ORDER", start_order_text_secondary: "ابدأ الطلب" });
+    seed([...slides]);
+    renderSplash();
+
+    expect(layout()).toBe(name);
+    expect(text()).toBe("START ORDER");
+  });
+
+  it.each([
+    ["missing", {}],
+    ["empty", { start_order_text_primary: "" }],
+    ["blank", { start_order_text_primary: "   " }],
+    ["a number", { start_order_text_primary: 42 }],
+    ["an object", { start_order_text_primary: {} }],
+    ["null", { start_order_text_primary: null }],
+    ["kiosk_settings null", null],
+  ])("%s → the 'order here' fallback", (_case, kioskSettings) => {
+    settings(kioskSettings);
+    seed([{ url: "https://cdn.test/one.jpg" }]);
+    renderSplash();
+
+    expect(layout()).toBe("single");
+    expect(text()).toBe("order here");
+  });
+
+  it.each(LAYOUTS)("%s: ORDER HERE's place — Title/H1, its 756 px column, bottom 208, wrapping anywhere, dir=auto on the leaf only, no clamp", (_name, slides) => {
+    settings({ start_order_text_primary: "Tap to order" });
+    seed([...slides]);
+    renderSplash();
+
+    const line = screen.getByText("Tap to order");
+    expect(line.tagName).toBe("SPAN");
+    expect(line).toHaveClass(
+      "tb-display", "text-[116px]", "leading-[98px]", "tracking-[-3.27px]", "text-tb-surface",
+      "absolute", "bottom-[208px]", "left-[162px]", "w-[756px]", "text-center", "[overflow-wrap:anywhere]"
+    );
+    expect(line.className).not.toMatch(/nowrap|line-clamp|truncate|overflow-hidden|tb-attract/);
+    expect(line).toHaveAttribute("dir", "auto");
+    expect(host().querySelectorAll("[dir]")).toHaveLength(1);
   });
 });

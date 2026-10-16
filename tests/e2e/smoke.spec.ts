@@ -35,8 +35,9 @@ test.describe("boot flow smoke (registration-first, posistKiosk parity)", () => 
     // Token → guard skips Registration straight to the attract screen.
     const splash = page.getByTestId("start-screen");
     await expect(splash).toBeVisible();
-    // No boot ran, so no splash media is stored: the WELCOME frame (P9d).
-    await expect(splash).toContainText(/touch anywhere to start/i);
+    // No boot ran, so nothing is stored — no splash media (the WELCOME frame,
+    // P9d), no kiosk settings: its one line is the i18n fallback (2026-10-16).
+    await expect(splash).toHaveText(/^order here$/i);
 
     // Whole screen is one tap target (kiosk convention).
     await splash.click();

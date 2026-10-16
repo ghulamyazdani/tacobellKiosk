@@ -445,9 +445,11 @@ function useLoaders() {
         setEnableBannerCollapse(Boolean(settingsData?.enable_banner_collapes)),
       );
 
-      // B6 (PAR-08): start_order_text_* no longer stop a boot. They used to
-      // throw (fork parity) although nothing reads them — the fork's only
-      // reader (StartFooter) is not on its live splash either.
+      // B6 (PAR-08): start_order_text_* no longer stop a boot (they used to
+      // throw, fork parity). start_order_text_primary is the splash's one
+      // line, read live from kiosk_settings (SplashText; user decision
+      // 2026-10-16) — anything but a non-blank string shows ORDER HERE;
+      // start_order_text_secondary stays unread.
       // Degrade over block (Rule 2): this used to throw (fork parity), so a
       // missing ideal_time parked boot on the retry screen. Absent, the slice
       // value stands — resolveIdleSeconds() caps it at Rule 1's 120 s anyway.

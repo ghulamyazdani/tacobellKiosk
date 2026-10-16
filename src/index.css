@@ -262,7 +262,6 @@
   --tb-dur-carousel: 500ms;
   --tb-dur-spring: 958ms; /* Figma 1:5502 → 1:5521 */
   --tb-dur-indeterminate: 1200ms;
-  --tb-dur-attract: 2000ms;
   --tb-dur-card-tilt: 3120ms; /* Figma 1:5603 GIF loop */
   --tb-dur-hourglass: 3960ms; /* Figma 1:6301 GIF loop */
   --tb-dur-reveal: 200ms;
@@ -459,9 +458,6 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
     animation: tb-countdown-fill var(--tb-countdown) linear backwards;
   }
   /* Infinite loops: never a transform loop on/around a tap target. */
-  .tb-attract {
-    animation: tb-attract var(--tb-dur-attract) ease-in-out infinite;
-  }
   .tb-indeterminate {
     animation: tb-indeterminate var(--tb-dur-indeterminate) ease-in-out infinite;
   }
@@ -520,9 +516,6 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
 }
 @keyframes tb-countdown-fill {
   from { transform: translateX(var(--tb-countdown-from)); }
-}
-@keyframes tb-attract {
-  50% { opacity: 0.65; }
 }
 @keyframes tb-indeterminate {
   from { transform: translateX(-100%); }

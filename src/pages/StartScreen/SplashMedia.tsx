@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { mediaDataRdx } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  kiosSettingsRdx,
+  mediaDataRdx,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   toSplashSlides,
   type SplashSlide,
@@ -45,15 +48,7 @@ const lastReported = new Map<string, number>();
 const SPLASH_REPORT_WINDOW_MS = 60 * 60 * 1000;
 
 const MEDIA = "pointer-events-none absolute inset-0 h-full w-full object-cover";
-const CENTRED = "absolute left-1/2 -translate-x-1/2";
-/**
- * Figma Title/H5 (Exp Bl 32/32, −1) — every splash CTA. tb-attract: the
- * prompt pulses (opacity only, 2 s, infinite — motion §3.6), so the
- * start-screen button's box never moves.
- */
-const CTA =
-  "tb-display tb-attract whitespace-nowrap text-[32px] leading-[32px] tracking-[-1px] text-tb-surface";
-/** Figma Title/H1 (Exp Bl 116/98, −3.27) — WELCOME, ORDER HERE. */
+/** Figma Title/H1 (Exp Bl 116/98, −3.27) — the splash's one line. */
 const H1 =
   "tb-display text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface";
 /** 1:2203 card (all three share it; x comes per position). */
@@ -118,12 +113,39 @@ const Tint = () => (
 );
 
 /**
+ * The splash's ONE line, on every layout (user decision 2026-10-16): the
+ * backend's start_order_text_primary (cx/get_kiosk_settings — posistKiosk's
+ * StartFooter copy), else ORDER HERE. Primary only: every splash visit runs
+ * in the default language. ORDER HERE's place: its 756 px column, bottom edge
+ * at y 1712, so a longer text grows upward.
+ * ponytail: no line clamp (overflow:hidden clips the first line's accents at
+ * leading 98 < 116 px), so a 4+ line operator text grows over the cards' foot;
+ * upgrade = a clamp or a step-down size if an operator needs a long line.
+ */
+function SplashText() {
+  const { t } = useTranslation();
+  const custom: unknown =
+    useSelector(kiosSettingsRdx)?.start_order_text_primary;
+  const text =
+    (typeof custom === "string" && custom.trim()) || t("splash.orderHere");
+  return (
+    // dir="auto" on this LEAF only (P9f): an operator's Arabic text reads RTL.
+    <span
+      dir="auto"
+      className={`${H1} absolute bottom-[208px] left-[162px] w-[756px] text-center [overflow-wrap:anywhere]`}
+    >
+      {text}
+    </span>
+  );
+}
+
+/**
  * Figma 1:5617 — the neutral no-media frame (no price claim, user decision
- * 2026-10-01). Also the media layer's ErrorBoundary fallback, and what the
- * splash falls back to when every configured slide failed.
+ * 2026-10-01), its WELCOME / TOUCH ANYWHERE TO START now the one SplashText
+ * line (2026-10-16). Also the media layer's ErrorBoundary fallback, and what
+ * the splash falls back to when every configured slide failed.
  */
 export function SplashWelcome() {
-  const { t } = useTranslation();
   return (
     <>
       <img
@@ -145,12 +167,7 @@ export function SplashWelcome() {
         />
       ))}
       <Bell className="top-[101px]" />
-      <span className={`${H1} ${CENTRED} top-[1548px] whitespace-nowrap`}>
-        {t("splash.welcome")}
-      </span>
-      <span className={`${CTA} ${CENTRED} top-[1752px]`}>
-        {t("splash.touchToStart")}
-      </span>
+      <SplashText />
     </>
   );
 }
@@ -159,15 +176,15 @@ export function SplashWelcome() {
  * The splash composition by PLAYABLE slide count (user decision 2026-10-01):
  * 0 → WELCOME (1:5617) · 1 → the 1:2203 centre card alone (user decision
  * 2026-10-13: an operator video carries its own captions, which full-bleed
- * 1:5604 covered with START ORDER) · ≥2 → the 1:2203 peek carousel. A slide
- * that errors or stalls is skipped, so the layout degrades 2 → 1 → WELCOME
- * and is never blank or stuck; the next visit (fresh mount) retries everything.
+ * 1:5604 covered with START ORDER) · ≥2 → the 1:2203 peek carousel — each
+ * under the one SplashText line (2026-10-16). A slide that errors or stalls
+ * is skipped, so the layout degrades 2 → 1 → WELCOME and is never blank or
+ * stuck; the next visit (fresh mount) retries everything.
  * ponytail: retry — non-codec failures get one more try 10 min after the LAST
  * failure; fixed interval, no backoff (a dead URL costs one request / ≤15 s
  * frozen card per 10 min); back off if the physical soak shows churn.
  */
 export default function SplashMedia() {
-  const { t } = useTranslation();
   const mediaData: unknown = useSelector(mediaDataRdx);
   // One snapshot per visit, so a running rotation never reshuffles. Media
   // only changes at boot, and every boot — P9e's splash refreshes included —
@@ -304,10 +321,7 @@ export default function SplashMedia() {
           />
         </div>
       )}
-      <div className="absolute bottom-[128px] left-[162px] flex w-[756px] flex-col items-center gap-[48px] text-center">
-        <span className={H1}>{t("splash.orderHere")}</span>
-        <span className={CTA}>{t("splash.startOrder")}</span>
-      </div>
+      <SplashText />
     </>
   );
 }

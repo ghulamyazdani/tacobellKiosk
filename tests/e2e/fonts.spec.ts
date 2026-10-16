@@ -6,7 +6,7 @@ import {
   type Page,
   type Request,
 } from "./fixtures/kiosk";
-import { mockKioskBackend as mockBackend, locale, CHEESE_BURGER } from "./fixtures/backend";
+import { mockKioskBackend as mockBackend, CHEESE_BURGER } from "./fixtures/backend";
 import { APP_ORIGIN } from "./fixtures/origin";
 import { registerToStart } from "./pages/boot";
 
@@ -34,10 +34,6 @@ const LATIN_EXT = "Archivo-wdth-wght-latin-ext.woff2";
 /** What TB copy and an India deployment print; Ω (in neither subset) is the control. */
 const GLYPHS = ["₹", "£", "€", "−", "…", "—", "·"];
 const CONTROL = "Ω";
-
-const en = locale("en") as {
-  splash: { welcome: string };
-};
 
 /** Whether a FontFace.unicodeRange ("U+0-FF, U+131, …") covers `cp`. */
 const covers = (range: string, cp: number) =>
@@ -262,15 +258,17 @@ test("boot → /second → /menu → PDP with ₹ prices: real screens draw .tb-
   await registerToStart(page);
   const cdp = await fontCDP(page);
 
-  // Splash WELCOME (1:5617, Title/H1 = Exp Bl).
-  const welcome = page
+  // The splash's one line on WELCOME (1:5617, Title/H1 = Exp Bl): the shared
+  // mock's start_order_text_primary (2026-10-16).
+  const line = page
     .getByTestId("start-screen")
-    .getByText(en.splash.welcome, { exact: true });
-  await expect(welcome).toHaveClass(/\btb-display\b/);
-  await expectFont(welcome, "125%", "900");
-  // The copy is lower case: the class sets the all-caps of the Figma lettering.
-  await expect(welcome).toHaveCSS("text-transform", "uppercase");
-  await expect.poll(() => renderedBy(cdp, welcome)).toEqual(["web"]);
+    .getByText("START ORDER", { exact: true });
+  await expect(line).toHaveClass(/\btb-display\b/);
+  await expectFont(line, "125%", "900");
+  // The class sets the all-caps of the Figma lettering (the i18n fallback's
+  // lower case, or an operator's).
+  await expect(line).toHaveCSS("text-transform", "uppercase");
+  await expect.poll(() => renderedBy(cdp, line)).toEqual(["web"]);
 
   // /second (1:2581): the pipeline card label is Cm Bd; the footer labels are
   // CTA/Expanded small = Exp Md (`tb-display font-medium`: the utility wins
