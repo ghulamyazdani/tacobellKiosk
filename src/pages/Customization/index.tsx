@@ -31,6 +31,7 @@ import {
   type AddonCustomizeTarget,
 } from "@cx-sdk/ordering/customization/addonCustomize";
 import { selectModifierMap } from "@cx-sdk/catalog/state/Menu.slice";
+import { selectShowErrorModalGlobal } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   dropOutOfStockPicks,
   isOptionOutOfStock,
@@ -86,6 +87,15 @@ import { loadedPdpParts, loadPdpLazyParts } from "./loadPdpLazyParts";
  * second tap of a double tap would leave the PDP or pick the card under it.
  */
 const TAP_GUARD_MS = 500;
+
+/**
+ * UX-01: the completion warning's stand-in when it throws — it closes at once
+ * (nothing shows, as before), so the ringed group's shake still plays.
+ */
+function ClosesAtOnce({ onClose }: { onClose: () => void }) {
+  useEffect(() => onClose(), [onClose]);
+  return null;
+}
 
 type AddonTapInput = Parameters<typeof planAddonTap>[0];
 /** An add-on prompt: decision 5's remove confirm, or the fork's replace-item. */
@@ -250,6 +260,14 @@ export default function Customization({
   const [cancelOrderOpen, setCancelOrderOpen] = useState(false);
   // Item 23: each failed ADD TO BAG (re)mounts the completion warning (0 = closed).
   const [incompleteTap, setIncompleteTap] = useState(0);
+  const closeWarning = () => setIncompleteTap(0);
+  // UX-01: ADD TO BAG before a size: the grid takes the groups' error ring (pickVariant clears it).
+  const [sizeRefused, setSizeRefused] = useState(false);
+  // UX-01: a refusal's shake waits for its dialog — the completion warning
+  // (z-80), or the global error (z-95) a quick-customization commit raises —
+  // and plays as it closes, where the guest looks. Off while one is up, on
+  // after: every refusal replays it (the class toggles across two commits).
+  const globalErrorUp = Boolean(useSelector(selectShowErrorModalGlobal));
   const initialisedFor = useRef<string | null>(null);
 
   // ---- Lane addon-customize: the add-on prompts (D9) and the tap guard
@@ -477,6 +495,7 @@ export default function Customization({
   const sizePending = isVariantFlow && Object.keys(selectedVariant ?? {}).length === 0;
 
   const pickVariant = (variant: any) => {
+    setSizeRefused(false);
     // The current size again: close the grid, keep its add-ons
     // (fetchAddonsForSelectedVariant would reset them).
     if (variant?.id != null && variant.id === selectedVariant?.id) {
@@ -500,12 +519,16 @@ export default function Customization({
   // DOM (scrollTo top NaN → the pane jumped to the top, off the ring). ----
   const handleAddToBag = () => {
     if (sizePending) {
+      setSizeRefused(true);
       setIncompleteTap((tap) => tap + 1);
       return;
     }
     if (sizeGridOpen) flushSync(() => setConfirmedVariant(true));
     if (addCustomizationToCart(undefined) === false) setIncompleteTap((tap) => tap + 1);
   };
+
+  // Without its code the warning never opens: the shake plays at once.
+  const warningUp = (incompleteTap > 0 && Boolean(lazyParts)) || globalErrorUp;
 
   const selectionFor = (group: any): any[] =>
     (selectedCustomizations ?? {})[group?._id] ?? [];
@@ -742,7 +765,7 @@ export default function Customization({
         key={group._id}
         id={group._id}
         data-testid={`pdp-group-${group._id}`}
-        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""} ${errored && !warningUp ? "tb-shake" : ""}`}
       >
         {/* The max the "You can choose up to" guard refuses at, so the two
             agree; at 1 wherever a second unit or pick is refused (user report
@@ -928,7 +951,10 @@ export default function Customization({
         )}
 
         {sizeGridOpen ? (
-          <section className="mt-[40px]" data-testid="pdp-variant-picker">
+          <section
+            className={`mt-[40px] ${sizeRefused ? "rounded-[8px] ring-4 ring-red-500 p-[16px]" : ""} ${sizeRefused && !warningUp ? "tb-shake" : ""}`}
+            data-testid="pdp-variant-picker"
+          >
             <h3 className="tb-display mb-[24px] text-[30px] tracking-[-1px] text-tb-purple-vibrant">
               {t("size.title")}
             </h3>
@@ -1001,6 +1027,7 @@ export default function Customization({
                       const options = slotOptionsFor(group);
                       if (options.length === 0) return null;
                       const pick = selectionFor(group)[0];
+                      const slotErrored = (erroredSection as any)?.id === group?._id;
                       return (
                         /* id={group._id} — the hook's error AutoScroll targets
                            it inside #scrollCustomizableItem (tier-1 contract) */
@@ -1010,7 +1037,8 @@ export default function Customization({
                             selection={selectionFor(group)}
                             previewItem={options[0]}
                             currency={currency}
-                            errored={(erroredSection as any)?.id === group?._id}
+                            errored={slotErrored}
+                            shake={slotErrored && !warningUp}
                             fixed={options.length === 1}
                             onCustomize={
                               pick && canCustomize(pick)
@@ -1159,7 +1187,7 @@ export default function Customization({
           the only action: the guest finishes the ringed groups. Without its
           code nothing shows over the ringed PDP (the picks stay). */}
       {incompleteTap > 0 && lazyParts && (
-        <ErrorBoundary fallback={null}>
+        <ErrorBoundary fallback={<ClosesAtOnce onClose={closeWarning} />}>
           <lazyParts.PdpIncompleteWarning
             key={incompleteTap}
             entity={SelectedEntity}
@@ -1168,7 +1196,7 @@ export default function Customization({
             fetchModifierProperties={fetchModifierProperties}
             isBox={isSlotGroup}
             sizeMissing={sizePending}
-            onClose={() => setIncompleteTap(0)}
+            onClose={closeWarning}
           />
         </ErrorBoundary>
       )}

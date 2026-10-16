@@ -33,6 +33,7 @@ import { isPackSlotGroup } from "@cx-sdk/ordering/customization/addonCustomize";
 import { computeShowAddonPrices } from "@cx-sdk/ordering/customization/nestedCardLogic";
 import {
   selectHidePlusIconFromItem,
+  selectShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   appendTier2SelectionToTier1,
@@ -133,6 +134,9 @@ export default function Tier2CustomizationSheet() {
     selectTier2CustomizationModalForConfirmation,
   );
   const removalRequested = useSelector(selectConfirmTier1CustomizationRemoval);
+  // UX-01: UPDATE's refusal is the global error (z-95): the errored group's
+  // shake waits for its GOT IT, where the guest looks (off while it is up).
+  const errorUp = Boolean(useSelector(selectShowErrorModalGlobal));
   const currency = useCurrencySymbol();
   // walk-oos: the PDP's stock rule (menu stamp, PAY's feed map wins).
   const outOfStockMap = useSelector(selectOutOfStockItems);
@@ -554,7 +558,7 @@ export default function Tier2CustomizationSheet() {
         key={group._id}
         id={group._id}
         data-testid={`tier2-group-${group._id}`}
-        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "tb-shake ring-4 ring-red-500 p-[16px]" : ""}`}
+        className={`flex flex-col gap-[16px] rounded-[8px] ${errored ? "ring-4 ring-red-500 p-[16px]" : ""} ${errored && !errorUp ? "tb-shake" : ""}`}
       >
         <GroupHeader
           name={name(group)}

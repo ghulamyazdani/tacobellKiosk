@@ -13,6 +13,8 @@ interface PackSlotCardProps {
   previewItem?: any; // first option, in-stock ones first (the empty slot's photo; out of stock = none is)
   currency: string;
   errored?: boolean; // min/max errored ring
+  /** The errored card's shake (OptionCard's): the PDP holds it while the refusal's warning is up. */
+  shake?: boolean;
   /** The slot has ONE option: once picked it is an included item (FIXED). */
   fixed?: boolean;
   /** A FIXED slot's CUSTOMIZE — passed only when its pick is tier-2 capable. */
@@ -37,6 +39,7 @@ export default function PackSlotCard({
   previewItem,
   currency,
   errored = false,
+  shake,
   fixed = false,
   onCustomize,
   onOpen,
@@ -54,6 +57,7 @@ export default function PackSlotCard({
         name={name(pick)}
         meta={formatOptionMeta(pick, currency, t)}
         errored={errored}
+        shake={shake}
         cta={
           onCustomize
             ? { label: t("pack.customize"), onClick: onCustomize, testId: `pack-slot-customize-${id}` }
@@ -80,6 +84,7 @@ export default function PackSlotCard({
           : undefined
       }
       errored={errored}
+      shake={shake}
       cta={{ label, onClick: onOpen, testId: `pack-slot-cta-${id}` }}
       onSelect={onOpen}
       selectLabel={label}

@@ -825,7 +825,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await rate(1);
   });
 
-  test("M6 ERRORS: ADD TO BAG over an unfinished required group shakes the group beside its ring; every refused tent key re-shakes the range banner — a NEW node per refusal, running tb-shake", async ({
+  test("M6 ERRORS: ADD TO BAG over an unfinished required group rings it at once and shakes it once its warning's GOT IT closes (UX-01: never under the warning); every refused tent key re-shakes the range banner — a NEW node per refusal, running tb-shake", async ({
     page,
   }) => {
     test.slow();
@@ -842,12 +842,15 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await rate(0.1);
     await page.getByTestId("pdp-add-to-bag").click(); // refused: the group is unfinished
     await expect(group).toHaveClass(/\bring-red-500\b/);
-    const groupShake = named(await animations(page, `[data-testid="pdp-group-${EXTRAS_GROUP}"]`), "tb-shake");
-    expect(groupShake.map((a) => a.on), "the errored group shakes").toEqual([`pdp-group-${EXTRAS_GROUP}`]);
-    expect(groupShake[0]).toMatchObject({ duration: 300, iterations: 1 });
-    await rate(1);
+    await expect(page.getByTestId("pdp-incomplete")).toBeVisible();
+    const shakes = () => animations(page, `[data-testid="pdp-group-${EXTRAS_GROUP}"]`).then((list) => named(list, "tb-shake"));
+    expect(await shakes(), "under the warning the group only rings").toEqual([]);
     await page.getByTestId("pdp-incomplete-gotit").click(); // the refusal's warning
     await expect(page.getByTestId("pdp-incomplete")).toHaveCount(0);
+    const groupShake = await shakes();
+    expect(groupShake.map((a) => a.on), "the errored group shakes as the warning closes").toEqual([`pdp-group-${EXTRAS_GROUP}`]);
+    expect(groupShake[0]).toMatchObject({ duration: 300, iterations: 1 });
+    await rate(1);
     await page.getByTestId(`pdp-option-${EXTRA_PICKLES}`).click(); // finishes the group
     await page.getByTestId("pdp-add-to-bag").click();
     await expect(page.getByTestId("product-added-modal")).toBeVisible({ timeout: 10_000 });

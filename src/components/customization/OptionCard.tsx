@@ -58,6 +58,8 @@ export interface OptionCardProps {
   /** Testid of the overlay select button (PackSlotCard's pack-slot-open-*). */
   selectTestId?: string;
   errored?: boolean;
+  /** The errored card's one shake; default: with its ring. A pack slot's waits for the refusal's warning to close. */
+  shake?: boolean;
   /**
    * Out of stock (lane walk-oos): the menu card's look — content at 40 %,
    * the photo grey, the "Unavailable" chip where the CTA sits — no radio,
@@ -193,10 +195,11 @@ export default function OptionCard({
   selectLabel,
   selectTestId,
   errored = false,
+  shake = errored,
   unavailable,
 }: OptionCardProps) {
   const id = useId();
-  const className = `${CARD} ${tall ? "min-h-[476px]" : "min-h-[400px]"} ${errored ? "tb-shake ring-4 ring-red-500" : ""}`;
+  const className = `${CARD} ${tall ? "min-h-[476px]" : "min-h-[400px]"} ${errored ? "ring-4 ring-red-500" : ""} ${shake ? "tb-shake" : ""}`;
   const content = (
     <>
       <span className="flex h-[172px] w-full shrink-0 items-center justify-center">
