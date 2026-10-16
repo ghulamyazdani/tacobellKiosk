@@ -13,6 +13,7 @@ import {
   SWIPE_SLOP_PX,
   SWIPE_VELOCITY_MS,
   VEIL,
+  enterAt,
   focusAt,
   matrixOf,
   settleMs,
@@ -104,6 +105,12 @@ describe("target: where a release lands (+1 next, −1 prev, 0 back)", () => {
     expect(Object.is(target(-0.4, -1, 60, true), 0)).toBe(true); // never −0
   });
 
+  it("after a catch a slow release never steps against the drag: caught 0.73 of a card off its slot (o +549), a 50 px LEFT drag lifted still stays (never prev); a RIGHT one goes back", () => {
+    expect(target(-0.69, 0, 50, true, 0.05)).toBe(0);
+    expect(target(-0.75, 0, 50, true, -0.02)).toBe(-1);
+    expect(target(0.69, 0, 50, true, -0.05)).toBe(0);
+  });
+
   it("one card per gesture at most", () => {
     expect(target(1, -9, 900, true)).toBe(1);
     expect(target(-1, 9, 900, true)).toBe(-1);
@@ -141,6 +148,20 @@ describe("focusAt: the focus follows position", () => {
   it("still (reduced motion): the slot's own focus wherever the card is dragged", () => {
     expect(focusAt(0, -300, true)).toEqual({ scale: 1.1, veil: 0 });
     expect(focusAt(1, -300, true)).toEqual({ scale: 0.88, veil: 0.45 });
+  });
+});
+
+describe("enterAt: a release's entrant comes in in formation, never on stage", () => {
+  it("one pitch beyond the new peek, where the finger left the row: 2 × 751 + o (mirrored for prev)", () => {
+    expect(enterAt(1, -434)).toBe(1068);
+    expect(enterAt(-1, 434)).toBe(-1068);
+    expect(enterAt(1, 0)).toBe(2 * PITCH); // a tap's pending video end: the auto-advance's two pitches
+  });
+
+  it("a long drag's stays off stage: a 0.88 card from ≈ 839 px out has its left edge at 1080", () => {
+    expect(enterAt(1, -700)).toBeCloseTo(540 + 340 * SIDE, 6);
+    expect(enterAt(-1, 751)).toBeCloseTo(-(540 + 340 * SIDE), 6);
+    expect(540 + enterAt(1, -751) - 340 * SIDE).toBeCloseTo(1080, 6);
   });
 });
 

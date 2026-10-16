@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { setKioskSettings, setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
@@ -867,10 +867,11 @@ describe("swipe", () => {
     fireEvent[lift](surface(), pointer(700 + dx, 900 + dy, { type, id }));
   }
   const settle = () => track()?.style.getPropertyValue("--tb-settle");
+  const enter = () => track()?.style.getPropertyValue("--tb-enter");
 
   beforeEach(() => start.mockReset());
 
-  it("left steps to the next, right to the previous, wrapping — the entrant from the side it steps from; a slow release settles in 500 ms", () => {
+  it("left steps to the next, right to the previous, wrapping — the entrant from the side it steps from, in formation with the release; a slow release settles in 500 ms", () => {
     seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
     renderButton();
     expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
@@ -879,13 +880,19 @@ describe("swipe", () => {
     expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("c.jpg")]);
     expect(track()).toHaveAttribute("data-dir", "1");
     expect(settle()).toBe("500ms"); // a still finger: 4·d/v clamps at 500
+    expect(enter()).toBe("1218px"); // released at o −284: one pitch beyond the new peek (2 × 751 − 284)
 
     drag(300);
     expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
     expect(track()).toHaveAttribute("data-dir", "-1");
+    expect(enter()).toBe("-1218px");
     drag(300);
     expect(cards()).toEqual([u("b.jpg"), u("c.jpg"), u("a.jpg")]);
     expect(start).not.toHaveBeenCalled();
+
+    tick(8_000); // the auto-advance: its entrant from two pitches out (the CSS fallback)
+    expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
+    expect([settle(), enter()]).toEqual(["", ""]);
   });
 
   it("a flick steps at once and settles at about the finger's speed (4·d/v, 250–500 ms); a fling back cancels", () => {
@@ -1018,6 +1025,7 @@ describe("swipe", () => {
     expect(cards()[1]).toBe(u("b.jpg"));
     expect(track()).toHaveAttribute("data-dir", "1");
     expect(settle()).toBe(""); // the advance's own 500 ms
+    expect(enter()).toBe("1478px"); // from where the finger left the row (o −24)
     expect(host().querySelector("video")).toBeNull();
   });
 
@@ -1128,6 +1136,99 @@ describe("swipe", () => {
     tick(16);
     fireEvent.pointerMove(surface(), pointer(660));
     expect(card("centre")?.style.transform).toBe(`translateX(${451 - 24}px) scale(${focusAt(0, 427).scale})`);
+  });
+
+  it("after a catch a slow release never steps against the drag: caught mid-advance at +549, a slow 50 px LEFT drag lets the incoming card land — never back to the previous one", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    const live: Record<string, string> = {
+      "-1": "matrix(0.95, 0, 0, 0.95, -202, 0)",
+      "0": "matrix(0.98, 0, 0, 0.98, 549, 0)",
+      "1": "matrix(0.88, 0, 0, 0.88, 1300, 0)",
+    };
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (el: Element) =>
+        ({ transform: live[el.closest<HTMLElement>(".tb-splash-card")?.dataset.slot ?? ""] ?? "none", opacity: "0.3" }) as CSSStyleDeclaration
+    );
+    drag(-50, { rest: 150 }); // o 515: p −0.69, all of it the catch's — the finger took it 0.05 the other way
+
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(track()).not.toHaveAttribute("data-dir");
+    expect(settle()).toBe("var(--tb-dur-snap)");
+  });
+
+  it("an advance that lands just before a press is committed first: the press catches all three movers — the entrant too — so the first move never jumps them a pitch", () => {
+    seed([{ url: u("v.mp4"), media_type: "mp4", iteration_time: 1 }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    act(() => {
+      media("centre").dispatchEvent(new Event("ended")); // the last play: advance()
+      surface().dispatchEvent(createEvent.pointerDown(surface(), pointer(700))); // before React's own task
+    });
+
+    expect(track()).toHaveAttribute("data-dir", "1");
+    expect(track()).toHaveAttribute("data-held");
+    for (const slot of ["prev", "centre", "next"] as const) expect(card(slot)?.style.transform, slot).not.toBe("");
+  });
+
+  it("the slop is the browser's px, not the stage's: on a stage scaled to 0.8 a 13 px wobble (16.25 stage px) is still a tap; 17 px is not, and follows from the slop on", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 864 } as DOMRect);
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-13, { type: "mouse" });
+    expect(card("centre")?.style.transform).toBe("");
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+
+    drag(-17, { type: "mouse", lift: null }); // 21.25 stage px, 1.25 of them past the 16 px (20 stage px) slop
+    expect(card("centre")?.style.transform).toBe(`translateX(-1.25px) scale(${focusAt(0, -1.25).scale})`);
+    fireEvent.pointerUp(surface(), pointer(683, 900, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("the slop is Euclidean: a 17 px diagonal (−12, −12) is past it — a mouse's click is not a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-12, { dy: -12, type: "mouse" });
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("20 px sideways follows from the slop on (−4 px), and its click is not a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-20, { type: "mouse", lift: null });
+    expect(card("centre")?.style.transform).toBe(`translateX(-4px) scale(${focusAt(0, -4).scale})`);
+    fireEvent.pointerUp(surface(), pointer(680, 900, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("a purely vertical drag (0, +300) is neither a swipe nor a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(0, { dy: 300, type: "mouse", lift: null });
+    expect(card("centre")?.style.transform).toBe("translateX(0px) scale(1)"); // the catch's (jsdom)
+    fireEvent.pointerUp(surface(), pointer(700, 1200, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("a touch swipe gets no click (Chromium drops it), so the next press re-arms the tap: its click starts the order", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-300);
+    fireEvent.pointerDown(surface(), pointer(540, 900, { id: 2 }));
+    fireEvent.pointerUp(surface(), pointer(540, 900, { id: 2 }));
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("a quick 40 px flick (24 px of visible follow) is a flick by its RAW travel: it steps", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-40, { every: 20, rest: 0 }); // 1 px/ms
+    expect(cards()[1]).toBe(u("b.jpg"));
   });
 });
 

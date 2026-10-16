@@ -356,8 +356,9 @@ describe("keyframes and classes (§1.5, §4)", () => {
   });
 
   // The ONE exception (2026-10-16, needs the user's OK): the splash carousel's drag writes its six layers
-  // every move, and unpromoted each move repaints the whole stage. Nothing else in src promotes.
-  it("will-change only on the splash carousel's movers and veils (index.css), nowhere else in src (CSS or class)", () => {
+  // every move, and unpromoted each move repaints the whole stage. Only while a finger is down
+  // (data-held): promoted at rest, a peek kept its 0.88 raster as the 1.10 centre (soft). Nothing else promotes.
+  it("will-change only on a HELD splash carousel's movers and veils (index.css), nowhere else in src (CSS or class)", () => {
     const SRC = join(import.meta.dirname, "..");
     const hits = readdirSync(SRC, { recursive: true, encoding: "utf8" })
       .filter((file) => /\.(tsx?|css)$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
@@ -367,8 +368,8 @@ describe("keyframes and classes (§1.5, §4)", () => {
       .filter(([, , body]) => body.includes("will-change"))
       .map(([, head, body]) => [head.trim(), declarations(body)]);
     expect(promoted).toEqual([
-      [".tb-splash-carousel > .tb-splash-card", { "will-change": "transform" }],
-      [".tb-splash-carousel .tb-splash-veil", { "will-change": "opacity" }],
+      [".tb-splash-carousel[data-held] > .tb-splash-card", { "will-change": "transform" }],
+      [".tb-splash-carousel[data-held] .tb-splash-veil", { "will-change": "opacity" }],
     ]);
   });
 
@@ -477,7 +478,7 @@ describe("the splash carousel (user request 2026-10-16)", () => {
     expect(moved).toEqual(expect.arrayContaining(["transform", "opacity"]));
   });
 
-  it("@starting-style only under .tb-splash-track[data-dir]: the entrant from two pitches out on its side, at the side scale", () => {
+  it("@starting-style only under .tb-splash-track[data-dir]: the entrant from the release's --tb-enter, else two pitches out on its side, at the side scale", () => {
     expect(CODE.match(/@starting-style/g)).toHaveLength(1);
     expect(depthAt(CODE.indexOf("@starting-style"))).toBe(0);
     const starting = [...block("@starting-style").matchAll(/([^{};]+)\{([^{}]*)\}/g)].map(([, head, body]) => [
@@ -487,11 +488,11 @@ describe("the splash carousel (user request 2026-10-16)", () => {
     expect(starting).toEqual([
       [
         '.tb-splash-track[data-dir="1"] > .tb-splash-card[data-slot="1"]',
-        { transform: "translateX(calc(var(--tb-splash-pitch) * 2)) scale(var(--tb-splash-side))" },
+        { transform: "translateX(var(--tb-enter, calc(var(--tb-splash-pitch) * 2))) scale(var(--tb-splash-side))" },
       ],
       [
         '.tb-splash-track[data-dir="-1"] > .tb-splash-card[data-slot="-1"]',
-        { transform: "translateX(calc(var(--tb-splash-pitch) * -2)) scale(var(--tb-splash-side))" },
+        { transform: "translateX(var(--tb-enter, calc(var(--tb-splash-pitch) * -2))) scale(var(--tb-splash-side))" },
       ],
     ]);
   });

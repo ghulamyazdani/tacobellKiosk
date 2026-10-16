@@ -7,6 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import {
@@ -32,6 +33,7 @@ import star5 from "../../assets/splash/star-5.svg";
 import star6 from "../../assets/splash/star-6.svg";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import {
+  enterAt,
   focusAt,
   matrixOf,
   PITCH,
@@ -117,12 +119,14 @@ interface Rotation {
    * whose content swaps in place.
    */
   dir: -1 | 0 | 1;
-  /** A finger is down on the carousel: nothing advances (the dwell is off, a video's end waits). */
+  /** A finger is down on the carousel: nothing advances (the dwell is off, a video's end waits); its layers are promoted (index.css). */
   held: boolean;
   /** The centre video ended under the finger: it advances at the release. */
   pending: boolean;
   /** The next settle's --tb-settle on the track; unset = --tb-dur-carousel. */
   settle: string | undefined;
+  /** A release's entrant start (--tb-enter: in formation, splashSwipe.enterAt); unset = two pitches out. */
+  enter: string | undefined;
 }
 
 /** The finger on the carousel (refs only: no render per move). */
@@ -139,7 +143,7 @@ interface Drag {
   o: number;
   /** Decided at the slop: "x" follows, "y" is neither a swipe nor a tap. */
   axis: "x" | "y" | null;
-  /** ±SWIPE_SLOP_PX, latched at the slop: the follow starts there (no catch-up jump). */
+  /** ±SWIPE_SLOP_PX in stage px, latched at the slop: the follow starts there (no catch-up jump). */
   lock: number;
   /** [timeStamp, dx]: the press and the moves of the last SWIPE_VELOCITY_MS. */
   samples: Sample[];
@@ -161,8 +165,11 @@ function live(
   return from;
 }
 
-/** One card toward `to` (+1 = the next), over `settle` (unset = --tb-dur-carousel). */
-const stepped = (r: Rotation, to: 1 | -1, n: number, settle: string | undefined): Rotation => ({
+/**
+ * One card toward `to` (+1 = the next), over `settle` (unset = --tb-dur-carousel);
+ * the entrant from `enter` (unset = two pitches out).
+ */
+const stepped = (r: Rotation, to: 1 | -1, n: number, settle?: string, enter?: string): Rotation => ({
   ...r,
   cur: live(r.cur, to, n, r.failed),
   e: r.e + to,
@@ -170,16 +177,18 @@ const stepped = (r: Rotation, to: 1 | -1, n: number, settle: string | undefined)
   held: false,
   pending: false,
   settle,
+  enter,
 });
 
 /**
  * The release, ONE commit: a step (speed-matched), else a video that ended
  * under the finger advances now (from where the cards are), else back to the
- * slots (the snap-back) — and the dwell re-arms in full.
+ * slots (the snap-back) — and the dwell re-arms in full. `o` = where the
+ * finger left the row: a step's entrant comes in in formation with it.
  */
-function released(r: Rotation, to: -1 | 0 | 1, settle: string, n: number): Rotation {
-  if (to) return stepped(r, to, n, settle);
-  if (r.pending && n - r.failed.size > 1) return stepped(r, 1, n, undefined);
+function released(r: Rotation, to: -1 | 0 | 1, settle: string, n: number, o: number): Rotation {
+  if (to) return stepped(r, to, n, settle, `${enterAt(to, o)}px`);
+  if (r.pending && n - r.failed.size > 1) return stepped(r, 1, n, undefined, `${enterAt(1, o)}px`);
   return { ...r, held: false, pending: false, settle };
 }
 
@@ -293,11 +302,11 @@ export function SplashWelcome() {
  * move): the press freezes the cards where they are (the catch), the drag
  * follows the finger 1:1 past the slop with the focus a function of where
  * each card sits, and the release makes ONE commit — a step at 30 % of a
- * card or on a flick, settling at about the finger's speed (250–500 ms), or
- * back to the slots (300 ms). Nothing waits on a transition. A drag is never
- * a tap: a touch past the slop gets no click from Chromium, and a mouse's or
- * a pen's is swallowed here; a tap anywhere — mid-settle too — still starts
- * the order (the splash <button>'s onClick).
+ * card or on a flick, speed-matched within 250–500 ms (the entrant in
+ * formation), or back to the slots (300 ms). Nothing waits on a transition.
+ * A drag is never a tap: a touch past the slop gets no click from Chromium,
+ * and a mouse's or a pen's is swallowed here; a tap anywhere — mid-settle
+ * too — still starts the order (the splash <button>'s onClick).
  */
 export default function SplashMedia() {
   const mediaData: unknown = useSelector(mediaDataRdx);
@@ -307,7 +316,7 @@ export default function SplashMedia() {
   // mounts a fresh layer that snapshots the new media. No key needed.
   const [slides] = useState(() => toSplashSlides(mediaData));
   const n = slides.length;
-  const [{ cur, failed, e, dir, held, settle }, setRotation] = useState<Rotation>({
+  const [{ cur, failed, e, dir, held, settle, enter }, setRotation] = useState<Rotation>({
     cur: 0,
     failed: new Map(),
     e: 0,
@@ -315,11 +324,15 @@ export default function SplashMedia() {
     held: false,
     pending: false,
     settle: undefined,
+    enter: undefined,
   });
 
-  // The rotation never moves under a finger: a video's end waits for the release.
+  // The rotation never moves under a finger: a video's end waits for the
+  // release. Committed in its own task (flushSync): left pending, React would
+  // render it together with the next press's hold — after that press's catch
+  // froze the old slots — and the first move would jump every card a pitch.
   const advance = useCallback(
-    () => setRotation((r) => (r.held ? { ...r, pending: true } : stepped(r, 1, n, undefined))),
+    () => flushSync(() => setRotation((r) => (r.held ? { ...r, pending: true } : stepped(r, 1, n)))),
     [n],
   );
   const fail = useCallback<Fail>(
@@ -453,10 +466,11 @@ export default function SplashMedia() {
     while (ev.timeStamp - d.samples[0][0] > SWIPE_VELOCITY_MS) d.samples.shift();
     if (!d.axis) {
       const dy = (ev.clientY - d.y) / d.k;
-      if (Math.hypot(dx, dy) < SWIPE_SLOP_PX) return; // still a tap
+      // The slop in CSS px (the browser's tap slop is), the follow in stage px.
+      if (Math.hypot(dx, dy) * d.k < SWIPE_SLOP_PX) return; // still a tap
       swallow.current = true; // past the slop: never a tap
       d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      d.lock = Math.sign(dx) * SWIPE_SLOP_PX;
+      d.lock = (Math.sign(dx) * SWIPE_SLOP_PX) / d.k;
     }
     if (d.axis === "y") return; // up or down: not a swipe (and not a tap)
     d.o = Math.max(-PITCH, Math.min(PITCH, d.base + dx - d.lock)); // one card at most
@@ -475,7 +489,8 @@ export default function SplashMedia() {
     const dx = (ev.clientX - d.x) / d.k;
     const v = velocity(d.samples, [ev.timeStamp, dx]);
     const p = -d.o / PITCH; // positive toward the next
-    const to = ev.type === "pointerup" && !single ? target(p, v, Math.abs(dx), d.axis === "x") : 0;
+    const moved = (d.base - d.o) / PITCH; // the finger's own share of p (a catch starts off the slots)
+    const to = ev.type === "pointerup" && !single ? target(p, v, Math.abs(dx), d.axis === "x", moved) : 0;
     // Every card back to its slot's CSS. Nothing reads layout before the
     // commit below, so each transition starts from the finger's last frame.
     for (const { mover, veil } of movers()) {
@@ -487,7 +502,7 @@ export default function SplashMedia() {
       }
     }
     const ms = to ? `${settleMs(Math.abs(to - p) * PITCH, v)}ms` : SNAP;
-    setRotation((r) => released(r, to, ms, n));
+    setRotation((r) => released(r, to, ms, n, d.o));
   };
 
   // A pointer that crossed the slop sends a click a mouse (or a pen) still
@@ -542,7 +557,7 @@ export default function SplashMedia() {
         className={single ? "tb-splash-track absolute inset-0" : "tb-splash-track tb-splash-carousel absolute inset-0"}
         data-dir={dir || undefined}
         data-held={held ? "" : undefined}
-        style={settle === undefined ? undefined : ({ "--tb-settle": settle } as CSSProperties)}
+        style={{ "--tb-settle": settle, "--tb-enter": enter } as CSSProperties}
       >
         {slots.map((slot) => {
           const index = slot === 0 ? cur : live(cur, slot === 1 ? 1 : -1, n, failed);

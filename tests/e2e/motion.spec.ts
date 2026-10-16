@@ -1291,7 +1291,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await rate(1);
   });
 
-  test("M12 PERFORMANCE: every @keyframes moves only opacity / transform / translate / scale / rotate, and nothing carries will-change but the splash carousel's six layers — the one exception, 2026-10-16 (splash, /second, menu, PDP, the spring, the bag)", async ({
+  test("M12 PERFORMANCE: every @keyframes moves only opacity / transform / translate / scale / rotate, and nothing carries will-change but the splash carousel's six layers while a finger holds them — the one exception, 2026-10-16 (splash, /second, menu, PDP, the spring, the bag)", async ({
     page,
   }) => {
     test.slow();
@@ -1332,8 +1332,15 @@ test.describe("motion (contract §5.3, no-preference)", () => {
       expect(found, `will-change on ${where}`).toEqual(promoted);
       await animations(page); // §4 rule 1 on whatever is running here
     };
-    // The exception (needs the user's OK): promoted while the carousel is up — each card and its veil.
-    await screen("/start", Array.from({ length: 3 }, () => ["tb-splash-card transform", "tb-splash-veil opacity"]).flat());
+    // The exception (needs the user's OK): promoted only while a finger holds the carousel — each card and its
+    // veil. At rest none is: a layer promoted as a 0.88 peek would keep that raster as the 1.10 centre (soft).
+    await screen("/start at rest");
+    await page.mouse.move(800, 900);
+    await page.mouse.down();
+    await page.mouse.move(700, 900, { steps: 4 }); // past the slop: a drag, never a tap
+    await screen("/start under a finger", Array.from({ length: 3 }, () => ["tb-splash-card transform", "tb-splash-veil opacity"]).flat());
+    await page.mouse.up(); // 11 % of a card: back to the slots, its click swallowed
+    await screen("/start after the release");
     await startToSecond(page);
     await screen("/second");
     await pickPipelineToMenu(page);
@@ -1717,7 +1724,7 @@ test.describe("M18 SWIPE (2026-10-16, CDP touches, hasTouch)", () => {
     return { scale: 1.1 - 0.22 * u, veil: 0.45 * u };
   };
 
-  test("M18 FOLLOW + RELEASE: nothing moves inside the slop; past it every card follows 1:1 (within 1 px) with its focus by position; the release starts each card's transition from the finger's frame, over 4·d/v clamped to 250–500 ms, on --tb-ease-out", async ({
+  test("M18 FOLLOW + RELEASE: nothing moves inside the slop; past it every card follows 1:1 (within 1 px) with its focus by position; the release starts each card's transition from the finger's frame — the entrant in formation, one pitch beyond the new peek — over 4·d/v clamped to 250–500 ms, on --tb-ease-out", async ({
     page,
   }) => {
     test.slow();
@@ -1766,8 +1773,8 @@ test.describe("M18 SWIPE (2026-10-16, CDP touches, hasTouch)", () => {
       Array.from(document.getAnimations(), (a) => {
         const target = (a.effect as KeyframeEffect | null)?.target as HTMLElement | null;
         const from = (a.effect as KeyframeEffect | null)?.getKeyframes()[0];
-        return a instanceof CSSTransition && a.transitionProperty === "transform" && target?.dataset.was
-          ? { was: target.dataset.was, from: new DOMMatrixReadOnly(String(from?.transform)) }
+        return a instanceof CSSTransition && a.transitionProperty === "transform" && target
+          ? { was: target.dataset.was ?? "entrant", from: new DOMMatrixReadOnly(String(from?.transform)) }
           : null;
       })
         .filter((t) => t !== null)
@@ -1785,6 +1792,11 @@ test.describe("M18 SWIPE (2026-10-16, CDP touches, hasTouch)", () => {
       expect(Math.abs((from?.x ?? NaN) - (at?.x ?? NaN)), `slot ${was}: from-x = release x`).toBeLessThanOrEqual(1);
       expect(Math.abs((from?.scale ?? NaN) - (at?.scale ?? NaN)), `slot ${was}: from-scale = release scale`).toBeLessThanOrEqual(0.002);
     }
+    // The entrant (@starting-style from the track's --tb-enter): in formation, one pitch beyond the new peek.
+    const o = frame.find((m) => m.slot === 0)?.x ?? NaN;
+    const entrant = tracks.find((t) => t.was === "entrant");
+    expect(Math.abs((entrant?.x ?? NaN) - (2 * PITCH + o)), "the entrant: from-x = 2 pitches + the release offset").toBeLessThanOrEqual(1);
+    expect(entrant?.scale, "the entrant: at the side scale").toBeCloseTo(0.88, 3);
     // The speed match: the app's own rule replayed on the events it read.
     const [, tUp, xUp] = log.findLast(([type]) => type === "pointerup") ?? [];
     const down = log.findLastIndex(([type]) => type === "pointerdown");
