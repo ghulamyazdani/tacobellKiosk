@@ -15,6 +15,7 @@ import {
 } from "./fixtures/backend";
 import { settle } from "./fixtures/capture";
 import { PIPELINES_URL, PLACE_ORDER_URL, mockCheckoutBackend, type CheckoutMockOptions } from "./fixtures/checkout";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   PNG_1X1,
   PROMPT_AFTER_MS,
@@ -23,6 +24,7 @@ import {
   fakeNow,
   freezeClock,
   test,
+  type CDPSession,
   type Locator,
   type Page,
 } from "./fixtures/kiosk";
@@ -193,6 +195,29 @@ async function animations(page: Page, scope = "html"): Promise<Seen[]> {
 
 const named = (list: Seen[], name: string) => list.filter((a) => a.name === name);
 
+/**
+ * The splash carousel's running transitions (2026-10-16): per moving card or veil, the property, where it
+ * starts (its first keyframe), its duration and its easing — a CSSTransition carries its timing function on
+ * the effect. The rest of the page is checked by `animations` (M12).
+ */
+const carouselMotion = (page: Page) =>
+  page.evaluate(() =>
+    document.getAnimations().flatMap((a) => {
+      const effect = a.effect as KeyframeEffect | null;
+      const target = effect?.target;
+      if (!(a instanceof CSSTransition) || !effect || !target?.closest(".tb-splash-track")) return [];
+      const from = effect.getKeyframes()[0] ?? {};
+      return [
+        {
+          prop: a.transitionProperty,
+          from: String(a.transitionProperty === "opacity" ? from.opacity : from.transform),
+          duration: Number(effect.getComputedTiming().duration),
+          easing: effect.getTiming().easing,
+        },
+      ];
+    })
+  );
+
 /** M8: every infinite animation is allow-listed and none runs on or around a tap target. */
 async function loops(page: Page): Promise<string[]> {
   const infinite = (await animations(page)).filter((a) => a.iterations === Infinity);
@@ -347,8 +372,9 @@ async function expectReduced(page: Page) {
 
 /**
  * M9: a 1 ms animation still PAINTS its from-frame once, so under reduce every full-opacity from-frame must be
- * the end state. The spring's is read on the live card; the selection bump's and the carousel shift's on a
- * throwaway element carrying the app's class (same stylesheet, same media).
+ * the end state. The spring's is read on the live card; the selection bump's on a throwaway element carrying
+ * the app's class (same stylesheet, same media). The splash carousel has no keyframes since 2026-10-16: its
+ * steps are transitions, which reduce makes 0 s (M9 CAROUSEL).
  */
 const firstFrames = (page: Page) =>
   page.evaluate((card) => {
@@ -378,7 +404,6 @@ const firstFrames = (page: Page) =>
     return {
       springScale: Math.round(Math.hypot(springFrame.a, springFrame.b) * 1000) / 1000,
       select: throwaway("tb-select"),
-      carousel: throwaway("tb-carousel-in"),
     };
   }, SPRING_CARD);
 
@@ -607,7 +632,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await settle(page);
   });
 
-  test("M3 NEVER ANIMATES: the idle timeout lands on a still splash — no data-enter, no carousel shift at mount (the shift waits for an advance)", async ({
+  test("M3 NEVER ANIMATES: the idle timeout lands on a still splash — no data-enter, nothing transitions at mount (the carousel's movers wait for an advance, which re-slots them over 500 ms on --tb-ease-out, the entrant from two pitches out)", async ({
     page,
   }) => {
     test.slow();
@@ -621,8 +646,9 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await page.route(`${MEDIA_ORIGIN}/**`, (route) => route.fulfill({ body: PNG_1X1, contentType: "image/png" }));
     await registerToStart(page);
     const splash = page.getByTestId("start-screen");
+    const track = splash.locator(".tb-splash-track");
     await expect(splash.locator(`img[src="${MEDIA_ORIGIN}/b.png"]`), "the carousel: B peeks on both sides").toHaveCount(2);
-    await expect(splash.locator(".tb-carousel-in")).toHaveCount(0);
+    await expect(track).not.toHaveAttribute("data-dir");
 
     await startToSecond(page);
     await pickPipelineToMenu(page);
@@ -634,19 +660,34 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(page).toHaveURL(/\/start$/);
     await expect(splash.locator(`img[src="${MEDIA_ORIGIN}/b.png"]`)).toHaveCount(2);
     await expect(page.locator("[data-enter]")).toHaveCount(0);
-    await expect(splash.locator(".tb-carousel-in")).toHaveCount(0);
-    expect(named(await animations(page), "tb-carousel-in")).toEqual([]);
+    await expect(track, "the first frame of a visit has no step to come in from").not.toHaveAttribute("data-dir");
+    expect(await carouselMotion(page), "nothing moves at mount").toEqual([]);
 
-    // Control: an advance DOES shift the three remounted cards in.
+    // Control: an advance DOES move the cards, 10× slowed so the read lands mid-flight. The two that stay
+    // are re-slotted (the centre out to the left, the next in), the entrant comes in from two pitches out
+    // (@starting-style); 500 ms on --tb-ease-out, transform and opacity only.
+    const rate = await slowMotion(page);
+    await rate(0.1);
     await expect
       .poll(
         async () => {
           await page.clock.runFor(1_000);
-          return splash.locator(".tb-carousel-in").count();
+          return track.getAttribute("data-dir");
         },
         { timeout: 20_000, intervals: [50] }
       )
-      .toBe(3);
+      .toBe("1");
+    const moving = await carouselMotion(page);
+    await rate(1);
+    expect(moving.filter((m) => m.prop === "transform").map((m) => m.from).sort()).toEqual([
+      "translateX(0px) scale(1.1)",
+      "translateX(1502px) scale(0.88)",
+      "translateX(751px) scale(0.88)",
+    ]);
+    expect(moving.filter((m) => m.prop === "opacity").map((m) => m.from).sort()).toEqual(["0", "0.45"]);
+    for (const m of moving) {
+      expect([m.duration, m.easing], `${m.prop} from ${m.from}`).toEqual([500, "cubic-bezier(0.2, 0.8, 0.2, 1)"]);
+    }
   });
 
   test("M4 TAPS: the /second entrance paused at 50 % — the card mid-flight still takes the tap and /menu loads", async ({
@@ -1068,12 +1109,73 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     expect(await firstFrames(page), "every full-opacity from-frame is the end state").toEqual({
       springScale: 1,
       select: "matrix(1, 0, 0, 1, 0, 0)",
-      carousel: "matrix(1, 0, 0, 1, 0, 0)",
     });
 
     await page.getByTestId("added-continue").click();
     await openBag(page);
     expect(named(await animations(page, '[data-testid="bag-sheet"]'), "tb-sheet-enter")).toHaveLength(1);
+    await expectReduced(page);
+  });
+
+  test("M9 CAROUSEL (2026-10-16): under reduce the splash carousel rests at once — its focus is layout (1.10 / 0.88 / veil 0.45); an advance and a release land in the frame they commit (no transition, so no from-frame); a drag only translates", async ({
+    page,
+  }) => {
+    await page.clock.install(); // the dwell is a fake-clock timer
+    await mockBackend(page);
+    const slide = (name: string) => ({ url: `${MEDIA_ORIGIN}/${name}.png`, media_type: "image", iteration_time: "5", text: "", items: [] });
+    await page.route("**/api/cx/kiosk/getMedia", (route) =>
+      route.fulfill({ json: { media: [{ key: "home_screen", ...slide("a"), extra_images: [slide("b"), slide("c")] }] } })
+    );
+    await page.route(`${MEDIA_ORIGIN}/**`, (route) => route.fulfill({ body: PNG_1X1, contentType: "image/png" }));
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await registerToStart(page);
+    const track = page.getByTestId("start-screen").locator(".tb-splash-track");
+    /** Each mover: slot, computed transform and veil opacity — plus whatever runs on the carousel. */
+    const carousel = () =>
+      page.evaluate(() => ({
+        cards: Array.from(document.querySelectorAll<HTMLElement>(".tb-splash-card"), (el) => [
+          el.dataset.slot,
+          getComputedStyle(el).transform,
+          getComputedStyle(el.querySelector(".tb-splash-veil") ?? el).opacity,
+        ]),
+        running: document.getAnimations().filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest(".tb-splash-track")).length,
+      }));
+    const REST = {
+      cards: [
+        ["-1", "matrix(0.88, 0, 0, 0.88, -751, 0)", "0.45"],
+        ["0", "matrix(1.1, 0, 0, 1.1, 0, 0)", "0"],
+        ["1", "matrix(0.88, 0, 0, 0.88, 751, 0)", "0.45"],
+      ],
+      running: 0,
+    };
+    expect(await carousel(), "the rest state is the same with motion off").toEqual(REST);
+
+    await expect
+      .poll(
+        async () => {
+          await page.clock.runFor(1_000);
+          return track.getAttribute("data-dir");
+        },
+        { timeout: 20_000, intervals: [50] }
+      )
+      .toBe("1");
+    expect(await carousel(), "an advance rests at once").toEqual(REST);
+
+    // A mouse drag 300 px left (284 past the slop): every card translates; none rescales, no veil changes.
+    await page.mouse.move(800, 900);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(800 - 30 * i, 900);
+    expect(await carousel(), "the drag only translates").toEqual({
+      cards: [
+        ["-1", "matrix(0.88, 0, 0, 0.88, -1035, 0)", "0.45"],
+        ["0", "matrix(1.1, 0, 0, 1.1, -284, 0)", "0"],
+        ["1", "matrix(0.88, 0, 0, 0.88, 467, 0)", "0.45"],
+      ],
+      running: 0,
+    });
+    await page.mouse.up();
+    await expect(page.getByTestId("start-screen").locator('.tb-splash-card[data-slot="0"] img')).toHaveAttribute("src", `${MEDIA_ORIGIN}/c.png`);
+    expect(await carousel(), "the release lands at once").toEqual(REST);
     await expectReduced(page);
   });
 
@@ -1189,11 +1291,17 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await rate(1);
   });
 
-  test("M12 PERFORMANCE: every @keyframes moves only opacity / transform / translate / scale / rotate, and nothing carries will-change (splash, /second, menu, PDP, the spring, the bag)", async ({
+  test("M12 PERFORMANCE: every @keyframes moves only opacity / transform / translate / scale / rotate, and nothing carries will-change but the splash carousel's six layers while a finger holds them — the one exception, 2026-10-16 (splash, /second, menu, PDP, the spring, the bag)", async ({
     page,
   }) => {
     test.slow();
     await mockBackend(page, { menu: menuWithRecommendations() });
+    // A two-slide splash: the 1:2203 carousel, whose three cards and three veils the drag writes every move.
+    const slide = (name: string) => ({ url: `${MEDIA_ORIGIN}/${name}.png`, media_type: "image", iteration_time: "60", text: "", items: [] });
+    await page.route("**/api/cx/kiosk/getMedia", (route) =>
+      route.fulfill({ json: { media: [{ key: "home_screen", ...slide("a"), extra_images: [slide("b")] }] } })
+    );
+    await page.route(`${MEDIA_ORIGIN}/**`, (route) => route.fulfill({ body: PNG_1X1, contentType: "image/png" }));
     await registerToStart(page);
     const keyframes = await keyframeProperties(page);
     expect(Object.keys(keyframes), "the sweep reads the app's own CSS").toEqual(
@@ -1208,7 +1316,6 @@ test.describe("motion (contract §5.3, no-preference)", () => {
         "tb-select",
         "tb-shake",
         "tb-wiggle",
-        "tb-carousel-in",
         "tb-indeterminate",
         "tb-hourglass",
         "tb-card-tilt",
@@ -1220,11 +1327,20 @@ test.describe("motion (contract §5.3, no-preference)", () => {
       expect(moved.filter((prop) => !COMPOSITED.includes(prop)), `@keyframes ${name}`).toEqual([]);
     }
 
-    const screen = async (where: string) => {
-      expect(await willChange(page), `will-change on ${where}`).toEqual([]);
+    const screen = async (where: string, promoted: string[] = []) => {
+      const found = (await willChange(page)).map((line) => line.match(/^DIV\.(tb-splash-(?:card|veil))\b.*: (\w+)$/)?.slice(1).join(" ") ?? line);
+      expect(found, `will-change on ${where}`).toEqual(promoted);
       await animations(page); // §4 rule 1 on whatever is running here
     };
-    await screen("/start");
+    // The exception (needs the user's OK): promoted only while a finger holds the carousel — each card and its
+    // veil. At rest none is: a layer promoted as a 0.88 peek would keep that raster as the 1.10 centre (soft).
+    await screen("/start at rest");
+    await page.mouse.move(800, 900);
+    await page.mouse.down();
+    await page.mouse.move(700, 900, { steps: 4 }); // past the slop: a drag, never a tap
+    await screen("/start under a finger", Array.from({ length: 3 }, () => ["tb-splash-card transform", "tb-splash-veil opacity"]).flat());
+    await page.mouse.up(); // 11 % of a card: back to the slots, its click swallowed
+    await screen("/start after the release");
     await startToSecond(page);
     await screen("/second");
     await pickPipelineToMenu(page);
@@ -1534,5 +1650,239 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await voids.release();
     await expect(page.getByTestId("paytm-terminal-prompt")).toBeVisible({ timeout: 15_000 });
     expect(paytm.counts.edcInit, "the busy initiate + the retry").toBe(2);
+  });
+});
+
+/*
+  M18 SWIPE (2026-10-16; design language, sign-off) — the splash carousel under a real finger (CDP touches,
+  hasTouch; motion on). Direct manipulation, the ScrollIndicator carve-out: the press CATCHES the cards where
+  they are, the drag follows 1:1 past the 16 px slop with the focus a function of where each card sits, and
+  the release hands every card back to its slot's CSS — one transition per card FROM the finger's frame,
+  over a settle matched to the finger's speed (ViewPager's 4·d/v, 250–500 ms) on --tb-ease-out. Nothing
+  waits on a transition: a second flick 150 ms later steps again, a tap mid-settle starts the order, and no
+  swipe ever does. Pacing: one 60 Hz frame (16 ms) between moves, real time (the speed is read from the
+  events' own timestamps).
+*/
+test.describe("M18 SWIPE (2026-10-16, CDP touches, hasTouch)", () => {
+  test.use({ hasTouch: true });
+
+  const PITCH = 751;
+  const slide = (name: string) => ({ url: `${MEDIA_ORIGIN}/${name}.png`, media_type: "image", iteration_time: "600", text: "", items: [] });
+  /** Three images, the auto-advance far off: only a finger moves them. Centre a · prev c · next b. */
+  async function carousel(page: Page) {
+    await mockBackend(page);
+    await page.route("**/api/cx/kiosk/getMedia", (route) =>
+      route.fulfill({ json: { media: [{ key: "home_screen", ...slide("a"), extra_images: [slide("b"), slide("c")] }] } })
+    );
+    await page.route(`${MEDIA_ORIGIN}/**`, (route) => route.fulfill({ body: PNG_1X1, contentType: "image/png" }));
+    await registerToStart(page);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/a.png`);
+    return page.context().newCDPSession(page);
+  }
+  const centre = (page: Page) => page.getByTestId("start-screen").locator('.tb-splash-card[data-slot="0"] img');
+  const touch = (cdp: CDPSession, type: "touchStart" | "touchMove" | "touchEnd" | "touchCancel", x = 0, y = 900) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: type === "touchEnd" || type === "touchCancel" ? [] : [{ x, y, radiusX: 1, radiusY: 1 }],
+    });
+  /** A finger from `x0` to `x1` in `moves` moves 16 ms apart (it stays down). */
+  async function move(cdp: CDPSession, x0: number, x1: number, moves: number) {
+    for (let i = 1; i <= moves; i += 1) {
+      await sleep(16);
+      await touch(cdp, "touchMove", x0 + ((x1 - x0) * i) / moves);
+    }
+  }
+  /** A flick: 220 px left in 112 ms (≈ 2 px/ms), lifted at speed. */
+  async function flickLeft(cdp: CDPSession) {
+    await touch(cdp, "touchStart", 700);
+    await move(cdp, 700, 480, 7);
+    await touch(cdp, "touchEnd");
+  }
+  /** Each mover's slot, x (px) and scale off its computed matrix, its veil's opacity — and a test-side tag. */
+  const movers = (page: Page) =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".tb-splash-card"), (el) => {
+        const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+        return {
+          slot: Number(el.dataset.slot),
+          was: el.dataset.was ?? null,
+          x: m.e,
+          scale: m.a,
+          veil: Number(getComputedStyle(el.querySelector(".tb-splash-veil") ?? el).opacity),
+        };
+      })
+    );
+  /**
+   * The centre's x once the renderer has run the last move: a touch move is acked before its pointermove runs
+   * (rAF-aligned input), so a read right after the send can see the move before.
+   */
+  const centreAt = (page: Page, x: number) =>
+    expect.poll(async () => Math.round((await movers(page)).find((m) => m.slot === 0)?.x ?? NaN)).toBe(x);
+  /** The focus a card `o` px off its slot carries (splashSwipe.focusAt). */
+  const focusAt = (slot: number, o: number) => {
+    const u = Math.min(Math.abs(slot + o / PITCH), 1);
+    return { scale: 1.1 - 0.22 * u, veil: 0.45 * u };
+  };
+
+  test("M18 FOLLOW + RELEASE: nothing moves inside the slop; past it every card follows 1:1 (within 1 px) with its focus by position; the release starts each card's transition from the finger's frame — the entrant in formation, one pitch beyond the new peek — over 4·d/v clamped to 250–500 ms, on --tb-ease-out", async ({
+    page,
+  }) => {
+    test.slow();
+    const cdp = await carousel(page);
+    // The events the carousel reads (same objects, same timestamps): the expected settle is computed from them.
+    await page.evaluate(() => {
+      const log: [string, number, number][] = [];
+      Object.assign(window, { __swipe: log });
+      for (const type of ["pointerdown", "pointermove", "pointerup"])
+        addEventListener(type, (e) => log.push([e.type, e.timeStamp, (e as PointerEvent).clientX]), { capture: true, passive: true });
+    });
+
+    await touch(cdp, "touchStart", 800);
+    await sleep(16);
+    await touch(cdp, "touchMove", 790); // 10 px: inside the slop
+    await sleep(16);
+    await touch(cdp, "touchMove", 786); // 14 px
+    await page.waitForFunction(() =>
+      (window as unknown as { __swipe: [string][] }).__swipe.filter(([type]) => type === "pointermove").length >= 2
+    );
+    expect((await movers(page)).map((m) => Math.round(m.x)), "inside the slop nothing follows").toEqual([-PITCH, 0, PITCH]);
+    for (const dx of [-40, -100, -200]) {
+      await sleep(16);
+      await touch(cdp, "touchMove", 800 + dx);
+      const o = dx + 16; // re-based at the slop: no catch-up jump
+      await centreAt(page, o);
+      for (const m of await movers(page)) {
+        expect(Math.abs(m.x - (m.slot * PITCH + o)), `slot ${m.slot} at dx ${dx}`).toBeLessThanOrEqual(1);
+        expect(m.scale, `slot ${m.slot} scale at dx ${dx}`).toBeCloseTo(focusAt(m.slot, o).scale, 2);
+        expect(m.veil, `slot ${m.slot} veil at dx ${dx}`).toBeCloseTo(focusAt(m.slot, o).veil, 2);
+      }
+    }
+    // A quick last stretch (≈ 3.75 px/ms), then the lift at speed.
+    await move(cdp, 600, 360, 4);
+    await centreAt(page, -440 + 16);
+    await page.evaluate(() =>
+      document.querySelectorAll<HTMLElement>(".tb-splash-card").forEach((el) => el.setAttribute("data-was", el.dataset.slot ?? ""))
+    );
+    const frame = await movers(page);
+    const rate = await slowMotion(page);
+    await rate(0.1); // the settle runs 10× slower: read while it runs
+    await touch(cdp, "touchEnd");
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/b.png`);
+    const settles = await carouselMotion(page);
+    const tracks = await page.evaluate(() =>
+      Array.from(document.getAnimations(), (a) => {
+        const target = (a.effect as KeyframeEffect | null)?.target as HTMLElement | null;
+        const from = (a.effect as KeyframeEffect | null)?.getKeyframes()[0];
+        return a instanceof CSSTransition && a.transitionProperty === "transform" && target
+          ? { was: target.dataset.was ?? "entrant", from: new DOMMatrixReadOnly(String(from?.transform)) }
+          : null;
+      })
+        .filter((t) => t !== null)
+        .map(({ was, from }) => ({ was, x: from.e, scale: from.a }))
+    );
+    const settle = await page.getByTestId("start-screen").locator(".tb-splash-track").evaluate((el) => el.style.getPropertyValue("--tb-settle"));
+    const log = await page.evaluate(() => (window as unknown as { __swipe: [string, number, number][] }).__swipe);
+    await rate(1);
+
+    // From the finger's frame: the two cards that stay start exactly where the finger left them.
+    for (const was of ["0", "1"]) {
+      const at = frame.find((m) => String(m.slot) === was);
+      const from = tracks.find((t) => t.was === was);
+      expect(from, `the card that was slot ${was} transitions`).toBeTruthy();
+      expect(Math.abs((from?.x ?? NaN) - (at?.x ?? NaN)), `slot ${was}: from-x = release x`).toBeLessThanOrEqual(1);
+      expect(Math.abs((from?.scale ?? NaN) - (at?.scale ?? NaN)), `slot ${was}: from-scale = release scale`).toBeLessThanOrEqual(0.002);
+    }
+    // The entrant (@starting-style from the track's --tb-enter): in formation, one pitch beyond the new peek.
+    const o = frame.find((m) => m.slot === 0)?.x ?? NaN;
+    const entrant = tracks.find((t) => t.was === "entrant");
+    expect(Math.abs((entrant?.x ?? NaN) - (2 * PITCH + o)), "the entrant: from-x = 2 pitches + the release offset").toBeLessThanOrEqual(1);
+    expect(entrant?.scale, "the entrant: at the side scale").toBeCloseTo(0.88, 3);
+    // The speed match: the app's own rule replayed on the events it read.
+    const [, tUp, xUp] = log.findLast(([type]) => type === "pointerup") ?? [];
+    const down = log.findLastIndex(([type]) => type === "pointerdown");
+    const oldest = log.slice(down).find(([type, t]) => type !== "pointerup" && Number(tUp) - t <= 100);
+    const v = oldest && Number(tUp) > oldest[1] ? (Number(xUp) - oldest[2]) / (Number(tUp) - oldest[1]) : 0;
+    const p = -(frame.find((m) => m.slot === 0)?.x ?? NaN) / PITCH;
+    const expected = Math.min(500, Math.max(250, Math.round((4 * (1 - p) * PITCH) / Math.max(Math.abs(v), 0.01))));
+    expect(settle, "the track's --tb-settle").toBe(`${expected}ms`);
+    const transforms = settles.filter((m) => m.prop === "transform");
+    expect(transforms).toHaveLength(3);
+    for (const m of settles) {
+      expect([m.duration, m.easing], `${m.prop} from ${m.from}`).toEqual([expected, "cubic-bezier(0.2, 0.8, 0.2, 1)"]);
+    }
+    await expect(page.getByTestId("second-screen")).toHaveCount(0);
+  });
+
+  test("M18 SNAP-BACK + STILL RELEASE: a 20 % drag lifted still goes back in --tb-dur-snap (300 ms); a 60 % one lifted still steps in 500 ms (a stopped finger reads 0 px/ms)", async ({
+    page,
+  }) => {
+    const cdp = await carousel(page);
+    const rate = await slowMotion(page);
+    const track = page.getByTestId("start-screen").locator(".tb-splash-track");
+
+    await touch(cdp, "touchStart", 800);
+    await move(cdp, 800, 634, 10); // 166 px: 150 past the slop, 20 % of a card
+    await sleep(150); // the finger stops
+    await rate(0.1);
+    await touch(cdp, "touchEnd");
+    const back = await carouselMotion(page);
+    await rate(1);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/a.png`);
+    expect(await track.evaluate((el) => el.style.getPropertyValue("--tb-settle"))).toBe("var(--tb-dur-snap)");
+    expect(back.filter((m) => m.prop === "transform").map((m) => m.duration)).toEqual([300, 300, 300]);
+
+    await expect.poll(() => carouselMotion(page)).toEqual([]);
+    await touch(cdp, "touchStart", 900);
+    await move(cdp, 900, 435, 20); // 465 px: 60 %
+    await sleep(150);
+    await touch(cdp, "touchEnd");
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/b.png`);
+    expect(await track.evaluate((el) => el.style.getPropertyValue("--tb-settle"))).toBe("500ms");
+    await expect(page.getByTestId("second-screen")).toHaveCount(0);
+  });
+
+  test("M18 CATCH: a finger on the cards mid-settle stops them where they are — two reads 100 ms apart are equal — and lets go without a tap", async ({
+    page,
+  }) => {
+    const cdp = await carousel(page);
+    const rate = await slowMotion(page);
+    await rate(0.1); // a 2.5–5 s settle: the finger surely lands mid-flight
+    await flickLeft(cdp);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/b.png`);
+    await sleep(150);
+    await touch(cdp, "touchStart", 540);
+    const first = await movers(page);
+    await sleep(100);
+    const second = await movers(page);
+    expect(Math.abs(first.find((m) => m.slot === 0)?.x ?? 0), "caught mid-flight").toBeGreaterThan(20);
+    expect(second, "frozen under the finger").toEqual(first);
+    await touch(cdp, "touchCancel");
+    await rate(1);
+    await expect.poll(() => movers(page).then((list) => list.map((m) => Math.round(m.x)))).toEqual([-PITCH, 0, PITCH]);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/b.png`);
+    await expect(page.getByTestId("second-screen")).toHaveCount(0);
+  });
+
+  test("M18 CHAINED + TAP MID-SETTLE: a second flick 150 ms after the first steps again; a swipe never orders; a tap while the cards still settle starts the order", async ({
+    page,
+  }) => {
+    const cdp = await carousel(page);
+    await flickLeft(cdp);
+    await sleep(150);
+    await flickLeft(cdp);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/c.png`);
+    await expect(page).toHaveURL(/\/start$/);
+    await expect(page.getByTestId("second-screen")).toHaveCount(0);
+
+    // From rest (a flick that catches a young settle only completes it — target(): the nearest card its way).
+    await expect.poll(() => carouselMotion(page)).toEqual([]);
+    const rate = await slowMotion(page);
+    await rate(0.1); // the next settle runs 10× slower: the tap surely lands in it
+    await flickLeft(cdp);
+    await expect(centre(page)).toHaveAttribute("src", `${MEDIA_ORIGIN}/a.png`);
+    expect(await carouselMotion(page), "still settling").not.toEqual([]);
+    await page.touchscreen.tap(540, 960);
+    await expect(page.getByTestId("second-screen")).toBeVisible();
+    await rate(1);
   });
 });

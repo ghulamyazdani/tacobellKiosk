@@ -190,7 +190,7 @@
 /* Opacity-only fade — position-neutral, so it is safe on any positioned /
  * translated box: FullscreenGate, NetworkStatus and .tb-reveal-late (the
  * full-screen status overlays). (The splash carousel it was written for
- * shifts on tb-carousel-in since lane motion.) */
+ * moves by .tb-splash-card transitions since 2026-10-16.) */
 @keyframes tb-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -260,6 +260,7 @@
   --tb-stagger: 40ms;
   --tb-dur-shake: 300ms;
   --tb-dur-carousel: 500ms;
+  --tb-dur-snap: 300ms; /* a release that stays: the splash cards back to their slots */
   --tb-dur-spring: 958ms; /* Figma 1:5502 → 1:5521 */
   --tb-dur-indeterminate: 1200ms;
   --tb-dur-card-tilt: 3120ms; /* Figma 1:5603 GIF loop */
@@ -278,7 +279,13 @@
   --tb-dist-sheet: 80px;
   --tb-dist-shake: 6px;
   --tb-dist-nudge: 12px;
-  --tb-carousel-step: 792px; /* SplashMedia card pitch 992 − 200 */
+  /* The splash carousel's focus (user request 2026-10-16; design language):
+   * the centre card at 1.10, the peeks at 0.88 under a 45 % veil, still 88 px
+   * wide — 540 + pitch − 340 × 0.88 = 992. Mirrored by splashSwipe.ts. */
+  --tb-splash-pitch: 751px;
+  --tb-splash-focus: 1.1;
+  --tb-splash-side: 0.88;
+  --tb-splash-veil: 0.45;
   --tb-press-scale: 0.97;
   --tb-select-from: 0.94;
   --tb-pop-from: 0.6;
@@ -427,8 +434,51 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
     animation: tb-wiggle 500ms ease-in-out var(--tb-dur-modal);
   }
 
-  .tb-carousel-in {
-    animation: tb-carousel-in var(--tb-dur-carousel) var(--tb-ease-out) backwards;
+  /* The splash carousel (SplashMedia; user request 2026-10-16). The slot is
+   * a transform and the focus a function of it: the centre card at
+   * --tb-splash-focus, a peek at --tb-splash-side under its veil. A step
+   * re-slots the movers, which TRANSITION there from wherever they are —
+   * mid-drag (the release starts from the finger's frame), mid-settle (a
+   * chained flick) or at rest (the auto-advance) — over the track's
+   * --tb-settle (a release: speed-matched 250–500 ms, the snap-back
+   * --tb-dur-snap, a failure or the retry 0 s) or --tb-dur-carousel. A finger
+   * owns the transform inline (transition none) only while it holds a card;
+   * nothing waits on a transition. Under reduce they land at once (the
+   * global block). */
+  .tb-splash-card {
+    transform: translateX(0px) scale(var(--tb-splash-focus));
+    transition: transform var(--tb-settle, var(--tb-dur-carousel)) var(--tb-ease-out);
+  }
+  .tb-splash-card[data-slot="-1"] {
+    transform: translateX(calc(var(--tb-splash-pitch) * -1)) scale(var(--tb-splash-side));
+  }
+  .tb-splash-card[data-slot="1"] {
+    transform: translateX(var(--tb-splash-pitch)) scale(var(--tb-splash-side));
+  }
+  .tb-splash-veil {
+    opacity: var(--tb-splash-veil);
+    transition: opacity var(--tb-settle, var(--tb-dur-carousel)) var(--tb-ease-out);
+  }
+  .tb-splash-card[data-slot="0"] .tb-splash-veil {
+    opacity: 0;
+  }
+  /* One slide: the Figma 680 × 1043 card alone (no neighbours to focus against). */
+  .tb-splash-card.tb-splash-single {
+    transform: none;
+  }
+  /* EXCEPTION to "no will-change" (needs the user's OK; motion contract): the
+   * drag writes the six layers every move, and unpromoted each move repaints
+   * the whole stage (lab, 6x CPU, --disable-gpu: 20 full repaints per 20
+   * moves; promoted 0). Promoted ONLY while a finger is down (data-held): a
+   * will-change layer keeps the raster scale it was promoted at, so a 0.88
+   * peek promoted at rest went on to rest as the 1.10 centre, upscaled and
+   * soft (review 2026-10-16); at rest each card is rastered at its own
+   * scale. Cost: ~7.5 Mpx rastered once per touch-down. */
+  .tb-splash-carousel[data-held] > .tb-splash-card {
+    will-change: transform;
+  }
+  .tb-splash-carousel[data-held] .tb-splash-veil {
+    will-change: opacity;
   }
   /* A full-screen STATUS overlay (motion-v2 MV4: PleaseWait, the menu fetch)
    * stays invisible for its first 300 ms, so a fast wait never flashes a
@@ -508,11 +558,21 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
   50% { transform: rotate(6deg); }
   75% { transform: rotate(-3deg); }
 }
-@keyframes tb-carousel-in {
-  from { transform: translateX(var(--tb-carousel-step)); }
-}
 @keyframes tb-nudge {
   50% { transform: translate(var(--tb-dist-nudge), var(--tb-dist-nudge)); }
+}
+/* The splash card a step brings in enters from one pitch further out, on the
+ * side it steps from — after a release, in formation with where the finger
+ * left the row (the track's --tb-enter, kept off stage) — its first style
+ * only, so the first frame of a visit (no data-dir) is still, and under
+ * reduce no transition runs — nothing paints. */
+@starting-style {
+  .tb-splash-track[data-dir="1"] > .tb-splash-card[data-slot="1"] {
+    transform: translateX(var(--tb-enter, calc(var(--tb-splash-pitch) * 2))) scale(var(--tb-splash-side));
+  }
+  .tb-splash-track[data-dir="-1"] > .tb-splash-card[data-slot="-1"] {
+    transform: translateX(var(--tb-enter, calc(var(--tb-splash-pitch) * -2))) scale(var(--tb-splash-side));
+  }
 }
 @keyframes tb-countdown-fill {
   from { transform: translateX(var(--tb-countdown-from)); }
@@ -567,7 +627,6 @@ button.bg-tb-surface:is(:active, [data-pressed]):not(:disabled, [aria-disabled="
     --tb-press-scale: 1;
     --tb-spring-from: 1;
     --tb-select-from: 1;
-    --tb-carousel-step: 0px;
     --tb-dist-page: 0px;
     --tb-dist-rise: 0px;
     --tb-dist-sheet: 0px;

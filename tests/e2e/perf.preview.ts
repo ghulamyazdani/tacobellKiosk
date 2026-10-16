@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
   CAESAR_DRESSING,
@@ -20,7 +21,7 @@ import {
 import { mockCheckoutBackend, type CheckoutMockOptions } from "./fixtures/checkout";
 import { LOYALTY_PHONE, LOYALTY_SETTINGS, mockXenoLoyalty } from "./fixtures/loyalty";
 import { PAYTM_DQR_ENTITY, mockPaytmBackend, statusSequence } from "./fixtures/paytm";
-import { expect, test, type Page } from "./fixtures/kiosk";
+import { expect, test, type CDPSession, type Page } from "./fixtures/kiosk";
 import {
   LOW_END_ARGS,
   PERF_LABEL,
@@ -28,6 +29,7 @@ import {
   flipOf,
   idle,
   load,
+  measure,
   memory,
   reportPath,
   scenario,
@@ -451,6 +453,300 @@ test("ENTRY: the cold load, the licence, the splash at idle, the warm reload, sp
     "menu · VEG / NON-VEG chips",
     "the app hides them (user 2026-10-14: MenuFilterChips not enabled in pages/Menu; vegFilter.spec's FILTER test is skipped too)",
   );
+});
+
+/* ---- The splash carousel: focus + swipe (2026-10-16) ---- */
+
+/**
+ * Three photos (`dwell` s each) — with `video`, the WebM between the second and the third (the 1 s fixture
+ * played 3×, as in the attract loop): the auto-advance meets image → image, image → video and video → image.
+ * Every photo is the 618×1099 JPEG, each URL its own decode.
+ */
+function carouselMedia(dwell: string, video = false) {
+  const slide = (name: string, media_type = "image", iteration_time = dwell) => ({ url: `${MEDIA_ORIGIN}/${name}`, media_type, iteration_time, text: "", items: [] });
+  return {
+    media: [
+      { key: "home_screen", ...slide("s1.jpg"), extra_images: [slide("s2.jpg"), ...(video ? [slide("promo.webm", "webm", "3")] : []), slide("s3.jpg")] },
+    ],
+  };
+}
+/** The centre card (the base of a before/after run swaps in its own selector). */
+const CENTRE = '.tb-splash-card[data-slot="0"]';
+/** The centre slide's file name (DOM only: no layout read). */
+const centreOf = (page: Page) =>
+  page.evaluate((sel) => document.querySelector(`${sel} img, ${sel} video`)?.getAttribute("src")?.split("/").pop() ?? null, CENTRE);
+/** In-page: resolves to the centre slide once it is no longer `from` — a 50 ms timer, DOM only (never rAF). */
+const centreLeaves = (page: Page, from: string | null) =>
+  page.evaluate(
+    ([sel, was]) =>
+      new Promise<string | null>((resolve) => {
+        const check = () => {
+          const now = document.querySelector(`${sel} img, ${sel} video`)?.getAttribute("src")?.split("/").pop() ?? null;
+          if (now !== was) resolve(now);
+          else setTimeout(check, 50);
+        };
+        check();
+      }),
+    [CENTRE, from] as const,
+  );
+/** Every carousel image decoded. */
+const carouselLoaded = (page: Page) =>
+  slow
+    .poll(() =>
+      page.evaluate((origin) => {
+        const images = Array.from(document.querySelectorAll<HTMLImageElement>(`[data-testid="start-screen"] img[src^="${origin}"]`));
+        return images.length >= 2 && images.every((img) => img.complete && img.naturalWidth > 0);
+      }, MEDIA_ORIGIN),
+    )
+    .toBe(true);
+
+interface Pt {
+  x: number;
+  y: number;
+  t: number;
+}
+const line = (x0: number, x1: number, ms: number, moves: number, y = 900): Pt[] =>
+  Array.from({ length: moves + 1 }, (_, i) => ({ x: Math.round(x0 + ((x1 - x0) * i) / moves), y, t: Math.round((ms * i) / moves) }));
+/** The budget's slow drag: 450 px left over 1.2 s, 40 moves. */
+const SLOW_LEFT = line(840, 390, 1_200, 40);
+/** 20 % of a card (150 px past the 16 px slop) over 0.6 s. */
+const SNAP_LEFT = line(700, 534, 600, 20);
+/** A flick: 220 px in 112 ms (≈ 2 px/ms). */
+const FLICK_LEFT = line(700, 480, 112, 7);
+
+/**
+ * One finger along `path` in real time — the sends are pipelined, never awaited one by one (a finger does not
+ * wait for the renderer's ack) — then lifted `hold` ms after the last point, or kept down (null).
+ */
+async function drive(cdp: CDPSession, path: Pt[], hold: number | null) {
+  const t0 = Date.now();
+  const at = (t: number) => sleep(Math.max(0, t0 + t - Date.now()));
+  const finger = ({ x, y }: Pt) => [{ x, y, radiusX: 1, radiusY: 1 }];
+  const sends: Promise<unknown>[] = [cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: finger(path[0]) })];
+  for (const p of path.slice(1)) {
+    await at(p.t);
+    sends.push(cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: finger(p) }));
+  }
+  if (hold !== null) {
+    await at((path.at(-1)?.t ?? 0) + hold);
+    sends.push(cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }));
+  }
+  await Promise.all(sends);
+}
+
+/** A finger held along `path` (frames sampled): per move = (script + style + layout) / moves, the press's catch included. */
+async function heldDrag(perf: Perf, label: string, path: Pt[]): Promise<Sample> {
+  const sample = await measure(perf, label, () => drive(perf.cdp, path, null), { frames: true });
+  const moves = path.length - 1;
+  const { ScriptDuration, RecalcStyleDuration, LayoutDuration } = sample.cdp;
+  return { ...sample, detail: { moves, perMoveMs: Math.round(((ScriptDuration + RecalcStyleDuration + LayoutDuration) / moves) * 100) / 100 } };
+}
+
+/**
+ * The held finger lifts (frames sampled; the window runs past the longest settle). `commitMs`: its pointerup →
+ * the release's commit (the track drops data-held) — the step or the snap-back is decided by then.
+ */
+async function releaseDrag(perf: Perf, label: string): Promise<Sample> {
+  const { page, cdp } = perf;
+  const from = await centreOf(page);
+  const sample = await measure(
+    perf,
+    label,
+    async () => {
+      await page.evaluate(() => {
+        const probe = { up: 0, commit: 0 };
+        Object.assign(window, { __release: probe });
+        addEventListener("pointerup", (e) => (probe.up = e.timeStamp), { once: true, capture: true, passive: true });
+        const track = document.querySelector(".tb-splash-track");
+        if (!track) return;
+        const watch = new MutationObserver(() => {
+          if (!probe.up || track.hasAttribute("data-held")) return;
+          probe.commit = performance.now();
+          watch.disconnect();
+        });
+        watch.observe(track, { attributes: true, attributeFilter: ["data-held"] });
+      });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await sleep(700); // past the longest settle (500 ms)
+    },
+    { frames: true },
+  );
+  const probe = await page.evaluate(() => (window as unknown as { __release: { up: number; commit: number } }).__release);
+  const commitMs = probe.up && probe.commit ? Math.round((probe.commit - probe.up) * 10) / 10 : null;
+  return { ...sample, detail: { from, to: await centreOf(page), commitMs } };
+}
+
+interface Layer {
+  layerId: string;
+  backendNodeId?: number;
+  paintCount: number;
+  width: number;
+  height: number;
+  drawsContent: boolean;
+}
+/**
+ * LayerTree across a HELD drag (the lab's diag): the compositing layers at rest, then each one's repaints
+ * while 20 moves (300 px) drag the cards — promoted, a move re-rasters nothing.
+ */
+async function layersOfAHeldDrag(perf: Perf) {
+  const { cdp, page } = perf;
+  await cdp.send("DOM.getDocument", { depth: -1 });
+  await cdp.send("LayerTree.enable");
+  let layers: Layer[] = [];
+  const onTree = (e: { layers?: Layer[] }) => {
+    if (e.layers) layers = e.layers;
+  };
+  cdp.on("LayerTree.layerTreeDidChange", onTree);
+  const describe = async () => {
+    const rows = [];
+    for (const l of layers) {
+      let who = "#root";
+      if (l.backendNodeId) {
+        try {
+          const { node } = await cdp.send("DOM.describeNode", { backendNodeId: l.backendNodeId });
+          const attrs = node.attributes ?? [];
+          const cls = attrs[attrs.indexOf("class") + 1] ?? "";
+          const mark = cls.split(" ").find((c) => c.startsWith("tb-splash-")) ?? cls.split(" ")[0] ?? "";
+          who = `${node.nodeName.toLowerCase()}${mark ? `.${mark}` : ""}`;
+        } catch {
+          who = "?";
+        }
+      }
+      rows.push({ id: l.layerId, who, size: `${Math.round(l.width)}x${Math.round(l.height)}`, draws: l.drawsContent, paints: l.paintCount });
+    }
+    return rows;
+  };
+  try {
+    // A still page sends no layer tree: a 1 px layer of the test's own, added and removed, makes two (the
+    // second is the carousel at rest).
+    await page.evaluate(() => {
+      const nudge = document.createElement("div");
+      nudge.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;will-change:transform";
+      document.body.append(nudge);
+      requestAnimationFrame(() => requestAnimationFrame(() => nudge.remove()));
+    });
+    await sleep(800);
+    const atRest = await describe();
+    await drive(cdp, line(840, 820, 100, 2), null); // the finger lands and engages
+    await sleep(600);
+    const held = await describe();
+    await drive(cdp, line(820, 520, 600, 20), null); // 20 moves, 300 px, still held
+    await sleep(600);
+    const dragged = await describe();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await sleep(700);
+    const drawing = atRest.filter((l) => l.draws && l.size !== "0x0");
+    const repaints = dragged.map((a) => ({
+      ...a,
+      paintsAtDown: (held.find((b) => b.id === a.id)?.paints ?? 0) - (atRest.find((b) => b.id === a.id)?.paints ?? 0),
+      repaintsDuringDrag: a.paints - (held.find((b) => b.id === a.id)?.paints ?? 0),
+    }));
+    return {
+      layersAtRest: atRest.length,
+      drawingLayersAtRest: drawing.length,
+      drawingMpxAtRest: Math.round(drawing.reduce((sum, l) => sum + Number(l.size.split("x")[0]) * Number(l.size.split("x")[1]), 0) / 1e4) / 100,
+      atRest,
+      cardOrVeilRepaintsDuringDrag: repaints.filter((l) => /tb-splash-(card|veil)/.test(l.who)).reduce((sum, l) => sum + l.repaintsDuringDrag, 0),
+      repaintsDuringDrag: repaints.reduce((sum, l) => sum + l.repaintsDuringDrag, 0),
+      layersDuringDrag: repaints,
+    };
+  } finally {
+    cdp.off("LayerTree.layerTreeDidChange", onTree);
+    await cdp.send("LayerTree.disable");
+  }
+}
+
+/** /second → back to the splash, its carousel loaded (unmeasured). */
+async function backToSplash(page: Page) {
+  await page.getByTestId("footer-cancel").click();
+  await slow(page.getByTestId("start-screen")).toBeVisible();
+  await carouselLoaded(page);
+}
+
+test("SPLASH SWIPE: the carousel's focus + swipe (2026-10-16) — a slow drag and its release, a 20 % drag snapping back, two flicks 150 ms apart, a tap at rest and one mid-settle, the layers of a held drag", async ({
+  page,
+}) => {
+  test.setTimeout(10 * 60_000);
+  await mockKiosk(page);
+  await page.route(GET_MEDIA, (route) => route.fulfill({ json: carouselMedia("600") }));
+  const perf = await startPerf(page);
+  await registerToStart(page, 60_000);
+  await carouselLoaded(page);
+  const { cdp } = perf;
+
+  await scenario(perf, "splash · drag + release", async (s) => {
+    for (let i = 0; i < 3; i += 1) {
+      s.push(await heldDrag(perf, "slow drag ← (450 px, 1.2 s) · held", SLOW_LEFT));
+      s.push(await releaseDrag(perf, "slow drag ← · release"));
+    }
+  });
+  await scenario(perf, "splash · drag 20 % → snap back", async (s) => {
+    for (let i = 0; i < 3; i += 1) {
+      s.push(await heldDrag(perf, "drag ← 20 % · held", SNAP_LEFT));
+      s.push(await releaseDrag(perf, "drag ← 20 % · release"));
+    }
+  });
+  await scenario(perf, "splash · flick ×2 (150 ms)", async (s) => {
+    for (let i = 0; i < 3; i += 1) {
+      const from = await centreOf(page);
+      const sample = await measure(
+        perf,
+        "flick ← ×2, 150 ms apart",
+        async () => {
+          await drive(cdp, FLICK_LEFT, 0);
+          await sleep(150);
+          await drive(cdp, FLICK_LEFT, 0);
+          await sleep(700);
+        },
+        { frames: true },
+      );
+      s.push({ ...sample, detail: { from, to: await centreOf(page) } });
+    }
+  });
+  await scenario(perf, "splash · tap → /second (at rest, mid-settle)", async (s) => {
+    for (let i = 0; i < 3; i += 1) {
+      s.push(await tap(perf, "tap at rest", page.getByTestId("start-screen"), { until: tid("second-screen") }));
+      await backToSplash(page);
+      await drive(cdp, FLICK_LEFT, 0); // unmeasured: the cards settle for up to 500 ms…
+      s.push(await tap(perf, "tap mid-settle", page.getByTestId("start-screen"), { until: tid("second-screen") }, { settle: false }));
+      await backToSplash(page);
+    }
+  });
+  await scenario(perf, "splash · layers (held drag)", () => layersOfAHeldDrag(perf));
+});
+
+test("SPLASH AUTO-ADVANCE: the carousel's own step (2026-10-16) — image → image, image → video, video → image, ×3", async ({ page }) => {
+  test.setTimeout(10 * 60_000);
+  await mockKiosk(page);
+  await page.route(GET_MEDIA, (route) => route.fulfill({ json: carouselMedia("3", true) }));
+  const perf = await startPerf(page);
+  await registerToStart(page, 60_000);
+  await carouselLoaded(page);
+
+  await scenario(perf, "splash · auto-advance", async (s) => {
+    // The cycle s1 → s2 → promo → s3 → s1; each window opens ~0.7 s before its step is due (3 s after the
+    // last step: a photo's dwell, the video's three plays) and closes past the step's 500 ms.
+    const KIND: Record<string, string> = { "s1.jpg": "image", "s2.jpg": "image", "promo.webm": "video", "s3.jpg": "image" };
+    // The first dwell's start is unknown: step once, unmeasured.
+    let from = await centreLeaves(page, await centreOf(page));
+    let since = Date.now();
+    for (let i = 0; i < 12; i += 1) {
+      await sleep(Math.max(0, since + 3_000 - 1_000 - Date.now()));
+      const was = from;
+      const sample = await measure(
+        perf,
+        "?",
+        async () => {
+          from = await centreLeaves(page, was);
+          since = Date.now();
+          await sleep(700);
+        },
+        { frames: true },
+      );
+      const label = `auto ${KIND[was ?? ""] ?? was} → ${KIND[from ?? ""] ?? from}${was === "s3.jpg" ? " (wrap)" : ""}`;
+      s.push({ ...sample, label, detail: { from: was, to: from } });
+    }
+  });
 });
 
 test("LONG MENU: the walk menu at 40 rail rows and 240 cards — order type → menu, the grid and rail flings, a rail tap across the menu, the ADA view", async ({

@@ -111,6 +111,48 @@ describe("StartScreen — the splash (P9d)", () => {
     expect(screen.getByText("second-screen")).toBeInTheDocument();
   });
 
+  // The swipe (2026-10-16): a drag past the slop is never a tap — a touch's click Chromium drops, a
+  // mouse's the carousel swallows —, the next press is a tap again, and Enter targets the button
+  // itself (never the gesture layer), so a drag never swallows it.
+  describe("a drag across the carousel", () => {
+    const layerOf = (button: HTMLElement) => button.querySelector(".tb-splash-track")?.parentElement as HTMLElement;
+    const at = (clientX: number) => ({ pointerId: 1, isPrimary: true, pointerType: "mouse", button: 0, clientX, clientY: 900 });
+    const dragAcross = (layer: HTMLElement) => {
+      fireEvent.pointerDown(layer, at(800));
+      fireEvent.pointerMove(layer, at(600));
+      fireEvent.pointerMove(layer, at(400));
+      fireEvent.pointerUp(layer, at(400));
+      fireEvent.click(layer); // a mouse's click after the drag
+    };
+
+    it("never navigates; the next tap does", () => {
+      seedMedia(TWO);
+      renderStart();
+      const button = screen.getByTestId("start-screen");
+      dragAcross(layerOf(button));
+      expect(screen.queryByText("second-screen")).not.toBeInTheDocument();
+      expect(screen.getByTestId("start-screen")).toBe(button);
+
+      fireEvent.pointerDown(layerOf(button), at(540));
+      fireEvent.pointerUp(layerOf(button), at(540));
+      fireEvent.click(layerOf(button));
+      expect(screen.getByText("second-screen")).toBeInTheDocument();
+    });
+
+    it("never swallows Enter on the button, right after it", async () => {
+      seedMedia(TWO);
+      renderStart();
+      const button = screen.getByTestId("start-screen");
+      fireEvent.pointerDown(layerOf(button), at(800));
+      fireEvent.pointerMove(layerOf(button), at(400));
+      fireEvent.pointerUp(layerOf(button), at(400)); // no click yet: the swallow is still armed
+
+      button.focus();
+      await userEvent.keyboard("{Enter}");
+      expect(screen.getByText("second-screen")).toBeInTheDocument();
+    });
+  });
+
   it("the backend's start_order_text_primary names the button on every layout — trimmed, never the secondary", () => {
     store.dispatch(
       setKioskSettings({ start_order_text_primary: "  Tap to order  ", start_order_text_secondary: "ابدأ الطلب" })

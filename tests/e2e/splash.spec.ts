@@ -1,6 +1,8 @@
-import { test, expect, PNG_1X1 as PNG, type Page, type Request } from "./fixtures/kiosk";
+import { test, expect, PNG_1X1 as PNG, type CDPSession, type Page, type Request } from "./fixtures/kiosk";
 import { readFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { axeSweep, targetProblems } from "./fixtures/a11y";
 import { locale, mockKioskBackend } from "./fixtures/backend";
 import { registerToStart } from "./pages/boot";
 
@@ -136,8 +138,11 @@ async function expectSingleCard(page: Page, selector: string) {
 }
 
 /**
- * The carousel's slide images keyed by their x on the stage — Figma 1:2203
- * puts the cards at prev −592 · centre 200 · next 992.
+ * The carousel's slide images keyed by their x on the stage. Figma 1:2203's
+ * 680 × 1043 card box, in focus since 2026-10-16: the centre at 1.10 (748 px
+ * wide from x 166), the peeks at 0.88 (598 px) one 751 px pitch out, still
+ * showing 88 px — prev −510 · centre 166 · next 992. Image rects include the
+ * scale; this suite runs under reduced motion, so they are static.
  */
 function cards(page: Page): Promise<Record<string, string | null>> {
   return splashOf(page).evaluate((stage, origin) => {
@@ -180,8 +185,8 @@ async function expectOneLine(page: Page, line: string) {
 
 /** Two slides: both peeks show the other one. */
 const showing = (centre: string, peek: string) => ({
-  "-592": peek,
-  "200": centre,
+  "-510": peek,
+  "166": centre,
   "992": peek,
 });
 
@@ -515,5 +520,121 @@ test.describe("P9d splash media", () => {
     await expect(splashOf(page)).not.toContainText("ابدأ الطلب");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await tapToSecond(page);
+  });
+});
+
+/**
+ * THE SWIPE (user request 2026-10-16; design language, sign-off). The
+ * carousel follows a finger past a 16 px slop and steps one card at 30 % of
+ * a card or on a flick. A drag is never a tap — Chromium sends a touch no
+ * click past its 15 DIP slop, and the carousel swallows a mouse's — while a
+ * press that stays inside the slop is one: it starts the order. Real input:
+ * CDP touches (hasTouch) one 60 Hz frame (16 ms) apart, and the mouse. This
+ * file runs under reduced motion, so every step lands at once (the cards
+ * follow by translate only); motion.spec M18 drives the real motion.
+ */
+test.describe("THE SWIPE (2026-10-16)", () => {
+  test.use({ hasTouch: true });
+
+  const SLIDE_C = `${MEDIA_ORIGIN}/slide-c.png`;
+  const PEEKING = (prev: string, centre: string, next: string) => ({ "-510": prev, "166": centre, "992": next });
+
+  /** Three images on long dwells: only a gesture moves them. */
+  async function carouselOfThree(page: Page) {
+    await mockBootEndpoints(page);
+    await mockMedia(
+      page,
+      homeScreen(
+        image(SLIDE_A, { iteration_time: "600" }),
+        image(SLIDE_B, { iteration_time: "600" }),
+        image(SLIDE_C, { iteration_time: "600" })
+      )
+    );
+    await serveMediaHost(page);
+    await registerToStart(page);
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_C, SLIDE_A, SLIDE_B));
+  }
+
+  const finger = (x: number, y: number) => [{ x, y, radiusX: 1, radiusY: 1 }];
+  /** One finger from (x, y) by (dx, dy) in `moves` moves a 60 Hz frame apart, then lifted. */
+  async function swipe(cdp: CDPSession, x: number, y: number, dx: number, dy = 0, moves = 10) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: finger(x, y) });
+    for (let i = 1; i <= moves; i += 1) {
+      await sleep(16);
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: finger(x + (dx * i) / moves, y + (dy * i) / moves),
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  }
+
+  /** Still on the splash: no order started. */
+  async function noOrder(page: Page) {
+    await expect(page).toHaveURL(/\/start$/);
+    await expect(page.getByTestId("second-screen")).toHaveCount(0);
+    await expect(splashOf(page)).toBeVisible();
+  }
+
+  test("TOUCH: a swipe left steps to the next slide and a swipe right back, wrapping — never an order; a still tap then starts it", async ({
+    page,
+  }) => {
+    await carouselOfThree(page);
+    const cdp = await page.context().newCDPSession(page);
+
+    await swipe(cdp, 800, 900, -300);
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_A, SLIDE_B, SLIDE_C));
+    await noOrder(page);
+
+    await swipe(cdp, 300, 900, 300);
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_C, SLIDE_A, SLIDE_B));
+    await swipe(cdp, 300, 900, 300);
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_B, SLIDE_C, SLIDE_A));
+    await noOrder(page);
+
+    await page.touchscreen.tap(540, 960);
+    await expect(page.getByTestId("second-screen")).toBeVisible();
+  });
+
+  test("TOUCH: a 14 px wobble is still a tap — it starts the order and moves no card", async ({ page }) => {
+    await carouselOfThree(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: finger(540, 960) });
+    for (const [x, y] of [[546, 963], [550, 970], [547, 966]]) {
+      await sleep(16);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: finger(x, y) });
+    }
+    expect(await cards(page), "inside the slop nothing follows").toEqual(PEEKING(SLIDE_C, SLIDE_A, SLIDE_B));
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(page.getByTestId("second-screen")).toBeVisible();
+  });
+
+  test("MOUSE: a drag steps the carousel and never orders (its click is swallowed); the next click does", async ({
+    page,
+  }) => {
+    await carouselOfThree(page);
+    await page.mouse.move(800, 900);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i += 1) await page.mouse.move(800 - 30 * i, 900);
+    await page.mouse.up();
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_A, SLIDE_B, SLIDE_C));
+    await noOrder(page);
+
+    await page.mouse.click(540, 960);
+    await expect(page.getByTestId("second-screen")).toBeVisible();
+  });
+
+  test("A11Y after a swipe: axe A/AA clean, every target a control of 44 px or more, the one button still named by the one line", async ({
+    page,
+  }) => {
+    await carouselOfThree(page);
+    const cdp = await page.context().newCDPSession(page);
+    await swipe(cdp, 800, 900, -300);
+    await expect.poll(() => cards(page)).toEqual(PEEKING(SLIDE_A, SLIDE_B, SLIDE_C));
+
+    expect(await axeSweep(page, "splash-carousel-swiped")).toEqual([]);
+    expect(await targetProblems(page)).toEqual([]);
+    await expectOneLine(page, LINE);
+    await expect(page.getByRole("button")).toHaveCount(1);
   });
 });

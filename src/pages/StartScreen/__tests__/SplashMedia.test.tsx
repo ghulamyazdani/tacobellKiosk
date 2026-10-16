@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { setKioskSettings, setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import SplashMedia, { SPLASH_RETRY_MS } from "../SplashMedia";
+import { focusAt } from "../splashSwipe";
 import i18n, { DEFAULT_LANGUAGE } from "../../../i18n";
 
 /*
@@ -49,10 +50,10 @@ const host = () => screen.getByTestId("splash");
 const text = () => host().textContent;
 const srcOf = (el: Element | null | undefined) => el?.getAttribute("src") ?? null;
 
-/** The 1:2203 card slots, by their Figma x. */
-const SLOT = { prev: -592, centre: 200, next: 992 } as const;
+/** The 1:2203 movers by slot: all three sit on the Figma box, the slot is their transform (2026-10-16). */
+const SLOT = { prev: -1, centre: 0, next: 1 } as const;
 type Slot = keyof typeof SLOT;
-const card = (slot: Slot) => host().querySelector(`[class*="left-[${SLOT[slot]}px]"]`);
+const card = (slot: Slot) => host().querySelector<HTMLElement>(`.tb-splash-card[data-slot="${SLOT[slot]}"]`);
 const media = (slot: Slot) => {
   const el = card(slot)?.querySelector("img, video");
   if (!el) throw new Error(`no media in the ${slot} card`);
@@ -61,13 +62,17 @@ const media = (slot: Slot) => {
 /** prev / centre / next slide URLs (null = a card with no media element). */
 const cards = () =>
   (["prev", "centre", "next"] as const).map((slot) => srcOf(card(slot)?.querySelector("img, video")));
-/** The one slide of the single layout: the centre card alone, no peeking cards (user 2026-10-13). */
+/** The one slide of the single layout: the centre card alone (.tb-splash-single), no peeking cards (user 2026-10-13). */
 const single = () =>
   card("prev") || card("next")
     ? null
-    : ((card("centre")?.querySelector("img, video") ?? null) as HTMLImageElement | HTMLVideoElement | null);
+    : ((host().querySelector(".tb-splash-single")?.querySelector("img, video") ?? null) as
+        | HTMLImageElement
+        | HTMLVideoElement
+        | null);
 const layout = () => {
-  if (card("centre")) return card("prev") || card("next") ? "carousel" : "single";
+  if (host().querySelector(".tb-splash-single")) return card("prev") || card("next") ? "broken" : "single";
+  if (card("centre")) return card("prev") && card("next") ? "carousel" : "broken";
   if (host().querySelector('img[src*="fullbleed-halfmoon"]')) return "welcome";
   return "blank";
 };
@@ -390,7 +395,7 @@ describe("video slides", () => {
     });
 
     expect(cards()).toEqual([null, u("v1.mp4"), u("a.jpg")]); // prev v3 = card colour
-    expect(card("prev")?.childElementCount).toBe(0);
+    expect(card("prev")?.querySelector("img, video")).toBeNull(); // the mover holds the card box and its veil
     expect(census()).toEqual({ videos: 1, media: 2 });
 
     fireEvent.ended(media("centre")); // → a, between two videos
@@ -739,40 +744,491 @@ describe("lifecycle", () => {
 });
 
 /*
-  Lane motion §3.6. The idle return lands on a STILL splash: no card shifts
-  and nothing fades at mount. An advance remounts all three cards, which
-  shift in together by one card pitch (tb-carousel-in) on their own slots; a
-  skipped (failed) slide is not an advance. Nothing pulses: tb-attract went
-  with the START ORDER CTA (2026-10-16) — e2e motion M8 pins /start to no
-  infinite animation (jsdom runs none).
+  Lane motion §3.6, the carousel since 2026-10-16. The idle return lands on a
+  STILL splash: the track carries no data-dir, so no card enters and nothing
+  fades at mount. An advance RE-SLOTS the movers (keyed by position): the old
+  next's node becomes the centre — its image never re-mounts, so never
+  re-decodes —, the old centre the prev, the old prev leaves at once, and
+  only the entrant mounts, from the side the step comes from (data-dir;
+  index.css @starting-style, e2e motion M3). A skipped (failed) slide is not
+  a step: its content swaps inside the same movers, still (dir 0, a 0 s
+  settle). Nothing pulses: tb-attract went with the START ORDER CTA
+  (2026-10-16) — e2e motion M8 pins /start to no infinite animation (jsdom
+  runs none).
 */
-describe("motion (lane motion §3.6)", () => {
-  const shifted = () =>
-    (["prev", "centre", "next"] as const).filter((slot) => card(slot)?.classList.contains("tb-carousel-in"));
+describe("motion (lane motion §3.6; the carousel, 2026-10-16)", () => {
+  const track = () => host().querySelector<HTMLElement>(".tb-splash-track");
 
-  it("the first frame is still; an advance shifts all three cards in, each still on its slot", () => {
+  it("the first frame is still (no data-dir); an advance re-slots the movers — the old next's NODE is the centre, its image kept — and only the entrant mounts, from the right", () => {
     seed([
       { url: u("a.jpg"), iteration_time: 5 },
       { url: u("b.jpg"), iteration_time: 5 },
       { url: u("c.jpg"), iteration_time: 5 },
     ]);
     renderSplash();
-    expect(shifted()).toEqual([]);
-    expect(host().querySelector(".tb-carousel-in, .tb-fade-in")).toBeNull();
+    expect(track()).not.toHaveAttribute("data-dir");
+    expect(track()?.style.getPropertyValue("--tb-settle")).toBe("");
+    const [prev, centre, next] = [card("prev"), card("centre"), card("next")];
+    const nextImage = media("next");
 
     tick(5_000);
     expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("c.jpg")]);
-    expect(shifted()).toEqual(["prev", "centre", "next"]);
-    expect(host().querySelector(".tb-fade-in")).toBeNull();
+    expect(track()).toHaveAttribute("data-dir", "1");
+    // The auto-advance: the default settle (--tb-dur-carousel), nothing inline.
+    expect(track()?.style.getPropertyValue("--tb-settle")).toBe("");
+    expect(card("centre")).toBe(next);
+    expect(media("centre")).toBe(nextImage);
+    expect(card("prev")).toBe(centre);
+    expect(prev?.isConnected).toBe(false);
+    expect([prev, centre, next]).not.toContain(card("next"));
+    expect(host().querySelectorAll(".tb-splash-card")).toHaveLength(3);
+    expect(host().querySelector(".tb-carousel-in, .tb-fade-in")).toBeNull();
   });
 
-  it("a skipped (failed) centre is not an advance: the remounted cards stay still", () => {
+  it("a skipped (failed) centre is not a step: the content swaps inside the same movers, in place (dir 0, a 0 s settle)", () => {
     seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
     renderSplash();
+    tick(8_000); // an advance first: data-dir="1"
+    expect(track()).toHaveAttribute("data-dir", "1");
+    const movers = [card("prev"), card("centre"), card("next")];
+
+    fireEvent.error(media("centre")); // b
+    expect(cards()).toEqual([u("a.jpg"), u("c.jpg"), u("a.jpg")]);
+    expect([card("prev"), card("centre"), card("next")]).toEqual(movers);
+    expect(track()).not.toHaveAttribute("data-dir");
+    expect(track()?.style.getPropertyValue("--tb-settle")).toBe("0s");
+  });
+
+  it("the peeks dim under a veil of their own, beside the card box; the single card has none and is the plain Figma card", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    const view = renderSplash();
+    for (const slot of ["prev", "centre", "next"] as const) {
+      const [box, veil] = Array.from(card(slot)?.children ?? []);
+      expect(box).toHaveClass("overflow-hidden", "rounded-[16px]", "bg-tb-purple-vibrant");
+      expect(veil).toHaveClass("tb-splash-veil", "pointer-events-none", "absolute", "inset-0", "rounded-[16px]", "bg-black");
+      expect(veil).toHaveAttribute("aria-hidden", "true");
+    }
+    expect(track()).toHaveClass("tb-splash-track", "tb-splash-carousel");
+    view.unmount();
+
+    seed([{ url: u("a.jpg") }]);
+    renderSplash();
+    expect(card("centre")).toHaveClass("tb-splash-card", "tb-splash-single");
+    expect(card("centre")?.querySelector(".tb-splash-veil")).toBeNull();
+    expect(track()).not.toHaveClass("tb-splash-carousel");
+  });
+});
+
+/*
+  The swipe (user request 2026-10-16; design language). The carousel follows
+  a finger 1:1 past a 16 px slop (stage px; jsdom's stage is 1:1), steps at
+  30 % of a card or on a 0.30 px/ms flick, and snaps back otherwise; one
+  commit at the release, nothing per move but inline styles on the movers.
+  A drag is never a tap; a press inside the slop is. The rotation waits under
+  a finger. jsdom has no style engine: the catch reads an empty transform
+  (x 0, scale 1) unless getComputedStyle is stubbed.
+*/
+describe("swipe", () => {
+  const start = vi.fn();
+  const renderButton = () =>
+    render(
+      <Provider store={store}>
+        <button type="button" data-testid="splash" onClick={start}>
+          <SplashMedia />
+        </button>
+      </Provider>
+    );
+  /** The gesture layer: the media layout's root inside the button. */
+  const surface = () => host().firstElementChild as HTMLElement;
+  const track = () => host().querySelector<HTMLElement>(".tb-splash-track");
+  const veil = (slot: Slot) => card(slot)?.querySelector<HTMLElement>(".tb-splash-veil");
+  const pointer = (x: number, y = 900, { id = 1, primary = true, type = "touch" } = {}) => ({
+    pointerId: id,
+    isPrimary: primary,
+    pointerType: type,
+    button: 0,
+    clientX: x,
+    clientY: y,
+  });
+  type Lift = "pointerUp" | "pointerCancel" | "lostPointerCapture" | null;
+  /**
+   * The first finger from x 700: two moves `every` ms apart to dx (dy), then
+   * — `rest` ms later — lifted where it is. A rest past 100 ms reads 0 px/ms
+   * (no flick).
+   */
+  function drag(dx: number, { dy = 0, every = 60, rest = 120, lift = "pointerUp" as Lift, type = "touch", id = 1 } = {}) {
+    fireEvent.pointerDown(surface(), pointer(700, 900, { type, id }));
+    tick(every);
+    fireEvent.pointerMove(surface(), pointer(700 + dx / 2, 900 + dy / 2, { type, id }));
+    tick(every);
+    fireEvent.pointerMove(surface(), pointer(700 + dx, 900 + dy, { type, id }));
+    if (!lift) return;
+    tick(rest);
+    fireEvent[lift](surface(), pointer(700 + dx, 900 + dy, { type, id }));
+  }
+  const settle = () => track()?.style.getPropertyValue("--tb-settle");
+  const enter = () => track()?.style.getPropertyValue("--tb-enter");
+
+  beforeEach(() => start.mockReset());
+
+  it("left steps to the next, right to the previous, wrapping — the entrant from the side it steps from, in formation with the release; a slow release settles in 500 ms", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
+
+    drag(-300);
+    expect(cards()).toEqual([u("a.jpg"), u("b.jpg"), u("c.jpg")]);
+    expect(track()).toHaveAttribute("data-dir", "1");
+    expect(settle()).toBe("500ms"); // a still finger: 4·d/v clamps at 500
+    expect(enter()).toBe("1218px"); // released at o −284: one pitch beyond the new peek (2 × 751 − 284)
+
+    drag(300);
+    expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
+    expect(track()).toHaveAttribute("data-dir", "-1");
+    expect(enter()).toBe("-1218px");
+    drag(300);
+    expect(cards()).toEqual([u("b.jpg"), u("c.jpg"), u("a.jpg")]);
+    expect(start).not.toHaveBeenCalled();
+
+    tick(8_000); // the auto-advance: its entrant from two pitches out (the CSS fallback)
+    expect(cards()).toEqual([u("c.jpg"), u("a.jpg"), u("b.jpg")]);
+    expect([settle(), enter()]).toEqual(["", ""]);
+  });
+
+  it("a flick steps at once and settles at about the finger's speed (4·d/v, 250–500 ms); a fling back cancels", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+
+    // −400 px in 100 ms (4 px/ms): p = 384 / 751, so 367 px to go → 4 · 367 / 4.
+    drag(-400, { every: 50, rest: 0 });
+    expect(cards()[1]).toBe(u("b.jpg"));
+    expect(settle()).toBe("367ms");
+
+    // A short quick flick: 60 px in 40 ms — under the 30 % distance, still a step.
+    drag(-60, { every: 20, rest: 0 });
+    expect(cards()[1]).toBe(u("c.jpg"));
+
+    // Out to the left past 30 %, then flung back right: back to the slots.
+    fireEvent.pointerDown(surface(), pointer(700));
+    tick(200);
+    fireEvent.pointerMove(surface(), pointer(300));
+    tick(200);
+    fireEvent.pointerMove(surface(), pointer(320));
+    tick(20);
+    fireEvent.pointerMove(surface(), pointer(380));
+    fireEvent.pointerUp(surface(), pointer(380));
+    expect(cards()[1]).toBe(u("c.jpg"));
+    expect(settle()).toBe("var(--tb-dur-snap)");
+  });
+
+  it("the cards follow the finger inline (transition none) past the slop — focus by position — and are handed back to their slots' CSS at the release", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+
+    drag(-200, { lift: null });
+    const o = -200 + 16; // re-based at the slop: no catch-up jump
+    for (const [slot, n] of [["prev", -1], ["centre", 0], ["next", 1]] as const) {
+      const focus = focusAt(n, o);
+      expect(card(slot)?.style.transform, slot).toBe(`translateX(${n * 751 + o}px) scale(${focus.scale})`);
+      expect(card(slot)?.style.transition, slot).toBe("none");
+      expect(veil(slot)?.style.opacity, slot).toBe(String(focus.veil));
+      expect(veil(slot)?.style.transition, slot).toBe("none");
+    }
+    expect(track()).toHaveAttribute("data-held");
+
+    fireEvent.pointerUp(surface(), pointer(500));
+    for (const slot of ["prev", "centre", "next"] as const) {
+      expect([card(slot)?.style.transform, card(slot)?.style.transition], slot).toEqual(["", ""]);
+      expect([veil(slot)?.style.opacity, veil(slot)?.style.transition], slot).toEqual(["", ""]);
+    }
+    expect(track()).not.toHaveAttribute("data-held");
+  });
+
+  it("a press that stays inside the 16 px slop is a tap: nothing moves or steps, and its click starts the order", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-12, { dy: 9 }); // 15 px
+
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(card("centre")?.style.transform).toBe("");
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("a short slow drag (under 30 %) changes no slide — back to the slots in --tb-dur-snap — and is not a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-150, { type: "mouse" });
+
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(track()).not.toHaveAttribute("data-dir");
+    expect(settle()).toBe("var(--tb-dur-snap)");
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("a mouse drag's click never reaches the start button; the next press's does", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-300, { type: "mouse" });
+    expect(cards()[1]).toBe(u("b.jpg"));
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(surface(), pointer(540, 900, { type: "mouse" }));
+    fireEvent.pointerUp(surface(), pointer(540, 900, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("a vertical drag is not a swipe — nothing follows or steps — and not a tap either", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-20, { dy: 300, lift: null });
+    expect(card("centre")?.style.transform).toBe("translateX(0px) scale(1)"); // the catch's (jsdom: x 0, scale 1)
+    fireEvent.pointerUp(surface(), pointer(680, 1200));
+
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(card("centre")?.style.transform).toBe("");
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("the dwell waits while a finger is down and re-arms in FULL at the release", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: 5 },
+      { url: u("b.jpg"), iteration_time: 5 },
+    ]);
+    renderButton();
+    tick(4_000);
+    drag(-40, { lift: null });
+    tick(10_000);
+    expect(cards()[1]).toBe(u("a.jpg"));
+
+    fireEvent.pointerUp(surface(), pointer(660));
+    tick(4_999);
+    expect(cards()[1]).toBe(u("a.jpg"));
+    tick(1);
+    expect(cards()[1]).toBe(u("b.jpg"));
+  });
+
+  it("a video that ends under the finger advances at the release — never read as a stall, however long the hold", () => {
+    seed([{ url: u("v.mp4"), media_type: "mp4", iteration_time: 1 }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-40, { lift: null });
+    fireEvent.ended(media("centre"));
+    tick(20_000); // past the 15 s watchdog
+    expect(cards()[1]).toBe(u("v.mp4"));
+    expect(splashEvents()).toEqual([]);
+
+    fireEvent.pointerUp(surface(), pointer(660));
+    expect(cards()[1]).toBe(u("b.jpg"));
+    expect(track()).toHaveAttribute("data-dir", "1");
+    expect(settle()).toBe(""); // the advance's own 500 ms
+    expect(enter()).toBe("1478px"); // from where the finger left the row (o −24)
+    expect(host().querySelector("video")).toBeNull();
+  });
+
+  it("a second finger is ignored; a cancel (or a lost capture) sends the cards back without a step, and the rotation resumes", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: 5 },
+      { url: u("b.jpg"), iteration_time: 5 },
+    ]);
+    renderButton();
+    drag(-300, { lift: null });
+    const held = card("centre")?.style.transform;
+    fireEvent.pointerDown(surface(), pointer(100, 900, { id: 9, primary: false }));
+    fireEvent.pointerMove(surface(), pointer(900, 900, { id: 9, primary: false }));
+    expect(card("centre")?.style.transform).toBe(held);
+
+    fireEvent.pointerCancel(surface(), pointer(0, 0));
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(card("centre")?.style.transform).toBe("");
+    expect(settle()).toBe("var(--tb-dur-snap)");
+
+    drag(-300, { lift: "lostPointerCapture" });
+    expect(cards()[1]).toBe(u("a.jpg"));
+    tick(5_000);
+    expect(cards()[1]).toBe(u("b.jpg"));
+  });
+
+  it("the single card is inert: no follow, no hold, no step — its tap still starts the order", () => {
+    seed([{ url: u("a.jpg") }]);
+    renderButton();
+    drag(-300);
+
+    expect(layout()).toBe("single");
+    expect(card("centre")?.style.transform).toBe("");
+    expect(track()).not.toHaveAttribute("data-held");
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("every slide failing under a held finger (WELCOME) lets the hold go: the retry's carousel rotates again, and the next press drags it", () => {
+    seed([
+      { url: u("a.jpg"), iteration_time: 5 },
+      { url: u("b.jpg"), iteration_time: 5 },
+    ]);
+    renderButton();
+    drag(-40, { lift: null });
+    fireEvent.error(media("next")); // b → a alone (the single card)
+    fireEvent.error(single() as HTMLImageElement); // a → WELCOME: the layer (and its capture) is gone
+    expect(layout()).toBe("welcome");
+
+    tick(SPLASH_RETRY_MS);
+    expect(layout()).toBe("carousel");
+    expect(cards()[1]).toBe(u("a.jpg"));
+    tick(5_000); // not held: the dwell runs
+    expect(cards()[1]).toBe(u("b.jpg"));
+    drag(-300, { id: 2 }); // a new touch (a new pointer id): the lost gesture's record never blocks it
+    expect(cards()[1]).toBe(u("a.jpg"));
+  });
+
+  it("a centre failure after a back swipe skips FORWARD, in place (no data-dir)", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    drag(300); // back → c
+    expect(cards()[1]).toBe(u("c.jpg"));
+    expect(track()).toHaveAttribute("data-dir", "-1");
 
     fireEvent.error(media("centre"));
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(track()).not.toHaveAttribute("data-dir");
+  });
+
+  it("under reduced motion the drag only translates: every card keeps its slot's focus until the cut", () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)", media: query }) as MediaQueryList
+    );
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-200, { lift: null });
+
+    expect(card("prev")?.style.transform).toBe("translateX(-935px) scale(0.88)");
+    expect(card("centre")?.style.transform).toBe("translateX(-184px) scale(1.1)");
+    expect(card("next")?.style.transform).toBe("translateX(567px) scale(0.88)");
+    expect([veil("prev"), veil("centre"), veil("next")].map((v) => v?.style.opacity)).toEqual(["0.45", "0", "0.45"]);
+  });
+
+  it("the catch: a press freezes every card where it is — its computed transform and veil written back inline — and the drag goes on from the centre's x", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    // Mid-settle (as Chromium reports it): the centre at +451 (0.968, veil 0.27), the others on its offset.
+    const live: Record<string, [string, string]> = {
+      "-1": ["matrix(0.88, 0, 0, 0.88, -300, 0)", "0.45"],
+      "0": ["matrix(0.968, 0, 0, 0.968, 451, 0)", "0.27"],
+      "1": ["matrix(0.88, 0, 0, 0.88, 1202, 0)", "0.45"],
+    };
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
+      const mover = el.closest<HTMLElement>(".tb-splash-card");
+      const [transform, opacity] = live[mover?.dataset.slot ?? ""] ?? ["none", "1"];
+      return { transform, opacity } as CSSStyleDeclaration;
+    });
+
+    fireEvent.pointerDown(surface(), pointer(700));
+    expect(card("prev")?.style.transform).toBe("translateX(-300px) scale(0.88)");
+    expect(card("centre")?.style.transform).toBe("translateX(451px) scale(0.968)");
+    expect(card("next")?.style.transform).toBe("translateX(1202px) scale(0.88)");
+    expect([veil("prev"), veil("centre"), veil("next")].map((v) => v?.style.opacity)).toEqual(["0.45", "0.27", "0.45"]);
+    expect(card("centre")?.style.transition).toBe("none");
+
+    // The finger takes it from there: 40 px left = 24 px past the slop.
+    tick(16);
+    fireEvent.pointerMove(surface(), pointer(660));
+    expect(card("centre")?.style.transform).toBe(`translateX(${451 - 24}px) scale(${focusAt(0, 427).scale})`);
+  });
+
+  it("after a catch a slow release never steps against the drag: caught mid-advance at +549, a slow 50 px LEFT drag lets the incoming card land — never back to the previous one", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    const live: Record<string, string> = {
+      "-1": "matrix(0.95, 0, 0, 0.95, -202, 0)",
+      "0": "matrix(0.98, 0, 0, 0.98, 549, 0)",
+      "1": "matrix(0.88, 0, 0, 0.88, 1300, 0)",
+    };
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (el: Element) =>
+        ({ transform: live[el.closest<HTMLElement>(".tb-splash-card")?.dataset.slot ?? ""] ?? "none", opacity: "0.3" }) as CSSStyleDeclaration
+    );
+    drag(-50, { rest: 150 }); // o 515: p −0.69, all of it the catch's — the finger took it 0.05 the other way
+
+    expect(cards()[1]).toBe(u("a.jpg"));
+    expect(track()).not.toHaveAttribute("data-dir");
+    expect(settle()).toBe("var(--tb-dur-snap)");
+  });
+
+  it("an advance that lands just before a press is committed first: the press catches all three movers — the entrant too — so the first move never jumps them a pitch", () => {
+    seed([{ url: u("v.mp4"), media_type: "mp4", iteration_time: 1 }, { url: u("b.jpg") }, { url: u("c.jpg") }]);
+    renderButton();
+    act(() => {
+      media("centre").dispatchEvent(new Event("ended")); // the last play: advance()
+      surface().dispatchEvent(createEvent.pointerDown(surface(), pointer(700))); // before React's own task
+    });
+
+    expect(track()).toHaveAttribute("data-dir", "1");
+    expect(track()).toHaveAttribute("data-held");
+    for (const slot of ["prev", "centre", "next"] as const) expect(card(slot)?.style.transform, slot).not.toBe("");
+  });
+
+  it("the slop is the browser's px, not the stage's: on a stage scaled to 0.8 a 13 px wobble (16.25 stage px) is still a tap; 17 px is not, and follows from the slop on", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 864 } as DOMRect);
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-13, { type: "mouse" });
+    expect(card("centre")?.style.transform).toBe("");
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+
+    drag(-17, { type: "mouse", lift: null }); // 21.25 stage px, 1.25 of them past the 16 px (20 stage px) slop
+    expect(card("centre")?.style.transform).toBe(`translateX(-1.25px) scale(${focusAt(0, -1.25).scale})`);
+    fireEvent.pointerUp(surface(), pointer(683, 900, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("the slop is Euclidean: a 17 px diagonal (−12, −12) is past it — a mouse's click is not a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-12, { dy: -12, type: "mouse" });
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("20 px sideways follows from the slop on (−4 px), and its click is not a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-20, { type: "mouse", lift: null });
+    expect(card("centre")?.style.transform).toBe(`translateX(-4px) scale(${focusAt(0, -4).scale})`);
+    fireEvent.pointerUp(surface(), pointer(680, 900, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("a purely vertical drag (0, +300) is neither a swipe nor a tap", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(0, { dy: 300, type: "mouse", lift: null });
+    expect(card("centre")?.style.transform).toBe("translateX(0px) scale(1)"); // the catch's (jsdom)
+    fireEvent.pointerUp(surface(), pointer(700, 1200, { type: "mouse" }));
+    fireEvent.click(surface());
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("a touch swipe gets no click (Chromium drops it), so the next press re-arms the tap: its click starts the order", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-300);
+    fireEvent.pointerDown(surface(), pointer(540, 900, { id: 2 }));
+    fireEvent.pointerUp(surface(), pointer(540, 900, { id: 2 }));
+    fireEvent.click(surface());
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("a quick 40 px flick (24 px of visible follow) is a flick by its RAW travel: it steps", () => {
+    seed([{ url: u("a.jpg") }, { url: u("b.jpg") }]);
+    renderButton();
+    drag(-40, { every: 20, rest: 0 }); // 1 px/ms
     expect(cards()[1]).toBe(u("b.jpg"));
-    expect(shifted()).toEqual([]);
   });
 });
 
