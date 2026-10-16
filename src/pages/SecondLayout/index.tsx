@@ -121,7 +121,8 @@ export default function SecondLayout() {
   const [failedPipeline, setFailedPipeline] = useState<Pipeline | null>(null);
   // UX-03 (design language, sign-off): the tapped card stays selected — the
   // Figma pressed lilac plus one tb-select bump — until the screen leaves. A
-  // latch cleared ONLY where the fetch fails (failedPipeline), never derived
+  // latch set where each fetch starts (the tap and TRY AGAIN alike) and
+  // cleared ONLY where the fetch fails (failedPipeline), never derived
   // from `fetching`: BrowserRouter navigates in a transition, so the finally's
   // setFetching(null) commits before the route changes and the card would
   // flash white for the whole /menu render.
@@ -154,6 +155,7 @@ export default function SecondLayout() {
    */
   const loadMenuAndEnter = async (pipeline: Pipeline, reveal: "late" | "now") => {
     setFailedPipeline(null);
+    setPickedId(pipeline._id);
     setFetching(reveal);
     try {
       const menu = await fetchMenu(pipeline.tab_id, false, false, pipeline);
@@ -200,7 +202,6 @@ export default function SecondLayout() {
         setRefusals((r) => ({ ...r, [pipeline._id]: (r[pipeline._id] ?? 0) + 1 }));
         return;
       }
-      setPickedId(pipeline._id);
 
       captureKioskEvent(KioskEventName.PipelineSelected, {
         pipeline_id: pipeline._id,

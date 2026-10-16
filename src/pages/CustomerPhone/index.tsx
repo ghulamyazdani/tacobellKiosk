@@ -173,7 +173,8 @@ export default function CustomerPhone() {
   // every way out of the lookup navigates, and leaving unmounts it. Not
   // isLoyaltyEventLoading: that drops before the route change commits
   // (BrowserRouter navigates in a transition), and the keypad would be live
-  // again for the whole /menu render.
+  // again for the whole /menu render. CONTINUE reads it too, so it never
+  // re-arms under the layer.
   const [checking, setChecking] = useState(false);
   const revealTimer = useRef<number | null>(null);
   // The lookup continuation dispatches + navigates after its await. Once this
@@ -573,10 +574,10 @@ export default function CustomerPhone() {
         type="button"
         data-testid="phone-continue"
         onClick={handleContinue}
-        disabled={isLoyaltyEventLoading}
+        disabled={isLoyaltyEventLoading || checking}
         className="tb-display absolute bottom-[188px] left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)] disabled:opacity-60"
       >
-        {isLoyaltyEventLoading ? t("phone.checking") : t("phone.continue")}
+        {isLoyaltyEventLoading || checking ? t("phone.checking") : t("phone.continue")}
       </button>
       <button
         type="button"
