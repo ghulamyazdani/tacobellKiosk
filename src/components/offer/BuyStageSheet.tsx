@@ -105,6 +105,11 @@ export default function BuyStageSheet({
   // CONTINUE tapped while locked → name the gap inline (the fork popped its
   // global error modal here).
   const [hintRequested, setHintRequested] = useState(false);
+  // UX-13 (R20): each refused CONTINUE re-keys the hint's text, which shakes —
+  // never the button. `shaking` drops with the hint, so a hint that comes back
+  // unasked (a re-lock after an unlock) never shakes.
+  const [refusals, setRefusals] = useState(0);
+  const [shaking, setShaking] = useState(false);
 
   const { offer, view } = stage;
   const cartItems = cart?.cartItems;
@@ -180,6 +185,7 @@ export default function BuyStageSheet({
         : t("offers.buyStage.hintMoreOther", { count: remaining })
       : null);
   const guardText = guard ? t(`offers.buyStage.${guard}`) : blockedMessage;
+  if (shaking && !hint) setShaking(false);
 
   const handleAdd = (entity: BuyMenuEntity) => {
     if (continuing || entity?.outOfStock) return;
@@ -225,6 +231,8 @@ export default function BuyStageSheet({
     setGuard(null);
     if (!satisfied) {
       setHintRequested(true);
+      setRefusals((n) => n + 1);
+      setShaking(true);
       return;
     }
     onContinue();
@@ -551,7 +559,12 @@ export default function BuyStageSheet({
               hint ? "mb-[16px]" : ""
             }`}
           >
-            {hint}
+            {/* A block leaf: the text wraps exactly as before; a NEW node per refusal. */}
+            {hint && (
+              <span key={refusals} className={shaking ? "block tb-shake" : "block"}>
+                {hint}
+              </span>
+            )}
           </p>
           <p
             data-testid="buy-stage-guard"

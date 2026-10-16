@@ -208,6 +208,11 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
+  // UX-13 (R20): a CONFIRM refused before a pick re-keys what CONFIRM needs —
+  // the subtitle, or group mode's hint — which shakes; never the button.
+  // `shaking` drops with the hint, so a hint that comes back unasked never shakes.
+  const [refusals, setRefusals] = useState(0);
+  const [shaking, setShaking] = useState(false);
   // Group mode: units picked per plain entry (row key → count); a
   // customizable entry counts once its row is staged.
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -408,7 +413,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   };
 
   const handleConfirm = async () => {
-    if (!canConfirm) return;
+    if (!canConfirm) {
+      if (!committing) {
+        setRefusals((n) => n + 1);
+        if (group) setShaking(true);
+      }
+      return;
+    }
     // Group mode commits exactly the picks, stamped by the SDK rules; a
     // category group its exact lines, stamped from the group.
     const categoryLines = orMode
@@ -823,6 +834,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         : group.remaining > 1
           ? t("offers.picker.groupHintOther", { count: group.remaining })
           : null;
+  if (shaking && !groupHint) setShaking(false);
 
   return (
     <div className="absolute inset-0 z-[80]" data-testid="freebie-picker">
@@ -850,7 +862,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         >
           {title}
         </h2>
-        <p className="mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80">
+        {/* Not a live region, so the line itself re-keys per refusal. */}
+        <p
+          key={refusals}
+          className={`mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80 ${
+            !group && refusals > 0 ? "tb-shake" : ""
+          }`}
+        >
           {subtitle}
         </p>
         <button
@@ -875,7 +893,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
               aria-live="polite"
               className="min-h-[26px] pb-[16px] text-center text-[22px] font-bold leading-[26px] text-tb-pink-dark"
             >
-              {groupHint}
+              {/* The live region stays mounted; its block leaf re-keys per refusal. */}
+              {groupHint && (
+                <span key={refusals} className={shaking ? "block tb-shake" : "block"}>
+                  {groupHint}
+                </span>
+              )}
             </p>
           )}
           <button
