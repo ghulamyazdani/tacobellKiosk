@@ -1344,7 +1344,7 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     });
   });
 
-  test("M15 WAITS (motion-v2 MV3): every silent wait shows the house sweep — the boot, /customerName's CRM lookup, the /payment window and /receipt's PLACING — a loop on no tap target", async ({
+  test("M15 WAITS (motion-v2 MV3): every silent wait shows the house sweep — the boot, /customerName's CRM lookup and /receipt's PLACING — a loop on no tap target; the /payment window's known 3 s counts down with the house fill (UX-05)", async ({
     page,
   }) => {
     test.slow();
@@ -1379,9 +1379,16 @@ test.describe("motion (contract §5.3, no-preference)", () => {
 
     await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
     await freezeClock(page); // the 3 s window holds while it is read
+    const rate = await slowMotion(page);
+    await rate(0.1); // the fill's 3 s (real time) is still running when read
     await page.getByTestId("payment-counter").click();
     await expect(page.getByTestId("payment-buffer-cancel")).toBeVisible();
-    expect(await loops(page), "the /payment window").toContain("tb-indeterminate");
+    expect(
+      named(await animations(page, '[data-testid="payment-buffer"]'), "tb-countdown-fill").map((a) => [a.duration, a.iterations, a.from]),
+      "the /payment window counts its 3 s down from the left edge, once"
+    ).toEqual([[3_000, 1, "translateX(-100%)"]]);
+    expect(await loops(page), "the /payment window").not.toContain("tb-indeterminate");
+    await rate(1);
     await page.clock.runFor(3_000);
     await expect(page.getByTestId("receipt-screen")).toBeVisible({ timeout: 15_000 });
     await page.clock.resume();

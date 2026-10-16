@@ -967,21 +967,25 @@ describe("PaymentSelection — HOW WOULD YOU LIKE TO PAY?", () => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    // motion-v2 MV3: the 3 s window was a still card; it shows the house sweep,
-    // a sibling of CANCEL (never in or around the button).
-    it("the window shows the house indeterminate sweep between the title and CANCEL", () => {
+    // motion-v2 MV3 gave the 3 s window a progress bar, a sibling of CANCEL (never in or around the button);
+    // UX-05: a known 3 s, so the house determinate fill over the window's duration — over the still third
+    // the reduced-motion rest shows (the fill is display:none there), never the indeterminate sweep.
+    it("the window counts its 3 s down with the house countdown fill between the title and CANCEL", () => {
       mount();
       tap("payment-counter");
 
-      const sweep = buffer()?.querySelectorAll(".tb-indeterminate") ?? [];
-      expect(sweep).toHaveLength(1);
-      const track = sweep[0].parentElement as HTMLElement;
-      expect(track).toHaveClass("overflow-hidden", "bg-tb-lilac", "mb-[40px]");
+      expect(buffer()?.querySelector(".tb-indeterminate")).toBeNull();
+      const fill = buffer()?.querySelectorAll<HTMLElement>(".tb-countdown-fill") ?? [];
+      expect(fill).toHaveLength(1);
+      expect(fill[0].style.getPropertyValue("--tb-countdown")).toBe("3000ms");
+      const track = fill[0].parentElement as HTMLElement;
+      expect(track).toHaveClass("relative", "overflow-hidden", "bg-tb-lilac", "mb-[40px]");
+      expect(track.firstElementChild).toHaveClass("w-1/3", "bg-tb-purple");
       expect(track).toHaveAttribute("aria-hidden");
       expect(track.previousElementSibling).toHaveAttribute("id", "payment-buffer-title");
       expect(track.previousElementSibling).toHaveClass("mb-[32px]");
       expect(track.nextElementSibling).toBe(screen.getByTestId("payment-buffer-cancel"));
-      expect(sweep[0].closest("button")).toBeNull();
+      expect(fill[0].closest("button")).toBeNull();
       // CANCEL shows at once: the window never reveals late (motion-v2 MV4 "NOT on").
       expect(screen.getByTestId("payment-buffer-cancel").closest(".tb-reveal-late")).toBeNull();
     });

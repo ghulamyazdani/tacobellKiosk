@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -37,6 +37,9 @@ interface CartLike {
  * Nothing is sent inside it.
  */
 const PAYMENT_BUFFER_MS = 3000;
+
+/** The window's fill runs over the same 3 s (index.css .tb-countdown-fill). */
+const BUFFER_FILL = { "--tb-countdown": `${PAYMENT_BUFFER_MS}ms` } as CSSProperties;
 
 /**
  * How long the screen swallows taps on arrival and after the window's CANCEL
@@ -484,10 +487,18 @@ export default function PaymentSelection() {
                 ? t(atCounter ? "payment.payAtCounterChosen" : "payment.payAtRestaurantChosen")
                 : t("paytm.redirecting")}
             </h2>
-            {/* The house indeterminate sweep (motion-v2 MV3): a sibling of
-                CANCEL, never in or around a button. */}
-            <div aria-hidden className="mx-auto mb-[40px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac">
-              <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+            {/* A known 3 s, so the house determinate fill (.tb-countdown-fill,
+                as on Order Complete): one linear run from the left, LTR in
+                Arabic too, over the still third of the reduced-motion rest
+                (the house sweep's), which its lilac cover hides while it
+                runs. Under reduce the fill is display:none and that still
+                third shows. A sibling of CANCEL, never in or around a button. */}
+            <div aria-hidden className="relative mx-auto mb-[40px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac">
+              <div className="h-full w-1/3 rounded-full bg-tb-purple" />
+              <div className="tb-countdown-fill absolute inset-0" style={BUFFER_FILL}>
+                <div className="absolute inset-y-0 left-1/2 w-full bg-tb-lilac" />
+                <div className="absolute inset-0 rounded-full bg-tb-purple" />
+              </div>
             </div>
             <button
               type="button"
