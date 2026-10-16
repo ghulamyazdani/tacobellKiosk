@@ -226,7 +226,8 @@ function SheetBody({ sheet }: { sheet: any }) {
             data-testid={`repeat-dec-${row?.itemId}`}
             aria-label={t("repeat.decrease")}
             onClick={() => decrease(row)}
-            className="flex h-[56px] w-[56px] min-h-[44px] min-w-[44px] items-center justify-center text-tb-purple"
+            // rounded-full bg-tb-surface: white on the white pill at rest; a lilac disc at touch-down (UX-12).
+            className="flex h-[56px] w-[56px] min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-tb-surface text-tb-purple"
           >
             <svg viewBox="0 0 16 16" className="h-[16px] w-[16px]" aria-hidden="true">
               <path
@@ -238,13 +239,14 @@ function SheetBody({ sheet }: { sheet: any }) {
               />
             </svg>
           </button>
-          <p className="text-[20px] font-bold text-black">{qty}</p>
+          {/* Re-keyed per quantity: each change replays the bump (the BagItemRow count). */}
+          <p key={qty} className="tb-bump text-[20px] font-bold text-black">{qty}</p>
           <button
             type="button"
             data-testid={`repeat-inc-${row?.itemId}`}
             aria-label={t("repeat.increase")}
             onClick={() => increase(row)}
-            className="flex h-[56px] w-[56px] min-h-[44px] min-w-[44px] items-center justify-center"
+            className="flex h-[56px] w-[56px] min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-tb-surface"
           >
             <img alt="" src={plusIcon} className="h-[16px] w-[16px]" />
           </button>

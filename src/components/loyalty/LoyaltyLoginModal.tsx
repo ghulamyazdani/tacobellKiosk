@@ -371,6 +371,17 @@ function LoginBody({ onClose }: LoginBodyProps) {
         >
           {t("loyalty.continue")}
         </button>
+        {/* Busy CONTINUE (UX-04, design language): the house sweep 6 px
+            above it, in the 32 px gap — absolute, so CONTINUE never moves;
+            late, so a fast lookup never flashes it. */}
+        {locked && (
+          <div
+            aria-hidden="true"
+            className="tb-reveal-late pointer-events-none absolute inset-x-0 bottom-[138px] mx-auto h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac"
+          >
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+          </div>
+        )}
       </div>
 
       {/* z-[70]: above this modal's card; below its error (z-80), the

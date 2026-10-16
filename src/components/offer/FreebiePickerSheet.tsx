@@ -208,6 +208,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
+  // UX-13 (R20): a CONFIRM refused before a pick re-keys what CONFIRM needs —
+  // the subtitle (while it names that need), or group mode's hint — which
+  // shakes; never the button.
+  // `shaking` drops with the hint, so a hint that comes back unasked never shakes.
+  const [refusals, setRefusals] = useState(0);
+  const [shaking, setShaking] = useState(false);
   // Group mode: units picked per plain entry (row key → count); a
   // customizable entry counts once its row is staged.
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -408,7 +414,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   };
 
   const handleConfirm = async () => {
-    if (!canConfirm) return;
+    if (!canConfirm) {
+      if (!committing && (group || subtitleNamesNeed)) {
+        setRefusals((n) => n + 1);
+        if (group) setShaking(true);
+      }
+      return;
+    }
     // Group mode commits exactly the picks, stamped by the SDK rules; a
     // category group its exact lines, stamped from the group.
     const categoryLines = orMode
@@ -578,11 +590,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         disabled={locked}
         aria-pressed={locked ? undefined : selected}
         onClick={() => handleRowTap(entry)}
+        // Live: bg-tb-surface, white on white at rest and Figma's lilac at touch-down (the white-button
+        // fill, UX-12). Locked: no fill — a white fill inside the opacity group re-rounds its edges.
         className={`flex items-center gap-[24px] py-[24px] text-left min-h-[132px] ${
           groupWise
             ? "min-w-0 flex-1 pl-[48px]"
             : "w-full border-b border-tb-grey-4 px-[48px]"
-        } ${locked ? "opacity-50" : ""}`}
+        } ${locked ? "opacity-50" : "bg-tb-surface"}`}
       >
         {imageUrl ? (
           <img
@@ -700,7 +714,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           aria-pressed={locked ? undefined : units > 0}
           onClick={() => handleCategoryTap(section, entity)}
           className={`flex min-h-[132px] min-w-0 flex-1 items-center gap-[24px] py-[24px] pl-[48px] text-left ${
-            locked ? "opacity-50" : ""
+            locked ? "opacity-50" : "bg-tb-surface"
           }`}
         >
           {imageUrl ? (
@@ -810,6 +824,11 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       : orMode
         ? t("offers.picker.subtitleOption")
         : t("offers.freebieSubtitleAnd");
+  // A refusal shakes the subtitle only while it names what CONFIRM waits for:
+  // the "or" pick, or an "and" group short of its need. An uncustomized "and"
+  // freebie is named by its own row ("Customize"), so the line stays still.
+  const subtitleNamesNeed =
+    orMode || (selectCount > 0 && completedLines.some((lines) => lines === null));
 
   // Group mode names what is missing (TB mounts no global error modal).
   const groupHint = !group
@@ -821,6 +840,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         : group.remaining > 1
           ? t("offers.picker.groupHintOther", { count: group.remaining })
           : null;
+  if (shaking && !groupHint) setShaking(false);
 
   return (
     <div className="absolute inset-0 z-[80]" data-testid="freebie-picker">
@@ -848,7 +868,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         >
           {title}
         </h2>
-        <p className="mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80">
+        {/* Not a live region, so the line itself re-keys per refusal. */}
+        <p
+          key={refusals}
+          className={`mb-[24px] px-[96px] text-center text-[22px] leading-[26px] text-tb-ink-purple/80 ${
+            !group && refusals > 0 ? "tb-shake" : ""
+          }`}
+        >
           {subtitle}
         </p>
         <button
@@ -873,7 +899,12 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
               aria-live="polite"
               className="min-h-[26px] pb-[16px] text-center text-[22px] font-bold leading-[26px] text-tb-pink-dark"
             >
-              {groupHint}
+              {/* The live region stays mounted; its block leaf re-keys per refusal. */}
+              {groupHint && (
+                <span key={refusals} className={shaking ? "block tb-shake" : "block"}>
+                  {groupHint}
+                </span>
+              )}
             </p>
           )}
           <button

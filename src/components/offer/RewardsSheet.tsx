@@ -183,6 +183,13 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   const eligibleRows: RankedOffer<SavingsOffer>[] = sections.hero
     ? [sections.hero, ...sections.readyRows]
     : sections.readyRows;
+  // UX-17: the offers eligible at open (the body mounts per open — BagSheet's
+  // openRows pattern). One unlocked while the sheet is open rises into its
+  // new place, its radio popping in; the rest, and every row on a reopen,
+  // stay still.
+  const [eligibleAtOpen] = useState(
+    () => new Set(eligibleRows.map((row) => String(row.offer?._id ?? ""))),
+  );
 
   // Radio state — applied offer preselected; seeded per open (see SheetBody
   // mounting note). SAVE compares against the live appliedId at commit time.
@@ -419,6 +426,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
         key={id}
         entry={entry}
         selected={interactive && pickedId === id}
+        rise={interactive && !eligibleAtOpen.has(id)}
         applied={appliedId === id}
         currency={currency}
         description={copy?.text || undefined}
@@ -574,6 +582,20 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
             {t("offers.saveSelection")}
           </button>
         </div>
+        {/* Busy SAVE (UX-04, design language): the house sweep 6 px above it.
+            Absolute against the panel, never in the footer (its 64 px
+            drop-shadow would re-filter every frame) or a button (the loop
+            rule); late, so a fast commit never flashes it. A guard only:
+            today's commit does no I/O and settles inside the tap's task, so
+            this never paints unless a commit awaits the network past 300 ms. */}
+        {committing && (
+          <div
+            aria-hidden="true"
+            className="tb-reveal-late pointer-events-none absolute inset-x-0 bottom-[114px] mx-auto h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac"
+          >
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+          </div>
+        )}
       </div>
     </div>
   );

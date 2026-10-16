@@ -40,7 +40,21 @@ export default function EditHowManyModal({
   // characters) and block the first key of a one-digit N.
   const [digits, setDigits] = useState("");
   const value = Number(digits);
-  const setValue = (k: number) => setDigits(k > 0 ? String(k) : "");
+  // UX-13 (R20): EDIT at 0 and "+" at N are refusals — the value leaf re-keys
+  // and shakes (never the control tapped); a change re-keys it with the bump.
+  // A press that changes nothing (− at 0) keeps the node.
+  const [refusals, setRefusals] = useState(0);
+  const [refused, setRefused] = useState(false);
+  const change = (next: string) => {
+    if (next === digits) return;
+    setDigits(next);
+    setRefused(false);
+  };
+  const refuse = () => {
+    setRefusals((n) => n + 1);
+    setRefused(true);
+  };
+  const setValue = (k: number) => change(k > 0 ? String(k) : "");
 
   // A k past N never applies: those digits (the numpad's `accepts`) and "+"
   // at N render dimmed and aria-disabled, not live-looking keys that do
@@ -51,7 +65,7 @@ export default function EditHowManyModal({
   const handleKeys = (next: string) => {
     const normalised = next.replace(/^0+/, "");
     if (!fits(normalised)) return;
-    setDigits(normalised);
+    change(normalised);
   };
 
   return (
@@ -103,11 +117,14 @@ export default function EditHowManyModal({
                 <img alt="" src={minusIcon} className="h-[36px] w-[36px]" />
               </button>
               {/* Re-keyed per value: each change replays the bump (motion-v2
-                  MV7, the BagItemRow count pattern). */}
+                  MV7, the BagItemRow count pattern) — and per refusal, which
+                  shakes it instead (UX-13). */}
               <p
-                key={value}
+                key={`${value}:${refusals}`}
                 data-testid="edit-how-many-value"
-                className="tb-bump min-w-[26px] text-center text-[30px] font-black leading-[24px] text-black"
+                className={`min-w-[26px] text-center text-[30px] font-black leading-[24px] text-black ${
+                  refused ? "tb-shake" : "tb-bump"
+                }`}
               >
                 {value}
               </p>
@@ -116,7 +133,7 @@ export default function EditHowManyModal({
                 data-testid="edit-how-many-increase"
                 aria-label={t("bag.increase")}
                 aria-disabled={atMax}
-                onClick={() => setValue(Math.min(total, value + 1))}
+                onClick={() => (atMax ? refuse() : setValue(Math.min(total, value + 1)))}
                 className={`flex h-[44px] w-[44px] items-center justify-center ${atMax ? "opacity-40" : ""}`}
               >
                 <img alt="" src={plusIcon} className="h-[36px] w-[36px]" />
@@ -137,9 +154,7 @@ export default function EditHowManyModal({
             data-testid="edit-how-many-confirm"
             autoFocus
             aria-disabled={value === 0}
-            onClick={() => {
-              if (value > 0) onConfirm(value);
-            }}
+            onClick={() => (value > 0 ? onConfirm(value) : refuse())}
             className={`tb-display h-[96px] w-full rounded-[8px] bg-tb-purple text-center text-[24px] leading-[32px] text-tb-surface shadow-[0px_20px_40px_0px_rgba(0,0,0,0.15)] ${
               value === 0 ? "opacity-40" : ""
             }`}
