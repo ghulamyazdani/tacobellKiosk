@@ -87,6 +87,10 @@ export default function PaytmPayment() {
     phase === "paid" ||
     ((phase === "cancelling" || phase === "settling") &&
       terminalPrompt === "none");
+  // The "pay with card" tilt runs while the guest can pay, and on under
+  // PleaseWait (never seen to stop); beside "press YES to cancel" or an end
+  // panel the card rests at its 0° Figma pose.
+  const tilt = phase === "awaiting" || waiting;
 
   return (
     // Motion §2.7: the content column arrives (.tb-enter); the sheen, the
@@ -126,13 +130,13 @@ export default function PaytmPayment() {
           className={`flex ${ada ? "size-[360px]" : "size-[616px]"} items-center justify-center`}
         >
           {/* Figma Credit card 1 (1:5603): the card tilts on a loop about
-              its bottom-left corner, inside the slot (motion §3.7). Nothing
-              tappable around it. */}
+              its bottom-left corner, inside the slot (motion §3.7), while
+              `tilt` holds. Nothing tappable around it. */}
           {edc ? (
             <img
               alt=""
               src={creditCard}
-              className={`tb-card-tilt ${ada ? "h-[162px] w-[252px]" : "h-[277.2px] w-[431.2px]"}`}
+              className={`${tilt ? "tb-card-tilt " : ""}${ada ? "h-[162px] w-[252px]" : "h-[277.2px] w-[431.2px]"}`}
             />
           ) : (
             showCancel && <PaytmQr value={qrCode} size={ada ? 360 : 616} />
@@ -155,11 +159,15 @@ export default function PaytmPayment() {
             </span>
           </div>
 
+          {/* The one instruction the guest must act on, on a device: it
+              rises in place of the hint, and again when it changes (keyed:
+              a new node per prompt, never a class on the hint's node). */}
           {showPrompt ? (
             <p
+              key={terminalPrompt}
               data-testid="paytm-terminal-prompt"
               role="status"
-              className="w-full rounded-[8px] bg-tb-purple px-[32px] py-[20px] text-center text-[30px] font-bold leading-[36px] text-tb-surface"
+              className="tb-rise w-full rounded-[8px] bg-tb-purple px-[32px] py-[20px] text-center text-[30px] font-bold leading-[36px] text-tb-surface"
             >
               {/* YES-only (UI-F3, flagged): polling stops
                   PAYTM_SETTLE_WINDOW_MS after the void with no countdown, so
@@ -198,9 +206,11 @@ export default function PaytmPayment() {
             </p>
           </div>
           {/* Points at the card machine: three nudges toward it after the
-              entrance (motion-v2 MV6, design language); the label stays
-              still. The root is overflow-clip; CANCEL sits bottom-left. */}
+              entrance (motion-v2 MV6, design language), and three more with
+              each terminal prompt, re-keyed; the label stays still. The
+              root is overflow-clip; CANCEL sits bottom-left. */}
           <img
+            key={showPrompt ? terminalPrompt : "pay"}
             aria-hidden
             alt=""
             src={downHereArrow}
