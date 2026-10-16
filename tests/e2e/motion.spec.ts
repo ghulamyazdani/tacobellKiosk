@@ -759,7 +759,8 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await page.getByTestId(`quick-add-${GREEK_SALAD}`).click();
     await expect(page.getByTestId("cta-view-bag")).toContainText("(1)");
     await expect(page.getByTestId("product-added-modal")).toBeVisible();
-    expect(named(await animations(page, '[data-testid="cta-view-bag"]'), "tb-bump"), "under the modal's scrim the mark holds still").toEqual([]);
+    // The node, not getAnimations(): tb-bump has no fill, so a bump that ran under the scrim may already be gone.
+    await expect(mark, "under the modal's scrim the mark holds still").not.toHaveClass(/\btb-bump\b/);
     await settle(page);
     const fresh = await replaced(page, mark, async () => {
       await rate(0.1);

@@ -272,7 +272,15 @@ export default function Customization({
   // (z-80), or the global error (z-95) a quick-customization commit raises —
   // and plays as it closes, where the guest looks. Off while one is up, on
   // after: every refusal replays it (the class toggles across two commits).
+  // Only the global error raised WITH the refusal holds it (each refusal sets
+  // a NEW erroredSection): another group's error — a group max, the DP cap —
+  // never re-shakes the ringed group (adjusting state while rendering). A
+  // pick's reset to {} is skipped while nothing is up: no extra render pass.
   const globalErrorUp = Boolean(useSelector(selectShowErrorModalGlobal));
+  const [errorHold, setErrorHold] = useState({ section: erroredSection, on: false });
+  const refusal = (erroredSection as { id?: unknown } | undefined)?.id !== undefined;
+  if (errorHold.section !== erroredSection && (refusal || globalErrorUp)) setErrorHold({ section: erroredSection, on: globalErrorUp });
+  else if (errorHold.on && !globalErrorUp) setErrorHold({ section: erroredSection, on: false });
   const initialisedFor = useRef<string | null>(null);
 
   // ---- Lane addon-customize: the add-on prompts (D9) and the tap guard
@@ -534,7 +542,7 @@ export default function Customization({
   };
 
   // Without its code the warning never opens: the shake plays at once.
-  const warningUp = (incompleteTap > 0 && Boolean(lazyParts)) || globalErrorUp;
+  const warningUp = (incompleteTap > 0 && Boolean(lazyParts)) || errorHold.on;
 
   const selectionFor = (group: any): any[] =>
     (selectedCustomizations ?? {})[group?._id] ?? [];

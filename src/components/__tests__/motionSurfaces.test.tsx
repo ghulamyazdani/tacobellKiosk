@@ -13,6 +13,7 @@ import CategoryRail from "../menu/CategoryRail";
 import MenuFilterChips from "../menu/MenuFilterChips";
 import MenuItemCard from "../menu/MenuItemCard";
 import MenuCtaBar from "../menu/MenuCtaBar";
+import { CartRehydratedContext } from "../../hooks/utils/useCartRehydrated";
 import SelectSizeModal from "../menu/SelectSizeModal";
 import OptionCard, { Counter, CtaBar, GroupHeader, OptionRow } from "../customization/OptionCard";
 import SlotSelectionSheet from "../customization/SlotSelectionSheet";
@@ -128,8 +129,13 @@ describe("selection (§3.2)", () => {
 });
 
 describe("counts re-key a small leaf (§3.3)", () => {
+  // UX-02: the bar arms once AppRoutes' cart rehydrate has settled (before it, a reload's rows landing is the mount).
+  const settled = ({ children }: { children: ReactNode }) => (
+    <CartRehydratedContext.Provider value>{wrapper({ children })}</CartRehydratedContext.Provider>
+  );
+
   it("the bag mark is a NEW node after an add AND after an increment of an existing row — the SAME node otherwise; the mark it mounts with stays still (UX-02)", () => {
-    render(<MenuCtaBar currency="£" onViewBag={vi.fn()} />, { wrapper });
+    render(<MenuCtaBar currency="£" onViewBag={vi.fn()} />, { wrapper: settled });
     const bag = () => screen.getByTestId("cta-view-bag").querySelector("img") as HTMLImageElement;
     const empty = bag();
     expect(empty).not.toHaveClass("tb-bump");
@@ -160,7 +166,7 @@ describe("counts re-key a small leaf (§3.3)", () => {
   it("the loyalty layout's count badge pops in, re-keyed per unit count", () => {
     store.dispatch(setKioskSettings({ enable_loyalty: true }));
     store.dispatch(setLoyaltyPartner({ partner: { partner_name: "Xeno" }, partnerDetails: { partner_name: "Xeno" } }));
-    render(<MenuCtaBar currency="£" onViewBag={vi.fn()} onOpenRewards={vi.fn()} />, { wrapper });
+    render(<MenuCtaBar currency="£" onViewBag={vi.fn()} onOpenRewards={vi.fn()} />, { wrapper: settled });
     const badge = () =>
       screen.getByRole("button", { name: i18n.t("menu.viewMyBag") }).querySelector("span.tb-pop-in") as HTMLElement | null;
     const bag = () => screen.getByRole("button", { name: i18n.t("menu.viewMyBag") }).querySelector("img");

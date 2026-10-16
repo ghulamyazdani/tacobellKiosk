@@ -5,6 +5,7 @@ import { cartQuantity, selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCoupons } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useCartTotal from "../../hooks/cartHooks/useCartTotal";
+import { useCartRehydrated } from "../../hooks/utils/useCartRehydrated";
 import { formatPrice } from "../../utils/price";
 import { selectAddToCartModal } from "../../redux/features/menuSelections/menuSelections.slice";
 import bagIcon from "../../assets/icons/bag.svg";
@@ -67,17 +68,21 @@ export default function MenuCtaBar({
   // the bump and the pop play as the guest looks back (ADD TO ORDER adds and
   // closes in one commit: one bump). The bar the menu mounts with stays
   // still (PDP BACK, a reload): each arms at its first change, or a close.
+  // A reload's rows land from Dexie just after the mount: until AppRoutes'
+  // rehydrate has settled (BagSheet's precedent) a change is still the mount.
   // Adjusting state while rendering (DetourTapGuard's pattern).
   const covered = Boolean(useSelector(selectAddToCartModal));
-  const [seen, setSeen] = useState({ bagKey, itemCount, covered, bump: false, pop: false });
-  if (seen.bagKey !== bagKey || seen.covered !== covered) {
+  const rehydrated = useCartRehydrated();
+  const [seen, setSeen] = useState({ bagKey, itemCount, covered, rehydrated, bump: false, pop: false });
+  if (seen.bagKey !== bagKey || seen.covered !== covered || seen.rehydrated !== rehydrated) {
     const closed = seen.covered && !covered;
     setSeen({
       bagKey,
       itemCount,
       covered,
-      bump: seen.bump || closed || seen.bagKey !== bagKey,
-      pop: seen.pop || closed || seen.itemCount !== itemCount,
+      rehydrated,
+      bump: seen.bump || closed || (seen.rehydrated && seen.bagKey !== bagKey),
+      pop: seen.pop || closed || (seen.rehydrated && seen.itemCount !== itemCount),
     });
   }
   const mark = covered ? (
