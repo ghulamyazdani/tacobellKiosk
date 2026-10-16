@@ -42,6 +42,7 @@ import {
   setRecommendationDetour,
 } from "../../../redux/features/menuSelections/menuSelections.slice";
 import { notePath } from "../../../hooks/utils/usePageEnter";
+import { resolveEntityImage } from "../../../utils/entityImage";
 import Menu from "../index";
 import i18n from "../../../i18n";
 
@@ -75,6 +76,13 @@ vi.mock("../../../utils/analytics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/analytics")>()),
   captureKioskEvent: (...args: unknown[]) => mockCapture(...args),
 }));
+
+// The real lookup, watched: a menu card resolves its photo once per render
+// (perf MENU-1 counts card renders by it).
+vi.mock("../../../utils/entityImage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../utils/entityImage")>();
+  return { ...actual, resolveEntityImage: vi.fn(actual.resolveEntityImage) };
+});
 
 /**
  * A fresh store as a boot leaves it for a tenant with the menu-layout
@@ -2010,5 +2018,73 @@ describe("Menu — the layout settings: send_categories / one_category_at_a_time
     renderMenu();
     expect(current()).toBe("rail-c-sides");
     expect(sectionIds()).toEqual(["section-c-sides"]);
+  });
+});
+
+/*
+  Perf MENU-1 / REDUX-1 / BAG-2 — memo(MenuItemCard) and Menu's two stable
+  card handlers. Menu re-renders on every cart write (the bag's taps too:
+  /cart is this same page); the grid must not re-render with it. A card still
+  re-renders when its own data moves (the stock map kills its item), and a
+  tap runs the LATEST handler, not the closure the skipped card last saw.
+*/
+describe("Menu — a cart write re-renders no card (perf MENU-1)", () => {
+  const MODS = {
+    sauce: {
+      _id: "sauce",
+      isActive: true,
+      min: 1,
+      max: 1,
+      constituentItems: [{ id: "mild", name: "mild", isActive: true, outOfStock: false }],
+    },
+  };
+  const BURRITO = { id: "e-burrito", name: "Burrito", price: 5, modifiers: ["sauce"], outOfStock: false };
+  const FRIES = { id: "e-fries", name: "Large Fries", price: 2.5, outOfStock: false };
+  const cardRenders = (id: string) =>
+    vi.mocked(resolveEntityImage).mock.calls.filter(([entity]) => (entity as { id?: string } | null)?.id === id)
+      .length;
+
+  beforeEach(() => {
+    mockFetchMenu.mockReset();
+    mockFetchMenu.mockReturnValue(new Promise(() => {}));
+    mockNavigate.mockReset();
+    resetStore();
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setModifiersMap({ modifiersMap: MODS }));
+    store.dispatch(setShowRepeatCustomization(true));
+    store.dispatch(
+      setMenuData({
+        menu: { categories: [{ id: "c1", name: "Mains", subCategories: [{ id: "s1", name: "Mains", entities: [BURRITO, FRIES] }] }] },
+      })
+    );
+  });
+
+  it("a cart write renders no card, yet the next '+' runs the latest handler (the repeat sheet); a stock change re-renders that card alone", () => {
+    renderMenu();
+    expect(cardRenders(BURRITO.id)).toBeGreaterThan(0);
+    vi.mocked(resolveEntityImage).mockClear();
+
+    act(() => {
+      store.dispatch(
+        setCartItems([{ id: BURRITO.id, itemId: "b-1", name: BURRITO.name, quantity: 1, type: "CUSTOMIZABLE", price: 5, total_price: 5 }])
+      );
+    });
+    expect(cardRenders(BURRITO.id)).toBe(0);
+    expect(cardRenders(FRIES.id)).toBe(0);
+
+    // The burrito is in the bag only for a handler from after the write: a
+    // stale one would see the empty cart and open the PDP instead.
+    fireEvent.click(screen.getByTestId(`quick-add-${BURRITO.id}`));
+    expect(repeatItemBottomSheetData(store.getState())?.isOpen).toBe(true);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(cardRenders(BURRITO.id)).toBe(0);
+
+    // PAY's stock map takes the burrito's only sauce: a new entity object.
+    act(() => {
+      store.dispatch(setOutOfStockItems({ mild: { type: "addon", inStock: false } }));
+    });
+    expect(screen.getByTestId(`item-${BURRITO.id}`)).toHaveAttribute("aria-disabled", "true");
+    expect(cardRenders(BURRITO.id)).toBe(1);
+    expect(cardRenders(FRIES.id)).toBe(0);
   });
 });

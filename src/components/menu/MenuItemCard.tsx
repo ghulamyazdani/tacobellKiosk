@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { resolveEntityImage } from "../../utils/entityImage";
@@ -65,7 +66,7 @@ export function formatMenuPriceLine(entity: unknown, currency: string, t: TFunct
  * DIRECT, empty child: tb-press-card squeezes the card while it is pressed
  * (`:has(> button:empty:active)`).
  */
-export default function MenuItemCard({
+function MenuItemCard({
   entity,
   currency,
   onOpen,
@@ -130,3 +131,12 @@ export default function MenuItemCard({
     </div>
   );
 }
+
+/**
+ * Memoized (perf MENU-1): Menu re-renders on every cart write, rail tap and
+ * overlay toggle, the whole grid with it. The props do not move with those —
+ * the entity from the memoized sellable menu, the currency string, Menu's two
+ * stable handlers — so the cards skip. A language change (useTranslation,
+ * useLocalized) and a stock change (a new entity object) still re-render one.
+ */
+export default memo(MenuItemCard);

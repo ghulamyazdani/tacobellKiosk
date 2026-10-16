@@ -2,7 +2,7 @@
  * The converted menu tree flows through untyped from the legacy converters;
  * typed with the SDK menu types in the P6 pass. Do not add NEW anys.
  */
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -462,6 +462,17 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   };
 
   /**
+   * The cards' handlers, stable for memo(MenuItemCard) (perf MENU-1): a cart
+   * write, a rail tap or an overlay toggle re-renders this page, never the
+   * grid. A tap still runs the LATEST handleEntityAction — the ref is written
+   * after every commit, before any tap can land.
+   */
+  const entityActionRef = useRef(handleEntityAction);
+  useLayoutEffect(() => { entityActionRef.current = handleEntityAction; });
+  const openCard = useCallback((entity: unknown) => entityActionRef.current(entity, false), []);
+  const quickAddCard = useCallback((entity: unknown) => entityActionRef.current(entity, true), []);
+
+  /**
    * A product-added suggestion tap — STAGED, as in posistKiosk: nothing
    * reaches the bag until the modal's ADD TO ORDER. A one-tap item is
    * PICKED on its tile. One that needs a choice opens what the same item's
@@ -668,8 +679,8 @@ export default function Menu({ bagOpen = false }: MenuProps) {
                               key={entity?.id}
                               entity={entity}
                               currency={currency}
-                              onOpen={(e: any) => handleEntityAction(e, false)}
-                              onQuickAdd={(e: any) => handleEntityAction(e, true)}
+                              onOpen={openCard}
+                              onQuickAdd={quickAddCard}
                             />
                           ))}
                         </div>
