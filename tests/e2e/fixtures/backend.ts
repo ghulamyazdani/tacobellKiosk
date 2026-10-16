@@ -41,7 +41,7 @@ export const SKIP_CRM = { skip_crm_page: true, pay_at_counter: "pay_at_counter" 
 export interface KioskBackendOptions {
   /** Merged over { start_order_text_primary: "START ORDER", ideal_time: "180" } (ideal_time clamps to 120 s). */
   settings?: Record<string, unknown>;
-  /** Arabic as the secondary language + start_order_text_secondary (boot fails without it). */
+  /** Arabic as the secondary language + start_order_text_secondary (unread: the splash shows only the primary). */
   arabic?: boolean;
   /** getPipelines body. Default [DINE_IN]. */
   pipelines?: unknown[];

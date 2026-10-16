@@ -73,8 +73,8 @@ const SMOKY_DONUTS_NAME = "3 pcs Mini Smoky Cheese Donuts.";
  * `enable_combo_upsell` flag to the get_kiosk_settings payload — the exact
  * field useAddEntityToCart's upsell gate reads out of
  * state.appSettings.kiosk_settings. `arabic` offers the secondary language
- * (menu-arabic.spec.ts), with its splash text: a secondary language without
- * it fails the boot.
+ * (menu-arabic.spec.ts), with its splash text — unread: the splash shows only
+ * the primary (2026-10-16).
  */
 const mockKioskBackend = (page: Page, { comboUpsell = false, arabic = false } = {}) =>
   mockBackend(page, { arabic, settings: comboUpsell ? { enable_combo_upsell: true } : {} });

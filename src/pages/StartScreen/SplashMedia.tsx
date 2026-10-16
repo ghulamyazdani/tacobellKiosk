@@ -9,6 +9,7 @@ import {
   toSplashSlides,
   type SplashSlide,
 } from "@cx-sdk/catalog/media/splashMedia";
+import { DEFAULT_LANGUAGE } from "../../i18n";
 import { safeVideoPlay } from "../../utils/safeVideoPlay";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
@@ -116,18 +117,22 @@ const Tint = () => (
  * The splash's ONE line, on every layout (user decision 2026-10-16): the
  * backend's start_order_text_primary (cx/get_kiosk_settings — posistKiosk's
  * StartFooter copy), else ORDER HERE. Primary only: every splash visit runs
- * in the default language. ORDER HERE's place: its 756 px column, bottom edge
- * at y 1712, so a longer text grows upward.
- * ponytail: no line clamp (overflow:hidden clips the first line's accents at
- * leading 98 < 116 px), so a 4+ line operator text grows over the cards' foot;
- * upgrade = a clamp or a step-down size if an operator needs a long line.
+ * in the default language — the fallback pinned to it, as i18n catches up
+ * with a session reset one effect late (App). ORDER HERE's place: its 756 px
+ * column, bottom edge at y 1712, so a longer text grows upward.
+ * ponytail: one size, no line clamp (overflow:hidden clips the first line's
+ * accents at leading 98 < 116 px). Ceilings: a word wider than the column
+ * (~7+ letters; WELCOME is 767 px) breaks mid-word, unhyphenated (WELCOM / E),
+ * and a 4+ line text (TAP HERE TO START YOUR ORDER) grows over the cards'
+ * foot; upgrade = a step-down size (or a clamp) if an operator needs either.
  */
 function SplashText() {
   const { t } = useTranslation();
   const custom: unknown =
     useSelector(kiosSettingsRdx)?.start_order_text_primary;
   const text =
-    (typeof custom === "string" && custom.trim()) || t("splash.orderHere");
+    (typeof custom === "string" && custom.trim()) ||
+    t("splash.orderHere", { lng: DEFAULT_LANGUAGE });
   return (
     // dir="auto" on this LEAF only (P9f): an operator's Arabic text reads RTL.
     <span

@@ -4,7 +4,7 @@ import { Provider } from "react-redux";
 import { setKioskSettings, setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import SplashMedia, { SPLASH_RETRY_MS } from "../SplashMedia";
-import "../../../i18n";
+import i18n, { DEFAULT_LANGUAGE } from "../../../i18n";
 
 /*
   P9d — the splash media layer. Layout by PLAYABLE slide count (0 → WELCOME
@@ -743,7 +743,8 @@ describe("lifecycle", () => {
   and nothing fades at mount. An advance remounts all three cards, which
   shift in together by one card pitch (tb-carousel-in) on their own slots; a
   skipped (failed) slide is not an advance. Nothing pulses: tb-attract went
-  with the START ORDER CTA (2026-10-16).
+  with the START ORDER CTA (2026-10-16) — e2e motion M8 pins /start to no
+  infinite animation (jsdom runs none).
 */
 describe("motion (lane motion §3.6)", () => {
   const shifted = () =>
@@ -773,25 +774,15 @@ describe("motion (lane motion §3.6)", () => {
     expect(cards()[1]).toBe(u("b.jpg"));
     expect(shifted()).toEqual([]);
   });
-
-  it.each([
-    ["welcome", [{ url: "   " }]],
-    ["single", [{ url: "https://cdn.test/one.jpg" }]],
-    ["carousel", [{ url: "https://cdn.test/one.jpg" }, { url: "https://cdn.test/two.jpg" }]],
-  ])("nothing on the splash pulses (no tb-attract) — %s", (name, slides) => {
-    seed(slides);
-    renderSplash();
-    expect(layout()).toBe(name);
-    expect(host().querySelector('[class*="tb-attract"]')).toBeNull();
-  });
 });
 
 /*
   The one line (user decision 2026-10-16): the backend's
   start_order_text_primary (kiosk_settings), trimmed, on EVERY layout — never
   start_order_text_secondary; anything but a non-blank string shows the i18n
-  "order here". ORDER HERE's place: Title/H1 in its 756 px column, bottom edge
-  at y 1712 (bottom 208), so a longer text grows upward.
+  "order here", in the default language. ORDER HERE's place: Title/H1 in its
+  756 px column, bottom edge at y 1712 (bottom 208), so a longer text grows
+  upward.
 */
 describe("the one line — start_order_text_primary, else 'order here' (2026-10-16)", () => {
   const LAYOUTS = [
@@ -840,6 +831,18 @@ describe("the one line — start_order_text_primary, else 'order here' (2026-10-
     expect(text()).toBe("order here");
   });
 
+  it("an Arabic session ending on the splash: the fallback is 'order here' from the first render (i18n catches up one effect later)", async () => {
+    await i18n.changeLanguage("ar");
+    try {
+      seed([{ url: "https://cdn.test/one.jpg" }]);
+      renderSplash();
+
+      expect(text()).toBe("order here");
+    } finally {
+      await i18n.changeLanguage(DEFAULT_LANGUAGE);
+    }
+  });
+
   it.each(LAYOUTS)("%s: ORDER HERE's place — Title/H1, its 756 px column, bottom 208, wrapping anywhere, dir=auto on the leaf only, no clamp", (_name, slides) => {
     settings({ start_order_text_primary: "Tap to order" });
     seed([...slides]);
@@ -851,7 +854,7 @@ describe("the one line — start_order_text_primary, else 'order here' (2026-10-
       "tb-display", "text-[116px]", "leading-[98px]", "tracking-[-3.27px]", "text-tb-surface",
       "absolute", "bottom-[208px]", "left-[162px]", "w-[756px]", "text-center", "[overflow-wrap:anywhere]"
     );
-    expect(line.className).not.toMatch(/nowrap|line-clamp|truncate|overflow-hidden|tb-attract/);
+    expect(line.className).not.toMatch(/nowrap|line-clamp|truncate|overflow-hidden/);
     expect(line).toHaveAttribute("dir", "auto");
     expect(host().querySelectorAll("[dir]")).toHaveLength(1);
   });

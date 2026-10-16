@@ -241,7 +241,7 @@ async function mockKioskBackend(page: Page, opts: BackendOptions = {}) {
     r.fulfill({
       json: {
         start_order_text_primary: SPLASH_LINE,
-        // A secondary language without its splash text fails the boot.
+        // Arabic's own copy: never shown on the splash (2026-10-16), never required by the boot (B6).
         ...(opts.arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
         ideal_time: "180",
         ...(opts.skipCRM
