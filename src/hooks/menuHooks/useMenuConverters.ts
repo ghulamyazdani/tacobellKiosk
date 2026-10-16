@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector, useStore } from "react-redux";
-import type { UnknownAction } from "@reduxjs/toolkit";
+import { freeze, type UnknownAction } from "@reduxjs/toolkit";
 import {
   selectMenu,
   setMenuData,
@@ -100,6 +100,33 @@ import {
   type LegacyComboData,
   type LegacyComboEntity,
 } from "@cx-sdk/catalog/menu/legacyMenuConverters";
+
+/*
+  Perf pass BOOT-1: Immer's autoFreeze deep-walks every payload a reducer
+  stores and stops only at an object already frozen. All of them together
+  are ~69k objects of the reference menu (~12 ms on an M-class dev machine,
+  several times that on the kiosk CPU, per pipeline tap — measured
+  2026-10-16). Production freezes each root before its dispatch (Immer's
+  shallow freeze); DEV keeps the deep freeze as the mutation tripwire. Every
+  menu-scale root fetchMenu dispatches goes through this: one left out is
+  walked with everything it reaches — the menu tree ~63k objects,
+  modifiersMap ~53k, an entity map ~7k (the roots share their objects).
+  ponytail: production leaves the objects INSIDE the menu maps unfrozen — a
+  mutation bug no DEV suite reaches edits this guest's menu instead of
+  throwing (each fetchMenu rebuilds it from a fresh copy).
+*/
+const frozenRoot = <T>(value: T): T => (import.meta.env.DEV ? value : freeze(value));
+
+/**
+ * The ONE modifier-group resolver (UB6): the SDK keeps the fork's trailing
+ * `undefined` per id the menu's `modifiers` lacks; this drops them, so no
+ * caller reads a field off one. Pure — useCustomization uses it without
+ * instantiating this hook (perf pass PDP-2).
+ */
+export const resolveModifierGroups = (modifiersMap: unknown, modifiersToBeSearched: Array<string>) =>
+  resolveLegacyModifierGroups(modifiersMap, modifiersToBeSearched, (value) =>
+    structuredClone(value),
+  )?.filter(Boolean);
 
 function useMenuConverters() {
   const dispatch = useDispatch();
@@ -294,6 +321,24 @@ function useMenuConverters() {
           ]);
         dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions, apply);
       } else {
+        // Perf pass BOOT-2: the four calls that do not need the cached menu
+        // id start BEFORE the Dexie read (the whole ~7 MB row), so they
+        // overlap it; only getMenu waits for the id. The bare catch only
+        // keeps a rejection that lands during the read from being reported
+        // as unhandled — the Promise.all below still observes it (→ {}).
+        const rest = Promise.all([
+          getOutOfStock({
+            deployment_id: parsedLicenceDetails.deployment_id,
+            tab_id: tab_id,
+          }).unwrap(),
+          getServerTimeApi({}).unwrap(),
+          getCxOffers(pipeline.tab_type, apply).catch(() => null),
+          isDynamicPricingEnabled
+            ? fetchDpSessions(apply).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+        rest.catch(() => {});
+
         let storedMenuId = "";
         let storedMenuFull: any = null;
 
@@ -307,7 +352,7 @@ function useMenuConverters() {
           // Best effort: no cached menu id → a full download (C5: no log).
         }
 
-        [menu, outOfStock, serverTimeData, offers, validDpSessions] =
+        [menu, [outOfStock, serverTimeData, offers, validDpSessions]] =
           await Promise.all([
             getMenuApi({
               tab_id: tab_id,
@@ -315,15 +360,7 @@ function useMenuConverters() {
               deployment_id: selectDeploymentDetailsRdx._id,
               MENU_ID: storedMenuId,
             }).unwrap(),
-            getOutOfStock({
-              deployment_id: parsedLicenceDetails.deployment_id,
-              tab_id: tab_id,
-            }).unwrap(),
-            getServerTimeApi({}).unwrap(),
-            getCxOffers(pipeline.tab_type, apply).catch(() => null),
-            isDynamicPricingEnabled
-              ? fetchDpSessions(apply).catch(() => [])
-              : Promise.resolve([]),
+            rest,
           ]);
         dpItemsMap = await fetchDpItems(pipeline?._id, validDpSessions, apply);
 
@@ -338,12 +375,18 @@ function useMenuConverters() {
           }
         } else {
           if (menu?.MENU_ID) {
+            // Perf pass BOOT-4: not awaited — a ~7 MB IndexedDB commit is
+            // not the guest's wait. IndexedDB queues the next read behind
+            // this write; a lost write costs one full download, as a failed
+            // put always has. The try covers a synchronous throw.
             try {
-              await db.menus.put({
-                tabId: tab_id,
-                menuId: menu.MENU_ID,
-                menu: menu,
-              });
+              void db.menus
+                .put({
+                  tabId: tab_id,
+                  menuId: menu.MENU_ID,
+                  menu: menu,
+                })
+                .catch(() => {});
             } catch {
               // Best effort: the next fetch downloads it again (C5: no log).
             }
@@ -420,7 +463,7 @@ function useMenuConverters() {
       const taxesMap = new Map<any, any>();
 
       const entityMapObject = Object.fromEntries(entityMap);
-      apply(setEntityMap({ entityMap: entityMapObject }));
+      apply(setEntityMap({ entityMap: frozenRoot(entityMapObject) }));
 
       const convertedData = convertMenuData(
         menuWithChecks,
@@ -439,7 +482,7 @@ function useMenuConverters() {
 
       apply(
         setModifiersMap({
-          modifiersMap: modifierMap,
+          modifiersMap: frozenRoot(modifierMap),
         }),
       );
 
@@ -449,7 +492,7 @@ function useMenuConverters() {
           showOnlySupCat,
           showEntpCategory,
         ).forEach((payload: any) => {
-          apply(setMenuBasedOnCategory(payload));
+          apply(setMenuBasedOnCategory({ ...payload, menu: frozenRoot(payload.menu) }));
         });
 
         const {
@@ -468,43 +511,44 @@ function useMenuConverters() {
 
         apply(
           setEntityModifierMap({
-            entityAndModifierMap: entityWithModifiersMap,
+            entityAndModifierMap: frozenRoot(entityWithModifiersMap),
           }),
         );
 
         apply(
           setCategoryMap({
-            categoryMap: categoryMapData,
+            categoryMap: frozenRoot(categoryMapData),
           }),
         );
 
         apply(
           setSubCategoryMap({
-            subCategoryMap: subCategoryMap,
+            subCategoryMap: frozenRoot(subCategoryMap),
           }),
         );
         apply(
           setSubCategoryMapWhichContainsTopLevelCategoryIdAndName({
-            subCategoryMapWhichContainsTopLevelCategoryIdAndName:
+            subCategoryMapWhichContainsTopLevelCategoryIdAndName: frozenRoot(
               subCategoryMapWhichContainsTopLevelCategoryIdAndName,
+            ),
           }),
         );
 
         apply(
           setAllMenuWithoutChecks({
-            inActiveEntities: inActiveEntityMap,
-            inaActiveVariants: inActiveVariantMap,
+            inActiveEntities: frozenRoot(inActiveEntityMap),
+            inaActiveVariants: frozenRoot(inActiveVariantMap),
           }),
         );
         //dispatching the variant
         apply(
           setEntityMenuObject({
-            menuEntityObject: entityObject,
+            menuEntityObject: frozenRoot(entityObject),
           }),
         );
         apply(
           setVariantObject({
-            variantObject: variantAndBaseItemMapping,
+            variantObject: frozenRoot(variantAndBaseItemMapping),
           }),
         );
       } else {
@@ -513,19 +557,19 @@ function useMenuConverters() {
 
         apply(
           setAllMenuWithoutChecks({
-            inActiveEntities: inActiveEntityMap,
-            inaActiveVariants: inActiveVariantMap,
+            inActiveEntities: frozenRoot(inActiveEntityMap),
+            inaActiveVariants: frozenRoot(inActiveVariantMap),
           }),
         );
         //dispatching the variant
         apply(
           setEntityMenuObject({
-            menuEntityObject: entityObject,
+            menuEntityObject: frozenRoot(entityObject),
           }),
         );
         apply(
           setVariantObject({
-            variantObject: variantAndBaseItemMapping,
+            variantObject: frozenRoot(variantAndBaseItemMapping),
           }),
         );
       }
@@ -560,7 +604,7 @@ function useMenuConverters() {
 
       setMenuLocal(convertedData);
 
-      apply(setMenuData({ menu: convertedData }));
+      apply(setMenuData({ menu: frozenRoot(convertedData) }));
       //now create a map for modifiers and there ids
 
       setFetchLoading(false);
@@ -697,14 +741,10 @@ function useMenuConverters() {
   //global function to fetch all the modifier groups and there items if it is not variant
   // Drops ids the menu's `modifiers` lacks: the SDK resolver keeps the fork's
   // trailing-`undefined` quirk, and the PDP seed read `group._id` off one
-  // (UB6 — the crash screen from the bag rail).
-  const fetchModifierProperties = (modifiersToBeSearched: Array<string>) => {
-    return resolveLegacyModifierGroups(
-      selectModifiersRdx,
-      modifiersToBeSearched,
-      deepClone,
-    )?.filter(Boolean);
-  };
+  // (UB6 — the crash screen from the bag rail). One implementation:
+  // resolveModifierGroups (module scope), which useCustomization shares.
+  const fetchModifierProperties = (modifiersToBeSearched: Array<string>) =>
+    resolveModifierGroups(selectModifiersRdx, modifiersToBeSearched);
 
   const fetchModifierPropertiesAll = (
     _modifiersToBeSearched: Array<string>,

@@ -23,7 +23,7 @@ import i18n from "../../../i18n";
   Seams: navigation, the Dexie cart mirror, and addEntity (a pass-through spy).
 */
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), addEntity: vi.fn(), railRenders: vi.fn() }));
 
 vi.mock("react-router-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router-dom")>()),
@@ -40,6 +40,18 @@ vi.mock("../../../hooks/cartHooks/useCartIndexedDb", async (importOriginal) => {
       updateItemIndexedDbCart: () => Promise.resolve(),
       increaseItemQuantityByIdIndexedDb: () => Promise.resolve(),
     }),
+  };
+});
+
+// A pass-through: counts the rail's renders (its first hook call) for the perf pass PDP-1 pin.
+vi.mock("../../../hooks/recommendation/useTenantRecommendations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../hooks/recommendation/useTenantRecommendations")>();
+  return {
+    ...actual,
+    useTenantItemSuggestions: (entityId: string | undefined) => {
+      mocks.railRenders(entityId);
+      return actual.useTenantItemSuggestions(entityId);
+    },
   };
 });
 
@@ -108,6 +120,7 @@ describe("YouMightLikeRail (R1 — PDP 'You Might Like')", () => {
     store.dispatch(setModifiersMap({ modifiersMap: { wrap_addons: { _id: "wrap_addons", isActive: true } } }));
     mocks.navigate.mockReset();
     mocks.addEntity.mockReset();
+    mocks.railRenders.mockReset();
   });
 
   afterEach(async () => {
@@ -196,5 +209,28 @@ describe("YouMightLikeRail (R1 — PDP 'You Might Like')", () => {
     expect(mocks.addEntity.mock.calls[0][0]).toMatchObject({ id: "fries", name: "Large Fries" });
     expect(cartRows()[0].name).toBe("Large Fries");
     expect(JSON.stringify(store.getState())).not.toContain(`⁨${AR_FRIES}⁩`);
+  });
+
+  it("perf pass PDP-1: memoized — a PDP re-render with the same item skips the rail; its own subscriptions still update it", () => {
+    // The PDP renders the rail inside an ErrorBoundary; any parent re-render (every tap) stands in here.
+    const Pdp = ({ tap }: { tap: number }) => (
+      <div data-tap={tap}>
+        <YouMightLikeRail entityId="burger" />
+      </div>
+    );
+    const { rerender } = render(<Pdp tap={0} />, { wrapper });
+    const renders = mocks.railRenders.mock.calls.length;
+    expect(renders).toBeGreaterThan(0);
+
+    rerender(<Pdp tap={1} />);
+    rerender(<Pdp tap={2} />);
+    expect(mocks.railRenders).toHaveBeenCalledTimes(renders);
+
+    // The bag changes under it: the rail re-renders and the count pill follows.
+    act(() => {
+      store.dispatch(setCartItems([{ id: "pepsi", itemId: "p-1", name: "Pepsi", quantity: 2, type: "ITEM", price: 3, total_price: 6 }]));
+    });
+    expect(mocks.railRenders.mock.calls.length).toBeGreaterThan(renders);
+    expect(pill("pdp-rail-item-pepsi")).toHaveTextContent(/^2$/);
   });
 });

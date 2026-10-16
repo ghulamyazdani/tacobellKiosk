@@ -22,12 +22,17 @@ import {
   checkCustomizationQuantity,
   generateString,
 } from "@cx-sdk/catalog/menu/menuUtils";
-import useLoyalty from "../loyalty/useLoyalty";
 import useCartHook from "../menuHooks/useCartHook";
 import { resolveCustomizationReturnPath } from "../../utils/customizationReturn";
-import useMenuConverters from "../menuHooks/useMenuConverters";
+import { resolveModifierGroups } from "../menuHooks/useMenuConverters";
+import useAllowMultiplePunch from "./useAllowMultiplePunch";
+import {
+  isCheckBoxRequiredFunction,
+  isStepperRequired,
+} from "@cx-sdk/catalog/menu/legacyMenuConverters";
+import { redeemItem } from "@cx-sdk/ordering/loyalty/loyaltyEngine";
+import { calculationWrapper } from "@cx-sdk/catalog/settings/settingsEngine";
 import { useState } from "react";
-import useAppSettings from "../utils/useAppSettings";
 import useGlobalTriggerServices from "../globals/useGlobalTriggerServices";
 import AutoScroll from "../../utils/autoScroll";
 import { useTranslation } from "react-i18next";
@@ -56,7 +61,6 @@ import {
   selectQuickCustomizatonMode,
   setShowErrorModalGlobal,
 } from "@cx-sdk/catalog/state/appSettings.slice";
-import useMakeItAMeal from "../makeItAMeal/useMakeItAMeal";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import {
   applyDecreaseCustomization,
@@ -146,15 +150,15 @@ const useCustomization = ({
     selectIsForceOpenMakeItAMealModal,
   );
   const quickCustomizationRdx = useSelector(selectQuickCustomizatonMode);
-  // Verbatim parity: the original destructured `findAppropriateVariantForSelectedItem`
-  // (unused). The bare call keeps hook order and store subscriptions identical.
-  useMakeItAMeal();
-  const {
-    isCheckBoxRequiredFunction,
-    fetchModifierProperties,
-    isAllowMultiplePunch,
-    isStepperRequired,
-  } = useMenuConverters();
+  // Perf pass PDP-2: the leaf hook and the pure functions, not
+  // useMenuConverters / useLoyalty / useAppSettings and a bare useMakeItAMeal
+  // (~140 store subscriptions + 20 RTK Query hooks, re-run on every PDP
+  // render, for four pure functions). Same functions, same results; every
+  // returned name is kept (isCheckBoxRequiredFunction, isStepperRequired,
+  // redeemItem and calculationWrapper are the SDK's own, imported above).
+  const { isAllowMultiplePunch } = useAllowMultiplePunch();
+  const fetchModifierProperties = (modifiersToBeSearched: Array<string>) =>
+    resolveModifierGroups(selectModifiersRdx, modifiersToBeSearched);
 
   // const groupIDTier2 = useSelector(tier2MIAMGroupID);
   // const groupIDTier1 = useSelector(tier1MIAMGroupID);
@@ -357,8 +361,6 @@ const useCustomization = ({
 
   const dispatch = useDispatch();
 
-  const { redeemItem } = useLoyalty();
-
   const {
     addItemToCart,
     updateItemCart,
@@ -441,7 +443,6 @@ const useCustomization = ({
   // const SelectedEntity = useSelector(selectMenuSelections);
 
   const [isScrollingDown, setIsScrollingDown] = useState(false);
-  const { calculationWrapper } = useAppSettings();
   const [disablePrevious, setDisabledPrevious] = useState(false);
   const disablePreviousButton = () => {
     setDisabledPrevious(true);

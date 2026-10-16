@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { memo, type JSX } from "react";
 import { useTranslation } from "react-i18next";
 import type { RecommendedEntity } from "@cx-sdk/core/types/recommendation";
 import { useTenantItemSuggestions } from "../../hooks/recommendation/useTenantRecommendations";
@@ -22,8 +22,11 @@ import ForYouCard from "../cart/ForYouCard";
  * tier-1 session over the guest's open customisation (Rule 1/3). A tap adds
  * one unit with the added modal suppressed — the card's count pill is the
  * confirmation. Null when nothing survives. Names resolve at render.
+ *
+ * Memoized (perf pass PDP-1): its one prop is an id string and all its data
+ * comes from its own subscriptions, so a PDP tap's re-render skips it.
  */
-export default function YouMightLikeRail({
+function YouMightLikeRail({
   entityId,
 }: {
   entityId?: string;
@@ -74,3 +77,5 @@ export default function YouMightLikeRail({
     </section>
   );
 }
+
+export default memo(YouMightLikeRail);

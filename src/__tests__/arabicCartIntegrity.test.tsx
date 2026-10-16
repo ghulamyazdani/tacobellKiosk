@@ -76,6 +76,8 @@ vi.mock("../utils/analytics", async (importOriginal) => ({
 vi.mock("../hooks/menuHooks/useMenuConverters", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/menuHooks/useMenuConverters")>();
   return {
+    // The PDP resolves modifier groups through the module's pure export (perf pass PDP-2).
+    ...actual,
     default: () => ({
       ...actual.default(),
       fetchMenu: () => Promise.resolve({ categories: [{ id: "c1" }] }),
