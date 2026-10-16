@@ -916,4 +916,23 @@ describe("fetchMenu — low-end perf pass (BOOT-1, BOOT-2, BOOT-4)", () => {
     }
     expect(firedAtConversion).toBe(true);
   });
+
+  it("BOOT-4: a changed menu (200) issues its cache write in a later task than the menu response — the parse and the copy never share a frame", async () => {
+    let responseMarker = false;
+    net.menu = () => {
+      // A macrotask queued as getMenu answers: a write that yields first is
+      // issued after it; one in the response's task is issued before.
+      setTimeout(() => {
+        responseMarker = true;
+      }, 0);
+      return Promise.resolve({ ...tenantMenu(), MENU_ID: "menu-10" });
+    };
+    let markerAtWrite: boolean | undefined;
+    net.dexiePut = () => {
+      markerAtWrite = responseMarker;
+      return Promise.resolve();
+    };
+    await fetchOnce();
+    expect(markerAtWrite).toBe(true);
+  });
 });
