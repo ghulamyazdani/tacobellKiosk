@@ -153,7 +153,7 @@ describe("reduced motion: every non-loop first frame is its end state (D-M4; mot
     expect(FIRST.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         "tb-modal-enter", "tb-fade-in", "tb-confetti-fall", "tb-chip-pop", "tb-success-pulse", "tb-enter", "tb-rise",
-        "tb-sheet-enter", "tb-modal-spring", "tb-pop-in", "tb-select", "tb-carousel-in",
+        "tb-sheet-enter", "tb-modal-spring", "tb-pop-in", "tb-select",
       ])
     );
   });
@@ -328,7 +328,7 @@ describe("keyframes and classes (§1.5, §4)", () => {
     expect(ALL.map(([name]) => name)).toEqual(
       expect.arrayContaining([
         "tb-enter", "tb-rise", "tb-sheet-enter", "tb-modal-spring", "tb-pop-in", "tb-bump", "tb-select",
-        "tb-shake", "tb-wiggle", "tb-carousel-in", "tb-indeterminate", "tb-hourglass", "tb-card-tilt",
+        "tb-shake", "tb-wiggle", "tb-indeterminate", "tb-hourglass", "tb-card-tilt",
       ])
     );
     for (const [name, frames] of ALL) {
@@ -346,7 +346,6 @@ describe("keyframes and classes (§1.5, §4)", () => {
     const fill = (selector: string) => rule(selector).decl.animation.split(" ").at(-1);
     expect(fill(".tb-rise")).toBe("backwards");
     expect(fill(".tb-pop-in")).toBe("backwards");
-    expect(fill(".tb-carousel-in")).toBe("backwards");
     expect(fill(".tb-sheet-enter")).toBe("both");
     expect(fill(".tb-modal-enter")).toBe("both");
   });
@@ -356,12 +355,21 @@ describe("keyframes and classes (§1.5, §4)", () => {
     expect(`${motion}${REDUCE}`).not.toMatch(/pointer-events/);
   });
 
-  it("no will-change anywhere in src (CSS or class)", () => {
+  // The ONE exception (2026-10-16, needs the user's OK): the splash carousel's drag writes its six layers
+  // every move, and unpromoted each move repaints the whole stage. Nothing else in src promotes.
+  it("will-change only on the splash carousel's movers and veils (index.css), nowhere else in src (CSS or class)", () => {
     const SRC = join(import.meta.dirname, "..");
     const hits = readdirSync(SRC, { recursive: true, encoding: "utf8" })
       .filter((file) => /\.(tsx?|css)$/.test(file) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(file))
       .filter((file) => readFileSync(join(SRC, file), "utf8").includes("will-change"));
-    expect(hits).toEqual([]);
+    expect(hits).toEqual(["index.css"]);
+    const promoted = [...CODE.matchAll(/([^{};]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => body.includes("will-change"))
+      .map(([, head, body]) => [head.trim(), declarations(body)]);
+    expect(promoted).toEqual([
+      [".tb-splash-carousel > .tb-splash-card", { "will-change": "transform" }],
+      [".tb-splash-carousel .tb-splash-veil", { "will-change": "opacity" }],
+    ]);
   });
 
   it("the two Figma press colours are @theme tokens", () => {
@@ -412,6 +420,85 @@ describe("lane motion-v2", () => {
     });
     expect(TOKENS).toMatchObject({ "--tb-dur-nudge": "1200ms", "--tb-dist-nudge": "12px", "--tb-dur-page": "260ms" });
     expect(REDUCE_ROOT["--tb-dist-nudge"]).toBe("0px");
+  });
+});
+
+/*
+  The splash carousel (user request 2026-10-16; design language, sign-off):
+  focus + swipe. The slot is a transform and the focus a function of it; a
+  step re-slots the movers, which TRANSITION from wherever they are (nothing
+  remounts, so a finger can catch them) over the track's --tb-settle or
+  --tb-dur-carousel; the entrant enters through @starting-style, only under
+  a track that moved (data-dir). Direct manipulation (SplashMedia, inline
+  while a finger holds a card) is the ScrollIndicator carve-out; there is no
+  keyframe, so the reduce block's 0 s transitions land every step at once,
+  and @starting-style never paints there.
+*/
+describe("the splash carousel (user request 2026-10-16)", () => {
+  const SETTLE = "var(--tb-settle, var(--tb-dur-carousel)) var(--tb-ease-out)";
+
+  it("tokens: pitch 751 px (the peeks stay 88 px), focus 1.1, side 0.88, veil 0.45, snap-back 300 ms; --tb-carousel-step and tb-carousel-in are retired", () => {
+    expect(TOKENS).toMatchObject({
+      "--tb-splash-pitch": "751px",
+      "--tb-splash-focus": "1.1",
+      "--tb-splash-side": "0.88",
+      "--tb-splash-veil": "0.45",
+      "--tb-dur-snap": "300ms",
+      "--tb-dur-carousel": "500ms",
+    });
+    expect(CODE).not.toMatch(/tb-carousel-(in|step)/);
+  });
+
+  it("each card rests on its slot: the centre at the focus scale, a peek one pitch out at the side scale — transform only", () => {
+    expect(rule(".tb-splash-card")).toEqual({
+      depth: 1,
+      decl: { transform: "translateX(0px) scale(var(--tb-splash-focus))", transition: `transform ${SETTLE}` },
+    });
+    expect(rule('.tb-splash-card[data-slot="-1"]').decl).toEqual({
+      transform: "translateX(calc(var(--tb-splash-pitch) * -1)) scale(var(--tb-splash-side))",
+    });
+    expect(rule('.tb-splash-card[data-slot="1"]').decl).toEqual({
+      transform: "translateX(var(--tb-splash-pitch)) scale(var(--tb-splash-side))",
+    });
+    expect(rule(".tb-splash-card.tb-splash-single").decl).toEqual({ transform: "none" });
+  });
+
+  it("the veil dims a peek and clears on the centre — opacity only, on the same settle", () => {
+    expect(rule(".tb-splash-veil")).toEqual({
+      depth: 1,
+      decl: { opacity: "var(--tb-splash-veil)", transition: `opacity ${SETTLE}` },
+    });
+    expect(rule('.tb-splash-card[data-slot="0"] .tb-splash-veil').decl).toEqual({ opacity: "0" });
+  });
+
+  it("every transition in index.css moves a composited property: the press's scale, the card's transform, the veil's opacity", () => {
+    const moved = [...CODE.matchAll(/transition:\s*([^;]+);/g)].map(([, value]) => value.trim().split(" ")[0]);
+    expect(moved.filter((prop) => prop !== "none" && !["scale", "transform", "opacity"].includes(prop))).toEqual([]);
+    expect(moved).toEqual(expect.arrayContaining(["transform", "opacity"]));
+  });
+
+  it("@starting-style only under .tb-splash-track[data-dir]: the entrant from two pitches out on its side, at the side scale", () => {
+    expect(CODE.match(/@starting-style/g)).toHaveLength(1);
+    expect(depthAt(CODE.indexOf("@starting-style"))).toBe(0);
+    const starting = [...block("@starting-style").matchAll(/([^{};]+)\{([^{}]*)\}/g)].map(([, head, body]) => [
+      head.trim(),
+      declarations(body),
+    ]);
+    expect(starting).toEqual([
+      [
+        '.tb-splash-track[data-dir="1"] > .tb-splash-card[data-slot="1"]',
+        { transform: "translateX(calc(var(--tb-splash-pitch) * 2)) scale(var(--tb-splash-side))" },
+      ],
+      [
+        '.tb-splash-track[data-dir="-1"] > .tb-splash-card[data-slot="-1"]',
+        { transform: "translateX(calc(var(--tb-splash-pitch) * -2)) scale(var(--tb-splash-side))" },
+      ],
+    ]);
+  });
+
+  it("reduce adds no token: the rest state (1.10 / 0.88 / veil 0.45) is layout, and the block's 0 s transitions land every step at once", () => {
+    expect(Object.keys(REDUCE_ROOT).filter((token) => /splash|snap|settle|carousel/.test(token))).toEqual([]);
+    expect(REDUCE).not.toMatch(/tb-splash/);
   });
 });
 
