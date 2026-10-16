@@ -890,4 +890,30 @@ describe("fetchMenu — low-end perf pass (BOOT-1, BOOT-2, BOOT-4)", () => {
       process.off("unhandledRejection", unhandled);
     }
   });
+
+  it("BOOT-4: a changed menu (200) converts in a later task than its cache write — no single frame holds both", async () => {
+    let markerFired = false;
+    net.dexiePut = () => {
+      // A macrotask queued as the write is issued: a conversion that yields
+      // first lands after it; one running in the write's task lands before.
+      setTimeout(() => {
+        markerFired = true;
+      }, 0);
+      return Promise.resolve();
+    };
+    net.menu = () => Promise.resolve({ ...tenantMenu(), MENU_ID: "menu-9" });
+    let firedAtConversion: boolean | undefined;
+    const unsubscribe = store.subscribe(() => {
+      const entityMap = (store.getState() as { menu?: { entityMap?: object } }).menu?.entityMap;
+      if (firedAtConversion === undefined && entityMap && Object.keys(entityMap).length > 0) {
+        firedAtConversion = markerFired;
+      }
+    });
+    try {
+      await fetchOnce();
+    } finally {
+      unsubscribe();
+    }
+    expect(firedAtConversion).toBe(true);
+  });
 });

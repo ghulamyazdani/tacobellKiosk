@@ -390,6 +390,13 @@ function useMenuConverters() {
             } catch {
               // Best effort: the next fetch downloads it again (C5: no log).
             }
+            // One macrotask boundary before the conversion. Un-awaited, the
+            // write's structured clone (IndexedDB copies the menu as put()
+            // runs) and the conversion below ran as ONE frame — ~450 ms at
+            // 6x CPU on the reference menu, vs ~250 + ~150 ms while the
+            // commit was awaited (perf benchmark, 2026-10-16). The yield
+            // splits them without waiting for the commit.
+            await new Promise((resolve) => setTimeout(resolve, 0));
           }
         }
       }
