@@ -221,9 +221,13 @@ export default function PaytmPayment() {
         </button>
       )}
 
+      {/* At once on every phase: the commit that mounts it drops the QR (or
+          CANCEL and TIME LEFT), so a late reveal showed "SCAN TO PAY" over an
+          empty slot for 500 ms — on every paid tail too. */}
       {waiting && (
         <PleaseWait
           testId="paytm-confirming"
+          atOnce
           subtitle={phase === "cancelling" ? t("paytm.wait.cancelling") : undefined}
         />
       )}

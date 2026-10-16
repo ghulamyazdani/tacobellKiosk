@@ -276,8 +276,9 @@ describe("PaytmPayment — /paymentPolling", () => {
     mount();
     await advance(3000);
     expect(screen.getByTestId("paytm-confirming")).toHaveTextContent(i18n.t("paytm.wait.confirming"));
-    // Over the EDC screen (no dialog) it reveals late (motion-v2 MV4): a fast settle never flashes it.
-    expect(screen.getByTestId("paytm-confirming")).toHaveClass("tb-reveal-late");
+    // At once, never late: the same commit drops CANCEL and TIME LEFT, so a late reveal would leave a
+    // half-dismantled "pay with card" screen for 500 ms on every paid tail (UX-11).
+    expect(screen.getByTestId("paytm-confirming")).not.toHaveClass("tb-reveal-late");
     expect(m.navigate.mock.calls).toEqual([["/receipt"]]);
   });
 
