@@ -465,10 +465,11 @@ export default function BuyStageSheet({
             >
               {counterText}
             </span>
+            {/* Mounts on each unlock, so it pops in once per unlock (UX-14). */}
             {satisfied && (
               <span
                 data-testid="buy-stage-unlocked"
-                className="rounded-full bg-tb-purple px-[20px] py-[8px] text-[20px] font-bold leading-[24px] text-tb-surface"
+                className="tb-pop-in rounded-full bg-tb-purple px-[20px] py-[8px] text-[20px] font-bold leading-[24px] text-tb-surface"
               >
                 {t("offers.buyStage.unlocked")}
               </span>
