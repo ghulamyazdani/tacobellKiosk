@@ -585,7 +585,9 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
         {/* Busy SAVE (UX-04, design language): the house sweep 6 px above it.
             Absolute against the panel, never in the footer (its 64 px
             drop-shadow would re-filter every frame) or a button (the loop
-            rule); late, so a fast commit never flashes it. */}
+            rule); late, so a fast commit never flashes it. A guard only:
+            today's commit does no I/O and settles inside the tap's task, so
+            this never paints unless a commit awaits the network past 300 ms. */}
         {committing && (
           <div
             aria-hidden="true"

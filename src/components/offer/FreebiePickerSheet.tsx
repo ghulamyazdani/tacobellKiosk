@@ -209,7 +209,8 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   // UX-13 (R20): a CONFIRM refused before a pick re-keys what CONFIRM needs —
-  // the subtitle, or group mode's hint — which shakes; never the button.
+  // the subtitle (while it names that need), or group mode's hint — which
+  // shakes; never the button.
   // `shaking` drops with the hint, so a hint that comes back unasked never shakes.
   const [refusals, setRefusals] = useState(0);
   const [shaking, setShaking] = useState(false);
@@ -414,7 +415,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
 
   const handleConfirm = async () => {
     if (!canConfirm) {
-      if (!committing) {
+      if (!committing && (group || subtitleNamesNeed)) {
         setRefusals((n) => n + 1);
         if (group) setShaking(true);
       }
@@ -823,6 +824,11 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
       : orMode
         ? t("offers.picker.subtitleOption")
         : t("offers.freebieSubtitleAnd");
+  // A refusal shakes the subtitle only while it names what CONFIRM waits for:
+  // the "or" pick, or an "and" group short of its need. An uncustomized "and"
+  // freebie is named by its own row ("Customize"), so the line stays still.
+  const subtitleNamesNeed =
+    orMode || (selectCount > 0 && completedLines.some((lines) => lines === null));
 
   // Group mode names what is missing (TB mounts no global error modal).
   const groupHint = !group
