@@ -269,7 +269,9 @@ export default function SecondLayout() {
             the footer's CANCEL still exits (Rule 1).
             scrollRow: -mx-[112px] widens the row to the full 1080 stage so the
             cards swipe edge to edge; px-[112px] keeps card 1 on the block's
-            left edge. Cards are shrink-0 or the nowrap row would squeeze them. */}
+            left edge. Cards are shrink-0 or the nowrap row would squeeze them.
+            bg-transparent: the texture shows through (index.css paints every
+            other scroller white — perf PAINT-1). */}
         {pipelines.length === 0 ? (
           <p
             data-testid="second-no-pipelines"
@@ -281,7 +283,7 @@ export default function SecondLayout() {
           <div
             className={
               scrollRow
-                ? "-mx-[112px] flex gap-[24px] overflow-x-auto px-[112px] [scrollbar-width:none]"
+                ? "-mx-[112px] flex gap-[24px] overflow-x-auto bg-transparent px-[112px] [scrollbar-width:none]"
                 : "flex flex-wrap justify-center gap-[24px]"
             }
           >

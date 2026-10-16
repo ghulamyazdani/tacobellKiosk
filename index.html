@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Kiosk touchscreen: pinch-zoom disabled -->
+    <!-- Kiosk touchscreen. Desktop Chrome / Edge ignore user-scalable=no (the
+         viewport meta is honoured on Android / iOS only): pinch-zoom is blocked
+         by `touch-action: pan-x pan-y` on <html> (src/index.css, base layer). -->
     <meta
       name="viewport"
       content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no"

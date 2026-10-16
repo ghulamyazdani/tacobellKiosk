@@ -300,6 +300,18 @@
   button:active:not(:disabled, :empty, [aria-disabled="true"], .tb-no-press) {
     scale: var(--tb-press-scale);
   }
+  /* Kiosk touch hardening (perf PAINT-4). Desktop Chrome / Edge ignore the
+   * viewport meta (index.html), so a two-finger pinch zoomed the stage for
+   * every later guest: pan-only on the root ends pinch-zoom everywhere (each
+   * scroller re-adds its own pan; ScrollIndicator's touch-none still wins).
+   * A held touch on a picture (an icon inside a button too) no longer lifts a
+   * drag ghost: nothing in the app drags. */
+  html {
+    touch-action: pan-x pan-y;
+  }
+  img {
+    -webkit-user-drag: none;
+  }
 }
 /* Figma pressed fills (instant): Primary 1:638 #501098→#9A23F8; Quick Add
  * 1:421 / Counter 1:604 white→#F3D9FF (extended to every white button —
@@ -602,4 +614,23 @@ body {
   background-color: var(--color-tb-purple);
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* A scroller paints its own surface (perf PAINT-1). Below a 1.5 device scale
+ * (the 1080×1920 panel at 100 %) Chromium keeps LCD text and composites a
+ * scroller only when its own opaque background covers its contents; without
+ * one, every scroll frame is a main-thread repaint. Every scroller in src
+ * (the .overflow-y-auto / .overflow-x-auto pair pressFeedback calls every
+ * scroller) sits on tb-surface, so this is white on white. A scroller opts
+ * out with a bg-* utility (utilities win) — bg-transparent where it would
+ * change a pixel: /second's swipe row (over the texture), the edit-how-many
+ * and MIAM lists (their box meets the card's anti-aliased edge), and the menu
+ * pane, the rail and the buy-stage list (multiply-blended photos: composited,
+ * each photo would become its own re-sampled layer). Pinned by
+ * src/__tests__/paintCss.test.ts. */
+@layer components {
+  .overflow-y-auto,
+  .overflow-x-auto {
+    background-color: var(--color-tb-surface);
+  }
 }
