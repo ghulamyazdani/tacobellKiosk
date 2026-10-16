@@ -1,8 +1,5 @@
 {
   "splash": {
-    "startOrder": "ابدأ الطلب",
-    "welcome": "أهلاً بك",
-    "touchToStart": "اضغط في أي مكان للبدء",
     "orderHere": "اطلب هنا"
   },
   "registration": {

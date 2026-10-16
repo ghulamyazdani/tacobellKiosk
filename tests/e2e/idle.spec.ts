@@ -561,10 +561,12 @@ test.describe("P9a idle timeout + session integrity", () => {
     // /second's cancel only navigates; /start's mount resets — language too.
     await page.getByTestId("footer-cancel").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
-    // The splash is named by its visible copy (P9d) — in English again.
+    // The splash is named by its one line (2026-10-16): the primary START
+    // ORDER — never the Arabic start_order_text_secondary.
     await expect(
-      page.getByRole("button", { name: /touch anywhere to start/i })
+      page.getByRole("button", { name: /^start order$/i })
     ).toBeVisible();
+    await expect(page.getByTestId("start-screen")).not.toContainText("ابدأ الطلب");
     // …with the document language and no Arabic isolate left anywhere.
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect

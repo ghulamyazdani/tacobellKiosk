@@ -7,7 +7,7 @@ import { CookiesProvider } from "react-cookie";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import { setClaimedCoupon } from "@cx-sdk/ordering/state/loyalty.slice";
 import { emptyMenuData, setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
-import { setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setKioskSettings, setMediaData } from "@cx-sdk/catalog/state/appSettings.slice";
 import { KioskEventName } from "@cx-sdk/core";
 import { store } from "../../../redux/app/store";
 import StartScreen from "../index";
@@ -57,16 +57,20 @@ const renderStart = (options: { reactStrictMode?: boolean } = {}) =>
 /*
   P9d: the splash is the getMedia home_screen media (SplashMedia — rotation,
   failures and video live in its own suite). Here, the screen contract: ONE
-  tap target named by the visible copy of whichever layout shows, a crash in
-  the media layer contained to the static WELCOME, and the operator hotspot
-  unaffected by media.
+  tap target named by the splash's one line on every layout (2026-10-16: the
+  backend's start_order_text_primary, else ORDER HERE), a crash in the media
+  layer contained to the static WELCOME, and the operator hotspot unaffected
+  by media.
 */
 describe("StartScreen — the splash (P9d)", () => {
   const seedMedia = (home_screen: unknown[]) =>
     store.dispatch(setMediaData({ media: { home_screen } }));
   const ONE = [{ url: "https://cdn.test/a.jpg" }];
   const TWO = [{ url: "https://cdn.test/a.jpg" }, { url: "https://cdn.test/b.jpg" }];
-  const WELCOME_NAME = /^welcome\s*touch anywhere to start$/i;
+  /** The one line on a fresh store (no settings stored): the i18n fallback. */
+  const ONE_LINE = /^order here$/i;
+  /** WELCOME's own photo: the name no longer tells the frame from the media layouts. */
+  const welcomePhoto = (button: HTMLElement) => button.querySelector('img[src*="fullbleed-halfmoon"]');
 
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });
@@ -78,11 +82,12 @@ describe("StartScreen — the splash (P9d)", () => {
     vi.restoreAllMocks();
   });
 
-  it("with no media stored it shows WELCOME (1:5617), and a tap starts the order flow", async () => {
+  it("with no media stored it shows WELCOME (1:5617) named by the one line, and a tap starts the order flow", async () => {
     renderStart();
 
-    const button = screen.getByRole("button", { name: WELCOME_NAME });
+    const button = screen.getByRole("button", { name: ONE_LINE });
     expect(button).toBe(screen.getByTestId("start-screen"));
+    expect(welcomePhoto(button)).toBeInTheDocument();
     expect(button).toHaveClass("tb-no-press"); // motion §3.1: the full-surface button never squeezes
     expect(screen.queryByText(/start order/i)).not.toBeInTheDocument();
 
@@ -91,29 +96,44 @@ describe("StartScreen — the splash (P9d)", () => {
   });
 
   it.each([
-    ["one slide → the single card (1:2203 centre, 2026-10-13)", ONE, /^order here\s*start order$/i],
-    ["two slides → carousel (1:2203)", TWO, /^order here\s*start order$/i],
-  ])("%s: the whole screen is ONE button named by its visible copy; a tap starts the order", (_label, media, name) => {
+    ["one slide → the single card (1:2203 centre, 2026-10-13)", ONE],
+    ["two slides → carousel (1:2203)", TWO],
+  ])("%s: the whole screen is ONE button named by the one line; a tap starts the order", (_label, media) => {
     seedMedia(media);
     renderStart();
 
-    const button = screen.getByRole("button", { name });
+    const button = screen.getByRole("button", { name: ONE_LINE });
     expect(button).toBe(screen.getByTestId("start-screen"));
     expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByText(/start order/i)).not.toBeInTheDocument(); // the CTA is retired
 
     fireEvent.click(button);
     expect(screen.getByText("second-screen")).toBeInTheDocument();
   });
 
-  it("a render crash in the media layer shows WELCOME in place — no crash screen, no recovery timer — and the tap still works", () => {
+  it("the backend's start_order_text_primary names the button on every layout — trimmed, never the secondary", () => {
+    store.dispatch(
+      setKioskSettings({ start_order_text_primary: "  Tap to order  ", start_order_text_secondary: "ابدأ الطلب" })
+    );
+    for (const media of [[], ONE, TWO]) {
+      seedMedia(media);
+      const view = renderStart();
+      expect(screen.getByRole("button", { name: /^Tap to order$/ })).toBe(screen.getByTestId("start-screen"));
+      view.unmount();
+    }
+  });
+
+  it("a render crash in the media layer shows WELCOME in place, named by the one line — no crash screen, no recovery timer — and the tap still works", () => {
     vi.spyOn(console, "error").mockImplementation(() => {}); // React logs the caught error
     const setTimeoutSpy = vi.spyOn(window, "setTimeout");
     crash.media = true;
     seedMedia(TWO);
+    store.dispatch(setKioskSettings({ start_order_text_primary: "Tap to order" }));
 
     renderStart();
 
-    const button = screen.getByRole("button", { name: WELCOME_NAME });
+    const button = screen.getByRole("button", { name: /^Tap to order$/ });
+    expect(welcomePhoto(button)).toBeInTheDocument();
     expect(screen.queryByTestId("app-error")).not.toBeInTheDocument();
     // The global boundary would arm a 10 s / 60 s reload here.
     expect(setTimeoutSpy.mock.calls.filter(([, ms]) => (ms ?? 0) >= 10_000)).toEqual([]);

@@ -51,10 +51,12 @@ const BOOT_REFRESH_RECHECK_MS = 15 * 60 * 1000;
 /**
  * Attract/splash screen, laid out in design pixels on the 1080×1920
  * KioskStage. Content is the getMedia `home_screen` media (SplashMedia: none →
- * WELCOME 1:5617, one → full-bleed 1:5604, several → carousel 1:2203). The
- * whole screen is one tap target (kiosk convention); its accessible name is
- * the visible copy of whichever layout is showing. It is also the ONLY place
- * updates apply (P9e), which is what keeps them from ever landing mid-order.
+ * WELCOME 1:5617, one → the 1:2203 centre card alone, several → carousel
+ * 1:2203). The whole screen is one tap target (kiosk convention); its
+ * accessible name is the splash's one line (SplashText: the backend's
+ * start_order_text_primary, else ORDER HERE) on every layout. It is also the
+ * ONLY place updates apply (P9e), which is what keeps them from ever landing
+ * mid-order.
  */
 export default function StartScreen() {
   const navigate = useNavigate();

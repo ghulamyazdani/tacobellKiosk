@@ -54,7 +54,7 @@ test.use({ reducedMotion: "no-preference" });
 
 const TAKE_AWAY = { _id: "p2", tab_id: "t2", tab_type: "take_away", primary_name: "Take Away" };
 const COMPOSITED = ["opacity", "transform", "translate", "scale", "rotate"];
-const LOOPS = ["tb-marquee", "tb-hourglass", "tb-card-tilt", "tb-attract", "tb-indeterminate"];
+const LOOPS = ["tb-marquee", "tb-hourglass", "tb-card-tilt", "tb-indeterminate"];
 const SPRING_CARD = '[data-testid="product-added-modal"] > div.tb-modal-spring';
 /** Figma white-button pressed fill (tb-lilac #F3D9FF). */
 const LILAC = "rgb(243, 217, 255)";
@@ -193,13 +193,12 @@ async function animations(page: Page, scope = "html"): Promise<Seen[]> {
 
 const named = (list: Seen[], name: string) => list.filter((a) => a.name === name);
 
-/** M8: every infinite animation is allow-listed and none moves on or around a tap target (tb-attract only fades). */
+/** M8: every infinite animation is allow-listed and none runs on or around a tap target. */
 async function loops(page: Page): Promise<string[]> {
   const infinite = (await animations(page)).filter((a) => a.iterations === Infinity);
   for (const a of infinite) {
     expect(LOOPS, `M8: ${a.name} on ${a.on} is an allow-listed loop`).toContain(a.name);
-    if (a.name === "tb-attract") expect(a.props, "M8: the loop inside a button fades only").toEqual(["opacity"]);
-    else expect(a.button, `M8: ${a.name} on ${a.on} has no button ancestor or descendant`).toBe(false);
+    expect(a.button, `M8: ${a.name} on ${a.on} has no button ancestor or descendant`).toBe(false);
   }
   return infinite.map((a) => a.name);
 }
@@ -958,13 +957,13 @@ test.describe("motion (contract §5.3, no-preference)", () => {
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
   });
 
-  test("M8 LOOPS: the splash prompt pulses, the ticker scrolls, the menu fetch sweeps — the only infinite animations, none a transform loop on or around a tap target; the menu-fetch overlay reveals late (motion-v2 MV4)", async ({
+  test("M8 LOOPS: the splash runs none (its pulse went with START ORDER, 2026-10-16), the ticker scrolls, the menu fetch sweeps — the only infinite animations, none on or around a tap target; the menu-fetch overlay reveals late (motion-v2 MV4)", async ({
     page,
   }) => {
     await mockBackend(page);
     const menuFetch = await holdRequests(page, "**/api/cx/kiosk/getMenu", { armed: false });
     await registerToStart(page);
-    expect(await loops(page), "/start").toContain("tb-attract");
+    expect(await loops(page), "/start: no infinite animation").toEqual([]);
     await startToSecond(page);
     expect(await loops(page), "/second").toContain("tb-marquee");
     await settle(page);
@@ -1210,7 +1209,6 @@ test.describe("motion (contract §5.3, no-preference)", () => {
         "tb-shake",
         "tb-wiggle",
         "tb-carousel-in",
-        "tb-attract",
         "tb-indeterminate",
         "tb-hourglass",
         "tb-card-tilt",

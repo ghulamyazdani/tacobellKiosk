@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
-import { mediaDataRdx } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  kiosSettingsRdx,
+  mediaDataRdx,
+} from "@cx-sdk/catalog/state/appSettings.slice";
 import {
   toSplashSlides,
   type SplashSlide,
 } from "@cx-sdk/catalog/media/splashMedia";
+import { DEFAULT_LANGUAGE } from "../../i18n";
 import { safeVideoPlay } from "../../utils/safeVideoPlay";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
@@ -45,15 +49,7 @@ const lastReported = new Map<string, number>();
 const SPLASH_REPORT_WINDOW_MS = 60 * 60 * 1000;
 
 const MEDIA = "pointer-events-none absolute inset-0 h-full w-full object-cover";
-const CENTRED = "absolute left-1/2 -translate-x-1/2";
-/**
- * Figma Title/H5 (Exp Bl 32/32, −1) — every splash CTA. tb-attract: the
- * prompt pulses (opacity only, 2 s, infinite — motion §3.6), so the
- * start-screen button's box never moves.
- */
-const CTA =
-  "tb-display tb-attract whitespace-nowrap text-[32px] leading-[32px] tracking-[-1px] text-tb-surface";
-/** Figma Title/H1 (Exp Bl 116/98, −3.27) — WELCOME, ORDER HERE. */
+/** Figma Title/H1 (Exp Bl 116/98, −3.27) — the splash's one line. */
 const H1 =
   "tb-display text-[116px] leading-[98px] tracking-[-3.27px] text-tb-surface";
 /** 1:2203 card (all three share it; x comes per position). */
@@ -118,12 +114,48 @@ const Tint = () => (
 );
 
 /**
+ * The splash's ONE line, on every layout (user decision 2026-10-16): the
+ * backend's start_order_text_primary (cx/get_kiosk_settings — posistKiosk's
+ * StartFooter copy), else ORDER HERE. Primary only: every splash visit runs
+ * in the default language — the fallback pinned to it, as i18n catches up
+ * with a session reset one effect late (App). ORDER HERE's place: its 756 px
+ * column, bottom edge at y 1712, so a longer text grows upward. A word wider
+ * than the column (~7+ letters: WELCOME 767, ANYWHERE 880 px) widens the box
+ * to that word (min-content), centred between the stage's 24 px gutters,
+ * instead of breaking mid-word (WELCOM / E).
+ * ponytail: one size, no line clamp (overflow:hidden clips the first line's
+ * accents at leading 98 < 116 px). Ceilings: one word over ~1032 px (~11+
+ * letters) runs past the gutters (past 1080, the stage clips it), and a 4+
+ * line text (TAP HERE TO START YOUR ORDER) grows over the cards' foot;
+ * upgrade = a step-down size (or a clamp) if an operator needs either.
+ */
+function SplashText() {
+  const { t } = useTranslation();
+  const custom: unknown =
+    useSelector(kiosSettingsRdx)?.start_order_text_primary;
+  const text =
+    (typeof custom === "string" && custom.trim()) ||
+    t("splash.orderHere", { lng: DEFAULT_LANGUAGE });
+  return (
+    <div className="absolute inset-x-[24px] bottom-[208px] flex justify-center">
+      {/* dir="auto" on this LEAF only (P9f): an operator's Arabic text reads RTL. */}
+      <span
+        dir="auto"
+        className={`${H1} w-max min-w-min max-w-[756px] text-center`}
+      >
+        {text}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Figma 1:5617 — the neutral no-media frame (no price claim, user decision
- * 2026-10-01). Also the media layer's ErrorBoundary fallback, and what the
- * splash falls back to when every configured slide failed.
+ * 2026-10-01), its WELCOME / TOUCH ANYWHERE TO START now the one SplashText
+ * line (2026-10-16). Also the media layer's ErrorBoundary fallback, and what
+ * the splash falls back to when every configured slide failed.
  */
 export function SplashWelcome() {
-  const { t } = useTranslation();
   return (
     <>
       <img
@@ -145,12 +177,7 @@ export function SplashWelcome() {
         />
       ))}
       <Bell className="top-[101px]" />
-      <span className={`${H1} ${CENTRED} top-[1548px] whitespace-nowrap`}>
-        {t("splash.welcome")}
-      </span>
-      <span className={`${CTA} ${CENTRED} top-[1752px]`}>
-        {t("splash.touchToStart")}
-      </span>
+      <SplashText />
     </>
   );
 }
@@ -159,15 +186,15 @@ export function SplashWelcome() {
  * The splash composition by PLAYABLE slide count (user decision 2026-10-01):
  * 0 → WELCOME (1:5617) · 1 → the 1:2203 centre card alone (user decision
  * 2026-10-13: an operator video carries its own captions, which full-bleed
- * 1:5604 covered with START ORDER) · ≥2 → the 1:2203 peek carousel. A slide
- * that errors or stalls is skipped, so the layout degrades 2 → 1 → WELCOME
- * and is never blank or stuck; the next visit (fresh mount) retries everything.
+ * 1:5604 covered with START ORDER) · ≥2 → the 1:2203 peek carousel — each
+ * under the one SplashText line (2026-10-16). A slide that errors or stalls
+ * is skipped, so the layout degrades 2 → 1 → WELCOME and is never blank or
+ * stuck; the next visit (fresh mount) retries everything.
  * ponytail: retry — non-codec failures get one more try 10 min after the LAST
  * failure; fixed interval, no backoff (a dead URL costs one request / ≤15 s
  * frozen card per 10 min); back off if the physical soak shows churn.
  */
 export default function SplashMedia() {
-  const { t } = useTranslation();
   const mediaData: unknown = useSelector(mediaDataRdx);
   // One snapshot per visit, so a running rotation never reshuffles. Media
   // only changes at boot, and every boot — P9e's splash refreshes included —
@@ -304,10 +331,7 @@ export default function SplashMedia() {
           />
         </div>
       )}
-      <div className="absolute bottom-[128px] left-[162px] flex w-[756px] flex-col items-center gap-[48px] text-center">
-        <span className={H1}>{t("splash.orderHere")}</span>
-        <span className={CTA}>{t("splash.startOrder")}</span>
-      </div>
+      <SplashText />
     </>
   );
 }

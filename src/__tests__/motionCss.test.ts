@@ -148,8 +148,8 @@ describe("reduced motion: every non-loop first frame is its end state (D-M4; mot
       return defined.flatMap(tokensOf);
     });
 
-  it("the loops are the five allow-listed ones; the checked first frames include every entrance", () => {
-    expect([...LOOPS].sort()).toEqual(["tb-attract", "tb-card-tilt", "tb-hourglass", "tb-indeterminate", "tb-marquee"]);
+  it("the loops are the four allow-listed ones; the checked first frames include every entrance", () => {
+    expect([...LOOPS].sort()).toEqual(["tb-card-tilt", "tb-hourglass", "tb-indeterminate", "tb-marquee"]);
     expect(FIRST.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         "tb-modal-enter", "tb-fade-in", "tb-confetti-fall", "tb-chip-pop", "tb-success-pulse", "tb-enter", "tb-rise",
@@ -328,7 +328,7 @@ describe("keyframes and classes (§1.5, §4)", () => {
     expect(ALL.map(([name]) => name)).toEqual(
       expect.arrayContaining([
         "tb-enter", "tb-rise", "tb-sheet-enter", "tb-modal-spring", "tb-pop-in", "tb-bump", "tb-select",
-        "tb-shake", "tb-wiggle", "tb-carousel-in", "tb-attract", "tb-indeterminate", "tb-hourglass", "tb-card-tilt",
+        "tb-shake", "tb-wiggle", "tb-carousel-in", "tb-indeterminate", "tb-hourglass", "tb-card-tilt",
       ])
     );
     for (const [name, frames] of ALL) {

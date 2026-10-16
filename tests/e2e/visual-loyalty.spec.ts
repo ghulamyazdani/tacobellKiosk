@@ -121,7 +121,7 @@ async function mockKioskBackend(page: Page, mode: Mode) {
     r.fulfill({
       json: {
         start_order_text_primary: "START ORDER",
-        // A secondary language without its splash text fails the boot.
+        // Arabic's own copy: never shown on the splash (2026-10-16), never required by the boot (B6).
         ...(arabic ? { start_order_text_secondary: "ابدأ الطلب" } : {}),
         ideal_time: "180",
         ...(mode === "ada" ? { accessibility_mode: true } : {}),

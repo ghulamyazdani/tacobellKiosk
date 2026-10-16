@@ -41,7 +41,8 @@ test.describe("Flow 1 — happy path", () => {
 
     // 1 — the splash.
     await registerToStart(page);
-    await expect(page.getByTestId("start-screen")).toContainText(en.splash.welcome);
+    // Its one line: the mock's start_order_text_primary (never the Arabic secondary).
+    await expect(page.getByTestId("start-screen")).toHaveText("START ORDER");
     await settle(page);
     await shot(page, "flow1-01-splash");
 

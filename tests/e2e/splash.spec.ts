@@ -13,6 +13,9 @@ import { registerToStart } from "./pages/boot";
  * so the layout degrades 2 → 1 → WELCOME and is never blank. A slide that
  * errored or stalled gets one more try 10 min after the last failure
  * (post-P9 44, D9: SPLASH_RETRY_MS); one with no picture (no_video) never.
+ * Every layout shows ONE line (user decision 2026-10-16): the backend's
+ * start_order_text_primary — the shared mock's START ORDER — else the i18n
+ * ORDER HERE, in ORDER HERE's old place (bottom edge at y 1712).
  *
  * ── MOCKS ───────────────────────────────────────────────────────────────
  * House order: the shared backend mock (fixtures/backend.ts) FIRST, every
@@ -43,12 +46,18 @@ const readFixture = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)));
 
 const en = locale("en");
+/** The one line: the shared mock's start_order_text_primary (fixtures/backend.ts). */
+const LINE = "START ORDER";
+/** A two-line Title/H1 in ORDER HERE's place: its 756 px column (x 162–918), bottom edge at y 1712. */
+const LINE_AT = { top: 1516, bottom: 1712, centre: 540 };
 const WEBM = readFixture("./fixtures/splash.webm");
 const AUDIO_ONLY_WEBM = readFixture("./fixtures/splash-audio-only.webm");
 
 /** SDK kioskInfoApi `getKioskMedia`: POST /api/cx/kiosk/getMedia. */
 const GET_MEDIA_URL = "**/api/cx/kiosk/getMedia";
 const MEDIA_ORIGIN = "https://splash-media.e2e.test";
+/** The WELCOME frame's own photo (1:5617): what tells it from the media layouts. */
+const WELCOME_PHOTO = 'img[src*="fullbleed-halfmoon"]';
 const SLIDE_A = `${MEDIA_ORIGIN}/slide-a.png`;
 const SLIDE_B = `${MEDIA_ORIGIN}/slide-b.png`;
 const VIDEO = `${MEDIA_ORIGIN}/promo.webm`;
@@ -144,7 +153,7 @@ function cards(page: Page): Promise<Record<string, string | null>> {
   }, MEDIA_ORIGIN);
 }
 
-/** Where a line of copy sits on the stage: its top and its horizontal centre. */
+/** Where a line of copy sits on the stage: its top, its bottom and its horizontal centre. */
 function copyAt(page: Page, copy: string) {
   return splashOf(page).evaluate((stage, text) => {
     const line = Array.from(stage.querySelectorAll("span")).find(
@@ -155,9 +164,18 @@ function copyAt(page: Page, copy: string) {
     const r = line.getBoundingClientRect();
     return {
       top: Math.round(r.top - s.top),
+      bottom: Math.round(r.bottom - s.top),
       centre: Math.round(r.left + r.width / 2 - s.left),
     };
   }, copy);
+}
+
+/** The splash shows ONE text — `line`, nothing else — and its tap target is named by it. */
+async function expectOneLine(page: Page, line: string) {
+  await expect(splashOf(page)).toHaveText(line);
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${line}$`, "i") })
+  ).toBeVisible();
 }
 
 /** Two slides: both peeks show the other one. */
@@ -175,7 +193,7 @@ async function tapToSecond(page: Page) {
 }
 
 test.describe("P9d splash media", () => {
-  test("NO MEDIA: a getMedia body without a media list stores nothing — WELCOME (1:5617), named by its own copy, no slide media; the tap starts the order", async ({
+  test("NO MEDIA: a getMedia body without a media list stores nothing — WELCOME (1:5617) under the one line in ORDER HERE's place, which names it; no slide media; the tap starts the order", async ({
     page,
   }) => {
     await mockBootEndpoints(page);
@@ -188,25 +206,20 @@ test.describe("P9d splash media", () => {
       brand_id: "brand1",
       channel: "Kiosk",
     });
-    // The tap target's accessible name is the visible copy.
-    await expect(
-      page.getByRole("button", { name: new RegExp(en.splash.touchToStart, "i") })
-    ).toBeVisible();
+    // ONE text, the tap target's accessible name: no WELCOME, no TOUCH
+    // ANYWHERE TO START, no ORDER HERE (2026-10-16).
+    await expectOneLine(page, LINE);
+    // ORDER HERE's place: START / ORDER on two lines, bottom edge at y 1712,
+    // centred (polled: the line count waits for the web font).
+    await expect.poll(() => copyAt(page, LINE)).toEqual(LINE_AT);
     const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.welcome);
-    await expect(splash).not.toContainText(en.splash.startOrder);
-    // Figma 1:5617: the WELCOME headline at y 1548, the CTA at y 1752, both centred.
-    expect(await copyAt(page, en.splash.welcome)).toEqual({ top: 1548, centre: 540 });
-    expect(await copyAt(page, en.splash.touchToStart)).toEqual({
-      top: 1752,
-      centre: 540,
-    });
+    await expect(splash.locator(WELCOME_PHOTO)).toHaveCount(1);
     await expect(splash.locator(`img[src^="${MEDIA_ORIGIN}"]`)).toHaveCount(0);
     await expect(splash.locator("video")).toHaveCount(0);
     await tapToSecond(page);
   });
 
-  test("ONE IMAGE: a single home_screen image sits alone in the centre card (1:2203; 2026-10-13) over ORDER HERE / START ORDER, and a relaunch shows it again from the device store without a new getMedia; the tap starts the order", async ({
+  test("ONE IMAGE: a single home_screen image sits alone in the centre card (1:2203; 2026-10-13) over the one line in ORDER HERE's place, and a relaunch shows both again from the device store without a new boot; the tap starts the order", async ({
     page,
   }) => {
     await mockBootEndpoints(page);
@@ -216,10 +229,8 @@ test.describe("P9d splash media", () => {
 
     await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
-    const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.startOrder);
-    await expect(splash).toContainText(en.splash.orderHere);
-    await expect(splash).not.toContainText(en.splash.welcome);
+    await expectOneLine(page, LINE);
+    await expect.poll(() => copyAt(page, LINE)).toEqual(LINE_AT);
 
     // TB boots only at registration: a relaunch lands straight on /start, so
     // the slide must come back from the persisted appSettings.mediaData.
@@ -230,10 +241,12 @@ test.describe("P9d splash media", () => {
     await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
     expect(getMedia).toHaveLength(1);
+    // …and the line from the persisted appSettings.kiosk_settings.
+    await expectOneLine(page, LINE);
     await tapToSecond(page);
   });
 
-  test("CAROUSEL: two images rotate through the centre card (1:2203), each on its own iteration_time, and wrap; the tap starts the order", async ({
+  test("CAROUSEL: two images rotate through the centre card (1:2203) over the one line in ORDER HERE's place, each on its own iteration_time, and wrap; the tap starts the order", async ({
     page,
   }) => {
     test.slow();
@@ -250,9 +263,8 @@ test.describe("P9d splash media", () => {
     await serveMediaHost(page);
     await registerToStart(page);
 
-    const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.orderHere);
-    await expect(splash).toContainText(en.splash.startOrder);
+    await expectOneLine(page, LINE);
+    await expect.poll(() => copyAt(page, LINE)).toEqual(LINE_AT);
     await expect.poll(() => cards(page)).toEqual(showing(SLIDE_A, SLIDE_B));
     await expectLoaded(page, SLIDE_A);
 
@@ -294,8 +306,7 @@ test.describe("P9d splash media", () => {
     await expect(splash.locator(`img[src="${SLIDE_A}"]`)).toHaveCount(0);
     await expectSingleCard(page, `img[src="${SLIDE_B}"]`);
     await expectLoaded(page, SLIDE_B);
-    await expect(splash).toContainText(en.splash.startOrder);
-    await expect(splash).toContainText(en.splash.orderHere);
+    await expectOneLine(page, LINE);
     await tapToSecond(page);
   });
 
@@ -308,8 +319,8 @@ test.describe("P9d splash media", () => {
     await registerToStart(page);
 
     const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.touchToStart);
-    await expect(splash).toContainText(en.splash.welcome);
+    await expect(splash.locator(WELCOME_PHOTO)).toHaveCount(1);
+    await expectOneLine(page, LINE);
     await expect(splash.locator(`img[src^="${MEDIA_ORIGIN}"]`)).toHaveCount(0);
     await tapToSecond(page);
   });
@@ -334,7 +345,7 @@ test.describe("P9d splash media", () => {
 
     await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
-    await expect(splashOf(page)).toContainText(en.splash.orderHere);
+    await expectOneLine(page, LINE);
     expect(requested).not.toContain(otherStore);
     expect(requested).not.toContain(malformed);
   });
@@ -360,7 +371,7 @@ test.describe("P9d splash media", () => {
       .toBeGreaterThan(0);
     await expect(video).toHaveJSProperty("paused", false);
     await expectSingleCard(page, "video");
-    await expect(splashOf(page)).toContainText(en.splash.startOrder);
+    await expectOneLine(page, LINE);
     await tapToSecond(page);
   });
 
@@ -386,7 +397,7 @@ test.describe("P9d splash media", () => {
 
     // B's host 404s: the carousel degrades to A alone in the centre card.
     const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.orderHere);
+    await expectOneLine(page, LINE);
     await expect(splash.locator(`img[src="${SLIDE_B}"]`)).toHaveCount(0);
     await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
     await expectLoaded(page, SLIDE_A);
@@ -406,7 +417,7 @@ test.describe("P9d splash media", () => {
     await page.clock.fastForward("01:00");
     await refetch;
     await expect.poll(() => cards(page)).toEqual(showing(SLIDE_A, SLIDE_B));
-    await expect(splash).toContainText(en.splash.orderHere);
+    await expectOneLine(page, LINE);
     await expect
       .poll(() =>
         splash
@@ -442,7 +453,8 @@ test.describe("P9d splash media", () => {
 
     // No picture: the only slide drops out → WELCOME (1:5617).
     const splash = splashOf(page);
-    await expect(splash).toContainText(en.splash.welcome);
+    await expect(splash.locator(WELCOME_PHOTO)).toHaveCount(1);
+    await expectOneLine(page, LINE);
     await expect(splash.locator("video")).toHaveCount(0);
 
     // Past the retry interval (RETRY's steps): the slide is never re-requested.
@@ -452,7 +464,56 @@ test.describe("P9d splash media", () => {
     await page.clock.fastForward("09:00");
     await page.clock.fastForward("02:00");
     expect(await retried, "a no_video slide was asked for again").toBe(false);
-    await expect(splash).toContainText(en.splash.welcome);
+    await expect(splash.locator(WELCOME_PHOTO)).toHaveCount(1);
+    await expectOneLine(page, LINE);
+    await tapToSecond(page);
+  });
+
+  test("THE ONE LINE (2026-10-16): an operator's start_order_text_primary shows trimmed, in ORDER HERE's place on a media layout", async ({
+    page,
+  }) => {
+    await mockKioskBackend(page, {
+      pipelines: [{ _id: "p1", name: "Dine In" }],
+      settings: { start_order_text_primary: "  Tap to order  " },
+    });
+    await mockMedia(page, homeScreen(image(SLIDE_A)));
+    await serveMediaHost(page);
+    await registerToStart(page);
+
+    await expectSingleCard(page, `img[src="${SLIDE_A}"]`);
+    await expectOneLine(page, "Tap to order");
+    await expect.poll(() => copyAt(page, "Tap to order")).toEqual(LINE_AT);
+    await tapToSecond(page);
+  });
+
+  test("THE ONE LINE: a blank start_order_text_primary shows the i18n ORDER HERE fallback, in its own place", async ({
+    page,
+  }) => {
+    await mockKioskBackend(page, {
+      pipelines: [{ _id: "p1", name: "Dine In" }],
+      settings: { start_order_text_primary: "" },
+    });
+    await registerToStart(page);
+
+    await expect(splashOf(page).locator(WELCOME_PHOTO)).toHaveCount(1);
+    await expectOneLine(page, en.splash.orderHere);
+    // ORDER / HERE: exactly where ORDER HERE sat before 2026-10-16.
+    await expect.poll(() => copyAt(page, en.splash.orderHere)).toEqual(LINE_AT);
+    await tapToSecond(page);
+  });
+
+  test("THE ONE LINE: with Arabic as the secondary language the splash still shows only the primary — never start_order_text_secondary", async ({
+    page,
+  }) => {
+    await mockKioskBackend(page, {
+      pipelines: [{ _id: "p1", name: "Dine In" }],
+      arabic: true,
+    });
+    await registerToStart(page);
+
+    await expectOneLine(page, LINE);
+    await expect(splashOf(page)).not.toContainText("ابدأ الطلب");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await tapToSecond(page);
   });
 });
