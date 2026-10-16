@@ -375,6 +375,15 @@ function useMenuConverters() {
           }
         } else {
           if (menu?.MENU_ID) {
+            // Macrotask boundaries around the write (perf benchmark,
+            // 2026-10-16, the 12 MB reference menu at 6x CPU): IndexedDB
+            // copies the menu as put() runs, so with no yield the response's
+            // parse, that copy and the conversion below shared ONE frame
+            // (~450 ms), and one yield after the write still left the parse
+            // and the copy together (~340 ms, vs ~230 ms while the commit
+            // was awaited). A yield before and after gives each its own task
+            // without waiting for the commit.
+            await new Promise((resolve) => setTimeout(resolve, 0));
             // Perf pass BOOT-4: not awaited — a ~7 MB IndexedDB commit is
             // not the guest's wait. IndexedDB queues the next read behind
             // this write; a lost write costs one full download, as a failed
@@ -390,12 +399,6 @@ function useMenuConverters() {
             } catch {
               // Best effort: the next fetch downloads it again (C5: no log).
             }
-            // One macrotask boundary before the conversion. Un-awaited, the
-            // write's structured clone (IndexedDB copies the menu as put()
-            // runs) and the conversion below ran as ONE frame — ~450 ms at
-            // 6x CPU on the reference menu, vs ~250 + ~150 ms while the
-            // commit was awaited (perf benchmark, 2026-10-16). The yield
-            // splits them without waiting for the commit.
             await new Promise((resolve) => setTimeout(resolve, 0));
           }
         }
