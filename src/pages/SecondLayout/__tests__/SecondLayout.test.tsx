@@ -97,8 +97,15 @@ describe("SecondLayout (order type — Figma 1:2581)", () => {
     );
     renderSecond();
     const card = screen.getByTestId("pipeline-p-dine");
-    expect(card).toBeDisabled();
+    // UX-15: aria-disabled (not disabled), so a tap is answered — the CLOSED
+    // pill shakes — and selects nothing.
+    expect(card).toHaveAttribute("aria-disabled", "true");
     expect(card).toHaveTextContent(/closed/i);
+    await userEvent.click(card);
+    expect(screen.getByText(/closed/i)).toHaveClass("tb-shake");
+    expect(card).not.toHaveAttribute("data-selected");
+    expect((store.getState() as { pipeline: { selectedPipeline: unknown } }).pipeline.selectedPipeline).toEqual([]);
+    expect(screen.queryByText("menu-screen")).toBeNull();
   });
 
   it("language sheet lists CX languages and switches the app language", async () => {
