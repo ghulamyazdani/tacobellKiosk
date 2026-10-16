@@ -602,6 +602,34 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     expect.soft(await sheenProblems(splash), "entry-07: the carousel's sheen (UB3)").toEqual([]);
   });
 
+  // The focus + swipe (user request 2026-10-16; design language, client sign-off): a finger holding the
+  // carousel 300 px left of where it landed. Motion on, so the focus moves with the cards (under reduce
+  // the drag only translates): the centre shrinks and dims as it leaves, the next grows and clears.
+  test.describe("motion on", () => {
+    test.use({ reducedMotion: "no-preference" });
+
+    test("SPLASH CAROUSEL MID-DRAG: the cards follow a held finger, the focus moving with them (2026-10-16)", async ({
+      page,
+    }) => {
+      await mockKioskBackend(page);
+      await mockSplashMedia(page, [SLIDE_A, SLIDE_B]);
+      await registerToStart(page);
+
+      const splash = page.getByTestId("start-screen");
+      await expect(splash.locator(`img[src^="${MEDIA_ORIGIN}"]`)).toHaveCount(3);
+      const centreX = () =>
+        splash
+          .locator('.tb-splash-card[data-slot="0"]')
+          .evaluate((el) => Math.round(new DOMMatrixReadOnly(getComputedStyle(el).transform).e));
+      await page.mouse.move(840, 900);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i += 1) await page.mouse.move(840 - 30 * i, 900);
+      await expect.poll(centreX).toBe(-284); // 300 px, 16 of them the slop
+      await capture(page, "entry-07b-splash-carousel-drag");
+      await page.mouse.up();
+    });
+  });
+
   test("ORDER TYPE: /second (1:2581) in English and Arabic, the language sheet (1:4488), the idle prompt (1:4514) and the menu-error dialog in both languages", async ({
     page,
   }) => {

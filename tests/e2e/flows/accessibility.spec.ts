@@ -1,4 +1,4 @@
-import { test, expect, freezeClock, stepClockUntil, type Page } from "../fixtures/kiosk";
+import { test, expect, freezeClock, stepClockUntil, PNG_1X1, type Page } from "../fixtures/kiosk";
 import {
   mockKioskBackend,
   fixtureJson,
@@ -180,6 +180,26 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await expectA11y(page, "a-17-cancel-order", "cancel-order-cancel");
     await page.getByTestId("cancel-order-cancel").click();
     await expect(page.getByTestId("cancel-order-modal")).toHaveCount(0);
+  });
+
+  // a-02 sweeps WELCOME (no media); the splash's other layout with a gesture of its own is the 1:2203
+  // carousel (focus + swipe, 2026-10-16): the focused centre, the veiled peeks, the swipe layer — still ONE
+  // target, named by the one line.
+  test("A2 SPLASH CAROUSEL: two slides — the focused centre, the dimmed peeks and the swipe layer, one target named by the one line", async ({
+    page,
+  }) => {
+    const MEDIA_ORIGIN = "https://splash-media.e2e.test";
+    const slide = (name: string) => ({ url: `${MEDIA_ORIGIN}/${name}.png`, media_type: "image", iteration_time: "600", text: "", items: [] });
+    await mockKioskBackend(page);
+    await page.route("**/api/cx/kiosk/getMedia", (route) =>
+      route.fulfill({ json: { media: [{ key: "home_screen", ...slide("a"), extra_images: [slide("b")] }] } })
+    );
+    await page.route(`${MEDIA_ORIGIN}/**`, (route) => route.fulfill({ body: PNG_1X1, contentType: "image/png" }));
+    await registerToStart(page);
+    await expect(page.getByTestId("start-screen").locator(".tb-splash-carousel > .tb-splash-card")).toHaveCount(3);
+    await expectA11y(page, "a-02b-splash-carousel");
+    await expect(page.getByRole("button")).toHaveCount(1);
+    await startToSecond(page);
   });
 
   test("B OFFERS: the rewards sheet, an applied offer in the bag, the freebie picker", async ({ page }) => {
