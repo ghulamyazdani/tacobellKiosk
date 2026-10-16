@@ -373,9 +373,13 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * spy waits for their next touch or wheel (posistKiosk's
    * disableScrollActivityMenu): the tapped row holds, and no row flickers on
    * the way there. Sections follow the rail's order, so the walk stops at the
-   * first one below the line.
+   * first one below the line. The spied row goes to the rail ALONE
+   * (CategoryRail's spyRef): a menu re-render per section crossed cost a
+   * LONG MENU fling +8–13 points of main-thread busy at 6x CPU, the rail's
+   * own ~0.
    */
   const spyLockRef = useRef(false);
+  const railSpyRef = useRef<((id: string) => void) | null>(null);
   const railRowsRef = useRef(railCategories);
   useLayoutEffect(() => {
     railRowsRef.current = railCategories;
@@ -397,7 +401,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           id = row.id;
         }
       }
-      setSelectedCategoryId(id);
+      railSpyRef.current?.(id);
     };
     pane.addEventListener("scroll", spy, { passive: true });
     return () => pane.removeEventListener("scroll", spy);
@@ -681,6 +685,7 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           categories={railCategories}
           selectedId={activeCategoryId}
           onSelect={handleRailSelect}
+          spyRef={railSpyRef}
         >
           {/* U1 chips under the bell; a crash fails open (no chips). */}
           <ErrorBoundary fallback={null}>

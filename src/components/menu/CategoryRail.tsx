@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 // Figma's rail bell (Menu-Categories "Bell", 1:24 — Dark Purple with the Grey 6
 // cut-out), exported as is (user 2026-10-13: the rail showed the white bell
 // filtered to black). ?no-inline: a precached file, never boot-path bytes.
@@ -31,6 +31,11 @@ interface CategoryRailProps {
   onSelect: (id: string) => void;
   /** Rendered between the bell and the list (the menu's diet filter chips). */
   children?: ReactNode;
+  /**
+   * Set by the rail: the menu's scroll spy marks the row in view through it,
+   * re-rendering the rail alone (never the menu, never its grid).
+   */
+  spyRef?: RefObject<((id: string) => void) | null>;
 }
 
 /**
@@ -49,14 +54,38 @@ interface CategoryRailProps {
  * whenever the box changes — the ADA toggle shrinks it with no remount —, and
  * smoothly (instant under reduced motion) when the selection moves on its own:
  * the menu's scroll spy. A tap moves nothing: its row is on screen.
+ * A spied row (spyRef) stands over `selectedId` until that changes (a tap, a
+ * filter, a refetch) or a row is tapped; one the rail no longer lists drops.
  */
 export default function CategoryRail({
   categories,
   selectedId,
   onSelect,
   children,
+  spyRef,
 }: CategoryRailProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
+  const [spied, setSpied] = useState<{ id: string; over: string } | null>(null);
+  const selectedRef = useRef(selectedId);
+  useLayoutEffect(() => {
+    selectedRef.current = selectedId;
+  });
+  useLayoutEffect(() => {
+    if (!spyRef) return;
+    // The same row over the same selection keeps the state: the spy calls on
+    // every scroll event, and a bail-out never re-renders.
+    spyRef.current = (id) =>
+      setSpied((prev) =>
+        prev?.id === id && prev.over === selectedRef.current ? prev : { id, over: selectedRef.current }
+      );
+    return () => {
+      spyRef.current = null;
+    };
+  }, [spyRef]);
+  const shownId =
+    spied && spied.over === selectedId && categories.some((category) => category.id === spied.id)
+      ? spied.id
+      : selectedId;
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -68,7 +97,7 @@ export default function CategoryRail({
   }, []);
   useEffect(() => {
     if (listRef.current) revealSelected(listRef.current, scrollBehavior());
-  }, [selectedId]);
+  }, [shownId]);
   return (
     <nav
       data-testid="category-rail"
@@ -87,14 +116,17 @@ export default function CategoryRail({
         className="relative flex w-full flex-col overflow-y-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {categories.map((category) => {
-          const selected = category.id === selectedId;
+          const selected = category.id === shownId;
           return (
             <button
               key={category.id}
               type="button"
               data-testid={`rail-${category.id}`}
               aria-current={selected ? "true" : undefined}
-              onClick={() => onSelect(category.id)}
+              onClick={() => {
+                setSpied(null);
+                onSelect(category.id);
+              }}
               className={`tb-select tb-compressed min-h-[64px] w-full shrink-0 rounded-[8px] py-[8px] pl-[24px] pr-[12px] text-left text-[30px] leading-[24px] [overflow-wrap:anywhere] ${
                 selected ? "bg-tb-purple-vibrant text-tb-surface" : "text-tb-purple"
               }`}

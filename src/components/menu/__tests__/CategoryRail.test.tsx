@@ -156,6 +156,44 @@ describe("CategoryRail (Menu-Categories)", () => {
   });
 
   /*
+    User 2026-10-16 (the menu's scroll spy): the menu marks the row in view
+    through spyRef, so a section crossed re-renders the rail alone. A spied
+    row stands over selectedId until that changes or a row is tapped; one the
+    rail no longer lists falls back to selectedId.
+  */
+  it("spyRef: a spied row stands over the selection until the selection changes or a row is tapped", () => {
+    const spy: { current: ((id: string) => void) | null } = { current: null };
+    const rows = [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+      { id: "c", name: "C" },
+    ];
+    const onSelect = vi.fn();
+    const current = () =>
+      screen
+        .getAllByRole("button")
+        .filter((button) => button.getAttribute("aria-current") === "true")
+        .map((button) => button.dataset.testid);
+    const { rerender } = render(<CategoryRail categories={rows} selectedId="a" onSelect={onSelect} spyRef={spy} />);
+    expect(current()).toEqual(["rail-a"]);
+
+    act(() => spy.current?.("c"));
+    expect(current()).toEqual(["rail-c"]);
+    // The menu's own selection changes (a tap, a filter): it wins.
+    rerender(<CategoryRail categories={rows} selectedId="b" onSelect={onSelect} spyRef={spy} />);
+    expect(current()).toEqual(["rail-b"]);
+    // A tap on the menu's current row while another is spied shows it at once.
+    act(() => spy.current?.("c"));
+    expect(current()).toEqual(["rail-c"]);
+    fireEvent.click(screen.getByTestId("rail-b"));
+    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(current()).toEqual(["rail-b"]);
+    // A spied row the rail no longer lists drops.
+    act(() => spy.current?.("gone"));
+    expect(current()).toEqual(["rail-b"]);
+  });
+
+  /*
     The list's box can change with no remount: the ADA toggle shrinks it to
     the reach zone's ~12 rows (ReachZone keeps the tree). A selected row the
     new box hides comes to its middle; a box that shows it moves nothing.
