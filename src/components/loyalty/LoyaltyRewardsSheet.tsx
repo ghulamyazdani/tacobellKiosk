@@ -470,7 +470,9 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         disabled={locked}
         data-testid={`loyalty-reward-${code}`}
         onClick={() => handlePick(entity)}
-        className={`${rowClass} ${locked ? "opacity-60" : ""}`}
+        // Live: bg-tb-surface, white on white at rest and Figma's lilac at touch-down (the white-button
+        // fill, UX-12). Dimmed: no fill — a white fill inside the opacity group re-rounds its edges.
+        className={`${rowClass} ${locked ? "opacity-60" : "bg-tb-surface"}`}
       >
         {inner}
         <span

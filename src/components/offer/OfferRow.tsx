@@ -401,10 +401,12 @@ export default function OfferRow({
       [applied ? appliedId : "", secondLine ? lineId : "", showDesc ? descId : ""]
         .filter(Boolean)
         .join(" ") || undefined;
+    // tb-press-card (UX-12): the row squeezes through its overlay radio, which
+    // counter-scales so the hit area stays whole (the bag's applied row).
     return (
       <div
         data-testid={`offer-row-body-${id}`}
-        className={`relative flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
+        className={`tb-press-card relative flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
           disabled ? "opacity-60" : ""
         }`}
       >

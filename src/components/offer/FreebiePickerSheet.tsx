@@ -578,11 +578,13 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
         disabled={locked}
         aria-pressed={locked ? undefined : selected}
         onClick={() => handleRowTap(entry)}
+        // Live: bg-tb-surface, white on white at rest and Figma's lilac at touch-down (the white-button
+        // fill, UX-12). Locked: no fill — a white fill inside the opacity group re-rounds its edges.
         className={`flex items-center gap-[24px] py-[24px] text-left min-h-[132px] ${
           groupWise
             ? "min-w-0 flex-1 pl-[48px]"
             : "w-full border-b border-tb-grey-4 px-[48px]"
-        } ${locked ? "opacity-50" : ""}`}
+        } ${locked ? "opacity-50" : "bg-tb-surface"}`}
       >
         {imageUrl ? (
           <img
@@ -700,7 +702,7 @@ function PickerBody({ offer, onClose }: { offer: any; onClose: () => void }) {
           aria-pressed={locked ? undefined : units > 0}
           onClick={() => handleCategoryTap(section, entity)}
           className={`flex min-h-[132px] min-w-0 flex-1 items-center gap-[24px] py-[24px] pl-[48px] text-left ${
-            locked ? "opacity-50" : ""
+            locked ? "opacity-50" : "bg-tb-surface"
           }`}
         >
           {imageUrl ? (
