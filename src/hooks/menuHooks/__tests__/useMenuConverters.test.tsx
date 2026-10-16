@@ -17,6 +17,7 @@ import {
   setMenuCharges,
 } from "@cx-sdk/ordering/state/cart.slice";
 import { setOffersFetchFailed } from "@cx-sdk/ordering/state/offer.slice";
+import { setOneCategoryAtATime } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
 import useMenuConverters from "../useMenuConverters";
 
@@ -35,7 +36,7 @@ import useMenuConverters from "../useMenuConverters";
 */
 
 const net = vi.hoisted(() => ({
-  menu: (): Promise<unknown> => Promise.resolve({}),
+  menu: (_args?: unknown): Promise<unknown> => Promise.resolve({}),
   outOfStock: (): Promise<unknown> => Promise.resolve([]),
   serverTime: (): Promise<unknown> => Promise.resolve({}),
   mockCapture: vi.fn(),
@@ -44,21 +45,42 @@ const net = vi.hoisted(() => ({
   offersBody: (): Promise<unknown> => Promise.resolve([]),
   dpSessions: undefined as unknown,
   dpItems: (): Promise<unknown> => Promise.resolve({ data: undefined }),
+  /** The Dexie menu cache (db.menus). */
+  dexieGet: (): Promise<unknown> => Promise.resolve(undefined),
+  dexiePut: (_row: unknown): Promise<unknown> => Promise.resolve(),
+  /** Start order of the fetch's requests and the cache read (perf pass BOOT-2). */
+  started: [] as string[],
 }));
 
 vi.mock("@cx-sdk/catalog/services/menuApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/menuApi")>()),
-  useGetMenuMutation: () => [() => ({ unwrap: () => net.menu() }), { isLoading: false }],
+  useGetMenuMutation: () => [
+    (args: unknown) => {
+      net.started.push("getMenu");
+      return { unwrap: () => net.menu(args) };
+    },
+    { isLoading: false },
+  ],
 }));
 
 vi.mock("@cx-sdk/catalog/services/outOfStockApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/outOfStockApi")>()),
-  useGetOutOfStockMutation: () => [() => ({ unwrap: () => net.outOfStock() })],
+  useGetOutOfStockMutation: () => [
+    () => {
+      net.started.push("outOfStock");
+      return { unwrap: () => net.outOfStock() };
+    },
+  ],
 }));
 
 vi.mock("@cx-sdk/catalog/services/settingsApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cx-sdk/catalog/services/settingsApi")>()),
-  useLazyGetServerTimeQuery: () => [() => ({ unwrap: () => net.serverTime() })],
+  useLazyGetServerTimeQuery: () => [
+    () => {
+      net.started.push("serverTime");
+      return { unwrap: () => net.serverTime() };
+    },
+  ],
 }));
 
 vi.mock("@cx-sdk/ordering/services/kioskOfferApi", async (importOriginal) => ({
@@ -79,7 +101,14 @@ vi.mock("../../offerHooks/useOfferHook", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../offerHooks/useOfferHook")>();
   return {
     default: () =>
-      net.realHooks ? actual.default() : { getCxOffers: () => Promise.resolve(null) },
+      net.realHooks
+        ? actual.default()
+        : {
+            getCxOffers: () => {
+              net.started.push("offers");
+              return Promise.resolve(null);
+            },
+          },
   };
 });
 
@@ -92,7 +121,10 @@ vi.mock("../../dynamicPricingHooks/useDynamicPricing", async (importOriginal) =>
       net.realHooks
         ? actual.default()
         : {
-            fetchDpSessions: () => Promise.resolve([]),
+            fetchDpSessions: () => {
+              net.started.push("dpSessions");
+              return Promise.resolve([]);
+            },
             fetchDpItems: () => Promise.resolve({}),
           },
   };
@@ -100,7 +132,15 @@ vi.mock("../../dynamicPricingHooks/useDynamicPricing", async (importOriginal) =>
 
 vi.mock("../../../models/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../models/db")>()),
-  db: { menus: { get: () => Promise.resolve(undefined), put: () => Promise.resolve() } },
+  db: {
+    menus: {
+      get: () => {
+        net.started.push("dexieGet");
+        return net.dexieGet();
+      },
+      put: (row: unknown) => net.dexiePut(row),
+    },
+  },
 }));
 
 vi.mock("../../../utils/analytics", async (importOriginal) => ({
@@ -649,5 +689,205 @@ describe("fetchMenu — menu charges follow the FETCHED pipeline's tab_type (S3 
     expect(pushed).toBeUndefined();
     expect((staged.find(setMenuCharges.match)?.payload as { menuCharges?: unknown }).menuCharges).toEqual([]);
     expect(staged.find(pushCharges.match)?.payload).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Low-end perf pass (2026-10-16). BOOT-1: in production every
+ * menu-scale payload reaches the store frozen at its ROOT, so Immer's
+ * autoFreeze stops there instead of walking the whole menu; DEV keeps the
+ * deep freeze. BOOT-2: the requests that need no cached menu id start
+ * before the Dexie read. BOOT-4: the Dexie cache write is not awaited.
+ * ------------------------------------------------------------------ */
+
+describe("fetchMenu — low-end perf pass (BOOT-1, BOOT-2, BOOT-4)", () => {
+  /** Every menu-scale state.menu key fetchMenu writes. */
+  const MENU_ROOTS = [
+    "entityMap",
+    "modifiersMap",
+    "menuBasedOnCategory",
+    "entityModifierMap",
+    "categoryMap",
+    "subCategoryMap",
+    "subCategoryMapWhichContainsTopLevelCategoryIdAndName",
+    "inActiveEntities",
+    "inaActiveVariants",
+    "menuEntityObject",
+    "variantObject",
+    "menu",
+  ];
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    window.localStorage.clear();
+    net.realHooks = false;
+    net.serverTime = () => Promise.resolve({ serverTime: "2026-10-07T12:00:00.000Z" });
+    net.menu = () => Promise.resolve(tenantMenu());
+    net.outOfStock = () => Promise.resolve([]);
+    net.dexieGet = () => Promise.resolve(undefined);
+    net.dexiePut = () => Promise.resolve();
+    net.started.length = 0;
+    net.mockCapture.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    net.dexieGet = () => Promise.resolve(undefined);
+    net.dexiePut = () => Promise.resolve();
+  });
+
+  const fetchOnce = async () => {
+    const { result } = renderHook(() => useMenuConverters(), { wrapper });
+    let menu: unknown;
+    await act(async () => {
+      menu = await result.current.fetchMenu("t2", false, false, PIPELINE);
+    });
+    return menu as { categories?: unknown[] };
+  };
+
+  /** Per root: is it frozen, and how many of the objects directly inside it are. */
+  const freezeShape = () => {
+    const menuState = (store.getState() as unknown as { menu: Record<string, object> }).menu;
+    return MENU_ROOTS.map((key) => {
+      const inside = Object.values(menuState[key] ?? {}).filter(
+        (value): value is object => typeof value === "object" && value !== null,
+      );
+      return {
+        key,
+        frozen: Object.isFrozen(menuState[key]),
+        inside: inside.length,
+        frozenInside: inside.filter((value) => Object.isFrozen(value)).length,
+      };
+    });
+  };
+
+  it.each([true, false])(
+    "BOOT-1 (one category at a time %s): production freezes every root and nothing inside it; DEV keeps the deep freeze",
+    async (oneAtATime) => {
+      store.dispatch(setOneCategoryAtATime(oneAtATime));
+      vi.stubEnv("DEV", false);
+      expect((await fetchOnce()).categories?.length).toBeGreaterThan(0);
+
+      const production = freezeShape();
+      expect(production.filter((root) => !root.frozen)).toEqual([]);
+      expect(production.reduce((sum, root) => sum + root.inside, 0)).toBeGreaterThan(0);
+      // Any frozen object here means Immer walked into that root — the
+      // root itself, or one sharing its objects, reached the store unfrozen.
+      // The slim fixture has no variants and no inactive entities, so the
+      // variant and inactive roots are empty here: their frozenRoot wraps are
+      // pinned by review, not by this assertion (a miss costs speed only).
+      expect(production.filter((root) => root.frozenInside > 0)).toEqual([]);
+
+      // DEV (unit tests, the e2e dev server): today's deep freeze, unchanged.
+      vi.unstubAllEnvs();
+      store.dispatch({ type: "RESET_STATE" });
+      store.dispatch(setOneCategoryAtATime(oneAtATime));
+      await fetchOnce();
+      expect(freezeShape().filter((root) => !root.frozen || root.frozenInside !== root.inside)).toEqual([]);
+    },
+  );
+
+  it("BOOT-2: out of stock, server time, offers and DP sessions start before the Dexie read; getMenu waits for the cached id", async () => {
+    store.dispatch(setIsDynamicPricingEnabled(true));
+    let readCache!: (row: unknown) => void;
+    net.dexieGet = () =>
+      new Promise((resolve) => {
+        readCache = resolve;
+      });
+    const menuArgs: unknown[] = [];
+    net.menu = (args) => {
+      menuArgs.push(args);
+      return Promise.resolve({ status: 304 });
+    };
+    const { result } = renderHook(() => useMenuConverters(), { wrapper });
+
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.fetchMenu("t2", false, false, PIPELINE);
+    });
+    // The cache read is still pending: only getMenu has not started.
+    expect(net.started).toEqual(["outOfStock", "serverTime", "offers", "dpSessions", "dexieGet"]);
+
+    await act(async () => {
+      readCache({ tabId: "t2", menuId: "menu-7", menu: tenantMenu() });
+      await pending;
+    });
+    expect(net.started.at(-1)).toBe("getMenu");
+    expect(menuArgs).toEqual([expect.objectContaining({ tab_id: "t2", MENU_ID: "menu-7" })]);
+    // 304 → the cached menu is converted.
+    await expect(pending).resolves.toEqual(expect.objectContaining({ categories: expect.any(Array) }));
+  });
+
+  it("BOOT-2: a request failing while the Dexie read is pending is no unhandled rejection — the fetch still resolves {} and reports it", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      let readCache!: (row: unknown) => void;
+      net.dexieGet = () =>
+        new Promise((resolve) => {
+          readCache = resolve;
+        });
+      net.outOfStock = () =>
+        Promise.reject({ status: "TIMEOUT_ERROR", error: "TimeoutError: signal timed out" });
+      const { result } = renderHook(() => useMenuConverters(), { wrapper });
+
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        pending = result.current.fetchMenu("t2", false, false, PIPELINE);
+        // A macrotask: Node reports a rejection nobody handles by now.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        readCache(undefined);
+        await pending;
+      });
+
+      await expect(pending).resolves.toEqual({});
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(menuFetchEvents()).toEqual([
+        { error_source: "menu_fetch", error_status: "TIMEOUT_ERROR", error_detail: "TimeoutError: signal timed out" },
+      ]);
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
+  it("BOOT-4: a changed menu (200) resolves without waiting for the Dexie cache write; a failed write stays silent", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const rows: unknown[] = [];
+      let failWrite!: (error: unknown) => void;
+      net.dexiePut = (row) => {
+        rows.push(row);
+        return new Promise((_resolve, reject) => {
+          failWrite = reject;
+        });
+      };
+      const served = { ...tenantMenu(), MENU_ID: "menu-8" };
+      net.menu = () => Promise.resolve(served);
+      const { result } = renderHook(() => useMenuConverters(), { wrapper });
+
+      let menu: unknown = "pending";
+      await act(async () => {
+        void result.current.fetchMenu("t2", false, false, PIPELINE).then((value) => {
+          menu = value;
+        });
+        // The write never commits here: an awaited put would hold the menu.
+        await vi.waitFor(() => expect(menu).not.toBe("pending"));
+      });
+      expect(menu).toEqual(expect.objectContaining({ categories: expect.any(Array) }));
+      expect(rows).toEqual([{ tabId: "t2", menuId: "menu-8", menu: served }]);
+
+      await act(async () => {
+        failWrite(new Error("QuotaExceededError"));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(menuFetchEvents()).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
   });
 });
