@@ -183,6 +183,13 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
   const eligibleRows: RankedOffer<SavingsOffer>[] = sections.hero
     ? [sections.hero, ...sections.readyRows]
     : sections.readyRows;
+  // UX-17: the offers eligible at open (the body mounts per open — BagSheet's
+  // openRows pattern). One unlocked while the sheet is open rises into its
+  // new place, its radio popping in; the rest, and every row on a reopen,
+  // stay still.
+  const [eligibleAtOpen] = useState(
+    () => new Set(eligibleRows.map((row) => String(row.offer?._id ?? ""))),
+  );
 
   // Radio state — applied offer preselected; seeded per open (see SheetBody
   // mounting note). SAVE compares against the live appliedId at commit time.
@@ -419,6 +426,7 @@ function SheetBody({ onClose, onNeedsPicker, onAddItems, appliedSaving }: SheetB
         key={id}
         entry={entry}
         selected={interactive && pickedId === id}
+        rise={interactive && !eligibleAtOpen.has(id)}
         applied={appliedId === id}
         currency={currency}
         description={copy?.text || undefined}
