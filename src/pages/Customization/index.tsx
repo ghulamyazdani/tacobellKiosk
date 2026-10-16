@@ -263,6 +263,11 @@ export default function Customization({
   const closeWarning = () => setIncompleteTap(0);
   // UX-01: ADD TO BAG before a size: the grid takes the groups' error ring (pickVariant clears it).
   const [sizeRefused, setSizeRefused] = useState(false);
+  // UX-19: a size pick closes the grid, and the option groups rise in where
+  // it was (the container mounts afresh; groups that arrive a commit later
+  // rise inside it). Never at mount or an edit's first render; "Change"
+  // clears it, so a close by ADD TO BAG never rises.
+  const [sizePicked, setSizePicked] = useState(false);
   // UX-01: a refusal's shake waits for its dialog — the completion warning
   // (z-80), or the global error (z-95) a quick-customization commit raises —
   // and plays as it closes, where the guest looks. Off while one is up, on
@@ -496,6 +501,7 @@ export default function Customization({
 
   const pickVariant = (variant: any) => {
     setSizeRefused(false);
+    setSizePicked(true);
     // The current size again: close the grid, keep its add-ons
     // (fetchAddonsForSelectedVariant would reset them).
     if (variant?.id != null && variant.id === selectedVariant?.id) {
@@ -1008,13 +1014,16 @@ export default function Customization({
               <button
                 type="button"
                 data-testid="pdp-change-size"
-                onClick={() => setConfirmedVariant(false)}
+                onClick={() => {
+                  setSizePicked(false);
+                  setConfirmedVariant(false);
+                }}
                 className="mt-[24px] flex min-h-[44px] w-fit items-center rounded-full border-2 border-tb-purple px-6 py-3 text-[18px] font-bold text-tb-purple"
               >
                 {name(selectedVariant)} · {t("pdp.change")}
               </button>
             )}
-            <div className="mt-[55px] flex flex-col gap-[64px]">
+            <div className={sizePicked ? "tb-rise mt-[55px] flex flex-col gap-[64px]" : "mt-[55px] flex flex-col gap-[64px]"}>
               {slotGroups.length > 0 && (
                 <div className="flex flex-col gap-[16px]">
                   {/* "Included" (1:4903; 1:2929 says "What's Included"). */}
