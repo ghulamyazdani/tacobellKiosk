@@ -50,6 +50,25 @@ function tenantMenu() {
   return menu;
 }
 
+/** 16 sub-categories, each with every slim item: the rail AND each section overflow (the ADA rail holds ~12 rows). */
+function longRailMenu() {
+  const menu = tenantMenu();
+  const everyItem = menu.categories.flatMap((category: { subCategories: { entities: unknown[] }[] }) =>
+    category.subCategories.flatMap((subCategory) => subCategory.entities)
+  );
+  const meals = menu.categories.find((category: { id: string }) => category.id === MEALS_COMBOS);
+  meals.subCategories = Array.from({ length: 16 }, (_, i) => ({
+    ...meals.subCategories[0],
+    id: `long-${i + 1}`,
+    name: `Row ${i + 1}`,
+    aliases: [],
+    order: i + 1,
+    entities: everyItem,
+  }));
+  menu.categories = [meals];
+  return menu;
+}
+
 /**
  * The mode's slim-menu. One at a time, every sub-category runs long (six more copies of its cards, new
  * ids), so the first section AND the tapped one overflow the pane: a swap that kept the old offset
@@ -287,21 +306,7 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
     page,
   }) => {
     test.slow();
-    const menu = tenantMenu();
-    const everyItem = menu.categories.flatMap((category: { subCategories: { entities: unknown[] }[] }) =>
-      category.subCategories.flatMap((subCategory) => subCategory.entities)
-    );
-    const meals = menu.categories.find((category: { id: string }) => category.id === MEALS_COMBOS);
-    meals.subCategories = Array.from({ length: 16 }, (_, i) => ({
-      ...meals.subCategories[0],
-      id: `long-${i + 1}`,
-      name: `Row ${i + 1}`,
-      aliases: [],
-      order: i + 1,
-      entities: everyItem,
-    }));
-    menu.categories = [meals];
-    await openMenu(page, "en", { menu, settings: { one_category_at_a_time: true } });
+    await openMenu(page, "en", { menu: longRailMenu(), settings: { one_category_at_a_time: true } });
 
     // The standard rail holds all 16; the guest picks the last. ADA shrinks the list to ~12 rows: the
     // rail brings row 16 back into its box.
@@ -339,5 +344,96 @@ test.describe("menu layout settings — send_categories / one_category_at_a_time
     await expectRowShown(page, "long-15");
     expect(await scrollTopOf(list), "the rail opened scrolled to it").toBeGreaterThan(0);
     expect.soft(await clippedText(page), "text the layout cuts off").toEqual([]);
+  });
+
+  /**
+   * User 2026-10-16: "when one category at a time is off and is scrolled through menu then the active
+   * category should change automatically on the basis of what category is in view". One scroll: the rail
+   * marks the row whose section crosses a rail tap's landing line (24 px under the pane's top), or the
+   * last row at the pane's end; a marked row the rail's box hides (ADA: ~12 of 16 rows) comes into it.
+   */
+  test("EN + ADA · scroll spy: one scroll, the rail follows the section in view — down the menu, at its end, back up", async ({
+    page,
+  }) => {
+    test.slow();
+    await openMenu(page, "en", { menu: longRailMenu() });
+    const pane = menuPane(page);
+    /** The pane scrolled so `id`'s section top sits `below` px under the landing line (negative: above it). */
+    const scrollToSection = (id: string, below: number) =>
+      pane.evaluate(
+        (el, [sectionId, px]) => {
+          const section = el.querySelector(`[data-testid="section-${sectionId}"]`) as HTMLElement;
+          el.scrollTop = section.offsetTop - 24 - px;
+        },
+        [id, below] as const
+      );
+
+    await expectRowShown(page, "long-1");
+    // A section is marked once its top crosses the line, not before.
+    await scrollToSection("long-3", 2);
+    await expectRowShown(page, "long-2");
+    await scrollToSection("long-3", -2);
+    await expectRowShown(page, "long-3");
+
+    // ADA: the rail's box shrinks to ~12 rows; a marked row below them comes into the box.
+    await page.getByTestId("footer-ada").click();
+    await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
+    const list = page.getByTestId("category-rail").locator("> div").last();
+    expect(await overflows(list), "the ADA rail overflows").toBe(true);
+    await scrollToSection("long-15", -300);
+    await expectRowShown(page, "long-15");
+    // The pane's end: the last row.
+    await pane.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expectRowShown(page, "long-16");
+    // Back up: the rail's box follows.
+    await scrollToSection("long-2", -100);
+    await expectRowShown(page, "long-2");
+    expect.soft(await clippedText(page), "text the layout cuts off").toEqual([]);
+  });
+
+  /**
+   * A rail tap's own scroll is not the guest's: the tapped row holds until their next touch (posistKiosk's
+   * disableScrollActivityMenu) — here where it matters: the short Sauces section can never reach the line
+   * (the pane stops at its end), where the spy alone marks the last row. One at a time never follows.
+   */
+  test("EN · scroll spy: a tapped row holds through its own scroll until the next touch; one at a time never follows", async ({
+    page,
+  }) => {
+    await openMenu(page, "en", { menu: modeMenu(MODES[2]) });
+    const pane = menuPane(page);
+    const scrolled = () => pane.evaluate((el) => el.dispatchEvent(new Event("scroll")));
+
+    await page.getByTestId(`rail-${SAUCES}`).click();
+    const landing = await page.getByTestId(`section-${SAUCES}`).evaluate((section) => {
+      const scroller = section.parentElement as HTMLElement;
+      return {
+        line: (section as HTMLElement).offsetTop - 24,
+        end: scroller.scrollHeight - scroller.clientHeight,
+        scrollTop: scroller.scrollTop,
+      };
+    });
+    expect(landing.end, "Sauces cannot reach the line: the pane stops at its end").toBeLessThan(landing.line);
+    expect(Math.abs(landing.scrollTop - landing.end)).toBeLessThanOrEqual(1);
+    await scrolled();
+    await expectRowShown(page, SAUCES);
+
+    // The guest touches the menu and scrolls: the spy marks what is in view — the end, the last row.
+    await pane.dispatchEvent("pointerdown");
+    await scrolled();
+    await expectRowShown(page, KIDDIE_MEAL);
+  });
+
+  test("EN · one at a time: scrolling the shown section never moves the rail", async ({ page }) => {
+    await openMenu(page, "en", { menu: modeMenu(MODES[1]), settings: MODES[1].settings });
+    const pane = menuPane(page);
+    expect(await overflows(pane), "the section overflows the pane").toBe(true);
+    await pane.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    expect(await scrollTopOf(pane)).toBeGreaterThan(0);
+    await pane.evaluate((el) => el.dispatchEvent(new Event("scroll")));
+    await expectRowShown(page, BOXES);
   });
 });

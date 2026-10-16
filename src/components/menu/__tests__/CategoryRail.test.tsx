@@ -95,7 +95,7 @@ describe("CategoryRail (Menu-Categories)", () => {
     stubbed — 64 px rows in a 320 px list (offsetTop is measured from the
     list, which is `relative`).
   */
-  it("mounts with the selected row centred in the list (its own scrollTop); a later selection never moves the list", () => {
+  it("mounts with the selected row centred in the list (its own scrollTop, at once); a later selection whose row shows (a tap) moves nothing", () => {
     const rows = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
     vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
       const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
@@ -103,6 +103,14 @@ describe("CategoryRail (Menu-Categories)", () => {
     });
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
     vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
+    // jsdom has no Element.scrollTo.
+    const original = Element.prototype.scrollTo;
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    onTestFinished(() => {
+      Element.prototype.scrollTo = original;
+      vi.restoreAllMocks();
+    });
 
     const { rerender } = render(<CategoryRail categories={rows} selectedId="r9" onSelect={vi.fn()} />);
     const list = screen.getByTestId("rail-r9").parentElement as HTMLElement;
@@ -110,10 +118,41 @@ describe("CategoryRail (Menu-Categories)", () => {
     expect(list).toHaveClass("relative");
     expect(list.scrollTop).toBe(64 * 9 - (320 - 64) / 2);
 
-    list.scrollTop = 0;
-    rerender(<CategoryRail categories={rows} selectedId="r11" onSelect={vi.fn()} />);
+    // Rows 7–11 show in the box at 448: a tap on row 10 moves nothing.
+    rerender(<CategoryRail categories={rows} selectedId="r10" onSelect={vi.fn()} />);
+    expect(list.scrollTop).toBe(64 * 9 - (320 - 64) / 2);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  /*
+    User 2026-10-16: with one scroll, the menu's scroll spy moves the
+    selection on its own — to a row the list's box can hide. It comes to the
+    middle, smoothly (scrollBehavior(): setupTests' matchMedia never
+    matches reduce).
+  */
+  it("a later selection whose row the box hides (the menu's scroll spy) comes to the middle, smoothly", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}` }));
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+      const index = /^rail-r(\d+)$/.exec(this.dataset.testid ?? "")?.[1];
+      return index === undefined ? 0 : 64 * Number(index);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(64);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(320);
+    const original = Element.prototype.scrollTo;
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    onTestFinished(() => {
+      Element.prototype.scrollTo = original;
+      vi.restoreAllMocks();
+    });
+
+    const { rerender } = render(<CategoryRail categories={rows} selectedId="r0" onSelect={vi.fn()} />);
+    const list = screen.getByTestId("rail-r0").parentElement as HTMLElement;
     expect(list.scrollTop).toBe(0);
-    vi.restoreAllMocks();
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    rerender(<CategoryRail categories={rows} selectedId="r11" onSelect={vi.fn()} />);
+    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 64 * 11 - (320 - 64) / 2, behavior: "smooth" });
   });
 
   /*

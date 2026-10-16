@@ -145,6 +145,9 @@ interface MenuNode {
 /** A rail row's id = its pane section's id. */
 const entryId = (entry: MenuNode | null | undefined) => String(entry?.id ?? entry?.categoryId ?? "");
 
+/** A rail tap lands its section this far under the pane's top — the scroll spy's line too. */
+const SECTION_LANDING_PX = 24;
+
 export default function Menu({ bagOpen = false }: MenuProps) {
   // Motion §2.4: Menu mounting under the product-added modal (Figma 1:5502:
   // the menu stays still), the bag or the rewards sheet is quiet. Read from
@@ -357,6 +360,53 @@ export default function Menu({ bagOpen = false }: MenuProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only re-drive (fork parity)
   }, []);
 
+  /**
+   * Scroll spy (user 2026-10-16: "when one category at a time is off and is
+   * scrolled through menu then the active category should change
+   * automatically on the basis of what category is in view"). One scroll
+   * marks the row whose section crosses a rail tap's landing line
+   * (SECTION_LANDING_PX under the pane's top), or the last row at the pane's
+   * end, which a short last section never brings up to the line.
+   * posistKiosk's MenuContainerKiosk does it with an IntersectionObserver on
+   * a top band; here one passive listener reads the sections' offsets (layout
+   * is clean mid-scroll). A rail tap's own scroll is not the guest's, so the
+   * spy waits for their next touch or wheel (posistKiosk's
+   * disableScrollActivityMenu): the tapped row holds, and no row flickers on
+   * the way there. Sections follow the rail's order, so the walk stops at the
+   * first one below the line.
+   */
+  const spyLockRef = useRef(false);
+  const railRowsRef = useRef(railCategories);
+  useLayoutEffect(() => {
+    railRowsRef.current = railCategories;
+  });
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (oneAtATime || !pane) return;
+    const spy = () => {
+      const rows = railRowsRef.current;
+      if (spyLockRef.current || rows.length === 0) return;
+      let id = rows[rows.length - 1].id;
+      if (Math.ceil(pane.scrollTop + pane.clientHeight) < pane.scrollHeight - 1) {
+        const line = pane.scrollTop + SECTION_LANDING_PX + 1;
+        id = rows[0].id;
+        for (const row of rows) {
+          const top = sectionRefs.current[row.id]?.offsetTop;
+          if (top === undefined) continue;
+          if (top > line) break;
+          id = row.id;
+        }
+      }
+      setSelectedCategoryId(id);
+    };
+    pane.addEventListener("scroll", spy, { passive: true });
+    return () => pane.removeEventListener("scroll", spy);
+  }, [oneAtATime]);
+  /** The guest's own touch or wheel hands the rail back to the spy. */
+  const releaseSpy = () => {
+    spyLockRef.current = false;
+  };
+
   const handleRailSelect = (id: string) => {
     select(id);
     const pane = paneRef.current;
@@ -365,8 +415,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       // A tap on the shown row goes back to its top too (a change: above).
       if (pane) pane.scrollTop = 0;
     } else if (el && pane) {
+      spyLockRef.current = true;
       // Instant under reduced motion (motion §3.9).
-      pane.scrollTo({ top: el.offsetTop - 24, behavior: scrollBehavior() });
+      pane.scrollTo({ top: el.offsetTop - SECTION_LANDING_PX, behavior: scrollBehavior() });
     }
     if (subMode) {
       captureKioskEvent(KioskEventName.SubCategoryClicked, {
@@ -619,6 +670,9 @@ export default function Menu({ bagOpen = false }: MenuProps) {
       // 1:5392 — only the rail+pane viewport shrinks; CTA and footer stay
       // pinned to the bottom).
       className="relative flex h-full w-[1080px] flex-col bg-tb-surface"
+      // Any touch (the pane, the scrollbar's thumb or track, the rail) hands
+      // the rail back to the scroll spy; a rail tap's click re-locks it.
+      onPointerDownCapture={releaseSpy}
     >
       {/* The rail + pane row is the one arriving block (motion §2.7); the
           scrollbar, the CTA bar, the footer and every overlay stay. */}
@@ -637,7 +691,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
             multiply-blend against the whole reach zone, so a composited pane
             would split every photo into its own layer and re-sample it. The
             pane and the rail stay un-composited, as before. */}
-        <div ref={paneRef} className="min-h-0 flex-1 overflow-y-auto bg-transparent px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={paneRef}
+          onWheel={releaseSpy}
+          className="min-h-0 flex-1 overflow-y-auto bg-transparent px-[24px] pb-[48px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center gap-6">
               <h1 className="tb-display text-center text-5xl text-tb-purple">
