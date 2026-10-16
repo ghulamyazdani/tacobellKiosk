@@ -190,13 +190,15 @@
 /* Opacity-only fade — position-neutral, so it is safe on any positioned /
  * translated box: FullscreenGate, NetworkStatus and .tb-reveal-late (the
  * full-screen status overlays). (The splash carousel it was written for
- * shifts on tb-carousel-in since lane motion.) */
+ * shifts on tb-carousel-in since lane motion.) On the reveal tokens (was
+ * 0.5s ease-out both): a layer that takes taps from t = 0 looks live for
+ * 200 ms, not 500, and the backwards fill ends on the layer's own opacity. */
 @keyframes tb-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 .tb-fade-in {
-  animation: tb-fade-in 0.5s ease-out both;
+  animation: tb-fade-in var(--tb-dur-reveal) var(--tb-ease-out) backwards;
 }
 
 /* Offer-applied celebration (lane offers, item 33; fork OffersSheet.css
