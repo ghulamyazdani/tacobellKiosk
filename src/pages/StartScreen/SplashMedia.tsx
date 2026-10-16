@@ -119,12 +119,15 @@ const Tint = () => (
  * StartFooter copy), else ORDER HERE. Primary only: every splash visit runs
  * in the default language — the fallback pinned to it, as i18n catches up
  * with a session reset one effect late (App). ORDER HERE's place: its 756 px
- * column, bottom edge at y 1712, so a longer text grows upward.
+ * column, bottom edge at y 1712, so a longer text grows upward. A word wider
+ * than the column (~7+ letters: WELCOME 767, ANYWHERE 880 px) widens the box
+ * to that word (min-content), centred between the stage's 24 px gutters,
+ * instead of breaking mid-word (WELCOM / E).
  * ponytail: one size, no line clamp (overflow:hidden clips the first line's
- * accents at leading 98 < 116 px). Ceilings: a word wider than the column
- * (~7+ letters; WELCOME is 767 px) breaks mid-word, unhyphenated (WELCOM / E),
- * and a 4+ line text (TAP HERE TO START YOUR ORDER) grows over the cards'
- * foot; upgrade = a step-down size (or a clamp) if an operator needs either.
+ * accents at leading 98 < 116 px). Ceilings: one word over ~1032 px (~11+
+ * letters) runs past the gutters (past 1080, the stage clips it), and a 4+
+ * line text (TAP HERE TO START YOUR ORDER) grows over the cards' foot;
+ * upgrade = a step-down size (or a clamp) if an operator needs either.
  */
 function SplashText() {
   const { t } = useTranslation();
@@ -134,13 +137,15 @@ function SplashText() {
     (typeof custom === "string" && custom.trim()) ||
     t("splash.orderHere", { lng: DEFAULT_LANGUAGE });
   return (
-    // dir="auto" on this LEAF only (P9f): an operator's Arabic text reads RTL.
-    <span
-      dir="auto"
-      className={`${H1} absolute bottom-[208px] left-[162px] w-[756px] text-center [overflow-wrap:anywhere]`}
-    >
-      {text}
-    </span>
+    <div className="absolute inset-x-[24px] bottom-[208px] flex justify-center">
+      {/* dir="auto" on this LEAF only (P9f): an operator's Arabic text reads RTL. */}
+      <span
+        dir="auto"
+        className={`${H1} w-max min-w-min max-w-[756px] text-center`}
+      >
+        {text}
+      </span>
+    </div>
   );
 }
 

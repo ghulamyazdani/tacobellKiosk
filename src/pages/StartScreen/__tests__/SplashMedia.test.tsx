@@ -843,7 +843,7 @@ describe("the one line — start_order_text_primary, else 'order here' (2026-10-
     }
   });
 
-  it.each(LAYOUTS)("%s: ORDER HERE's place — Title/H1, its 756 px column, bottom 208, wrapping anywhere, dir=auto on the leaf only, no clamp", (_name, slides) => {
+  it.each(LAYOUTS)("%s: ORDER HERE's place — Title/H1, its 756 px column (a longer word widens it, never breaks mid-word), bottom 208, dir=auto on the leaf only, no clamp", (_name, slides) => {
     settings({ start_order_text_primary: "Tap to order" });
     seed([...slides]);
     renderSplash();
@@ -852,9 +852,10 @@ describe("the one line — start_order_text_primary, else 'order here' (2026-10-
     expect(line.tagName).toBe("SPAN");
     expect(line).toHaveClass(
       "tb-display", "text-[116px]", "leading-[98px]", "tracking-[-3.27px]", "text-tb-surface",
-      "absolute", "bottom-[208px]", "left-[162px]", "w-[756px]", "text-center", "[overflow-wrap:anywhere]"
+      "w-max", "min-w-min", "max-w-[756px]", "text-center"
     );
-    expect(line.className).not.toMatch(/nowrap|line-clamp|truncate|overflow-hidden/);
+    expect(line.parentElement).toHaveClass("absolute", "inset-x-[24px]", "bottom-[208px]", "flex", "justify-center");
+    expect(line.className).not.toMatch(/nowrap|line-clamp|truncate|overflow-hidden|overflow-wrap/);
     expect(line).toHaveAttribute("dir", "auto");
     expect(host().querySelectorAll("[dir]")).toHaveLength(1);
   });
