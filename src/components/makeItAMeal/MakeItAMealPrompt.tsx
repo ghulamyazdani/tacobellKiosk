@@ -121,6 +121,11 @@ const savingsFor = (combo: unknown): number | null => {
   return null;
 };
 
+interface MakeItAMealPromptBodyProps {
+  pickedId: string | null;
+  setPickedId: (id: string | null) => void;
+}
+
 /**
  * MIAM upsell prompt — "Would you like to make it a meal?".
  *
@@ -157,7 +162,7 @@ const savingsFor = (combo: unknown): number | null => {
  * Backdrop tap intentionally does NOT close (fork parity — its handler is
  * commented out).
  */
-export default function MakeItAMealPrompt() {
+function MakeItAMealPromptBody({ pickedId, setPickedId }: MakeItAMealPromptBodyProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -166,8 +171,6 @@ export default function MakeItAMealPrompt() {
   const { openDoubleTierModal } = useMakeItAMeal();
   const { sellableCombos } = useSellableCombos();
 
-  const isOpen = useSelector(makeItAMealIsOpen, shallowEqual);
-  const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
   const item = useSelector(makeItMealSelectedItem, shallowEqual);
   const { isSecondary, name, text } = useLocalized();
   // 29c (D8): the operator's make_it_meal_<slot> text replaces the Figma
@@ -186,14 +189,12 @@ export default function MakeItAMealPrompt() {
     [item, sellableCombos]
   );
 
-  // Multi-combo selection. Derived-with-fallback rather than an effect, so
-  // "first preselected" holds even when the combo list changes underneath.
-  const [pickedId, setPickedId] = useState<string | null>(null);
+  // Multi-combo selection (the shell holds the pick). Derived-with-fallback
+  // rather than an effect, so "first preselected" holds even when the combo
+  // list changes underneath.
   const selected =
     combos.find((c: any) => String(c?.id) === pickedId) ?? combos[0];
   const isMulti = combos.length > 1;
-
-  if (!(isOpen || isForceOpen)) return null;
 
   /** Fork MakeItAMealModal.closeMakeItAMeal — verbatim dispatch set. */
   const closeDance = () => {
@@ -395,4 +396,18 @@ export default function MakeItAMealPrompt() {
       </div>
     </div>
   );
+}
+
+/**
+ * Closed, the prompt is two boolean subscriptions (perf REDUX-3): the body's
+ * hooks — the cart writers, the sellable combos, the copy — mount only while
+ * it is up. The multi-combo pick lives here, as it did while the whole prompt
+ * stayed mounted, so a re-prompt still opens on the last pick.
+ */
+export default function MakeItAMealPrompt() {
+  const isOpen = useSelector(makeItAMealIsOpen, shallowEqual);
+  const isForceOpen = useSelector(selectIsForceOpenMakeItAMealModal);
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  if (!(isOpen || isForceOpen)) return null;
+  return <MakeItAMealPromptBody pickedId={pickedId} setPickedId={setPickedId} />;
 }

@@ -125,7 +125,7 @@ const withPicks = (
  * out-of-stock map. CSS entrance only: the Figma Smart Animate spring
  * (index.css tb-modal-spring).
  */
-export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps) {
+function ProductAddedModalBody({ onQuickAdd }: ProductAddedModalProps) {
   const { t } = useTranslation();
   const { name } = useLocalized();
   const dispatch = useDispatch();
@@ -148,7 +148,7 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
         : resolveItemRecommendations(entityMap, outOfStockItems, modal?.item).slice(0, 3),
     [modal, entityMap, outOfStockItems]
   );
-  // Only while shown: the modal stays mounted on the menu.
+  // Only while shown: the body stays mounted through a detour.
   const shown = Boolean(modal?.isOpen) && !detour;
   const preview = useMemo(
     () => (shown ? withPicks(cart, recommendations, pending, pendingCustom) : null),
@@ -159,18 +159,12 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
   // The app's modal focus: the CTA takes it on every show (autoFocus,
   // ErrorModal's) — a keyboard Enter on a menu "+" otherwise added again
   // behind the dialog — and the opener gets it back on close
-  // (SelectSizeModal's restoreFocus), kept through a detour. Read while
-  // rendering the open edge, before autoFocus moves focus in.
-  const isOpen = Boolean(modal?.isOpen);
-  const [focusReturn, setFocusReturn] = useState({ isOpen, opener: null as Element | null });
-  if (focusReturn.isOpen !== isOpen) {
-    setFocusReturn({ isOpen, opener: isOpen ? document.activeElement : null });
-  }
-  const { opener } = focusReturn;
-  useEffect(() => {
-    if (!isOpen) return;
-    return () => restoreFocus(opener);
-  }, [isOpen, opener]);
+  // (SelectSizeModal's restoreFocus), kept through a detour: this body lives
+  // from the open edge to the close (the shell below). Read at its first
+  // render, before autoFocus moves focus in; StrictMode's dev re-run of the
+  // cleanup finds the dialog still up and skips the restore.
+  const [opener] = useState(() => document.activeElement);
+  useEffect(() => () => restoreFocus(opener), [opener]);
 
   // A suggestion's chooser is up: still open, picks kept, not shown.
   if (!shown) return null;
@@ -396,4 +390,17 @@ export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps
       </div>
     </div>
   );
+}
+
+/**
+ * Closed, the modal is one boolean subscription (perf REDUX-3): the body —
+ * the strip, the picks and the bag's bill over them — mounts on the open
+ * edge and stays mounted while a suggestion's chooser hides it (open, not
+ * shown), so its opener survives the detour.
+ */
+export default function ProductAddedModal({ onQuickAdd }: ProductAddedModalProps) {
+  const isOpen = useSelector((s: { menuSelections?: { addToCartModal?: { isOpen?: boolean } } }) =>
+    Boolean(s.menuSelections?.addToCartModal?.isOpen)
+  );
+  return isOpen ? <ProductAddedModalBody onQuickAdd={onQuickAdd} /> : null;
 }

@@ -181,7 +181,10 @@ export default function Tent() {
   /**
    * Per-keypress ceiling check (fork NumberKeyboard `tentCheck`): a digit
    * that would push the value past the configured maximum is refused rather
-   * than accepted-and-rejected later. Deletions always pass.
+   * than accepted-and-rejected later. Deletions always pass. The typed value
+   * stays local until BACK or an accepted CONFIRM commits it (NO THANKS
+   * commits an empty tent; the fork writes it per key): a store write
+   * re-serialises the whole persisted root.
    */
   const handleChange = useCallback(
     (next: string) => {
@@ -195,9 +198,8 @@ export default function Tent() {
       }
       setRangeError("");
       setInputValue(next);
-      dispatch(setTent(next));
     },
-    [dispatch, inputValue.length, showRangeError, tentRange.configured, tentRange.to]
+    [inputValue.length, showRangeError, tentRange.configured, tentRange.to]
   );
 
   /**

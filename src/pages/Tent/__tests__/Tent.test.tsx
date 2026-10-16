@@ -153,12 +153,15 @@ describe("Tent — the table-number step", () => {
   });
 
   describe("range validation (configured 1..20)", () => {
-    it("writes an in-range entry straight through to appSettings.tent", () => {
+    it("an in-range entry: the store keeps the committed tent while it is typed; CONFIRM writes it to appSettings.tent", () => {
       mount();
       type("12");
 
-      expect(tentInStore()).toBe("12");
+      expect(tentInStore()).toBeNull();
       expect(error()).not.toBeInTheDocument();
+
+      tap("tent-confirm");
+      expect(tentInStore()).toBe("12");
     });
 
     it("refuses the keypress that would exceed the maximum", () => {
@@ -170,11 +173,15 @@ describe("Tent — the table-number step", () => {
       type("9");
 
       expect(displayText()).toBe("9");
-      expect(tentInStore()).toBe("9");
+      expect(tentInStore()).toBeNull();
       expect(error()).toBeInTheDocument();
       expect(error()).toHaveTextContent(
         i18n.t("tent.rangeError", { from: 1, to: 20 })
       );
+
+      // BACK commits what was accepted, never the refused key.
+      tap("tent-back");
+      expect(tentInStore()).toBe("9");
     });
 
     it("always allows a deletion, even from a value at the ceiling", () => {
@@ -185,8 +192,31 @@ describe("Tent — the table-number step", () => {
       tap("numpad-backspace");
 
       expect(displayText()).toBe("2");
-      expect(tentInStore()).toBe("2");
+      expect(tentInStore()).toBeNull();
       expect(error()).not.toBeInTheDocument();
+
+      tap("tent-confirm");
+      expect(tentInStore()).toBe("2");
+    });
+
+    // perf CHECKOUT-2: appSettings is persisted — a write per key
+    // re-serialised and rewrote the whole persist:root blob on every digit.
+    it("typing never writes the store: no dispatch for a digit, a backspace or a refused key", () => {
+      mount();
+      const writes = vi.fn();
+      const unsubscribe = store.subscribe(writes);
+      try {
+        type("12");
+        tap("numpad-backspace");
+        type("9");
+        type("9"); // 199 > 20: refused
+      } finally {
+        unsubscribe();
+      }
+
+      expect(displayText()).toBe("19");
+      expect(error()).toBeInTheDocument();
+      expect(writes).not.toHaveBeenCalled();
     });
 
     it("refuses Continue below the minimum and stays on the screen", () => {

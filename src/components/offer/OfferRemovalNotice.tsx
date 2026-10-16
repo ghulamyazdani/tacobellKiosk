@@ -46,7 +46,7 @@ const NAME_SLOT = "\u0000";
  * Centered modal, so the shared position-dependent tb-modal-enter keyframe
  * applies (RemoveItemModal precedent).
  */
-export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
+function OfferRemovalNoticeBody({ bill }: OfferRemovalNoticeProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const removalModal = useSelector(offerRemovalModal) as any;
@@ -164,4 +164,15 @@ export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
       </div>
     </div>
   );
+}
+
+/**
+ * Closed, the notice is one boolean subscription (perf REDUX-3): the body's
+ * hooks — the bill engine and the offer savings, re-run on every cart write
+ * — mount only while it is up. None of them has an effect, so nothing has to
+ * run while it is closed.
+ */
+export default function OfferRemovalNotice({ bill }: OfferRemovalNoticeProps) {
+  const isOpen = useSelector((state) => Boolean(offerRemovalModal(state)?.isOpen));
+  return isOpen ? <OfferRemovalNoticeBody bill={bill} /> : null;
 }
