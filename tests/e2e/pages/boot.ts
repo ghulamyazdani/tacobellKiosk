@@ -15,10 +15,10 @@ export async function submitLicence(page: Page) {
   await page.getByTestId("registration-submit").click();
 }
 
-/** Register on the on-screen keyboard and land on the splash. */
-export async function registerToStart(page: Page) {
+/** Register on the on-screen keyboard and land on the splash. `timeout`: a throttled CPU (perf) needs more. */
+export async function registerToStart(page: Page, timeout = 10_000) {
   await submitLicence(page);
-  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("start-screen")).toBeVisible({ timeout });
 }
 
 /** Splash → order type (/second). */
@@ -34,16 +34,16 @@ export async function pickPipelineToMenu(page: Page) {
 }
 
 /** Splash → order type → `screen` (/menu, or /phone with loyalty on). */
-export async function startOrderTo(page: Page, screen: "menu-screen" | "phone-screen") {
+export async function startOrderTo(page: Page, screen: "menu-screen" | "phone-screen", timeout = 15_000) {
   await page.getByTestId("start-screen").click();
   await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId(screen)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId(screen)).toBeVisible({ timeout });
 }
 
-/** Register on the on-screen keyboard and land on /menu. */
-export async function bootRegisteredToMenu(page: Page) {
-  await registerToStart(page);
-  await startOrderTo(page, "menu-screen");
+/** Register on the on-screen keyboard and land on /menu. `timeout`: each leg's (default 10 s, then 15 s). */
+export async function bootRegisteredToMenu(page: Page, timeout?: number) {
+  await registerToStart(page, timeout);
+  await startOrderTo(page, "menu-screen", timeout);
 }
 
 /** The hidden operator gesture (StartScreen's useLongPress): a 3 s hold in fake time (needs page.clock.install()). */
