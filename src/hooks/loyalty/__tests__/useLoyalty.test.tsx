@@ -162,8 +162,8 @@ describe("useLoyalty — idle-facing edges (P9a)", () => {
   User 2026-10-17 — the phone is asked at the rewards entry, so "identified"
   is the lookup's verdict, not a phone in the store: the rewards entries and
   checkout's /phone step read selectIsLoyaltyIdentified. Only a 200 sets it;
-  a non-200 or a failed transport clears it; a lookup the screen outlived
-  writes nothing.
+  a lookup starting clears it (its caller just committed a new number), so a
+  non-200, a failed transport or a lookup the screen outlived leaves it false.
 */
 describe("useLoyalty.executeLoyalty — the identified flag", () => {
   const identified = () => selectIsLoyaltyIdentified(store.getState());
@@ -202,9 +202,12 @@ describe("useLoyalty.executeLoyalty — the identified flag", () => {
     expect(identified()).toBe(false);
   });
 
-  it("a lookup answered AFTER the screen unmounted leaves it alone", async () => {
+  it("a lookup answered AFTER the screen unmounted identifies no one — not even on an earlier 200", async () => {
+    // An earlier 200 (another number); this lookup's number is committed.
+    store.dispatch(setLoyaltyIdentified(true));
     const { result, unmount } = renderHook(() => useLoyalty(), { wrapper });
     const lookup = startLookup(result.current);
+    expect(identified()).toBe(false);
 
     unmount();
     await act(async () => {

@@ -904,8 +904,10 @@ export default function BagSheet({
         tabType,
         skipCRM: shouldSkipCRM(),
         isLoyaltyOn: getIsLoyaltyOn(),
-        // Not identified → /phone before the name, as with loyalty off.
-        isLoyaltyIdentified,
+        // Not identified → /phone before the name, as with loyalty off. Read
+        // live, like the CAS above: the rewards login stays open to the guest
+        // while PAY awaits, and useCheckoutFlow's BACK reads it live too.
+        isLoyaltyIdentified: selectIsLoyaltyIdentified(store.getState()),
       });
 
       if (decision.kind === "blocked") {

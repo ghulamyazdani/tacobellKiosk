@@ -352,7 +352,9 @@ export async function mockXenoLoyalty(
 
   // Boot: resolves the deployment's partner. setLoyaltyPartner ALSO flips
   // state.loyalty.isLoyaltyOn — with enable_loyalty in settings that is what
-  // makes getIsLoyaltyOn() true and routes /second → /phone.
+  // makes getIsLoyaltyOn() true: /second still lands on /menu, the menu's
+  // REWARDS and the bag's LOG-IN & GET REWARDS open the rewards login, and
+  // PAY asks on /phone until a login identifies the guest (user 2026-10-17).
   await page.route("**/api/cx/kiosk/getLoyaltyPartner", (route) => {
     handle.partnerCount += 1;
     return route.fulfill({ json: opts.partner ?? LOYALTY_PARTNER });

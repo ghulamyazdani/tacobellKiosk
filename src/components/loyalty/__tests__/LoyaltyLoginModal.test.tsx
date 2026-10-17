@@ -4,7 +4,7 @@
  * domain pass. Do not add NEW anys.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
@@ -299,6 +299,30 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
       expect(onClose).not.toHaveBeenCalled();
       // The phone still landed — a failed lookup must not lose the identity.
       expect(customerState().customerInfo.customerPhone).toBe(PHONE);
+    });
+
+    it("another number after that 200, closed before its lookup answers: nobody is identified", async () => {
+      executeEvent.mockResolvedValue({ data: BALANCE_EMPTY });
+      seedDeployment();
+      const { unmount } = renderModal();
+      await typeDigits(PHONE);
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+      await screen.findByTestId("loyalty-error");
+      expect(loyaltyState().isLoyaltyIdentified).toBe(true);
+
+      // TRY AGAIN → a different number; the guest closes while Xeno is slow.
+      await userEvent.click(screen.getByTestId("loyalty-error-retry"));
+      await userEvent.click(screen.getByTestId("numpad-clear"));
+      let answer!: (value: unknown) => void;
+      executeEvent.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+      await typeDigits("8800112233");
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+      unmount();
+      await act(async () => answer({ data: BALANCE_OK }));
+
+      // Not A's 200 standing for B: the rewards entry retries, PAY asks.
+      expect(customerState().customerInfo.customerPhone).toBe("8800112233");
+      expect(loyaltyState().isLoyaltyIdentified).toBe(false);
     });
 
     it("a rejected lookup surfaces the retryable failure copy and never opens the sheet", async () => {

@@ -601,7 +601,9 @@ test.describe("loyalty on, no rewards login: the phone is asked at checkout (use
     await expect(page.getByTestId("tent-screen")).toBeVisible({ timeout: 15_000 });
     await typeDigits(page, "12");
     await page.getByTestId("tent-confirm").click();
-    await expect(page).toHaveURL(/\/phone$/, { timeout: 15_000 });
+    // The screen, not the URL: /tent's keypad shares the numpad-key testids,
+    // and the route commits after the URL changes (a transition).
+    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
     await typeDigits(page, LOYALTY_PHONE);
     await page.getByTestId("phone-continue").click();
     await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });

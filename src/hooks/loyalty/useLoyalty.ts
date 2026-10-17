@@ -123,6 +123,11 @@ function useLoyalty() {
   };
 
   const executeLoyalty = async (phoneDetails: any) => {
+    // Both callers commit the number just before this lookup, so an earlier
+    // 200 (for another number) must not stand for it: nobody is identified
+    // until this lookup's own 200 — so a failed lookup, or one whose screen
+    // closed before it answered, identifies no one.
+    dispatch(setLoyaltyIdentified(false));
     const { phoneNumber, countryCode } = phoneDetails;
     const payload = buildCheckLoyaltyBalancePayload({
       loyaltyPartner: loyaltyPartnerRdx,
@@ -160,10 +165,6 @@ function useLoyalty() {
       return resp;
     } catch (error) {
       reportLoyaltyFailure("executeLoyalty", error);
-      // A failed transport (no body) or a non-200 without `response` throws
-      // in addLoyaltyPointsAndCoupons above, before the flag: the callers
-      // read this as a failed lookup, so it identifies no one either.
-      if (mountedRef.current) dispatch(setLoyaltyIdentified(false));
     }
   };
 

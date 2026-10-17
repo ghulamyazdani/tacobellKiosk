@@ -120,8 +120,9 @@ function LoginBody({ onClose }: LoginBodyProps) {
   };
 
   /**
-   * Submit — the SAME path `/phone` runs (contract step 3/4), minus the
-   * navigation (the customer is already on /menu):
+   * Submit — the SAME path the legacy pre-menu `/phone` runs (contract step
+   * 3/4; checkout's /phone never looks up), minus the navigation (the
+   * customer is already on /menu):
    *   country min/max validation (skipped when the country carries neither)
    *   → clear the stored name if the number changed → setPhoneNumberRdx
    *   → executeLoyalty (check_loyalty_balance — a pure lookup, no OTP)
@@ -409,10 +410,11 @@ function LoginBody({ onClose }: LoginBodyProps) {
  *
  * Mechanic (USER DIRECTIVE — Xeno verbatim): the live segment is a PHONE
  * lookup, not a code. Submitting runs the same `executeLoyalty`
- * (check_loyalty_balance) path `/phone` runs and, when the customer has
- * coupons and points, dispatches `openLoyaltyItemsModal({ isTimerOn: true })`
- * — which is what opens `LoyaltyRewardsSheet` (it reads that slice state
- * itself, so no prop plumbing between the two).
+ * (check_loyalty_balance) path the legacy pre-menu `/phone` runs and, when
+ * the customer has coupons and points, dispatches
+ * `openLoyaltyItemsModal({ isTimerOn: true })` — which is what opens
+ * `LoyaltyRewardsSheet` (it reads that slice state itself, so no prop
+ * plumbing between the two).
  *
  * Body mounted only while open so the entry never re-opens pre-filled.
  * z-60: above BagSheet (z-40) and the rewards sheet (z-50); its country

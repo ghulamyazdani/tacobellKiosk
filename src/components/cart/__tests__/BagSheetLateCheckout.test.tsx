@@ -262,4 +262,20 @@ describe("BagSheet PAY — loyalty on: /phone unless a rewards login identified 
       state: { checkoutRoute: "customerName" },
     });
   });
+
+  it("a rewards login finished while PAY awaits counts: straight to /customerName", async () => {
+    mount();
+    const pay = payWithRevalidationInFlight();
+
+    // LOG-IN & GET REWARDS stays live during PAY; its lookup answers 200.
+    act(() => {
+      store.dispatch(setLoyaltyIdentified(true));
+    });
+    await pay.answer();
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith("/customerName", {
+      state: { checkoutRoute: "customerName" },
+    });
+  });
 });
