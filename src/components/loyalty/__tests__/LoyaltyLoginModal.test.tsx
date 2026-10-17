@@ -10,6 +10,7 @@ import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { setLoyaltyPartner } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
+import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
 import { setCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import { setCustomerName } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
@@ -356,6 +357,91 @@ describe("LoyaltyLoginModal (Figma 1:4174 — REWARDS login)", () => {
       );
       expect(loyaltyState().loyaltyItemsModal.isOpen).toBe(false);
       expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  /*
+    The lookup funnel: the login is now where a loyalty guest's number is
+    looked up, so it reports what the pre-menu /phone reports for the same
+    steps, with the same properties — and never the number.
+  */
+  describe("the lookup funnel — /phone's events", () => {
+    const FUNNEL = [
+      "number_screen_viewed",
+      "phone_number_entered",
+      "account_send_code",
+      "account_reorder_available",
+      "account_reorder_unavailable",
+      "order_checkin_not_available",
+      "account_resend_code_error",
+    ];
+    const funnel = () => mockCapture.mock.calls.filter(([name]) => FUNNEL.includes(name));
+    const submitted = [
+      ["phone_number_entered", { phone_length: 10, country_code: "+91" }],
+      ["account_send_code", { country_code: "+91" }],
+    ];
+
+    beforeEach(() => {
+      mockCapture.mockReset();
+      seedDeployment();
+      store.dispatch(setTabType("dine_in"));
+    });
+
+    it("opening reports the number screen; a refused entry reports nothing more", async () => {
+      renderModal();
+      expect(funnel()).toEqual([
+        ["number_screen_viewed", { loyalty_enabled: true, tab_type: "dine_in" }],
+      ]);
+
+      await typeDigits("99538");
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+      await screen.findByTestId("loyalty-error");
+      expect(funnel()).toHaveLength(1);
+    });
+
+    it.each([
+      ["coupons and points", { data: BALANCE_OK }, ["account_reorder_available", { coupon_count: 1, loyalty_points: 6000 }]],
+      ["a 200 without them", { data: BALANCE_EMPTY }, ["account_reorder_unavailable", { reason: "no_coupons_or_points" }]],
+      ["a non-200", { data: BALANCE_FAILED }, ["order_checkin_not_available", { reason: "api_error" }]],
+      ["no answer (a failed transport)", { error: { status: "FETCH_ERROR" } }, ["order_checkin_not_available", { reason: "api_error" }]],
+    ])("a lookup answered with %s: entered → send code → its outcome", async (_label, rtkResult, outcome) => {
+      executeEvent.mockResolvedValue(rtkResult);
+      renderModal();
+      await typeDigits(PHONE);
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+
+      await waitFor(() => expect(funnel()).toHaveLength(4));
+      expect(funnel().slice(1)).toEqual([...submitted, outcome]);
+      expect(JSON.stringify(mockCapture.mock.calls)).not.toContain(PHONE);
+    });
+
+    it("a throw after the lookup reports account_resend_code_error with its message", async () => {
+      const { onClose } = renderModal();
+      onClose.mockImplementation(() => {
+        throw new Error("close failed");
+      });
+      await typeDigits(PHONE);
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+
+      await screen.findByTestId("loyalty-error");
+      expect(funnel().slice(-1)).toEqual([
+        ["account_resend_code_error", { error_message: "close failed" }],
+      ]);
+    });
+
+    it("closed before the lookup answers: no outcome, as /phone once it is left", async () => {
+      let answer!: (value: unknown) => void;
+      executeEvent.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+      const { unmount } = renderModal();
+      await typeDigits(PHONE);
+      await userEvent.click(screen.getByTestId("loyalty-login-submit"));
+      unmount();
+      await act(async () => answer({ data: BALANCE_OK }));
+
+      expect(funnel().map(([name]) => name)).toEqual([
+        "number_screen_viewed",
+        ...submitted.map(([name]) => name),
+      ]);
     });
   });
 

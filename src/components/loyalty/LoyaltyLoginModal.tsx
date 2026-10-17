@@ -17,6 +17,7 @@ import {
   setLoyaltyCouponAvailable,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import useLoyalty from "../../hooks/loyalty/useLoyalty";
+import useAppSettings from "../../hooks/utils/useAppSettings";
 import KioskNumpad from "../keyboard/KioskNumpad";
 import CountryPicker from "../phone/CountryPicker";
 import CountryFlag from "../phone/CountryFlag";
@@ -54,6 +55,8 @@ function LoginBody({ onClose }: LoginBodyProps) {
   const storedPhone = useSelector(selectCustomerPhone) as string | undefined;
 
   const { executeLoyalty, isLoyaltyEventLoading } = useLoyalty();
+  const { getTabType } = useAppSettings();
+  const tabType = getTabType();
 
   const [digits, setDigits] = useState("");
   const [showLastDigit, setShowLastDigit] = useState(false);
@@ -63,6 +66,22 @@ function LoginBody({ onClose }: LoginBodyProps) {
   const [countryOpen, setCountryOpen] = useState(false);
 
   const comingSoonTimer = useRef<number | null>(null);
+
+  // The lookup funnel (loyalty-phone review, 2026-10-17): the rewards login
+  // is now where a loyalty guest's number is looked up, so it reports
+  // /phone's events with /phone's properties — never the number itself.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    captureKioskEvent(KioskEventName.NumberScreenViewed, {
+      loyalty_enabled: true,
+      tab_type: tabType,
+    });
+    return () => {
+      mountedRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only view event
+  }, []);
 
   const maxDigits = Number(countryCode?.max ?? 0) || FALLBACK_MAX_DIGITS;
   const dialCode: string = countryCode?.dialCode ?? "";
@@ -148,6 +167,10 @@ function LoginBody({ onClose }: LoginBodyProps) {
       return;
     }
 
+    captureKioskEvent(KioskEventName.PhoneNumberEntered, {
+      phone_length: digits.length,
+      country_code: countryCode?.dialCode,
+    });
     setBusy(true);
     try {
       if (storedPhone !== digits) {
@@ -158,6 +181,9 @@ function LoginBody({ onClose }: LoginBodyProps) {
       // / redeem_coupon all read the phone number back out of redux.
       dispatch(setPhoneNumberRdx(digits));
 
+      captureKioskEvent(KioskEventName.AccountSendCode, {
+        country_code: countryCode?.dialCode,
+      });
       const resp: any = await executeLoyalty({
         countryCode: countryCode?.dialCode,
         phoneNumber: digits,
@@ -166,19 +192,36 @@ function LoginBody({ onClose }: LoginBodyProps) {
       if (resp?.status_code === 200) {
         const res = resp?.response;
         if (res?.coupons?.length > 0 && res?.loyalty_points > 0) {
+          captureKioskEvent(KioskEventName.AccountReorderAvailable, {
+            coupon_count: res.coupons.length,
+            loyalty_points: res.loyalty_points,
+          });
           dispatch(openLoyaltyItemsModal({ isTimerOn: true }));
           dispatch(setLoyaltyCouponAvailable(true));
           onClose();
           return;
         }
+        captureKioskEvent(KioskEventName.AccountReorderUnavailable, {
+          reason: "no_coupons_or_points",
+        });
         dispatch(setLoyaltyCouponAvailable(false));
         setError(t("loyalty.noCoupons"));
         return;
       }
 
+      // No answer also means the guest closed the modal mid-lookup
+      // (executeLoyalty drops it): /phone reports nothing once it is left.
+      if (mountedRef.current) {
+        captureKioskEvent(KioskEventName.OrderCheckinNotAvailable, {
+          reason: "api_error",
+        });
+      }
       dispatch(setLoyaltyCouponAvailable(false));
       setError(t("loyalty.lookupFailed"));
-    } catch {
+    } catch (error) {
+      captureKioskEvent(KioskEventName.AccountResendCodeError, {
+        error_message: (error as { message?: string } | undefined)?.message,
+      });
       // Rule 2 — never a frozen modal: the customer retries or closes out.
       dispatch(setLoyaltyCouponAvailable(false));
       setError(t("loyalty.lookupFailed"));
