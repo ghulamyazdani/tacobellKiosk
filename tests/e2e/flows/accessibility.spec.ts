@@ -29,7 +29,6 @@ import {
   openRewardsSheet,
   typeDigits,
   breakPayPreflight,
-  loginToRewards,
   payToPhone,
 } from "../pages/order";
 
@@ -299,7 +298,7 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
   });
 
-  test("E LOYALTY + SYSTEM: /phone and the country picker, the Xeno rewards sheet + OTP + its error, /customerName, the idle prompt, the ADA view, offline, the menu error", async ({
+  test("E LOYALTY + SYSTEM: /phone and the country picker, the rewards login, the Xeno rewards sheet + OTP + its error, /customerName, the idle prompt, the ADA view, offline, the menu error", async ({
     page,
     context,
   }) => {
@@ -316,12 +315,17 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.getByTestId("country-sheet-close").click();
     await expect(page.getByTestId("country-sheet")).toHaveCount(0);
 
-    // Back out to the menu for the rewards login (its lookup opens the sheet).
+    // Back out to the menu for the rewards login — now the main place a guest is identified — whose
+    // lookup opens the sheet.
     await page.getByTestId("phone-back").click();
     await expect(page.getByTestId("bag-sheet")).toBeVisible();
     await page.getByTestId("bag-close").click();
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
-    await loginToRewards(page, LOYALTY_PHONE);
+    await page.getByTestId("menu-rewards-link").click();
+    await expect(page.getByTestId("loyalty-login")).toBeVisible();
+    await expectA11y(page, "e-02b-loyalty-login", "loyalty-login-close");
+    await typeDigits(page, LOYALTY_PHONE);
+    await page.getByTestId("loyalty-login-submit").click();
     await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     await expectA11y(page, "e-03-xeno-rewards", "loyalty-rewards-close");
     await page.getByTestId(`loyalty-reward-${LOYALTY_REWARDS.greekSalad.couponCode}`).click();
