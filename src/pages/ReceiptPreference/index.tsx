@@ -14,6 +14,7 @@ import useAdaActive from "../../hooks/utils/useAdaActive";
 import useCheckoutFlow from "../../hooks/utils/useCheckoutFlow";
 import usePageEnter from "../../hooks/utils/usePageEnter";
 import { resolveIdleSeconds, useIdleHold } from "../../hooks/utils/useIdleTimeout";
+import PlacingOrderLayer from "../../components/payment/PlacingOrderLayer";
 import { ORDER_SUCCESS_COUNTDOWN_SECONDS } from "../OrderSuccess";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import bgTexture from "../../assets/splash/bg-texture.png";
@@ -76,12 +77,19 @@ export default function ReceiptPreferenceScreen() {
   // this vertical exists to avoid.
   const {
     confirmAndPush,
+    status,
+    isBuffering,
     isPushing,
     hasFailed,
     failedOnTimeout,
     retry: retryOrderPush,
     dismissError,
   } = usePayAtCounter();
+  // PLACING from the tap (the 0 ms buffer) until the screen leaves: "placed"
+  // commits before the route change does (BrowserRouter navigates in a
+  // transition), and the dialog would drop for the whole Order Complete render
+  // (UX-16, the same condition as /customerName's).
+  const placing = isBuffering || isPushing || status === "placed";
 
   // POST-PAYMENT mode (2026-10-13): only the paid tail reaches /receipt with a
   // Paytm type (PaymentSelection pins COD before its hop). Read from the
@@ -251,29 +259,7 @@ export default function ReceiptPreferenceScreen() {
       {/* Same buffer surface as /payment, WITHOUT the cancel affordance — the
           push has started and cannot be recalled (brief: "once the push
           starts, Cancel disappears"). */}
-      {isPushing && (
-        <div
-          data-testid="payment-buffer"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="receipt-placing-title"
-          className="absolute inset-0 z-50"
-        >
-          <div aria-hidden className="absolute inset-0 bg-tb-ink-purple/70" />
-          <div className="tb-modal-enter absolute left-1/2 top-1/2 w-[676px] rounded-[12px] bg-tb-surface px-[44px] py-[56px] text-center">
-            <h2
-              id="receipt-placing-title"
-              className="tb-display text-[40px] leading-[1.1] tracking-[-1px] text-tb-purple"
-            >
-              {t("payment.placingOrder")}
-            </h2>
-            {/* The house indeterminate sweep (motion-v2 MV3): no silent wait. */}
-            <div aria-hidden className="mx-auto mt-[32px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac">
-              <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
-            </div>
-          </div>
-        </div>
-      )}
+      {placing && <PlacingOrderLayer testId="payment-buffer" titleId="receipt-placing-title" />}
 
       {/* TERMINAL PUSH FAILURE (Rule 2) — the same panel /customerName renders,
           because this screen can reach the same exhausted ladder. The fork's

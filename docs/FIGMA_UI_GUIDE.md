@@ -64,6 +64,11 @@
    precedent); every settle, snap-back and auto-advance is a CSS transition on
    cards that stay mounted, so a touch can catch them; `will-change` only under
    the track's `[data-held]` (the one exception to "no will-change").
+   UX pass (2026-10-16; merged 2026-10-17): `.tb-reveal-late` also hides a
+   non-blocking busy sweep beside a busy CTA for its first 300 ms; a class may
+   be removed and re-added only across two commits (never within one); a
+   refusal shakes its explanation, never the tapped control — one recorded
+   exception, /second's CLOSED pill.
 6. **Data**: screens render from SDK state (converted menu tree, pipelines,
    cart) — Figma's literal content (product names, prices) is placeholder.
    Splash content is the operator's getMedia `home_screen` media (P9d); the

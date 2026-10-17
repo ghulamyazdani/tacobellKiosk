@@ -25,6 +25,7 @@ import KioskKeyboard from "../../components/keyboard/KioskKeyboard";
 import FooterBar from "../../components/chrome/FooterBar";
 import LanguageSheet from "../../components/language/LanguageSheet";
 import CancelOrderModal from "../../components/common/CancelOrderModal";
+import PlacingOrderLayer from "../../components/payment/PlacingOrderLayer";
 import { captureKioskEvent, KioskEventName } from "../../utils/analytics";
 import tbBell from "../../assets/brand/tb-bell.svg";
 import inputClear from "../../assets/icons/input-clear.svg";
@@ -138,6 +139,7 @@ export default function CustomerName() {
   // POST /api/onlineOrders/partner/kiosk/placeOrder — no gateway, no terminal.
   const {
     start: startOrderPush,
+    status,
     isBuffering,
     isPushing,
     hasFailed,
@@ -167,8 +169,13 @@ export default function CustomerName() {
    * cleared, and `start()` refuses unless status is "idle"), which is a
    * stronger guarantee than a screen-local ref — it survives this component's
    * own re-renders and covers `retry()` too.
+   *
+   * Held through "placed" until the screen leaves: the hook sets it before
+   * navigate(), and BrowserRouter commits the route change later (a
+   * transition) — CONTINUE would re-arm under PLACING for the Order Complete
+   * render (UX-16).
    */
-  const placingOrder = isBuffering || isPushing;
+  const placingOrder = isBuffering || isPushing || status === "placed";
 
   /**
    * CRM prefill (mount-only). Best-effort by design: any failure (offline,
@@ -457,6 +464,14 @@ export default function CustomerName() {
             {t("customerName.loading")}
           </p>
         </div>
+      )}
+
+      {/* UX-16: the push shows /receipt's PLACING dialog over the keyboard,
+          BACK and the footer (BACK and CANCEL ORDER refuse while it runs —
+          they were dead taps), up until the screen leaves (placingOrder holds
+          through "placed"). */}
+      {placingOrder && (
+        <PlacingOrderLayer testId="customer-name-placing" titleId="customer-name-placing-title" />
       )}
 
       {/* TERMINAL PUSH FAILURE (Rule 2). The fork's equivalent path only

@@ -19,6 +19,13 @@ export interface OfferRowProps {
   selected: boolean;
   /** Whether this offer is the one currently applied to the cart. */
   applied: boolean;
+  /**
+   * UX-17: the offer became eligible while the sheet was open — the row
+   * rises in (tb-rise) and its radio ring pops in (tb-pop-in). An eligible
+   * row mounts fresh (the sheet renders it in another list than the locked
+   * one), so each plays once per unlock.
+   */
+  rise?: boolean;
   /** Currency symbol, prefixed verbatim (BagSheet convention). */
   currency: string;
   onPick: () => void;
@@ -97,6 +104,7 @@ export default function OfferRow({
   entry,
   selected,
   applied,
+  rise = false,
   currency,
   onPick,
   disabled,
@@ -380,7 +388,7 @@ export default function OfferRow({
             aria-hidden="true"
             className={`flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border-2 ${
               selected ? "border-tb-purple" : "border-tb-grey-3"
-            }`}
+            } ${rise ? "tb-pop-in" : ""}`}
           >
             {selected && (
               <span className="tb-pop-in h-[20px] w-[20px] rounded-full bg-tb-purple" />
@@ -401,12 +409,14 @@ export default function OfferRow({
       [applied ? appliedId : "", secondLine ? lineId : "", showDesc ? descId : ""]
         .filter(Boolean)
         .join(" ") || undefined;
+    // tb-press-card (UX-12): the row squeezes through its overlay radio, which
+    // counter-scales so the hit area stays whole (the bag's applied row).
     return (
       <div
         data-testid={`offer-row-body-${id}`}
-        className={`relative flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
+        className={`tb-press-card relative flex min-h-[44px] w-full items-center gap-[24px] border-t border-tb-grey-4 pt-[23px] pb-[24px] text-left ${
           disabled ? "opacity-60" : ""
-        }`}
+        } ${rise ? "tb-rise" : ""}`}
       >
         {inner}
         <button

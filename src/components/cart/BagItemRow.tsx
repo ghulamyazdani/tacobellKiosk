@@ -418,7 +418,8 @@ export default function BagItemRow({
               data-testid={`bag-dec-${row?.itemId}`}
               aria-label={t("bag.decrease")}
               onClick={handleDecrease}
-              className="flex h-[44px] w-[44px] items-center justify-center text-tb-purple"
+              // rounded-full bg-tb-surface: white on the white pill at rest; a lilac disc at touch-down (UX-12).
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-tb-surface text-tb-purple"
             >
               {/* Minus glyph (Figma icon 3601ce08) inlined — no committed minus.svg yet. */}
               <svg viewBox="0 0 24 24" className="h-[24px] w-[24px]" aria-hidden="true">
@@ -437,8 +438,8 @@ export default function BagItemRow({
               aria-label={t("bag.increase")}
               aria-disabled={!canIncrease}
               onClick={handleIncrease}
-              className={`flex h-[44px] w-[44px] items-center justify-center ${
-                canIncrease ? "" : "opacity-40"
+              className={`flex h-[44px] w-[44px] items-center justify-center rounded-full ${
+                canIncrease ? "bg-tb-surface" : "opacity-40"
               }`}
             >
               <img alt="" src={plusIcon} className="h-[24px] w-[24px]" />

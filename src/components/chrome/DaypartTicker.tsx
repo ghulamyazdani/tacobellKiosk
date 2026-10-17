@@ -19,17 +19,20 @@ export default function DaypartTicker({ message }: { message?: string }) {
     ? { animationDuration: `${18 * Math.max(1, visibleLength / 16)}s` }
     : undefined;
 
+  // Seamless: the 24 px between the copies is each copy's own trailing
+  // padding, not a gap on the track, so translateX(-50%) is exactly one
+  // copy plus its gap (a track gap made it 12 px short: a snap per loop).
   return (
     <div className="relative h-[96px] w-full overflow-hidden bg-tb-pink-dark">
       <div
-        className="tb-marquee-track absolute top-[28px] flex w-max gap-[24px]"
+        className="tb-marquee-track absolute top-[28px] flex w-max"
         style={style}
       >
         {[0, 1].map((copy) => (
           <div
             key={copy}
             aria-hidden={copy === 1}
-            className="flex w-max gap-[24px]"
+            className="flex w-max gap-[24px] pr-[24px]"
           >
             {cells.map((_, i) => (
               <div key={i} className="flex h-[40px] items-center gap-[24px]">

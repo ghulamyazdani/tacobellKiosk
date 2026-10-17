@@ -169,6 +169,13 @@ export default function CustomerPhone() {
   // One lookup per tap: executeLoyalty resolves asynchronously and navigates,
   // so a second tap must not fire a second check_loyalty_balance (Rule 2).
   const isSubmitting = useRef(false);
+  // UX-06: the lookup's status layer. Latched at submit and never cleared —
+  // every way out of the lookup navigates, and leaving unmounts it. Not
+  // isLoyaltyEventLoading: that drops before the route change commits
+  // (BrowserRouter navigates in a transition), and the keypad would be live
+  // again for the whole /menu render. CONTINUE reads it too, so it never
+  // re-arms under the layer.
+  const [checking, setChecking] = useState(false);
   const revealTimer = useRef<number | null>(null);
   // The lookup continuation dispatches + navigates after its await. Once this
   // screen is gone (Back, Skip, Cancel, idle → /start after the hold cap) it
@@ -257,6 +264,7 @@ export default function CustomerPhone() {
     }
 
     isSubmitting.current = true;
+    setChecking(true);
     captureKioskEvent(KioskEventName.AccountSendCode, {
       country_code: selectedCountryCode?.dialCode,
     });
@@ -566,10 +574,10 @@ export default function CustomerPhone() {
         type="button"
         data-testid="phone-continue"
         onClick={handleContinue}
-        disabled={isLoyaltyEventLoading}
+        disabled={isLoyaltyEventLoading || checking}
         className="tb-display absolute bottom-[188px] left-[24px] h-[84px] w-[1032px] rounded-[8px] bg-tb-surface text-center text-[24px] leading-[20px] text-tb-purple shadow-[0_20px_40px_rgba(0,0,0,0.15)] disabled:opacity-60"
       >
-        {isLoyaltyEventLoading ? t("phone.checking") : t("phone.continue")}
+        {isLoyaltyEventLoading || checking ? t("phone.checking") : t("phone.continue")}
       </button>
       <button
         type="button"
@@ -579,6 +587,25 @@ export default function CustomerPhone() {
       >
         {t("phone.back")}
       </button>
+
+      {/* UX-06 (design language, sign-off): the house status layer (/second's
+          menu fetch) over the lookup — it reveals late, so a fast lookup never
+          flashes it, and takes taps from t = 0, so no digit typed into the
+          live keypad is silently dropped. It stops at the footer (56 px):
+          CANCEL ORDER, ADA and language stay live (Rule 1). z-30, under the
+          z-40 language sheet the footer can still open. */}
+      {checking && (
+        <div
+          data-testid="phone-checking"
+          className="tb-reveal-late absolute inset-x-0 top-0 bottom-[56px] z-30 flex flex-col items-center justify-center gap-8 bg-tb-purple/90"
+        >
+          <div className="h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-surface/20">
+            {/* Indeterminate sweep (motion §3.7), clipped by the track. */}
+            <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-pink" />
+          </div>
+          <p className="tb-display text-[32px] leading-[36px] text-tb-surface">{t("phone.checking")}</p>
+        </div>
+      )}
 
       <FooterBar
         onCancelOrder={() =>

@@ -10,6 +10,8 @@ interface PleaseWaitProps {
   /** Second line; defaults to "We confirm your order" (the frame's copy). */
   subtitle?: string;
   testId?: string;
+  /** Never late: the owner tears down live content in the same commit. */
+  atOnce?: boolean;
 }
 
 /**
@@ -21,7 +23,9 @@ interface PleaseWaitProps {
  * opacity-only tb-fade-in after 300 ms, so a fast wait (a warm Paytm chunk,
  * a quick initiate) never flashes a full-screen loader; the layer blocks
  * taps from its first frame all the same — unless it replaces a dialog
- * (below): then it shows at once. Pure CSS, position-neutral
+ * (below) or the owner passes atOnce (/paymentPolling: its QR, CANCEL and
+ * TIME LEFT unmount in the same commit, so a late layer would show a
+ * half-dismantled screen): then it shows at once. Pure CSS, position-neutral
  * (tb-modal-enter is only for left-1/2 top-1/2 modals). Design language:
  * the frame shows at once (sign-off).
  *
@@ -40,6 +44,7 @@ interface PleaseWaitProps {
 export default function PleaseWait({
   subtitle,
   testId = "please-wait",
+  atOnce = false,
 }: PleaseWaitProps) {
   const { t } = useTranslation();
   const ada = useAdaActive();
@@ -49,7 +54,7 @@ export default function PleaseWait({
   // review F1). Read once, at mount — this first render runs before that
   // commit, so the dialog is still in the document — and kept, so a
   // re-render never starts the reveal over a layer already on screen.
-  const [late] = useState(() => !document.querySelector('[aria-modal="true"]'));
+  const [late] = useState(() => !atOnce && !document.querySelector('[aria-modal="true"]'));
 
   return (
     <div

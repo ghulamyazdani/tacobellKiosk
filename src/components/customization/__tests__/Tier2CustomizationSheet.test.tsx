@@ -20,6 +20,7 @@ import {
   setAllowMultiplePunch,
   setCurrency,
   setHidePlusIconFromItem,
+  setShowErrorModalGlobal,
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { store } from "../../../redux/app/store";
@@ -173,10 +174,13 @@ describe("Tier2CustomizationSheet (P6c — nested customize sheet)", () => {
     expect(selectErrorMessageGlobal(state)).toBe(
       "Please check the customization errors"
     );
-    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveClass(
-      "ring-red-500",
-      "tb-shake" // motion §3.8: the unfinished group shakes
-    );
+    // motion §3.8 + UX-01: the unfinished group rings at once and shakes once the error's GOT IT closes it.
+    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveClass("ring-red-500");
+    expect(screen.getByTestId("tier2-group-dl_addons")).not.toHaveClass("tb-shake");
+    act(() => {
+      store.dispatch(setShowErrorModalGlobal({ showErrorModal: false, errorMessage: "" }));
+    });
+    expect(screen.getByTestId("tier2-group-dl_addons")).toHaveClass("ring-red-500", "tb-shake");
   });
 
   it("pick + SAVE commits the nested row into the tier-1 selections and closes", async () => {

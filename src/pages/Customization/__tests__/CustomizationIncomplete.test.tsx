@@ -194,7 +194,11 @@ describe("PDP completion warning (item 23)", () => {
     await addToBag();
     expect(title()).toBe("Let's finish your choices first");
     expect(message()).toBe("Please choose your sauce before adding to your bag");
-    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).toHaveClass("ring-4", "ring-red-500", "tb-shake"); // motion §3.8
+    // motion §3.8 + UX-01: the ring at once; the shake waits for GOT IT (under the warning it played unseen).
+    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).toHaveClass("ring-4", "ring-red-500");
+    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).not.toHaveClass("tb-shake");
+    await tap("pdp-incomplete-gotit");
+    expect(screen.getByTestId(`pdp-group-${SAUCE._id}`)).toHaveClass("ring-4", "ring-red-500", "tb-shake");
   });
 
   it("a slot group among the missing ones → the box title", async () => {

@@ -1,11 +1,18 @@
+import { useState } from "react";
 import { useSelector } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { cartQuantity, selectCart } from "@cx-sdk/ordering/state/cart.slice";
 import { selectCoupons } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "../../hooks/utils/useAppSettings";
 import useCartTotal from "../../hooks/cartHooks/useCartTotal";
+import { useCartRehydrated } from "../../hooks/utils/useCartRehydrated";
 import { formatPrice } from "../../utils/price";
+import { selectAddToCartModal } from "../../redux/features/menuSelections/menuSelections.slice";
 import bagIcon from "../../assets/icons/bag.svg";
+
+/** The loyalty layout's count badge on the bag mark (Figma 1:3956). */
+const BADGE =
+  "absolute -right-[8px] -top-[8px] flex h-[28px] min-w-[28px] items-center justify-center rounded-full bg-tb-pink px-[6px] text-[16px] font-bold leading-none text-tb-purple";
 
 interface MenuCtaBarProps {
   currency: string;
@@ -54,9 +61,35 @@ export default function MenuCtaBar({
   const itemCount = Number(useSelector(cartQuantity) ?? 0);
   const total = useCartTotal(cart);
   // Re-keys the bag mark so tb-bump replays on every add / remove / re-price
-  // (a re-price changes only the total). It also bumps once on mount —
-  // accepted (motion contract §3.3).
+  // (a re-price changes only the total).
   const bagKey = `${itemCount}:${total.toFixed(2)}`;
+  // UX-02: the product-added modal's scrim covers this bar, so while it is
+  // up the mark and the badge are still nodes, and its close re-keys both:
+  // the bump and the pop play as the guest looks back (ADD TO ORDER adds and
+  // closes in one commit: one bump). The bar the menu mounts with stays
+  // still (PDP BACK, a reload): each arms at its first change, or a close.
+  // A reload's rows land from Dexie just after the mount: until AppRoutes'
+  // rehydrate has settled (BagSheet's precedent) a change is still the mount.
+  // Adjusting state while rendering (DetourTapGuard's pattern).
+  const covered = Boolean(useSelector(selectAddToCartModal));
+  const rehydrated = useCartRehydrated();
+  const [seen, setSeen] = useState({ bagKey, itemCount, covered, rehydrated, bump: false, pop: false });
+  if (seen.bagKey !== bagKey || seen.covered !== covered || seen.rehydrated !== rehydrated) {
+    const closed = seen.covered && !covered;
+    setSeen({
+      bagKey,
+      itemCount,
+      covered,
+      rehydrated,
+      bump: seen.bump || closed || (seen.rehydrated && seen.bagKey !== bagKey),
+      pop: seen.pop || closed || (seen.rehydrated && seen.itemCount !== itemCount),
+    });
+  }
+  const mark = covered ? (
+    <img key="covered" alt="" src={bagIcon} className="h-[50px] w-[50px]" />
+  ) : (
+    <img key={bagKey} alt="" src={bagIcon} className={seen.bump ? "tb-bump h-[50px] w-[50px]" : "h-[50px] w-[50px]"} />
+  );
 
   // Label per the brief: REWARDS until the lookup has returned a coupon list,
   // MY REWARDS (n) once it has.
@@ -86,7 +119,7 @@ export default function MenuCtaBar({
           <span className="tb-display text-[24px] leading-[32px] text-tb-surface">
             {t("menu.viewMyBag")} ({itemCount})
           </span>
-          <img key={bagKey} alt="" src={bagIcon} className="tb-bump h-[50px] w-[50px]" />
+          {mark}
         </button>
       </div>
     );
@@ -128,12 +161,12 @@ export default function MenuCtaBar({
           onClick={onViewBag}
           className="relative flex h-[50px] min-h-[44px] w-[50px] min-w-[44px] items-center justify-center"
         >
-          <img key={bagKey} alt="" src={bagIcon} className="tb-bump h-[50px] w-[50px]" />
+          {mark}
           {itemCount > 0 && (
             <span
-              key={itemCount}
+              key={covered ? "covered-badge" : itemCount}
               aria-hidden="true"
-              className="tb-pop-in absolute -right-[8px] -top-[8px] flex h-[28px] min-w-[28px] items-center justify-center rounded-full bg-tb-pink px-[6px] text-[16px] font-bold leading-none text-tb-purple"
+              className={seen.pop && !covered ? `tb-pop-in ${BADGE}` : BADGE}
             >
               {itemCount}
             </span>

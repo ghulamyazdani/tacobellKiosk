@@ -470,7 +470,9 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
         disabled={locked}
         data-testid={`loyalty-reward-${code}`}
         onClick={() => handlePick(entity)}
-        className={`${rowClass} ${locked ? "opacity-60" : ""}`}
+        // Live: bg-tb-surface, white on white at rest and Figma's lilac at touch-down (the white-button
+        // fill, UX-12). Dimmed: no fill — a white fill inside the opacity group re-rounds its edges.
+        className={`${rowClass} ${locked ? "opacity-60" : "bg-tb-surface"}`}
       >
         {inner}
         <span
@@ -635,6 +637,18 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
                 {t("loyalty.confirm")}
               </button>
             </div>
+            {/* Busy CONFIRM (UX-04): the house sweep 6 px above it, centred
+                on it (x 368–1056). Absolute against the panel — never in the
+                drop-shadow footer or a button; late, so a fast OTP never
+                flashes it. */}
+            {locked && (
+              <div
+                aria-hidden="true"
+                className="tb-reveal-late pointer-events-none absolute bottom-[114px] left-[502px] h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac"
+              >
+                <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -669,6 +683,15 @@ function SheetBody({ onClose, isTimerOn }: SheetBodyProps) {
                 {t("loyalty.redeem")}
               </button>
             </div>
+            {/* Busy REDEEM (UX-04): the same sweep above the full-width bar. */}
+            {locked && (
+              <div
+                aria-hidden="true"
+                className="tb-reveal-late pointer-events-none absolute inset-x-0 bottom-[114px] mx-auto h-[8px] w-[420px] overflow-hidden rounded-full bg-tb-lilac"
+              >
+                <div className="tb-indeterminate h-full w-1/3 rounded-full bg-tb-purple" />
+              </div>
+            )}
           </>
         )}
       </div>
