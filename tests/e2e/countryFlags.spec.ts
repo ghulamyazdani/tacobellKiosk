@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from "./fixtures/kiosk";
-import { mockKioskBackend as mockBackend, locale, DINE_IN } from "./fixtures/backend";
+import { mockKioskBackend as mockBackend, locale, DINE_IN, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart, startOrderTo } from "./pages/boot";
+import { payToPhone } from "./pages/order";
 import { stageBox } from "./fixtures/a11y";
 import { settle, shot } from "./fixtures/capture";
 import { mockXenoLoyalty, LOYALTY_SETTINGS } from "./fixtures/loyalty";
@@ -18,7 +19,8 @@ import { mockXenoLoyalty, LOYALTY_SETTINGS } from "./fixtures/loyalty";
  * that fails shows the country code in its circle, never a broken image.
  *
  * Mocks: the shared backend (India deployment, loyalty on with an optional
- * phone so /phone can be skipped to reach the rewards login), Xeno last.
+ * phone), Xeno last. /phone is reached through PAY (the phone is never asked
+ * before the menu — user 2026-10-17); the rewards login from the menu.
  */
 
 const en = locale("en");
@@ -41,7 +43,11 @@ async function mockKioskBackend(page: Page, { arabic = false } = {}) {
   await mockXenoLoyalty(page);
 }
 
-const startToPhone = (page: Page) => startOrderTo(page, "phone-screen");
+/** Splash → Dine In → /menu → one Greek Salad → PAY → /phone (checkout mode: no rewards login). */
+async function startToPhone(page: Page) {
+  await startOrderTo(page, "menu-screen");
+  await payToPhone(page, GREEK_SALAD);
+}
 const pill = (page: Page) => page.getByTestId("phone-country-code");
 const sheet = (page: Page) => page.getByTestId("country-sheet");
 /** A host's flag circle: its first child (a row, the pill, the chip). */
@@ -170,7 +176,8 @@ test.describe("round country flags (restroGo parity)", () => {
     await expect(page.getByTestId("second-screen")).toBeVisible();
     await page.getByTestId("footer-ada").click();
     await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await payToPhone(page, GREEK_SALAD);
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
     await expect.poll(() => loadedFlag(pill(page))).toBe("/flags/in.png");
 
@@ -187,10 +194,8 @@ test.describe("round country flags (restroGo parity)", () => {
     test.slow();
     await mockKioskBackend(page);
     await registerToStart(page);
-    await startToPhone(page);
+    await startOrderTo(page, "menu-screen");
     // An unidentified guest: the menu's REWARDS link opens the login modal.
-    await page.getByTestId("phone-skip").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("menu-rewards-link").click();
     await expect(page.getByTestId("loyalty-login")).toBeVisible();
 

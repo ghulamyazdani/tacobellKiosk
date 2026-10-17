@@ -5,7 +5,7 @@ import { mockXenoLoyalty, LOYALTY_PHONE, LOYALTY_SETTINGS } from "./fixtures/loy
 import { stageBox } from "./fixtures/a11y";
 import { settle, shot } from "./fixtures/capture";
 import { registerToStart, startToSecond, chooseLanguage, pickPipelineToMenu } from "./pages/boot";
-import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { addOneTap, openBag, loginToRewards } from "./pages/order";
 import { payAtCounter } from "./pages/checkout";
 
 /**
@@ -32,7 +32,10 @@ const ar = locale("ar");
 const ADA_BRAND_ZONE_HEIGHT = 798;
 const STAGE_HEIGHT = 1920;
 
-/** guest = loyalty off; loyaltyGuest = loyalty on, /phone skipped; identified = loyalty on, signed in. */
+/**
+ * guest = loyalty off; loyaltyGuest = loyalty on, checkout's /phone skipped; identified = loyalty on,
+ * signed in at the menu's REWARDS (user 2026-10-17: the phone is never asked before the menu).
+ */
 type Customer = "guest" | "loyaltyGuest" | "identified";
 
 async function mockBackend(page: Page, customer: Customer, { arabic = false } = {}) {
@@ -54,28 +57,24 @@ async function orderToComplete(page: Page, customer: Customer, { arabic = false,
     await page.getByTestId("footer-ada").click();
     await expect(page.getByTestId("footer-ada")).toHaveAttribute("aria-pressed", "true");
   }
-  if (customer === "guest") {
-    await pickPipelineToMenu(page);
-  } else {
-    await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-    if (customer === "identified") {
-      await typeDigits(page, LOYALTY_PHONE);
-      await page.getByTestId("phone-continue").click();
-      // The lookup opens the rewards sheet: closed, nothing claimed.
-      await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible({ timeout: 15_000 });
-      await page.getByTestId("loyalty-rewards-close").click();
-      await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
-    } else {
-      await page.getByTestId("phone-skip").click();
-    }
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await pickPipelineToMenu(page);
+  if (customer === "identified") {
+    await loginToRewards(page, LOYALTY_PHONE);
+    // The lookup opens the rewards sheet: closed, nothing claimed.
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("loyalty-rewards-close").click();
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
   }
   await addOneTap(page, GREEK_SALAD, "(1)");
   await openBag(page);
   await page.getByTestId("bag-pay").click();
+  if (customer === "loyaltyGuest") {
+    // No rewards login: PAY asks for the (optional) number first — skipped.
+    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("phone-skip").click();
+  }
   if (customer !== "guest") {
-    // Loyalty on: PAY's preflight asks for a name first (not mandatory).
+    // Loyalty on: the name step comes before /payment (not mandatory).
     await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("customer-name-continue").click();
   }

@@ -23,11 +23,10 @@ import {
   chooseLanguage,
   pickPipelineToMenu,
   registerToStart,
-  startOrderTo,
   startToSecond,
 } from "./pages/boot";
 import { clippedText } from "./fixtures/clippedText";
-import { addOneTap, addViaPdp, openBag, bagRows, loyaltyRows, typeDigits } from "./pages/order";
+import { addOneTap, addViaPdp, openBag, bagRows, loyaltyRows, loginToRewards, typeDigits } from "./pages/order";
 import {
   mockCheckoutBackend,
   type CheckoutMockHandle,
@@ -251,8 +250,7 @@ async function mockKioskBackend(
   }: SwitchMockOptions = {}
 ): Promise<SwitchNet> {
   // Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. Loyalty on
-  // routes /second through the /phone lookup (loyalty.spec.ts); its
-  // skip_crm_page: false wins over SKIP_CRM's.
+  // (loyalty.spec.ts): its skip_crm_page: false wins over SKIP_CRM's.
   await mockBackend(page, {
     arabic,
     settings: {
@@ -347,16 +345,13 @@ async function bootToBagWithBurgerAndSalad(page: Page) {
 }
 
 /**
- * Loyalty on (loyalty.spec.ts helpers): register → START → Dine In → the
- * /phone lookup → /menu as an identified guest, the auto-opened rewards
- * sheet dismissed.
+ * Loyalty on (loyalty.spec.ts helpers): register → START → Dine In → /menu →
+ * the rewards login, an identified guest, the auto-opened rewards sheet
+ * dismissed.
  */
 async function bootIdentifiedToMenu(page: Page) {
-  await registerToStart(page);
-  await startOrderTo(page, "phone-screen");
-  await typeDigits(page, LOYALTY_PHONE);
-  await page.getByTestId("phone-continue").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await bootRegisteredToMenu(page);
+  await loginToRewards(page, LOYALTY_PHONE);
   await page.getByTestId("loyalty-rewards-close").click();
   await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
 }

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "./fixtures/kiosk";
 import AxeBuilder from "@axe-core/playwright";
 import { mockKioskBackend as mockBackend, locale, DINE_IN, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart, startOrderTo } from "./pages/boot";
-import { dismissAddedModal, typeDigits } from "./pages/order";
+import { dismissAddedModal, loginToRewards, payToPhone, typeDigits } from "./pages/order";
 import { stageBox } from "./fixtures/a11y";
 import {
   mockXenoLoyalty,
@@ -61,7 +61,8 @@ async function mockKioskBackend(page: Page, { arabic = false }: MockOptions = {}
     settings: {
       start_order_text_secondary: "ابدأ الطلب",
       accessibility_mode: true,
-      // Loyalty on: /second routes through the pre-menu /phone lookup.
+      // Loyalty on: the rewards login looks the number up; with no login,
+      // PAY asks for it on /phone (user 2026-10-17).
       ...LOYALTY_SETTINGS,
     },
     pipelines: [
@@ -74,10 +75,15 @@ async function mockKioskBackend(page: Page, { arabic = false }: MockOptions = {}
   return mockXenoLoyalty(page);
 }
 
-/** Splash → Dine In → the pre-menu /phone (loyalty on). */
-const startToPhone = (page: Page) => startOrderTo(page, "phone-screen");
+/** Splash → Dine In → /menu → one Greek Salad → PAY → /phone (checkout mode: no rewards login). */
+async function startToPhone(page: Page) {
+  await startOrderTo(page, "menu-screen");
+  await payToPhone(page, GREEK_SALAD);
+}
 
 const pill = (page: Page) => page.getByTestId("phone-country-code");
+/** The rewards login's country chip: the same picker. */
+const chip = (page: Page) => page.getByTestId("loyalty-country-code");
 const sheet = (page: Page) => page.getByTestId("country-sheet");
 /** The country rows (the list's buttons — not the sheet's scrim / X / clear). */
 const countryRows = (page: Page) =>
@@ -91,14 +97,14 @@ async function search(page: Page, text: string) {
   }
 }
 
-/** Pill → sheet → "emir" → United Arab Emirates. */
-async function pickUae(page: Page) {
-  await pill(page).click();
+/** /phone's pill (or the login's chip) → sheet → "emir" → United Arab Emirates. */
+async function pickUae(page: Page, host = pill(page)) {
+  await host.click();
   await expect(sheet(page)).toBeVisible({ timeout: 10_000 });
   await search(page, "emir");
   await sheet(page).getByTestId("country-AE").click();
   await expect(sheet(page)).toHaveCount(0);
-  await expect(pill(page)).toContainText("+971");
+  await expect(host).toContainText("+971");
 }
 
 /** auth.selectedCountryCode from the DEV store seam. */
@@ -127,7 +133,7 @@ async function capture(page: Page, name: string) {
 }
 
 test.describe("UB5: the country-code picker", () => {
-  test("/phone: picking the UAE makes the rewards lookup carry +971 (country_code AND countrycode), and the keypad follows the country", async ({
+  test("/phone (checkout): picking the UAE moves the keypad to the UAE and looks nothing up; the pick is the session's — the rewards login's lookup then carries +971 (country_code AND countrycode)", async ({
     page,
   }) => {
     test.slow();
@@ -170,8 +176,19 @@ test.describe("UB5: the country-code picker", () => {
     await page.getByTestId("phone-visibility").click();
     await expect(page.getByTestId("phone-number-display")).toHaveText(UAE_NUMBER);
 
+    // Checkout's /phone looks nothing up: straight on to the name step.
     await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
+    expect(xenoData(xeno, "check_loyalty_balance")).toEqual([]);
+
+    // Back in the bag, the rewards login's lookup carries the pick.
+    await expect(page.getByTestId("customer-name-loading")).toHaveCount(0);
+    await page.getByTestId("customer-name-back").click();
+    await expect(page.getByTestId("phone-screen")).toBeVisible();
+    await page.getByTestId("phone-back").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible({ timeout: 10_000 });
+    await loginToRewards(page, UAE_NUMBER, "bag-login-rewards");
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     expect(xenoData(xeno, "check_loyalty_balance")).toEqual([
       expect.objectContaining({
         customer_mobile: UAE_NUMBER,
@@ -190,8 +207,9 @@ test.describe("UB5: the country-code picker", () => {
     await startToPhone(page);
     await pickUae(page);
 
-    // Pre-menu /phone: CANCEL ORDER goes straight to the splash (empty bag).
+    // Checkout /phone: CANCEL ORDER asks first (the guest has a bag); YES ends it.
     await page.getByTestId("footer-cancel").click();
+    await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     // /start's mount reset restores the default — no `picked` survives.
     await expect.poll(() => selectedCountry(page)).toEqual({
@@ -213,11 +231,14 @@ test.describe("UB5: the country-code picker", () => {
     test.slow();
     const xeno = await mockKioskBackend(page);
     await registerToStart(page);
-    await startToPhone(page);
-    await pickUae(page);
+    await startOrderTo(page, "menu-screen");
+    // The rewards login, the UAE picked on its chip.
+    await page.getByTestId("menu-rewards-link").click();
+    await expect(page.getByTestId("loyalty-login")).toBeVisible();
+    await pickUae(page, chip(page));
     await typeDigits(page, UAE_NUMBER);
-    await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("loyalty-login-submit").click();
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     await page.getByTestId("loyalty-rewards-close").click();
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
 
@@ -275,11 +296,9 @@ test.describe("UB5: the country-code picker", () => {
       });
     });
     await registerToStart(page);
-    await startToPhone(page);
-    await expect(pill(page)).toContainText("+91");
-    await typeDigits(page, "9876543210");
-    await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await startOrderTo(page, "menu-screen");
+    await loginToRewards(page, "9876543210");
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     await page.getByTestId("loyalty-rewards-close").click();
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
     // /second's get_data has answered (India) before the operator's edit.
@@ -321,7 +340,8 @@ test.describe("UB5: the country-code picker", () => {
     await expect(page.getByTestId("second-screen")).toBeVisible();
     await page.getByTestId("footer-ada").click();
     await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await payToPhone(page, GREEK_SALAD);
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
 
     await pill(page).click();

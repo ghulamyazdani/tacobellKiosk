@@ -24,6 +24,7 @@ import {
   bagRows as paidRows,
   loyaltyRows,
   openRewardsSheet as openOffersFromEntry,
+  loginToRewards,
   typeDigits,
 } from "./pages/order";
 
@@ -145,21 +146,19 @@ async function mockAll(page: Page, offers: unknown[]): Promise<XenoMockHandle> {
   return mockXenoLoyalty(page);
 }
 
-/** Splash → order type → /phone (loyalty on routes the lookup ahead of the menu). */
-const startOrderToPhone = (page: Page) => startOrderTo(page, "phone-screen");
+/** Splash → order type → /menu (the phone is never asked first: user 2026-10-17). */
+const startOrderToMenu = (page: Page) => startOrderTo(page, "menu-screen");
 
-/** The pre-menu lookup: /menu as an identified guest, the rewards sheet auto-opened. */
+/** The rewards login from the menu bar: an identified guest, the rewards sheet auto-opened. */
 async function identify(page: Page) {
-  await typeDigits(page, LOYALTY_PHONE);
-  await page.getByTestId("phone-continue").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await loginToRewards(page, LOYALTY_PHONE);
   await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
 }
 
-/** Register on the on-screen keyboard → /phone → lookup → /menu (loyalty.spec). */
+/** Register on the on-screen keyboard → /menu → the rewards login (loyalty.spec). */
 async function bootIdentifiedToMenu(page: Page) {
   await registerToStart(page);
-  await startOrderToPhone(page);
+  await startOrderToMenu(page);
   await identify(page);
 }
 
@@ -382,7 +381,7 @@ test.describe("lane loyalty-visual — a Xeno reward beside a CX offer (D3 lock,
     expect(xeno.revokeUrls[0]).toContain(`rewardId=${SALAD_REWARD.couponCode}`);
 
     // Next customer: no reward, no lock — the machine applies the flagged offer.
-    await startOrderToPhone(page);
+    await startOrderToMenu(page);
     await identify(page);
     await closeLoyaltySheet(page);
     await addCheeseBurgerViaPdp(page);

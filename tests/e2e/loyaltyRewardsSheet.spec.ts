@@ -17,7 +17,7 @@ import {
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
 import { registerToStart } from "./pages/boot";
-import { dismissAddedModal, typeDigits } from "./pages/order";
+import { dismissAddedModal, loginToRewards, typeDigits } from "./pages/order";
 
 /**
  * Lane loyalty-visual — the Xeno REWARDS sheet after its reskin (Figma
@@ -85,8 +85,8 @@ const mockKioskBackend = (page: Page, opts: BackendOptions = {}) =>
     pipelines: [opts.arabic ? { ...DINE_IN, secondary_name: "تناول في المطعم" } : DINE_IN],
   });
 
-/** Splash → /second (Arabic / the ADA view when asked) → /phone. */
-async function startOrderToPhone(page: Page, { ada = false, arabic = false } = {}) {
+/** Splash → /second (Arabic / the ADA view when asked) → /menu (no phone first: user 2026-10-17). */
+async function startOrderToMenu(page: Page, { ada = false, arabic = false } = {}) {
   await page.getByTestId("start-screen").click();
   await expect(page.getByTestId("second-screen")).toBeVisible();
   if (arabic) {
@@ -99,14 +99,12 @@ async function startOrderToPhone(page: Page, { ada = false, arabic = false } = {
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
   }
   await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** The pre-menu lookup (check_loyalty_balance) → /menu as an identified guest. */
-async function identifyToMenu(page: Page) {
-  await typeDigits(page, LOYALTY_PHONE);
-  await page.getByTestId("phone-continue").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+/** The rewards login (check_loyalty_balance) from the menu bar: an identified guest, on /menu. */
+async function identify(page: Page) {
+  await loginToRewards(page, LOYALTY_PHONE);
   await expect(page).toHaveURL(/\/menu$/);
 }
 
@@ -144,7 +142,7 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     ["full view", 1480],
     ["ADA view", 1026],
   ] as const) {
-    test(`E1 LOOKUP geometry (${mode}): after /phone the sheet is the ${panelHeight} px panel (Figma 1:3842), 152 plates, 32 px names, the Figma subtitle, "You have 6000 points" and an 84 px REDEEM`, async ({
+    test(`E1 LOOKUP geometry (${mode}): after the rewards login the sheet is the ${panelHeight} px panel (Figma 1:3842), 152 plates, 32 px names, the Figma subtitle, "You have 6000 points" and an 84 px REDEEM`, async ({
       page,
     }) => {
       test.slow();
@@ -152,8 +150,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
       await mockKioskBackend(page, { settings: ada ? { accessibility_mode: true } : {} });
       await mockXenoLoyalty(page);
       await registerToStart(page);
-      await startOrderToPhone(page, { ada });
-      await identifyToMenu(page);
+      await startOrderToMenu(page, { ada });
+      await identify(page);
 
       const sheet = page.getByTestId("loyalty-rewards-sheet");
       const panel = sheet.getByRole("dialog", { name: en.loyalty.title });
@@ -188,7 +186,7 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     });
   }
 
-  test("E2 stalled chunk: after the /phone lookup the sheet is a named scrim ('Close rewards') with no sheet behind it; a tap closes it, the guest stays on a usable /menu, and once the code arrives MY REWARDS opens the sheet", async ({
+  test("E2 stalled chunk: after the rewards login's lookup the sheet is a named scrim ('Close rewards') with no sheet behind it; a tap closes it, the guest stays on a usable /menu, and once the code arrives MY REWARDS opens the sheet", async ({
     page,
   }) => {
     test.slow();
@@ -199,8 +197,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
       held.push(route);
     });
     await registerToStart(page);
-    await startOrderToPhone(page);
-    await identifyToMenu(page);
+    await startOrderToMenu(page);
+    await identify(page);
 
     const loading = page.getByTestId("loyalty-rewards-loading");
     await expect(loading).toBeVisible();
@@ -252,8 +250,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
       return route.abort("failed");
     });
     await registerToStart(page);
-    await startOrderToPhone(page);
-    await identifyToMenu(page);
+    await startOrderToMenu(page);
+    await identify(page);
 
     // The post-lookup auto-open: the scrim, then — once React retries the
     // rejected import — the local boundary's same scrim, never the crash screen.
@@ -288,8 +286,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     await mockKioskBackend(page);
     await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderToPhone(page);
-    await identifyToMenu(page);
+    await startOrderToMenu(page);
+    await identify(page);
 
     const sheet = page.getByTestId("loyalty-rewards-sheet");
     // The decorative countdown bar (no testid): the sheet's 6 px pink strip.
@@ -318,8 +316,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     const checkout = await mockCheckoutBackend(page);
     await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderToPhone(page);
-    await identifyToMenu(page);
+    await startOrderToMenu(page);
+    await identify(page);
 
     // The texts are really in play on the sheet…
     const sheet = page.getByTestId("loyalty-rewards-sheet");
@@ -393,8 +391,8 @@ test.describe("lane loyalty-visual — the Xeno REWARDS sheet (39a, D9, D6b)", (
     await mockKioskBackend(page, { arabic: true, settings: OPERATOR_PRIMARY });
     await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderToPhone(page, { arabic: true });
-    await identifyToMenu(page);
+    await startOrderToMenu(page, { arabic: true });
+    await identify(page);
 
     const sheet = page.getByTestId("loyalty-rewards-sheet");
     await expect(page.getByTestId(`loyalty-reward-${SALAD_REWARD.couponCode}`)).toBeVisible();

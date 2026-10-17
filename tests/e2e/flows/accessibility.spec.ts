@@ -24,12 +24,13 @@ import {
 } from "../pages/boot";
 import {
   addViaPdp,
-  addOneTap,
   openBag,
   bagRows,
   openRewardsSheet,
   typeDigits,
   breakPayPreflight,
+  loginToRewards,
+  payToPhone,
 } from "../pages/order";
 
 /**
@@ -305,7 +306,9 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await mockKioskBackend(page, { settings: LOYALTY_SETTINGS });
     await mockXenoLoyalty(page, { failRedeem: true });
     await registerToStart(page);
-    await startOrderTo(page, "phone-screen");
+    await startOrderTo(page, "menu-screen");
+    // No rewards login yet: PAY asks for the phone (never before the menu, user 2026-10-17).
+    await payToPhone(page, GREEK_SALAD);
     await expectA11y(page, "e-01-phone", "phone-back");
     await page.getByTestId("phone-country-code").click();
     await expect(page.getByTestId("country-sheet")).toBeVisible();
@@ -313,9 +316,12 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.getByTestId("country-sheet-close").click();
     await expect(page.getByTestId("country-sheet")).toHaveCount(0);
 
-    await typeDigits(page, LOYALTY_PHONE);
-    await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible();
+    // Back out to the menu for the rewards login (its lookup opens the sheet).
+    await page.getByTestId("phone-back").click();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    await page.getByTestId("bag-close").click();
+    await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
+    await loginToRewards(page, LOYALTY_PHONE);
     await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     await expectA11y(page, "e-03-xeno-rewards", "loyalty-rewards-close");
     await page.getByTestId(`loyalty-reward-${LOYALTY_REWARDS.greekSalad.couponCode}`).click();
@@ -331,7 +337,7 @@ test.describe("Flow 7 — accessibility sweep", () => {
     await page.getByTestId("loyalty-rewards-close").click();
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
 
-    await addOneTap(page, GREEK_SALAD, "(1)");
+    // The salad is still in the bag; logged in, PAY skips /phone.
     await openBag(page);
     await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("customer-name-screen")).toBeVisible();

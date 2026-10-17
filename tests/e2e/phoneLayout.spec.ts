@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "./fixtures/kiosk";
-import { mockKioskBackend, holdRequests, locale } from "./fixtures/backend";
+import { mockKioskBackend, holdRequests, locale, GREEK_SALAD } from "./fixtures/backend";
 import { registerToStart, startOrderTo, chooseLanguage } from "./pages/boot";
-import { typeDigits } from "./pages/order";
+import { payToPhone, typeDigits } from "./pages/order";
 import { stageBox, type StageBox } from "./fixtures/a11y";
 import { settle, shot } from "./fixtures/capture";
 import { clippedText } from "./fixtures/clippedText";
@@ -43,7 +43,7 @@ const BELL_BOTTOM = 135 + 89;
 const CENTRE_TOLERANCE = 8;
 
 /** `skip: false` makes the number mandatory: no SKIP, a shorter block. */
-async function bootToPhone(page: Page, { skip = true } = {}) {
+async function bootToMenu(page: Page, { skip = true } = {}) {
   await mockKioskBackend(page, {
     arabic: true,
     settings: { ...LOYALTY_SETTINGS, crm_phone_mandatory: !skip, accessibility_mode: true },
@@ -51,7 +51,13 @@ async function bootToPhone(page: Page, { skip = true } = {}) {
   // Newest route wins: the Xeno surface goes last.
   await mockXenoLoyalty(page);
   await registerToStart(page);
-  await startOrderTo(page, "phone-screen");
+  await startOrderTo(page, "menu-screen");
+}
+
+/** Loyalty on, no rewards login: PAY asks for the number on /phone, in checkout mode (user 2026-10-17). */
+async function bootToPhone(page: Page, opts: { skip?: boolean } = {}) {
+  await bootToMenu(page, opts);
+  await payToPhone(page, GREEK_SALAD);
 }
 
 /** The parts the layout places, in stage px. */
@@ -153,9 +159,9 @@ test.describe("/phone layout (user 2026-10-14)", () => {
     await expect(page.getByTestId("ada-brand-zone")).toHaveCount(0);
     await expectLayout(page, "ar", { ada: false, lang: "ar" });
 
-    // The relocated BACK keeps its exit: pre-menu → /second.
+    // The relocated BACK keeps its exit: checkout → the bag.
     await page.getByTestId("phone-back").click();
-    await expect(page.getByTestId("second-screen")).toBeVisible();
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
   });
 
   test("a mandatory number (no SKIP): the shorter block is centred all the same — normal and ADA", async ({ page }) => {
@@ -169,10 +175,17 @@ test.describe("/phone layout (user 2026-10-14)", () => {
     await expectLayout(page, "en-ada-noskip", { ada: true, lang: "en", skip: false });
   });
 
-  test("CONTINUE on white still reads as disabled while the lookup is in flight, then carries on", async ({ page }) => {
+  test("CONTINUE on white still reads as disabled while the lookup is in flight, then carries on — the legacy pre-menu mode, the only one that looks up", async ({ page }) => {
     test.slow();
-    await bootToPhone(page);
+    await bootToMenu(page);
     const lookup = await holdRequests(page, /\/api\/partners\/execute_event/);
+    // No screen enters it now (user 2026-10-17): a /phone URL without checkout state does — a script
+    // pop here (bag.spec pushPath: AppRoutes' Back trap passes untrusted pops).
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/phone");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await expect(page.getByTestId("phone-screen")).toBeVisible();
     await typeDigits(page, LOYALTY_PHONE);
 
     const button = page.getByTestId("phone-continue");

@@ -172,7 +172,10 @@ async function typeDigits(page: Page, digits: string) {
   }
 }
 
-/** Register → splash → /second (Arabic or the ADA view) → /phone → lookup → /menu. */
+/**
+ * Register → splash → /second (Arabic or the ADA view) → /menu → the rewards login → lookup (the phone
+ * is never asked before the menu: user 2026-10-17).
+ */
 async function lookUpRewards(page: Page, mode: Mode) {
   await page.goto("/");
   await page.getByRole("button", { name: "t", exact: true }).click();
@@ -193,10 +196,11 @@ async function lookUpRewards(page: Page, mode: Mode) {
     await expect(page.getByTestId("ada-brand-zone")).toBeVisible();
   }
   await page.getByTestId("pipeline-p1").click();
-  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-  await typeDigits(page, LOYALTY_PHONE);
-  await page.getByTestId("phone-continue").click();
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("menu-rewards-link").click();
+  await expect(page.getByTestId("loyalty-login")).toBeVisible();
+  await typeDigits(page, LOYALTY_PHONE);
+  await page.getByTestId("loyalty-login-submit").click();
   await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
 }
 

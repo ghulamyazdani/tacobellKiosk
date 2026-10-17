@@ -61,6 +61,33 @@ export async function openBag(page: Page) {
 export const bagRows = (page: Page) => page.locator('[data-testid^="bag-row-"]');
 export const loyaltyRows = (page: Page) => page.locator('[data-testid^="bag-loyalty-row-"]');
 
+/**
+ * One plain item → the bag → PAY → /phone in checkout mode: CRM shown, not a table tab, and loyalty off
+ * or no rewards login yet (user 2026-10-17: the phone is asked here, never before the menu).
+ */
+export async function payToPhone(page: Page, entityId: string) {
+  await addOneTap(page, entityId, "(1)");
+  await openBag(page);
+  await page.getByTestId("bag-pay").click();
+  await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * The rewards login: `entry` (the menu bar's REWARDS, or the bag's LOG-IN & GET REWARDS) opens the login
+ * modal for a guest no lookup identified → `digits` → CONTINUE runs check_loyalty_balance. With coupons
+ * and points the modal closes on the rewards sheet; the caller asserts what follows.
+ */
+export async function loginToRewards(
+  page: Page,
+  digits: string,
+  entry: "menu-rewards-link" | "bag-login-rewards" = "menu-rewards-link",
+) {
+  await page.getByTestId(entry).click();
+  await expect(page.getByTestId("loyalty-login")).toBeVisible();
+  await typeDigits(page, digits);
+  await page.getByTestId("loyalty-login-submit").click();
+}
+
 /** The bag's offers entry → the rewards sheet. */
 export async function openRewardsSheet(page: Page) {
   await page.getByTestId("bag-rewards-entry").click();

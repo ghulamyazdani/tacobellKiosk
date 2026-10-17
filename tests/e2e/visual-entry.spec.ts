@@ -331,8 +331,8 @@ async function registerToStart(page: Page) {
   await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
 }
 
-/** Splash → order type → the pipeline's next screen. */
-async function startOrderTo(page: Page, testId: "menu-screen" | "phone-screen") {
+/** Splash → order type → /menu (loyalty on or off: no phone first, user 2026-10-17). */
+async function startOrderTo(page: Page, testId: "menu-screen") {
   await page.getByTestId("start-screen").click();
   await page.getByTestId("pipeline-p1").click();
   await expect(page.getByTestId(testId)).toBeVisible({ timeout: 15_000 });
@@ -768,14 +768,21 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       );
   });
 
-  test("LOYALTY CHECKOUT: /phone, the rewards sheet after the lookup, /customerName and the cancel-order modal (1:4552)", async ({
+  test("LOYALTY CHECKOUT: /phone at checkout (no rewards login), /customerName and the cancel-order modal (1:4552)", async ({
     page,
   }) => {
     test.slow();
     await mockKioskBackend(page, { loyalty: "mandatory" });
     await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderTo(page, "phone-screen");
+    await startOrderTo(page, "menu-screen");
+    // No rewards login: PAY asks for the number before the name (user
+    // 2026-10-17 — never before the menu). The rewards sheet after a lookup
+    // (entry-23) is the LOYALTY LOGIN walk's.
+    await addCheeseBurgerViaPdp(page);
+    await openBag(page);
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("phone-number-display")).toContainText(
       en.phone.placeholder
     );
@@ -786,17 +793,6 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await capture(page, "entry-22-phone-filled");
 
     await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByTestId(`loyalty-reward-${LOYALTY_REWARDS.cheeseBurger.couponCode}`)
-    ).toBeVisible();
-    await capture(page, "entry-23-loyalty-rewards");
-    await page.getByTestId("loyalty-rewards-close").click();
-    await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
-
-    await addCheeseBurgerViaPdp(page);
-    await openBag(page);
-    await page.getByTestId("bag-pay").click();
     await expect(page.getByTestId("customer-name-screen")).toBeVisible({
       timeout: 10_000,
     });
@@ -811,7 +807,7 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await capture(page, "entry-25-cancel-order");
   });
 
-  test("LOYALTY LOGIN: the rewards login modal (1:4174), the OTP step and the REWARDS INCOMING seal (1:4079)", async ({
+  test("LOYALTY LOGIN: the rewards login modal (1:4174), the rewards sheet after its lookup, the OTP step and the REWARDS INCOMING seal (1:4079)", async ({
     page,
   }) => {
     test.slow();
@@ -819,10 +815,8 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
     await mockKioskBackend(page, { loyalty: "optional" });
     await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderTo(page, "phone-screen");
+    await startOrderTo(page, "menu-screen");
     // An unidentified guest: the menu's REWARDS link opens the login modal.
-    await page.getByTestId("phone-skip").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("menu-rewards-link").click();
     await expect(page.getByTestId("loyalty-login")).toBeVisible();
     await typeDigits(page, LOYALTY_PHONE);
@@ -834,6 +828,10 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       timeout: 10_000,
     });
     await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
+    await expect(
+      page.getByTestId(`loyalty-reward-${LOYALTY_REWARDS.cheeseBurger.couponCode}`)
+    ).toBeVisible();
+    await capture(page, "entry-23-loyalty-rewards");
     expect
       .soft(await bellMasks(page, "loyalty-rewards-sheet"), "rewards sheet bell")
       .toEqual({ bells: 1, unmasked: 0 });
@@ -921,10 +919,12 @@ test.describe("lane fonts — entry/system/checkout/loyalty captures", () => {
       await expect(page.getByTestId("second-screen")).toBeVisible();
       await chooseMode(page, mode);
       await page.getByTestId("pipeline-p1").click();
-      await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-      await typeDigits(page, LOYALTY_PHONE);
-      await page.getByTestId("phone-continue").click();
       await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+      // The rewards login (never a phone before the menu: user 2026-10-17).
+      await page.getByTestId("menu-rewards-link").click();
+      await expect(page.getByTestId("loyalty-login")).toBeVisible();
+      await typeDigits(page, LOYALTY_PHONE);
+      await page.getByTestId("loyalty-login-submit").click();
       // The lookup opens the rewards sheet: closed, no reward claimed.
       await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
       await page.getByTestId("loyalty-rewards-close").click();

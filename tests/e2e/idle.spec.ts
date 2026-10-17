@@ -8,6 +8,7 @@ import {
   MENU_BUDGET_MS,
   dexieRows,
   persistedLoyaltyPoints,
+  persistedSlice,
 } from "./fixtures/kiosk";
 import {
   mockKioskBackend as mockBackend,
@@ -27,7 +28,15 @@ import {
   LOYALTY_SETTINGS,
 } from "./fixtures/loyalty";
 import { registerToStart, startOrderTo, bootRegisteredToMenu } from "./pages/boot";
-import { addOneTap, dismissAddedModal, openBag, typeDigits, breakPayPreflight } from "./pages/order";
+import {
+  addOneTap,
+  dismissAddedModal,
+  openBag,
+  typeDigits,
+  breakPayPreflight,
+  loginToRewards,
+  payToPhone,
+} from "./pages/order";
 
 /**
  * P9a — idle timeout + session integrity, end to end.
@@ -88,7 +97,7 @@ const en = locale("en");
 interface KioskMockOptions {
   /** Pay-at-counter fan-out (checkout.spec.ts): PAY → /payment. */
   skipCRM?: boolean;
-  /** Xeno loyalty on (loyalty.spec.ts): /second → /phone. */
+  /** Xeno loyalty on (loyalty.spec.ts): the phone at the rewards login or at checkout. */
   loyalty?: boolean;
   /** Offer Arabic as the secondary language. */
   arabic?: boolean;
@@ -101,11 +110,8 @@ const mockKioskBackend = (page: Page, opts: KioskMockOptions = {}) =>
     settings: { ...(opts.skipCRM ? SKIP_CRM : {}), ...(opts.loyalty ? LOYALTY_SETTINGS : {}) },
   });
 
-/** Splash → order type → /menu (loyalty off). */
+/** Splash → order type → /menu (loyalty on or off: no phone first, user 2026-10-17). */
 const startOrderToMenu = (page: Page) => startOrderTo(page, "menu-screen");
-
-/** Loyalty on: Splash → order type → /phone (the pre-menu lookup). */
-const startOrderToPhone = (page: Page) => startOrderTo(page, "phone-screen");
 
 const addGreekSaladOneTap = (page: Page, expectedCount: string) =>
   addOneTap(page, GREEK_SALAD, expectedCount);
@@ -464,8 +470,10 @@ test.describe("P9a idle timeout + session integrity", () => {
     // User decision 2026-10-01 (P9d S7): the reward rode in a push whose
     // outcome is unknown, so it is left for staff, not refunded.
     expect(xeno.revokeCount).toBe(0);
-    // …nor later: the claim went with the session, the next one starts clean.
-    await startOrderToPhone(page);
+    // …nor later: the claim went with the session, the next one starts clean
+    // (its checkout /phone shows no number).
+    await startOrderToMenu(page);
+    await payToPhone(page, GREEK_SALAD);
     await expect(page.getByTestId("phone-number-display")).toContainText(
       "Mobile number"
     );
@@ -587,10 +595,8 @@ test.describe("P9a idle timeout + session integrity", () => {
     await mockKioskBackend(page, { loyalty: true });
     const xeno = await mockXenoLoyalty(page);
     await registerToStart(page);
-    await startOrderToPhone(page);
-    await typeDigits(page, LOYALTY_PHONE);
-    await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await startOrderToMenu(page);
+    await loginToRewards(page, LOYALTY_PHONE);
 
     // Claim the Greek Salad reward (loyalty.spec.ts redeemReward).
     const reward = LOYALTY_REWARDS.greekSalad;
@@ -620,11 +626,11 @@ test.describe("P9a idle timeout + session integrity", () => {
     await expectStaysOnStart(page);
     expect(xeno.revokeCount).toBe(1);
 
-    // The identity went with the session: the next customer is looked up anew.
-    await startOrderToPhone(page);
-    await expect(page.getByTestId("phone-number-display")).toContainText(
-      "Mobile number"
-    );
+    // The identity went with the session: the next customer's REWARDS asks
+    // to log in anew.
+    await startOrderToMenu(page);
+    await page.getByTestId("menu-rewards-link").click();
+    await expect(page.getByTestId("loyalty-login")).toBeVisible();
   });
 
   test("LATE CHECKOUT: a PAY preflight that answers after the customer cancelled the order does not pull the splash into checkout", async ({
@@ -665,7 +671,7 @@ test.describe("P9a idle timeout + session integrity", () => {
     await expect(page.getByTestId("bag-sheet")).toHaveCount(0);
   });
 
-  test("LATE LOOKUP: once the customer cancels a /phone lookup still in flight, its late answer writes nothing into the next session", async ({
+  test("LATE LOOKUP: once the customer cancels a rewards-login lookup still in flight, its late answer writes nothing into the next session", async ({
     page,
   }) => {
     test.slow();
@@ -676,20 +682,25 @@ test.describe("P9a idle timeout + session integrity", () => {
       armed: false,
     });
     await registerToStart(page);
-    await startOrderToPhone(page);
+    await startOrderToMenu(page);
+    await page.getByTestId("menu-rewards-link").click();
+    await expect(page.getByTestId("loyalty-login")).toBeVisible();
     await typeDigits(page, LOYALTY_PHONE);
 
     lookup.arm();
-    await page.getByTestId("phone-continue").click();
+    await page.getByTestId("loyalty-login-submit").click();
     await expect.poll(() => lookup.count).toBe(1);
-    await expect(page.getByTestId("phone-continue")).toBeDisabled();
-    // P9b: the lookup is bounded (10 s; on expiry /phone carries on to /menu
-    // as a guest), so useLoyalty's idle hold (D5) is a backstop now, and the
-    // late answer can only follow a CUSTOMER exit taken inside the budget.
-    // No clock jump from here to the release.
+    await expect(page.getByTestId("loyalty-login-submit")).toBeDisabled();
+    // P9b: the lookup is bounded (10 s), so useLoyalty's idle hold (D5) is a
+    // backstop now, and the late answer can only follow a CUSTOMER exit taken
+    // inside the budget. No clock jump from here to the release.
 
-    // The customer gives up on the stalled lookup.
+    // The customer gives up on the stalled lookup: X (nothing blocks it),
+    // then CANCEL ORDER.
+    await page.getByTestId("loyalty-login-close").click();
+    await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
     await page.getByTestId("footer-cancel").click();
+    await page.getByTestId("cancel-order-confirm").click();
     await expect(page.getByTestId("start-screen")).toBeVisible({ timeout: 10_000 });
     const late = page.waitForResponse(/event_name=check_loyalty_balance/);
     await lookup.release();
@@ -697,8 +708,12 @@ test.describe("P9a idle timeout + session integrity", () => {
     expect(xeno.events.check_loyalty_balance).toBe(1);
     await expectStaysOnStart(page);
     // Fix stage F1: the 6000-point body is dropped, not stored for whoever
-    // walks up next (and no rewards sheet opens over the splash).
+    // walks up next (and no rewards sheet opens over the splash) — nor does
+    // it identify them (the late 200 sets no isLoyaltyIdentified).
     expect(await persistedLoyaltyPoints(page)).toBe(0);
+    expect(
+      (await persistedSlice<{ isLoyaltyIdentified?: boolean }>(page, "loyalty")).isLoyaltyIdentified
+    ).toBe(false);
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
   });
 
@@ -771,17 +786,16 @@ async function bootToParkedPush(page: Page) {
 
 /**
  * The shared opening of both S7 tests (the caller registers the mocks, Xeno
- * on): the Greek Salad reward claimed — its free row — beside a paid Tortilla
- * Sauce (a zero bill would push from /customerName, not PAY AT COUNTER), then
+ * on): the rewards login, the Greek Salad reward claimed — its free row —
+ * beside a paid Tortilla Sauce (a zero bill would push from /customerName, not
+ * PAY AT COUNTER), then
  * PAY → /customerName → /payment → PAY AT COUNTER → /receipt → NO THANKS. The
  * push leaves carrying the reward row.
  */
 async function claimRewardThenPayAtCounter(page: Page) {
   await registerToStart(page);
-  await startOrderToPhone(page);
-  await typeDigits(page, LOYALTY_PHONE);
-  await page.getByTestId("phone-continue").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+  await startOrderToMenu(page);
+  await loginToRewards(page, LOYALTY_PHONE);
 
   // The redemption chain (loyalty.spec.ts redeemReward) in the auto-opened sheet.
   await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
@@ -808,7 +822,7 @@ async function claimRewardThenPayAtCounter(page: Page) {
   await expect(page.locator('[data-testid^="bag-loyalty-row-"]')).toHaveCount(1);
 
   await page.getByTestId("bag-pay").click();
-  // Loyalty on, not a table tab: the name step comes first.
+  // Loyalty on and logged in, not a table tab: the name step comes first.
   await expect(page.getByTestId("customer-name-screen")).toBeVisible({
     timeout: 15_000,
   });

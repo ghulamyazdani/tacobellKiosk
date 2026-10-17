@@ -22,7 +22,7 @@ import {
   pickPipelineToMenu,
   holdHotspot,
 } from "./pages/boot";
-import { addOneTap, openBag, typeDigits } from "./pages/order";
+import { addOneTap, openBag, loginToRewards, typeDigits } from "./pages/order";
 import {
   mockCheckoutBackend,
   PLACE_ORDER_URL,
@@ -137,7 +137,7 @@ function failedRequests(page: Page, pattern: RegExp): string[] {
   return failed;
 }
 
-/** Splash → order type → /menu (loyalty off). */
+/** Splash → order type → /menu (loyalty on or off: no phone first, user 2026-10-17). */
 async function startOrderToMenu(page: Page) {
   await startToSecond(page);
   await pickPipelineToMenu(page);
@@ -322,7 +322,7 @@ test.describe("P9b Rule 2 recovery", () => {
     expect(settings.count).toBe(2);
   });
 
-  test("LOYALTY DOWN AT BOOT: the kiosk boots and sells loyalty-off (the Activity Center says Unavailable, a pipeline goes straight to /menu); the next splash visit retries and brings /phone back", async ({
+  test("LOYALTY DOWN AT BOOT: the kiosk boots and sells loyalty-off (the Activity Center says Unavailable, the menu has no REWARDS link); the next splash visit retries and brings REWARDS back", async ({
     page,
   }) => {
     test.slow();
@@ -350,9 +350,12 @@ test.describe("P9b Rule 2 recovery", () => {
     await page.getByTestId("activity-close").click();
     await expect(activity).toHaveCount(0);
 
-    // Loyalty-off: no /phone lookup ahead of the menu.
+    // Loyalty-off: the menu offers no rewards login (MenuCtaBar hides the
+    // link unless getIsLoyaltyOn).
     await startOrderToMenu(page);
     await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("cta-view-bag")).toBeVisible();
+    await expect(page.getByTestId("menu-rewards-link")).toHaveCount(0);
     expect(xeno.events.check_loyalty_balance).toBe(0);
 
     // The proxy recovers. Ending the session lands on a NEW splash visit,
@@ -366,9 +369,8 @@ test.describe("P9b Rule 2 recovery", () => {
     await expect
       .poll(async () => (await persistedLoyalty(page)).isLoyaltyOn)
       .toBe(true);
-    await startToSecond(page);
-    await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
+    await startOrderToMenu(page);
+    await expect(page.getByTestId("menu-rewards-link")).toBeVisible();
   });
 
   test("PUSH TIMEOUT (U2): a placeOrder that never answers ends at its 10 s budget on the UNCERTAIN panel after ONE request — no ladder, no logout; Retry reuses the order id and lands on /orderSuccess", async ({
@@ -463,12 +465,8 @@ test.describe("P9b Rule 2 recovery", () => {
     const xeno = await mockXenoLoyalty(page);
     const redeem = await holdRequests(page, REDEEM_COUPON_URL);
     await registerToStart(page);
-    await startToSecond(page);
-    await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-    await typeDigits(page, LOYALTY_PHONE);
-    await page.getByTestId("phone-continue").click();
-    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await startOrderToMenu(page);
+    await loginToRewards(page, LOYALTY_PHONE);
 
     // The redemption chain up to the OTP submit (loyalty.spec.ts redeemReward).
     const reward = LOYALTY_REWARDS.greekSalad;

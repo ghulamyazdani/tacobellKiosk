@@ -27,14 +27,17 @@ export async function startToSecond(page: Page) {
   await expect(page.getByTestId("second-screen")).toBeVisible();
 }
 
-/** /second → /menu (loyalty off). */
+/** /second → /menu. */
 export async function pickPipelineToMenu(page: Page) {
   await page.getByTestId("pipeline-p1").click();
   await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
 }
 
-/** Splash → order type → `screen` (/menu, or /phone with loyalty on). */
-export async function startOrderTo(page: Page, screen: "menu-screen" | "phone-screen", timeout = 15_000) {
+/**
+ * Splash → order type → /menu, loyalty on or off: the phone is asked at the rewards login or at
+ * checkout, never before the menu (user 2026-10-17 — pages/order loginToRewards / payToPhone).
+ */
+export async function startOrderTo(page: Page, screen: "menu-screen", timeout = 15_000) {
   await page.getByTestId("start-screen").click();
   await page.getByTestId("pipeline-p1").click();
   await expect(page.getByTestId(screen)).toBeVisible({ timeout });

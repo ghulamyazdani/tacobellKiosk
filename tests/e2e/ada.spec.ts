@@ -14,7 +14,7 @@ import {
   CHEESE_BURGER,
 } from "./fixtures/backend";
 import { registerToStart, startToSecond, pickPipelineToMenu } from "./pages/boot";
-import { addOneTap, openBag, typeDigits, breakPayPreflight } from "./pages/order";
+import { addOneTap, openBag, typeDigits, breakPayPreflight, loginToRewards } from "./pages/order";
 import { stageBox, type StageBox } from "./fixtures/a11y";
 import { mockCheckoutBackend } from "./fixtures/checkout";
 import {
@@ -89,7 +89,7 @@ const REWARDS_AUTO_DISMISS_MS = 25_000;
 interface KioskMockOptions {
   /** get_kiosk_settings.accessibility_mode — the tenant's feature gate. */
   ada?: boolean;
-  /** Xeno loyalty on (loyalty.spec.ts): /second → /phone. */
+  /** Xeno loyalty on (loyalty.spec.ts): the phone at the rewards login or at checkout. */
   loyalty?: boolean;
 }
 
@@ -816,13 +816,10 @@ test.describe("P9c ADA reach-zone view", () => {
     // The decorative countdown bar (no testid): the sheet's 6px pink strip.
     const drainBar = sheet.locator("span.h-\\[6px\\]");
 
-    /** /second → /phone lookup → /menu with the rewards sheet auto-opened. */
+    /** /second → /menu → the rewards login, the rewards sheet auto-opened. */
     const lookUpRewards = async () => {
-      await page.getByTestId("pipeline-p1").click();
-      await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-      await typeDigits(page, LOYALTY_PHONE);
-      await page.getByTestId("phone-continue").click();
-      await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+      await pickPipelineToMenu(page);
+      await loginToRewards(page, LOYALTY_PHONE);
       await expect(sheet).toBeVisible();
     };
 

@@ -1,8 +1,10 @@
 import { test, expect, type Page, persistedLoyaltyPoints } from "./fixtures/kiosk";
-import { mockKioskBackend as mockBackend } from "./fixtures/backend";
+import { mockKioskBackend as mockBackend, locale } from "./fixtures/backend";
+import { mockCheckoutBackend } from "./fixtures/checkout";
 import {
   mockXenoLoyalty,
   CHEESE_BURGER_ID,
+  CUSTOMER_NAME_ROWS,
   LOYALTY_OTP,
   LOYALTY_PHONE,
   LOYALTY_POINTS_TOTAL,
@@ -10,15 +12,21 @@ import {
   LOYALTY_SETTINGS,
   type XenoMockOptions,
 } from "./fixtures/loyalty";
-import { registerToStart, startOrderTo } from "./pages/boot";
-import { addViaPdp, openBag, loyaltyRows, typeDigits } from "./pages/order";
+import { bootRegisteredToMenu } from "./pages/boot";
+import { addViaPdp, openBag, loyaltyRows, loginToRewards, typeDigits } from "./pages/order";
 
 /**
- * P7c — XENO loyalty vertical, end to end: the pre-menu identity lookup
- * (`/phone` → `check_loyalty_balance`), the rewards sheet and its dispatch-
+ * P7c — XENO loyalty vertical, end to end: the identity lookup (the rewards
+ * login → `check_loyalty_balance`), the rewards sheet and its dispatch-
  * exact redemption chain (`validate_coupon` → `authenticate_redemption` →
  * 4-digit OTP → `redeem_coupon`), the reward cart row, both entry guards, the
  * cancel-order revoke, the auto-reversal and the loyalty checkout route.
+ *
+ * WHEN THE PHONE IS ASKED (user 2026-10-17): never before the menu — /second
+ * lands on /menu, loyalty on or off. The menu bar's REWARDS and the bag's
+ * LOG-IN & GET REWARDS ask for it (the login modal, whose lookup identifies
+ * the guest); a guest no lookup identified is asked at checkout, on /phone
+ * before /customerName as with loyalty off — a pure capture, no lookup.
  *
  * Mock surface: `tests/e2e/fixtures/loyalty.ts` over the shared harness
  * (fixtures/backend.ts mock, pages/* steps), with two P7c deltas:
@@ -62,9 +70,11 @@ import { addViaPdp, openBag, loyaltyRows, typeDigits } from "./pages/order";
  */
 
 const GREEK_SALAD_REWARD = LOYALTY_REWARDS.greekSalad;
+const en = locale("en");
 
-/** The shared boot mock with LOYALTY_SETTINGS folded into get_kiosk_settings. */
-const mockKioskBackend = (page: Page) => mockBackend(page, { settings: LOYALTY_SETTINGS });
+/** The shared boot mock with LOYALTY_SETTINGS (and a test's own keys) folded into get_kiosk_settings. */
+const mockKioskBackend = (page: Page, settings: Record<string, unknown> = {}) =>
+  mockBackend(page, { settings: { ...LOYALTY_SETTINGS, ...settings } });
 
 /** Both mock layers in the one order that works (catch-all first). */
 async function mockAll(page: Page, opts: XenoMockOptions = {}) {
@@ -73,35 +83,12 @@ async function mockAll(page: Page, opts: XenoMockOptions = {}) {
 }
 
 /**
- * Register on the on-screen keyboard, start an order, pick the pipeline —
- * and land on /phone, NOT /menu: with loyalty on, SecondLayout routes the
- * identity lookup ahead of the menu (contract step 2).
+ * Boot → register → order type → /menu → the rewards login with the mock
+ * number. `check_loyalty_balance` is a PURE lookup — no OTP is involved here.
  */
-async function bootRegisteredToPhone(page: Page) {
-  await registerToStart(page);
-  await startOrderTo(page, "phone-screen");
-  await expect(page).toHaveURL(/\/phone$/);
-}
-
-/**
- * The pre-menu lookup: enter the mock number, continue, land on /menu.
- * `check_loyalty_balance` is a PURE lookup — no OTP is involved here.
- */
-async function identifyOnPhoneScreen(page: Page) {
-  await typeDigits(page, LOYALTY_PHONE);
-  // Masked-but-last display: the placeholder is gone once digits exist.
-  await expect(page.getByTestId("phone-number-display")).not.toContainText(
-    "Mobile number"
-  );
-  await page.getByTestId("phone-continue").click();
-  await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
-  await expect(page).toHaveURL(/\/menu$/);
-}
-
-/** Boot → register → order type → phone lookup → /menu as an identified guest. */
 async function bootIdentifiedToMenu(page: Page) {
-  await bootRegisteredToPhone(page);
-  await identifyOnPhoneScreen(page);
+  await bootRegisteredToMenu(page);
+  await loginToRewards(page, LOYALTY_PHONE);
 }
 
 /** The post-lookup auto-open (isTimerOn) — dismiss it to browse the menu. */
@@ -156,24 +143,28 @@ async function paidRowItemId(page: Page): Promise<string> {
 }
 
 test.describe("P7c XENO loyalty", () => {
-  test("BOOT + PHONE: loyalty routes /second to the lookup; the balance opens the rewards sheet and badges the CTA link", async ({
+  test("BOOT + LOGIN: loyalty sends /second to the menu, nothing asked; REWARDS logs in, and the balance opens the rewards sheet and badges the CTA link", async ({
     page,
   }) => {
     test.slow();
     const xeno = await mockAll(page);
 
     // enable_loyalty made the boot resolve a (non-reelo) partner…
-    await bootRegisteredToPhone(page);
+    await bootRegisteredToMenu(page);
     expect(xeno.partnerCount).toBe(1);
-    // …and NO loyalty event has fired yet — the phone screen is the lookup.
+    // …but the phone is never asked before the menu: /second lands on /menu,
+    // and NO loyalty event has fired yet.
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByTestId("menu-rewards-link")).toHaveText("Rewards");
     expect(xeno.events.check_loyalty_balance).toBe(0);
 
-    await identifyOnPhoneScreen(page);
-    expect(xeno.events.check_loyalty_balance).toBe(1);
-
-    // Xeno branch of the partner table: coupons + points ⇒ the items modal
-    // auto-opens with its dismiss timer, and the CTA link switches label.
+    await loginToRewards(page, LOYALTY_PHONE);
+    // Xeno branch of the partner table: coupons + points ⇒ the login modal
+    // closes on the items modal, auto-opened with its dismiss timer, and the
+    // CTA link switches label.
     await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
+    await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
+    expect(xeno.events.check_loyalty_balance).toBe(1);
     await expect(page.getByTestId("menu-rewards-link")).toContainText(
       "My Rewards (3)"
     );
@@ -372,13 +363,23 @@ test.describe("P7c XENO loyalty", () => {
     test.slow();
     const xeno = await mockAll(page, { emptyCoupons: true });
     await bootIdentifiedToMenu(page);
+    // The login's own answer: the modal stays up behind its error (TRY
+    // AGAIN, then X closes it).
+    await expect(page.getByTestId("loyalty-error")).toContainText(
+      "No coupons available for you at the moment"
+    );
     expect(xeno.events.check_loyalty_balance).toBe(1);
+    await page.getByTestId("loyalty-error-retry").click();
+    await page.getByTestId("loyalty-login-close").click();
+    await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
 
     // No coupons and no points ⇒ no auto-open, and the link keeps its
     // pre-lookup copy (the count only appears with a coupon list).
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
     await expect(page.getByTestId("menu-rewards-link")).toHaveText("Rewards");
 
+    // The lookup answered, so the guest is identified: the link runs the
+    // branch table — the guard, not a second login.
     await page.getByTestId("menu-rewards-link").click();
     const errorDialog = page.getByTestId("global-error"); // G1: the app-wide GlobalErrorHost
     await expect(errorDialog).toBeVisible();
@@ -386,9 +387,11 @@ test.describe("P7c XENO loyalty", () => {
       "No coupons available for you at the moment"
     );
     await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
+    await expect(page.getByTestId("loyalty-login")).toHaveCount(0);
 
     await page.getByTestId("global-error-ok").click();
     await expect(errorDialog).toHaveCount(0);
+    expect(xeno.events.check_loyalty_balance).toBe(1);
   });
 
   test("REVOKE ON CANCEL: cancel-order revokes the claimed reward before the reset, and the next customer starts clean", async ({
@@ -432,11 +435,13 @@ test.describe("P7c XENO loyalty", () => {
     );
     expect(xeno.revokeUrls[0]).toContain(`phone=${LOYALTY_PHONE}`);
 
-    // New customer: the identity was cleared too, so the lookup runs again.
+    // New customer: the identity was cleared too — REWARDS asks to log in
+    // again (loginToRewards waits for the modal) and the lookup runs again.
     await page.getByTestId("start-screen").click();
     await page.getByTestId("pipeline-p1").click();
-    await expect(page.getByTestId("phone-screen")).toBeVisible({ timeout: 15_000 });
-    await identifyOnPhoneScreen(page);
+    await expect(page.getByTestId("menu-screen")).toBeVisible({ timeout: 15_000 });
+    await loginToRewards(page, LOYALTY_PHONE);
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
     expect(xeno.events.check_loyalty_balance).toBe(2);
 
     await closeRewardsSheet(page);
@@ -497,11 +502,11 @@ test.describe("P7c XENO loyalty", () => {
     );
   });
 
-  test("CHECKOUT ROUTE: with loyalty on, PAY resolves to the customerName step", async ({
+  test("CHECKOUT ROUTE: with loyalty on, a guest the rewards login identified skips /phone — PAY resolves to the customerName step, whose BACK returns to the bag", async ({
     page,
   }) => {
     test.slow();
-    await mockAll(page);
+    const xeno = await mockAll(page);
     await bootIdentifiedToMenu(page);
     await closeRewardsSheet(page);
 
@@ -515,12 +520,116 @@ test.describe("P7c XENO loyalty", () => {
 
     await page.getByTestId("bag-pay").click();
     // resolveCheckoutRoute: not a table tab, skip_crm_page false, loyalty on
-    // ⇒ "customerName" (the phone was already collected pre-menu). P8a
-    // replaced the /checkout stub with the real screen, so the decision is
-    // asserted by the destination it actually lands on.
+    // and identified ⇒ "customerName" (the rewards login has the number).
+    // P8a replaced the /checkout stub with the real screen, so the decision
+    // is asserted by the destination it actually lands on.
     await expect(page).toHaveURL(/\/customerName$/, { timeout: 10_000 });
     await expect(page.getByTestId("customer-name-screen")).toBeVisible();
     // Nothing is pushed by arriving here: the name step is still pre-order.
     await expect(page.getByTestId("order-error")).toHaveCount(0);
+
+    // BACK agrees with PAY (useCheckoutFlow): no /phone behind the name step.
+    await expect(page.getByTestId("customer-name-loading")).toHaveCount(0);
+    await page.getByTestId("customer-name-back").click();
+    await expect(page).toHaveURL(/\/cart$/, { timeout: 10_000 });
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+    expect(xeno.events.check_loyalty_balance).toBe(1);
+  });
+});
+
+test.describe("loyalty on, no rewards login: the phone is asked at checkout (user 2026-10-17)", () => {
+  test("PAY → /phone before the name, no lookup; BACK walks /customerName → /phone (number kept) → the bag, whose LOG-IN & GET REWARDS still asks to log in — and once it has, PAY skips /phone", async ({
+    page,
+  }) => {
+    test.slow();
+    const xeno = await mockAll(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, "£8.00");
+    await openBag(page);
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 10_000 });
+    // The loyalty copy; LOYALTY_SETTINGS makes the number mandatory (no SKIP).
+    await expect(page.getByTestId("phone-screen")).toContainText(en.phone.loyaltySubtitle);
+    await expect(page.getByTestId("phone-skip")).toHaveCount(0);
+    await typeDigits(page, LOYALTY_PHONE);
+    await page.getByTestId("phone-continue").click();
+    await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
+    // The CRM prefill keys on the number just given…
+    await expect(page.getByTestId("customer-name-input")).toHaveText(
+      CUSTOMER_NAME_ROWS[0].firstname
+    );
+    // …and checkout's /phone looked nothing up: no Xeno call, no rewards sheet.
+    expect(xeno.eventCalls).toEqual([]);
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toHaveCount(0);
+
+    // The number was never looked up, so /phone is still a step behind the
+    // name — pre-filled with it.
+    await page.getByTestId("customer-name-back").click();
+    await expect(page).toHaveURL(/\/phone$/);
+    await page.getByTestId("phone-visibility").click();
+    await expect(page.getByTestId("phone-number-display")).toHaveText(LOYALTY_PHONE);
+    await page.getByTestId("phone-back").click();
+    await expect(page).toHaveURL(/\/cart$/, { timeout: 10_000 });
+    await expect(page.getByTestId("bag-sheet")).toBeVisible();
+
+    // A typed number is not a rewards login: the bag's entry asks to log in
+    // (never "No coupons" without a lookup)…
+    await loginToRewards(page, LOYALTY_PHONE, "bag-login-rewards");
+    await expect(page.getByTestId("loyalty-rewards-sheet")).toBeVisible();
+    expect(xeno.events.check_loyalty_balance).toBe(1);
+    await closeRewardsSheet(page);
+    // …and once it has answered, the guest is identified: PAY skips /phone.
+    await page.getByTestId("bag-pay").click();
+    await expect(page).toHaveURL(/\/customerName$/, { timeout: 10_000 });
+    expect(xeno.events.check_loyalty_balance).toBe(1);
+  });
+
+  test("TABLE ORDER: PAY → /tent → /phone → /customerName, as with loyalty off; BACK returns /phone → /tent", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page);
+    // One "table" pipeline (the checkout fixture's tabType); Xeno last.
+    await mockCheckoutBackend(page, { tabType: "table" });
+    const xeno = await mockXenoLoyalty(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, "£8.00");
+    await openBag(page);
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("tent-screen")).toBeVisible({ timeout: 15_000 });
+    await typeDigits(page, "12");
+    await page.getByTestId("tent-confirm").click();
+    await expect(page).toHaveURL(/\/phone$/, { timeout: 15_000 });
+    await typeDigits(page, LOYALTY_PHONE);
+    await page.getByTestId("phone-continue").click();
+    await expect(page.getByTestId("customer-name-screen")).toBeVisible({ timeout: 15_000 });
+    expect(xeno.events.check_loyalty_balance).toBe(0);
+
+    await expect(page.getByTestId("customer-name-loading")).toHaveCount(0);
+    await page.getByTestId("customer-name-back").click();
+    await expect(page).toHaveURL(/\/phone$/);
+    await page.getByTestId("phone-back").click();
+    await expect(page.getByTestId("tent-screen")).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("CRM HIDDEN: with skip_crm_page, PAY goes straight to /payment — nothing asked, nothing looked up", async ({
+    page,
+  }) => {
+    test.slow();
+    await mockKioskBackend(page, { skip_crm_page: true });
+    const checkout = await mockCheckoutBackend(page);
+    const xeno = await mockXenoLoyalty(page);
+    await bootRegisteredToMenu(page);
+    await addCheeseBurgerViaPdp(page, "£8.00");
+    await openBag(page);
+
+    await page.getByTestId("bag-pay").click();
+    await expect(page.getByTestId("payment-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/payment$/);
+    expect(xeno.eventCalls).toEqual([]);
+    expect(checkout.placeOrderCount).toBe(0);
+    expect(checkout.forbiddenUrls).toEqual([]);
   });
 });

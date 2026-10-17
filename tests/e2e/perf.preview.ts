@@ -1032,26 +1032,29 @@ test("IDLE: the menu left alone until the idle prompt, the prompt's countdown, C
   });
 });
 
-test("LOYALTY: order type → the pre-menu /phone, its keypad, the lookup → the loyalty rewards sheet → the menu, 3 guests", async ({ page }) => {
+test("LOYALTY: order type → the menu → REWARDS → the rewards login, its keypad, the lookup → the loyalty rewards sheet → the menu, 3 guests", async ({ page }) => {
   test.setTimeout(10 * 60_000);
   await mockKiosk(page, { settings: LOYALTY_SETTINGS });
   await mockXenoLoyalty(page);
   const perf = await startPerf(page);
   await registerToStart(page, 60_000);
 
-  await scenario(perf, "loyalty · /phone → lookup → rewards sheet → menu", async (s) => {
+  // The phone is never asked before the menu (user 2026-10-17): the rewards login asks for it.
+  await scenario(perf, "loyalty · REWARDS → login → lookup → rewards sheet → menu", async (s) => {
     for (let guest = 0; guest < 3; guest += 1) {
       await startToSecond(page);
-      s.push(await tap(perf, "Dine In → /phone", page.getByTestId("pipeline-p1"), { until: tid("phone-screen") }));
+      s.push(await tap(perf, "Dine In → /menu", page.getByTestId("pipeline-p1"), { until: MENU_READY }));
+      s.push(await tap(perf, "REWARDS → login", page.getByTestId("menu-rewards-link"), { until: tid("loyalty-login") }));
       for (let n = 1; n <= 6; n += 1)
         s.push(
           await tap(perf, "key", page.getByTestId(`numpad-key-${LOYALTY_PHONE[n - 1]}`), {
-            until: tid("phone-number-display"),
-            text: masked(LOYALTY_PHONE.slice(0, n)),
+            // The newest digit is legible in its own cell (LoyaltyLoginModal), so a repeated digit is still a change.
+            until: `${tid("loyalty-phone-display")} > span > span:nth-child(${n})`,
+            text: LOYALTY_PHONE[n - 1],
           }),
         );
       await typeDigits(page, LOYALTY_PHONE.slice(6));
-      s.push(await tap(perf, "CONTINUE → lookup → rewards sheet", page.getByTestId("phone-continue"), { until: tid("loyalty-rewards-sheet") }));
+      s.push(await tap(perf, "CONTINUE → lookup → rewards sheet", page.getByTestId("loyalty-login-submit"), { until: tid("loyalty-rewards-sheet") }));
       s.push(await tap(perf, "close → menu", page.getByTestId("loyalty-rewards-close"), { until: tid("loyalty-rewards-sheet"), gone: true }));
       await cancelToSplash(page);
     }
