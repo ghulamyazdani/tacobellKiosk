@@ -128,13 +128,13 @@ describe("SecondLayout — menu-load failure stays on /second (P9b R8)", () => {
     expect(screen.queryByTestId("menu-error")).not.toBeInTheDocument();
   });
 
-  it("with loyalty on, a loaded menu goes to /phone first", async () => {
+  it("with loyalty on, a loaded menu enters it too — the phone is never asked first (user 2026-10-17)", async () => {
     store.dispatch(setKioskSettings({ enable_loyalty: true }));
     store.dispatch(setLoyaltyPartner({ partner: { partner_name: "Xeno" } }));
     mount();
     await tapPipeline(LOADED_MENU);
 
-    expect(mockNavigate).toHaveBeenCalledWith("/phone");
+    expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
   });
 
   it.each([

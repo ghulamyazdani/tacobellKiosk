@@ -11,6 +11,7 @@ import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
   pushLoyaltyPointsAndCoupons,
   setClaimedCoupon,
+  setLoyaltyIdentified,
   setLoyaltyPartner,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
@@ -255,6 +256,12 @@ describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
   });
 
   describe("LOG-IN & GET REWARDS entry (locked decision 5b)", () => {
+    /** The login modal's lookup answered for this phone (useLoyalty.executeLoyalty). */
+    const identify = () => {
+      store.dispatch(setPhoneNumberRdx("9953833675"));
+      store.dispatch(setLoyaltyIdentified(true));
+    };
+
     it("unidentified customer → the login modal", async () => {
       seedLoyaltyOn();
       store.dispatch(setCartItems([{ ...BURGER_ROW }]));
@@ -267,9 +274,23 @@ describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
       expect(onOpenLoyaltyRewards).not.toHaveBeenCalled();
     });
 
-    it("identified customer with coupons → the rewards sheet", async () => {
+    it("a phone typed at checkout's /phone, never looked up → still the login modal (user 2026-10-17)", async () => {
       seedLoyaltyOn();
       store.dispatch(setPhoneNumberRdx("9953833675"));
+      store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+      const onOpenLoyaltyLogin = vi.fn();
+      const onOpenLoyaltyRewards = vi.fn();
+      renderSheet({ onOpenLoyaltyLogin, onOpenLoyaltyRewards });
+
+      await userEvent.click(screen.getByTestId("bag-login-rewards"));
+      expect(onOpenLoyaltyLogin).toHaveBeenCalledTimes(1);
+      expect(onOpenLoyaltyRewards).not.toHaveBeenCalled();
+      expect(appSettingsState().showGlobalError).toBe(false);
+    });
+
+    it("identified customer with coupons → the rewards sheet", async () => {
+      seedLoyaltyOn();
+      identify();
       store.dispatch(setCartItems([{ ...BURGER_ROW }]));
       const onOpenLoyaltyLogin = vi.fn();
       const onOpenLoyaltyRewards = vi.fn();
@@ -282,7 +303,7 @@ describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
 
     it("a reward already in the cart → 'already availed', no sheet", async () => {
       seedLoyaltyOn();
-      store.dispatch(setPhoneNumberRdx("9953833675"));
+      identify();
       store.dispatch(setCartItems([{ ...BURGER_ROW }, { ...REWARD_ROW }]));
       const onOpenLoyaltyRewards = vi.fn();
       renderSheet({ onOpenLoyaltyLogin: vi.fn(), onOpenLoyaltyRewards });
@@ -297,7 +318,7 @@ describe("BagSheet — XENO reward legs (contract steps 7-9)", () => {
 
     it("no coupons → 'no coupons available', no sheet", async () => {
       seedLoyaltyOn([]);
-      store.dispatch(setPhoneNumberRdx("9953833675"));
+      identify();
       store.dispatch(setCartItems([{ ...BURGER_ROW }]));
       const onOpenLoyaltyRewards = vi.fn();
       renderSheet({ onOpenLoyaltyLogin: vi.fn(), onOpenLoyaltyRewards });

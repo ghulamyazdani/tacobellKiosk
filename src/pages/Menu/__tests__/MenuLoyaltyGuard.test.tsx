@@ -13,6 +13,7 @@ import {
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
 import {
   pushLoyaltyPointsAndCoupons,
+  setLoyaltyIdentified,
   setLoyaltyPartner,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
@@ -87,7 +88,10 @@ const REWARD_ROW = {
   total_price: 0,
 };
 
-/** Loyalty ON (kiosk_settings AND the partner blob) with an identified guest. */
+/**
+ * Loyalty ON (kiosk_settings AND the partner blob) with an identified guest:
+ * the login modal's lookup answered for the phone in the store.
+ */
 const seedIdentifiedGuest = (coupons: unknown[]) => {
   store.dispatch(setKioskSettings({ enable_loyalty: true }));
   store.dispatch(setLoyaltyPartner(PARTNER));
@@ -100,6 +104,7 @@ const seedIdentifiedGuest = (coupons: unknown[]) => {
       min_bill_for_redemption: 0,
     })
   );
+  store.dispatch(setLoyaltyIdentified(true));
 };
 
 const renderMenu = () =>
@@ -174,6 +179,17 @@ describe("Menu rewards entry guards → the GLOBAL error, never a menu-local mod
     expect((raised.payload as { errorMessage?: string }).errorMessage).not.toBe(
       "No coupons available for you at the moment"
     );
+  });
+
+  it("a phone with no lookup behind it (typed at checkout's /phone) is not an identity: REWARDS opens the login modal, no guard error (user 2026-10-17)", () => {
+    seedIdentifiedGuest([]);
+    store.dispatch(setLoyaltyIdentified(false));
+    const dispatched = vi.spyOn(store, "dispatch");
+    renderMenu();
+
+    expect(tapRewards(dispatched)).toEqual([]);
+    expect(screen.getByTestId("loyalty-login")).toBeInTheDocument();
+    expect(selectShowErrorModalGlobal(store.getState())).toBe(false);
   });
 
   it("a global error raised by anything (even the guard copy) is never rendered by the menu", () => {

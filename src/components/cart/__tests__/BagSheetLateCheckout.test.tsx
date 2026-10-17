@@ -3,7 +3,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { pushCharges, setCartItems } from "@cx-sdk/ordering/state/cart.slice";
-import { setCurrency } from "@cx-sdk/catalog/state/appSettings.slice";
+import { setCurrency, setKioskSettings } from "@cx-sdk/catalog/state/appSettings.slice";
+import {
+  setLoyaltyIdentified,
+  setLoyaltyPartner,
+} from "@cx-sdk/ordering/state/loyalty.slice";
+import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
 import { store } from "../../../redux/app/store";
 import BagSheet from "../BagSheet";
 import "../../../i18n";
@@ -218,5 +223,43 @@ describe("BagSheet PAY — a non-empty charge", () => {
     expect(appliedCharges()).toEqual([
       expect.objectContaining({ name: "Bag fee", type: "fixed", amount: 2 }),
     ]);
+  });
+});
+
+/*
+  User 2026-10-17: the phone is never asked before the menu. With loyalty on,
+  PAY asks for it (/phone, checkout mode) unless a rewards login identified
+  the guest — the lookup's flag decides, never a phone merely in the store
+  (one typed at checkout's /phone was never looked up).
+*/
+describe("BagSheet PAY — loyalty on: /phone unless a rewards login identified the guest", () => {
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setCurrency({ currency: "GBP", text: "£" }));
+    store.dispatch(setCartItems([{ ...BURGER_ROW }]));
+    store.dispatch(setKioskSettings({ enable_loyalty: true }));
+    store.dispatch(setLoyaltyPartner({ partner: { partner_name: "Xeno" } }));
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+    mockNavigate.mockReset();
+    mockFetchMenu.mockReset();
+  });
+
+  it("not identified → /phone in CHECKOUT mode, the number asked before the name", async () => {
+    mount();
+    await payWithRevalidationInFlight().answer();
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith("/phone", { state: { checkoutRoute: "phone" } });
+  });
+
+  it("identified by the rewards login → straight to /customerName", async () => {
+    store.dispatch(setLoyaltyIdentified(true));
+    mount();
+    await payWithRevalidationInFlight().answer();
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith("/customerName", {
+      state: { checkoutRoute: "customerName" },
+    });
   });
 });

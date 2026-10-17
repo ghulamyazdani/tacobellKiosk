@@ -135,6 +135,9 @@ const persistence: PersistencePolicy = {
         "coupons",
         "loyaltyItems",
         "redeemedLoyalty",
+        // With the guest's phone (customerInfo, above): a crash-reload keeps
+        // the two agreeing.
+        "isLoyaltyIdentified",
       ],
     },
     {

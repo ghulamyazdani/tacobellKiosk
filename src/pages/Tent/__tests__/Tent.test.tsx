@@ -13,7 +13,11 @@ import {
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setCartItems } from "@cx-sdk/ordering/state/cart.slice";
-import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
+import {
+  setLoyaltyIdentified,
+  turnOfLoyalty,
+  turnOnLoyalty,
+} from "@cx-sdk/ordering/state/loyalty.slice";
 import { store } from "../../../redux/app/store";
 import { notePath } from "../../../hooks/utils/usePageEnter";
 import Tent from "../index";
@@ -352,11 +356,12 @@ describe("Tent — the table-number step", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/payment");
     });
 
-    it("goes to /customerName when loyalty is on", () => {
+    it("goes to /customerName when loyalty is on and a rewards login identified the guest", () => {
       store.dispatch(
         setKioskSettings({ skip_crm_page: false, enable_loyalty: true })
       );
       store.dispatch(turnOnLoyalty({}));
+      store.dispatch(setLoyaltyIdentified(true));
       mount();
       type("12");
       tap("tent-confirm");
@@ -364,9 +369,28 @@ describe("Tent — the table-number step", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/customerName");
     });
 
+    it.each([
+      ["CONFIRM", () => {
+        type("12");
+        tap("tent-confirm");
+      }],
+      ["NO THANKS", () => tap("tent-skip")],
+    ])("loyalty on, no rewards login: %s goes to /phone in CHECKOUT MODE, as with loyalty off (user 2026-10-17)", (_label, leave) => {
+      store.dispatch(
+        setKioskSettings({ skip_crm_page: false, enable_loyalty: true })
+      );
+      store.dispatch(turnOnLoyalty({}));
+      mount();
+      leave();
+
+      expect(mockNavigate.mock.calls).toEqual([
+        ["/phone", { state: { checkoutRoute: "phone" } }],
+      ]);
+    });
+
     it("goes to /phone in CHECKOUT MODE when loyalty is off", () => {
-      // /phone is the pre-menu loyalty lookup by default, so the checkout
-      // entry has to announce itself or the screen exits to /menu.
+      // /phone without router state is the legacy pre-menu lookup, so the
+      // checkout entry has to announce itself or the screen exits to /menu.
       mount();
       type("12");
       tap("tent-confirm");

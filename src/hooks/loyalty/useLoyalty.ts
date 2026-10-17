@@ -23,6 +23,7 @@ import { pushLoyaltyPointsAndCoupons } from "@cx-sdk/ordering/state/loyalty.slic
 import { useDispatch } from "react-redux";
 import { selectMenu } from "@cx-sdk/catalog/state/Menu.slice";
 import { pushLoyaltyItems } from "@cx-sdk/ordering/state/loyalty.slice";
+import { setLoyaltyIdentified } from "@cx-sdk/ordering/state/loyalty.slice";
 import { parkRedeemedItem } from "@cx-sdk/ordering/state/loyalty.slice";
 import { selectCountryCode } from "@cx-sdk/core/auth/authentication.slice";
 import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
@@ -147,6 +148,11 @@ function useLoyalty() {
         resp?.response?.coupons,
       );
       dispatch(pushLoyaltyItems(allLoyaltyItems));
+      // The rewards entries and checkout's /phone step key on this (user
+      // 2026-10-17): only a 200 identifies the guest. A non-200 leaves them
+      // unidentified, so the rewards entry retries and checkout asks for the
+      // number again.
+      dispatch(setLoyaltyIdentified(resp?.status_code === 200));
       // return {
       //   status_code: 200,
       //   response: xenoExpectedSuccessResponse.response,
@@ -154,6 +160,10 @@ function useLoyalty() {
       return resp;
     } catch (error) {
       reportLoyaltyFailure("executeLoyalty", error);
+      // A failed transport (no body) or a non-200 without `response` throws
+      // in addLoyaltyPointsAndCoupons above, before the flag: the callers
+      // read this as a failed lookup, so it identifies no one either.
+      if (mountedRef.current) dispatch(setLoyaltyIdentified(false));
     }
   };
 

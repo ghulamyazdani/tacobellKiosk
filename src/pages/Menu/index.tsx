@@ -27,9 +27,9 @@ import {
   closeLoyaltyItemsModal,
   openLoyaltyItemsModal,
   selectCoupons,
+  selectIsLoyaltyIdentified,
   selectLoyaltyItemsModal,
 } from "@cx-sdk/ordering/state/loyalty.slice";
-import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
 import { cartQuantity } from "@cx-sdk/ordering/state/cart.slice";
 
 import useAddEntityToCart from "../../hooks/menuHooks/useAddEntityToCart";
@@ -168,10 +168,11 @@ export default function Menu({ bagOpen = false }: MenuProps) {
   const menu = useSelector(selectSellableMenu) as any;
   const currency = useCurrencySymbol();
   // P7c loyalty reads: the partner coupon list drives the CTA-bar label and
-  // the entry-tap branch table; the customer phone is the XENO identity
-  // (written by /phone, or by the login modal when the guest skipped it).
+  // the entry-tap branch table; the guest is identified once the login
+  // modal's balance lookup answered for their phone (user 2026-10-17 — a
+  // phone typed at checkout's /phone was never looked up, so it is not).
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
-  const customerPhone = useSelector(selectPhoneNumber) as any;
+  const isLoyaltyIdentified = useSelector(selectIsLoyaltyIdentified);
   const totalQuantity = Number(useSelector(cartQuantity) ?? 0);
 
   const [languageOpen, setLanguageOpen] = useState(false);
@@ -618,8 +619,6 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    * P7c — XENO loyalty                                                  *
    * ------------------------------------------------------------------ */
 
-  const isLoyaltyIdentified = String(customerPhone ?? "").trim().length > 0;
-
   /**
    * Both loyalty guard branches dispatch the fork's GLOBAL error action —
    * that is what BagSheet's rewards entry already does, and keeping one code
@@ -636,13 +635,16 @@ export default function Menu({ bagOpen = false }: MenuProps) {
    *   coupons on file            → open the items modal, isTimerOn:false
    *   otherwise                  → "No coupons available for you at the moment"
    *
-   * DIVERGENCE (flagged): an UNIDENTIFIED guest gets the login modal instead
-   * of the "no coupons" dead end. The contract's table assumes the fork's
-   * flow, where /phone always runs before the menu; here the phone screen is
-   * skippable (!crm_phone_mandatory), and the CTA's pre-lookup label is
-   * "REWARDS" precisely because the lookup has not happened yet. Same branch
-   * the bag already added under locked decision 5b, so the two entries behave
-   * identically. Revert = delete this one `if`.
+   * DIVERGENCE (flagged): an UNIDENTIFIED guest — no balance lookup answered
+   * for the phone in the store — gets the login modal instead of the "no
+   * coupons" dead end. The contract's table assumes the fork's flow, where
+   * /phone always runs before the menu; here the phone is never asked before
+   * the menu (user 2026-10-17): this entry and the bag's are where a guest
+   * asks for their rewards, so they ask for the number, and the CTA's
+   * pre-lookup label is "REWARDS" precisely because the lookup has not
+   * happened yet. A failed lookup leaves the guest unidentified, so the next
+   * tap retries. Same branch the bag runs under locked decision 5b, so the
+   * two entries behave identically.
    */
   const handleOpenLoyaltyRewards = () => {
     if (!getIsLoyaltyOn()) return;
@@ -842,10 +844,10 @@ export default function Menu({ bagOpen = false }: MenuProps) {
           LoyaltySuccessModal z-[70]; the two entry-guard errors render in
           the app-wide GlobalErrorHost (z-[95], IdleGuard) above all of
           them (an error must never be occluded). The rewards sheet takes NO
-          open prop: /phone and the login modal both open it by dispatching
-          openLoyaltyItemsModal({isTimerOn:true}), and it reads that slice
-          state itself — which is also how the post-lookup auto-open lands
-          when the guest arrives here from /phone. It is lazy (D9) and
+          open prop: the login modal opens it after its lookup by dispatching
+          openLoyaltyItemsModal({isTimerOn:true}) (as the legacy pre-menu
+          /phone does), and the two entries with isTimerOn:false; it reads
+          that slice state itself. It is lazy (D9) and
           ALWAYS mounted (null while closed), so its chunk loads at /menu
           entry; the local boundary keeps a failed chunk from crashing /menu
           (LoyaltyRewardsFallback, z-50, stands in for it). No key on either

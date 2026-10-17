@@ -188,8 +188,8 @@ function useAppSettings() {
       // UB5: the deployment default never overwrites a guest's country pick.
       // The staged order-type switch (`opts`) never re-applies it (same
       // deployment, same default), and the live /second call — not awaited,
-      // so it can land after a pick on the pre-menu /phone — checks for a
-      // pick when its response arrives. A pick (`picked: true`, written only
+      // so it can land after a pick in the menu's rewards login — checks for
+      // a pick when its response arrives. A pick (`picked: true`, written only
       // by the country picker) lasts one guest: the session reset clears it.
       const picked = (store.getState() as CountryPickState).auth
         ?.selectedCountryCode?.picked;

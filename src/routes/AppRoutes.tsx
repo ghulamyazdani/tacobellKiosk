@@ -110,12 +110,14 @@ function InSessionOverlays() {
  *   /LoadingResources boot data load (outside the idle subtree)
  *   /start       attract screen (outside the idle subtree, like posistKiosk)
  *   /second      order type
- *   /phone       loyalty identity lookup, pre-menu (P7c; only reachable when
- *                getIsLoyaltyOn() — SecondLayout picks the branch)
+ *   /phone       checkout phone capture (P8a checkout mode); without router
+ *                state the legacy pre-menu loyalty lookup (P7c), which no
+ *                screen enters since /second always goes to /menu (2026-10-17)
  *   /cart        Menu with the bag sheet open (P7a locked decision 1)
  *   /forYou      redirects to /cart (dropped 2026-10-11)
  *   /customerName checkout-time name capture (P7c; the PAY preflight returns
- *                "customerName" whenever loyalty is on)
+ *                "customerName" when loyalty is on and a rewards login
+ *                identified the guest — otherwise /phone comes first)
  *   /tent        table-tent number capture (P8a; preflight route "tent")
  *   /payment     payment-method choice (P8a PAY AT COUNTER; P8b the Paytm
  *                card-machine / UPI QR tiles when configured)
@@ -142,7 +144,7 @@ function InSessionOverlays() {
  *           ├─ "payment"      → /payment
  *           ├─ "customerName" → /customerName
  *           └─ "phone"        → /phone   (checkout mode, see CustomerPhone)
- *   /tent         Continue → skipCRM ? /payment : loyaltyOn ? /customerName : /phone
+ *   /tent         Continue → skipCRM ? /payment : loyaltyOn && identified ? /customerName : /phone
  *   /phone        Continue → /customerName   (ONLY in checkout mode)
  *   /customerName Continue → directOrder ? push → /orderSuccess : /payment
  *   BACK on /tent, /phone (checkout), /customerName, /payment, /receipt →

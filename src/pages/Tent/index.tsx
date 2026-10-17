@@ -51,8 +51,11 @@ const MAX_DISPLAY_CELLS = 6;
  *
  * Forward fan-out (fork BrandWrapper.tsx:149-215):
  *   skipCRM ? /payment : isLoyaltyOn ? /customerName : /phone
- * `/phone` is entered in CHECKOUT MODE — it is pre-menu by default in TB, so
- * the router state carries `checkoutRoute: "phone"` to flip it.
+ * except that a loyalty guest no rewards login identified walks /phone too
+ * (user 2026-10-17 — the phone is never asked before the menu).
+ * `/phone` is entered in CHECKOUT MODE — without router state it is the
+ * legacy pre-menu lookup, so the router state carries
+ * `checkoutRoute: "phone"` to flip it.
  *
  * ⚠️ DELIBERATE DIVERGENCE — Rule 2 dead-end fix. The fork validates the
  * typed number against `tent_number_range` and, when that setting does not
@@ -204,8 +207,9 @@ export default function Tent() {
 
   /**
    * Fork BrandWrapper's tent branch, minus the dead end: skipCRM ? /payment :
-   * loyalty ? /customerName : /phone (checkout mode) — the next applicable
-   * step, from the one place BACK reads too (useCheckoutFlow).
+   * loyalty with an identified guest ? /customerName : /phone (checkout
+   * mode) — the next applicable step, from the one place BACK reads too
+   * (useCheckoutFlow).
    */
   const continueForward = useCallback(() => goNext("/tent"), [goNext]);
 

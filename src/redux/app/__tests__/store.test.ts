@@ -5,6 +5,8 @@ import {
 } from "@cx-sdk/devices/updates/autoUpdate.slice";
 import { setDiscountOnAddon } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setPipelineStatuses } from "@cx-sdk/catalog/state/kioskOpenStatus.slice";
+import { setPhoneNumberRdx } from "@cx-sdk/core/customer/customerInfo.slice";
+import { setLoyaltyIdentified } from "@cx-sdk/ordering/state/loyalty.slice";
 import {
   setBillPaymentInfo,
   setKioskPaymentType,
@@ -150,6 +152,26 @@ describe("P9e persistence (device scope)", () => {
     expect(auth).toHaveProperty("selectedCountryCode");
     // U2 relies on the operator toggle surviving a relaunch.
     expect(JSON.parse(root.appSettings ?? "{}")).toHaveProperty("mandatoryFullscreen");
+  });
+
+  // User 2026-10-17: the rewards login's verdict is on disk beside the phone
+  // it was given for, so a crash-reload keeps the two agreeing (checkout's
+  // /phone step and the rewards entries read it).
+  it("persist:root.loyalty holds isLoyaltyIdentified, beside the phone (customerInfo.customerInfo.customerPhone)", async () => {
+    await bootstrapped(persistor);
+    store.dispatch(setPhoneNumberRdx("9953833675"));
+    store.dispatch(setLoyaltyIdentified(true));
+    await persistor.flush();
+
+    const root = JSON.parse(window.localStorage.getItem("persist:root") ?? "{}") as Record<
+      string,
+      string
+    >;
+    expect(JSON.parse(root.loyalty ?? "{}")).toHaveProperty("isLoyaltyIdentified", true);
+    expect(JSON.parse(root.customerInfo ?? "{}").customerInfo).toHaveProperty(
+      "customerPhone",
+      "9953833675"
+    );
   });
 
   // Last in the file: it re-imports the store (a second instance on the same storage).

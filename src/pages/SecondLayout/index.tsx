@@ -94,13 +94,7 @@ export default function SecondLayout() {
     useKioskOpenServices();
 
   const { fetchMenu } = useMenuConverters();
-  // getIsLoyaltyOn() = kiosk_settings.enable_loyalty AND state.loyalty
-  // .isLoyaltyOn (a partner actually resolved at boot). The raw isLoyaltyOn
-  // selector alone would send the guest to /phone on a deployment whose
-  // settings have loyalty switched off but whose partner blob is still in
-  // persisted state — both must agree.
-  const { getChargesCountryDataApi, getIsLoyaltyOn, getDeactivatedPipelines } =
-    useAppSettings();
+  const { getChargesCountryDataApi, getDeactivatedPipelines } = useAppSettings();
   // Fork parity (SecondLayout.tsx:86-91, 247): pipelines deactivated for this
   // device are never shown, the rest in their configured `order` (missing =
   // 0; the sort is stable, so ties keep the server order). A copy — never
@@ -161,7 +155,7 @@ export default function SecondLayout() {
       const menu = await fetchMenu(pipeline.tab_id, false, false, pipeline);
       // Rule 1: the fetch is not idle-held, so the session can end (idle →
       // /start) while it is in flight. A late response must not drive the
-      // emptied kiosk off the splash into /menu or /phone.
+      // emptied kiosk off the splash into /menu.
       if (!mountedRef.current) return;
       // Rule 2/3 (P9b): fetchMenu swallows EVERY failure (network, timeout,
       // 5xx, bad body, converter throw) and resolves {} — fork parity. Judge
@@ -172,7 +166,9 @@ export default function SecondLayout() {
         setPickedId(null); // neutral behind the dialog and after BACK
         return;
       }
-      navigate(getIsLoyaltyOn() ? "/phone" : "/menu");
+      // Loyalty on or off, the menu comes next (user 2026-10-17): the phone
+      // is asked at the rewards entry (menu bar, bag) or at checkout.
+      navigate("/menu");
     } finally {
       setFetching(null);
     }

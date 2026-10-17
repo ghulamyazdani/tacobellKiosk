@@ -23,8 +23,8 @@ import { getBillOfferDiscount } from "@cx-sdk/ordering/loyalty/loyaltyOfferRules
 import {
   addLoyaltyPoints,
   selectCoupons,
+  selectIsLoyaltyIdentified,
 } from "@cx-sdk/ordering/state/loyalty.slice";
-import { selectPhoneNumber } from "@cx-sdk/core/customer/customerInfo.slice";
 import {
   openMakeItAMealModal,
   openMakeItAMealSession,
@@ -312,9 +312,12 @@ export default function BagSheet({
     | null
     | undefined;
   // P7c loyalty reads: the partner coupon list drives the entry-tap branch
-  // table, the customer phone is the XENO identity (set by /phone).
+  // table. "Identified" = a balance lookup answered for the phone in the
+  // store (the rewards login), not merely a phone: one typed at checkout's
+  // /phone was never looked up (user 2026-10-17). Unidentified ⇒ the login
+  // modal, not the rewards sheet — and PAY asks for the phone.
   const loyaltyCoupons = useSelector(selectCoupons) as any[] | null;
-  const customerPhone = useSelector(selectPhoneNumber) as any;
+  const isLoyaltyIdentified = useSelector(selectIsLoyaltyIdentified);
   const autoAppliedOfferId = useSelector(selectAutoAppliedOfferId);
   const pipelines = useSelector(selectPipelines) as SwitchablePipeline[] | null;
   const selectedPipeline = useSelector(selectSelectedPipeline) as
@@ -398,10 +401,6 @@ export default function BagSheet({
   }
   const isTakeOut = orderTypeKindOf(tabType) === "takeOut";
   const hasAppliedOffer = Boolean(cartOffer && Object.keys(cartOffer).length > 0);
-  // "Identified" = the XENO lookup has a phone to key on (setPhoneNumberRdx on
-  // /phone, or from the login modal). No phone ⇒ the login modal, not the
-  // rewards sheet.
-  const isLoyaltyIdentified = String(customerPhone ?? "").trim().length > 0;
 
   // Ranked offers for the Rewards entry row (decision 5). rank() is memoised
   // on the cart signature inside useOfferSavings, and calling it here warms
@@ -905,6 +904,8 @@ export default function BagSheet({
         tabType,
         skipCRM: shouldSkipCRM(),
         isLoyaltyOn: getIsLoyaltyOn(),
+        // Not identified → /phone before the name, as with loyalty off.
+        isLoyaltyIdentified,
       });
 
       if (decision.kind === "blocked") {

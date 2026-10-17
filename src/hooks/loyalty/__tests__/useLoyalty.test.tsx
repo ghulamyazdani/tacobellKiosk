@@ -5,7 +5,9 @@ import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import {
   resetLoyaltySession,
+  selectIsLoyaltyIdentified,
   setClaimedCoupon,
+  setLoyaltyIdentified,
   setLoyaltyPartner,
 } from "@cx-sdk/ordering/state/loyalty.slice";
 import { setMenuData } from "@cx-sdk/catalog/state/Menu.slice";
@@ -153,6 +155,64 @@ describe("useLoyalty — idle-facing edges (P9a)", () => {
     await expect(lookup.result).resolves.toBeUndefined();
     expect(loyalty().totalLoyaltyPoints).toBe(0);
     expect(loyalty().coupons).toEqual([]);
+  });
+});
+
+/*
+  User 2026-10-17 — the phone is asked at the rewards entry, so "identified"
+  is the lookup's verdict, not a phone in the store: the rewards entries and
+  checkout's /phone step read selectIsLoyaltyIdentified. Only a 200 sets it;
+  a non-200 or a failed transport clears it; a lookup the screen outlived
+  writes nothing.
+*/
+describe("useLoyalty.executeLoyalty — the identified flag", () => {
+  const identified = () => selectIsLoyaltyIdentified(store.getState());
+
+  const lookUp = async (rtkResult: unknown) => {
+    transport.executeEvent.mockResolvedValue(rtkResult);
+    const { result } = renderHook(() => useLoyalty(), { wrapper });
+    await act(async () => {
+      await result.current.executeLoyalty({ phoneNumber: "9953833675", countryCode: "+91" });
+    });
+  };
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setLoyaltyPartner(PARTNER));
+    store.dispatch(setMenuData({ menu: { categories: [] } }));
+    transport.executeEvent.mockReset();
+    transport.isLoading = false;
+  });
+
+  it("a 200 identifies the guest", async () => {
+    expect(identified()).toBe(false);
+    await lookUp(BALANCE);
+
+    expect(identified()).toBe(true);
+  });
+
+  it.each([
+    ["a non-200 answer with a body", { data: { status_code: 500, response: { coupons: [], loyalty_points: 0 } } }],
+    ["a non-200 answer without one", { data: { status_code: 404, message: "customer not found" } }],
+    ["a failed transport (RTK's { error }, no body)", { error: { status: "FETCH_ERROR", error: "TypeError: Failed to fetch" } }],
+  ])("%s clears it — even after an earlier 200", async (_label, rtkResult) => {
+    store.dispatch(setLoyaltyIdentified(true));
+    await lookUp(rtkResult);
+
+    expect(identified()).toBe(false);
+  });
+
+  it("a lookup answered AFTER the screen unmounted leaves it alone", async () => {
+    const { result, unmount } = renderHook(() => useLoyalty(), { wrapper });
+    const lookup = startLookup(result.current);
+
+    unmount();
+    await act(async () => {
+      lookup.answer(BALANCE);
+      await lookup.result;
+    });
+
+    expect(identified()).toBe(false);
   });
 });
 

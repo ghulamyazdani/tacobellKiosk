@@ -523,7 +523,7 @@ function useLoaders() {
       // runs this AFTER its boot try/catch closes, so a dead loyalty proxy is
       // an unhandled rejection there. P9b, user decision 2026-10-01: DEGRADE,
       // never block — a loyalty outage must not stop the kiosk selling. Boot
-      // finishes loyalty-OFF (no /phone, no rewards UI), the Activity Center
+      // finishes loyalty-OFF (no rewards UI), the Activity Center
       // shows "loyalty unavailable", and StartScreen retries the lookup on
       // each splash visit (a relaunch never re-runs this boot).
       // `isLoyaltyOn` is persisted, so it is cleared FIRST: left alone, the

@@ -1,4 +1,6 @@
+import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
+import { selectIsLoyaltyIdentified } from "@cx-sdk/ordering/state/loyalty.slice";
 import useAppSettings from "./useAppSettings";
 
 /**
@@ -9,8 +11,10 @@ import useAppSettings from "./useAppSettings";
  *
  *   /cart          always (the bag's PAY starts checkout)
  *   /tent          a table order type (tab_type "table")
- *   /phone         CRM shown and loyalty off — with loyalty on the phone is
- *                  asked before the menu (/second → /phone)
+ *   /phone         CRM shown, unless loyalty is on and a rewards login
+ *                  identified the guest — the phone is never asked before
+ *                  the menu, so a guest who did not log in to rewards is
+ *                  asked here, as with loyalty off (user 2026-10-17)
  *   /customerName  CRM shown
  *   /payment       always
  *   /receipt       always — before the push at the counter; a Paytm payment
@@ -18,7 +22,7 @@ import useAppSettings from "./useAppSettings";
  *
  * "CRM shown" is `!skip_crm_page` (settingsEngine.shouldSkipCRM, "hide CRM").
  * These are the bag's own predicates: the SDK's resolveCheckoutRoute picks
- * the step after /cart from the same three inputs, and useCheckoutFlow.test
+ * the step after /cart from the same four inputs, and useCheckoutFlow.test
  * pins the two equal. /paymentPolling and /orderSuccess have no BACK (an
  * order may be placed or paid). `appSettings.skipPhoneAndName` adds or skips
  * nothing — no code sets it.
@@ -33,13 +37,21 @@ export interface CheckoutFlow {
   tabType: unknown;
   /** skip_crm_page ("hide CRM"): no /phone, no /customerName. */
   skipCRM: unknown;
-  /** Loyalty on: the phone was asked before the menu, so no checkout /phone. */
+  /** Loyalty on (getIsLoyaltyOn): with an identified guest, no checkout /phone. */
   isLoyaltyOn: unknown;
+  /**
+   * A balance lookup answered for the phone in the store (the rewards login —
+   * selectIsLoyaltyIdentified): that number is already known.
+   */
+  isLoyaltyIdentified: boolean;
 }
 
-const applies = (step: CheckoutStep, { tabType, skipCRM, isLoyaltyOn }: CheckoutFlow) => {
+const applies = (
+  step: CheckoutStep,
+  { tabType, skipCRM, isLoyaltyOn, isLoyaltyIdentified }: CheckoutFlow
+) => {
   if (step === "/tent") return tabType === "table";
-  if (step === "/phone") return !skipCRM && !isLoyaltyOn;
+  if (step === "/phone") return !skipCRM && !(isLoyaltyOn && isLoyaltyIdentified);
   if (step === "/customerName") return !skipCRM;
   return true;
 };
@@ -56,18 +68,20 @@ export const previousCheckoutStep = (from: CheckoutStep, flow: CheckoutFlow): Ch
   STEPS.slice(0, STEPS.indexOf(from)).reverse().find((step) => applies(step, flow)) ?? from;
 
 /**
- * The steps under this kiosk's settings, navigated. /phone is the pre-menu
- * loyalty lookup by default, so its checkout leg carries
+ * The steps under this kiosk's settings, navigated. /phone without router
+ * state is the legacy pre-menu loyalty lookup, so its checkout leg carries
  * `checkoutRoute: "phone"`, as the bag's PAY does — without it a BACK to
  * /phone would open the pre-menu screen, whose exits are /second and /menu.
  */
 export default function useCheckoutFlow() {
   const navigate = useNavigate();
   const { getTabType, shouldSkipCRM, getIsLoyaltyOn } = useAppSettings();
+  const isLoyaltyIdentified = useSelector(selectIsLoyaltyIdentified);
   const flow: CheckoutFlow = {
     tabType: getTabType(),
     skipCRM: shouldSkipCRM(),
     isLoyaltyOn: getIsLoyaltyOn(),
+    isLoyaltyIdentified,
   };
   const go = (step: CheckoutStep) => {
     if (step === "/phone") navigate(step, { state: { checkoutRoute: "phone" } });

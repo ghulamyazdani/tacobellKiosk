@@ -7,7 +7,11 @@ import {
   toggleAccessibilityMode,
 } from "@cx-sdk/catalog/state/appSettings.slice";
 import { setTabType } from "@cx-sdk/catalog/state/pipeline.slice";
-import { turnOfLoyalty, turnOnLoyalty } from "@cx-sdk/ordering/state/loyalty.slice";
+import {
+  setLoyaltyIdentified,
+  turnOfLoyalty,
+  turnOnLoyalty,
+} from "@cx-sdk/ordering/state/loyalty.slice";
 import {
   selectCustomerName,
   setCustomerName,
@@ -283,8 +287,9 @@ describe("/customerName — the CRM lookup wait", () => {
 
 /*
   User 2026-10-14: BACK returns to the step the guest came from (useCheckoutFlow)
-  — /phone in checkout mode (CRM shown, loyalty off), else the table number,
-  else the bag. It was always the bag. The typed name is kept for the way back.
+  — /phone in checkout mode (CRM shown, unless a rewards login identified a
+  loyalty guest — user 2026-10-17), else the table number, else the bag. It
+  was always the bag. The typed name is kept for the way back.
 */
 describe("/customerName — BACK to the step the guest came from", () => {
   const Landed = () => {
@@ -327,16 +332,26 @@ describe("/customerName — BACK to the step the guest came from", () => {
     expect(selectCustomerName(store.getState())).toBe("a");
   });
 
-  it("loyalty on, a table order: the phone was asked before the menu, so BACK → the table number", () => {
+  it("loyalty on, no rewards login: the phone was asked at checkout, so BACK opens /phone in CHECKOUT mode, as with loyalty off", () => {
     loyaltyOn();
+    mountInFlow();
+    back();
+
+    expect(screen.getByTestId("landed")).toHaveTextContent('/phone {"checkoutRoute":"phone"}');
+  });
+
+  it("loyalty on, a rewards login identified the guest, a table order: no /phone was walked, so BACK → the table number", () => {
+    loyaltyOn();
+    store.dispatch(setLoyaltyIdentified(true));
     mountInFlow();
     back();
 
     expect(screen.getByTestId("landed")).toHaveTextContent("/tent null");
   });
 
-  it("loyalty on, no table step: BACK → the bag", () => {
+  it("loyalty on, identified, no table step: BACK → the bag", () => {
     loyaltyOn();
+    store.dispatch(setLoyaltyIdentified(true));
     store.dispatch(setTabType("take_away"));
     mountInFlow();
     back();

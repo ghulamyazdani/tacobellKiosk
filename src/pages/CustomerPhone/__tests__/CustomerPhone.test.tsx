@@ -144,6 +144,78 @@ describe("CustomerPhone — a late lookup never navigates (P9a, D10)", () => {
   });
 });
 
+/*
+  User 2026-10-17: with loyalty on, a guest no rewards login identified is
+  asked the phone at checkout, "just like normal flow". CHECKOUT MODE never
+  looks up — no check_loyalty_balance wait, no rewards sheet opened behind
+  /customerName — and the pre-menu mode (no router state) keeps its lookup.
+*/
+describe("CustomerPhone — checkout mode never looks up (user 2026-10-17)", () => {
+  const typeNumber = () => {
+    for (const digit of "9876543210") fireEvent.click(screen.getByTestId(`numpad-key-${digit}`));
+  };
+  const events = () => mockCapture.mock.calls.map(([event]) => event);
+
+  beforeEach(() => {
+    store.dispatch({ type: "RESET_STATE" });
+    store.dispatch(setKioskSettings({ enable_loyalty: true }));
+    store.dispatch(setLoyaltyPartner(XENO));
+    mockNavigate.mockReset();
+    mockExecuteLoyalty.mockReset();
+    mockExecuteLoyalty.mockResolvedValue(REWARDS);
+    mockCapture.mockReset();
+  });
+
+  it("loyalty on, CONTINUE: the number committed, no lookup, no rewards sheet, no wait → /customerName", async () => {
+    mount({ checkoutRoute: "phone" });
+    typeNumber();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("phone-continue"));
+    });
+
+    expect(mockExecuteLoyalty).not.toHaveBeenCalled();
+    expect(rewardsSheetOpen()).toBe(false);
+    expect(screen.queryByTestId("phone-checking")).toBeNull();
+    expect(selectCustomerPhone(store.getState() as never)).toBe("9876543210");
+    expect(mockNavigate.mock.calls).toEqual([["/customerName"]]);
+    expect(events()).toContain("phone_number_entered");
+    expect(events()).not.toContain("account_send_code");
+    expect(events()).not.toContain("order_checkin_not_available");
+  });
+
+  it("loyalty on, SKIP: no lookup → /customerName", () => {
+    mount({ checkoutRoute: "phone" });
+    fireEvent.click(screen.getByTestId("phone-skip"));
+
+    expect(mockExecuteLoyalty).not.toHaveBeenCalled();
+    expect(mockNavigate.mock.calls).toEqual([["/customerName"]]);
+  });
+
+  it("loyalty off, CONTINUE: unchanged — no lookup, the no-config event, → /customerName", async () => {
+    store.dispatch(setKioskSettings({ enable_loyalty: false }));
+    mount({ checkoutRoute: "phone" });
+    typeNumber();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("phone-continue"));
+    });
+
+    expect(mockExecuteLoyalty).not.toHaveBeenCalled();
+    expect(mockCapture).toHaveBeenCalledWith("order_checkin_not_available", { reason: "no_loyalty_config" });
+    expect(mockNavigate.mock.calls).toEqual([["/customerName"]]);
+  });
+
+  it("the pre-menu mode (no router state) still looks the number up, then → /menu", async () => {
+    mount();
+    typeNumber();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("phone-continue"));
+    });
+
+    expect(mockExecuteLoyalty).toHaveBeenCalledWith({ countryCode: "+91", phoneNumber: "9876543210" });
+    expect(mockNavigate.mock.calls).toEqual([["/menu"]]);
+  });
+});
+
 describe("CustomerPhone placeholder (P9f contrast)", () => {
   beforeEach(() => {
     store.dispatch({ type: "RESET_STATE" });

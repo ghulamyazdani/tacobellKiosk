@@ -72,38 +72,47 @@ const maskExceptLast = (input: string) =>
   input.length <= 1 ? input : `${"*".repeat(input.length - 1)}${input[input.length - 1]}`;
 
 /**
- * /phone — loyalty identity lookup, reached from /second when loyalty is on
- * (getIsLoyaltyOn: kiosk_settings.enable_loyalty AND the partner blob).
+ * /phone — the phone-number step of checkout (CHECKOUT MODE, below) and the
+ * legacy pre-menu loyalty lookup.
  *
- * Flow parity with posistKiosk CustomerPhone.tsx (P7c contract step 3):
- * digits via the numpad, masked-but-last for 2s, min/max from the selected
- * country (validation SKIPPED when the country carries neither), the name
- * cleared whenever the number changes, then `executeLoyalty` →
- * `check_loyalty_balance` (a pure lookup, NO OTP here). Xeno success with
- * coupons AND points opens the rewards sheet with its auto-dismiss timer.
+ * PRE-MENU (no router state) — flow parity with posistKiosk
+ * CustomerPhone.tsx (P7c contract step 3): digits via the numpad,
+ * masked-but-last for 2s, min/max from the selected country (validation
+ * SKIPPED when the country carries neither), the name cleared whenever the
+ * number changes, then `executeLoyalty` → `check_loyalty_balance` (a pure
+ * lookup, NO OTP here). Xeno success with coupons AND points opens the
+ * rewards sheet with its auto-dismiss timer. The app no longer enters it —
+ * user 2026-10-17: the phone is never asked before the menu, /second always
+ * goes to /menu — so it only serves a /phone URL without checkout state (a
+ * reload or update that lands mid-lookup from an older build, a typed URL),
+ * and keeps its old exits.
  *
  * DIVERGENCE (brief decision 8): the fork's catch branch navigates to
  * /customerName; TB navigates to /menu — a failed lookup must never block
  * ordering, and /customerName is a checkout-time screen here.
  *
- * CHECKOUT MODE (P8a). The SAME screen is also the "phone" leg of the
- * checkout fan-out, entered from the bag (or /tent) with
- * `location.state.checkoutRoute === "phone"`. resolveCheckoutRoute only
- * returns "phone" when loyalty is OFF, so in this mode `redirection()` takes
- * its `!isLoyaltyOnSetting` early-return and NO check_loyalty_balance lookup
- * is ever fired — the screen is a pure CRM phone capture.
+ * CHECKOUT MODE (P8a). The SAME screen is the "phone" leg of the checkout
+ * fan-out, entered from the bag (or /tent) with
+ * `location.state.checkoutRoute === "phone"` — with loyalty off, and with
+ * loyalty on when no rewards login identified the guest (user 2026-10-17:
+ * asked "at the end before the customer name screen just like normal
+ * flow"). It NEVER looks up: `redirection()` goes straight on, so the screen
+ * is a pure CRM phone capture. A lookup here would leave the rewards sheet
+ * open in redux behind /customerName (it would pop over the bag on a later
+ * BACK) and add a network wait to checkout.
  *
  * The mode changes exactly three things and nothing else, so the pre-menu
  * behaviour stays byte-identical:
- *   Continue / Skip → /customerName   (pre-menu: /menu)
+ *   Continue / Skip → /customerName, never a lookup  (pre-menu: the lookup,
+ *                     then /menu)
  *   Back            → /tent or /cart  (pre-menu: /second) — the step
  *                     before (useCheckoutFlow; user 2026-10-14)
  *   CANCEL ORDER    → asks first (CancelOrderModal; audit-fixes A3) — the
  *                     guest has a bag; pre-menu it goes to /start at once
  *                     (the bag is empty there, like /second)
  * The confirm ONLY navigates to /start, whose mount revokes and resets (H1).
- * Validation, masking, the CRM mandatory gates, the analytics vocabulary and
- * every rendered string are untouched by the mode.
+ * Validation, masking, the CRM mandatory gates and every rendered string are
+ * untouched by the mode.
  *
  * COUNTRY (audit-fixes UB5): the pill opens the country picker (design
  * language, sign-off). A pick drives the digit limits, the keypad cap and the
@@ -262,6 +271,12 @@ export default function CustomerPhone() {
       navigationControl();
       return;
     }
+    // CHECKOUT MODE never looks up (see the header): the number just goes
+    // out with the order.
+    if (isCheckoutMode) {
+      navigationControl();
+      return;
+    }
 
     isSubmitting.current = true;
     setChecking(true);
@@ -324,6 +339,7 @@ export default function CustomerPhone() {
     dispatch,
     executeLoyalty,
     inputValue,
+    isCheckoutMode,
     isLoyaltyOnSetting,
     isReeloLoyalty,
     navigationControl,

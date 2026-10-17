@@ -56,11 +56,13 @@ const CRM_LOOKUP_TIMEOUT_MS = 10000;
 /**
  * /customerName — the checkout-time identity screen (contract step 10).
  *
- * With loyalty on the preflight already resolves to "customerName" (the
- * phone was collected before the menu), so this screen only needs the
- * name: prefilled from the CRM (`getCustomerNameByNumber`, newest `updated`
- * record's `firstname`) ONLY when the redux name is empty, gated on
- * `crm_name_mandatory`, then committed with `setCustomerName(trim)`.
+ * The phone is asked before this screen — by /phone, or, with loyalty on, by
+ * the rewards login that identified the guest (the preflight then resolves
+ * straight to "customerName"; user 2026-10-17: never before the menu) — so
+ * this screen only needs the name: prefilled from the CRM
+ * (`getCustomerNameByNumber`, newest `updated` record's `firstname`) ONLY
+ * when the redux name is empty, gated on `crm_name_mandatory`, then
+ * committed with `setCustomerName(trim)`.
  *
  * P8a — the fan-out this screen now owns (the /checkout stub is gone):
  *   directOrder === false → /payment
